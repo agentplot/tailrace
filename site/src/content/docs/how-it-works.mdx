@@ -1,0 +1,113 @@
+---
+title: How it works
+description: How tailrace packages and signs what the merge queue lands, keeps it in a store you own, moves channels by proof, and serves consumers under a policy.
+---
+
+tailrace answers one question about a landed change: what did it produce,
+and where may it run. It pushes, it attests, it promotes, and it serves.
+Where the design pack proposes a mechanism Chuck has not yet ruled on, this
+page calls it the direction; [the design](/tailrace/design/) says which is
+which.
+
+## After the landing
+
+sluice lands a commit on `main`. tailrace reads sluice's refs for the
+landed commit and moon's task hashes for what the build left, and gives the
+result a version. `tailrace push` packages the outputs as OCI artifacts,
+one manifest each with the payload as layer blobs and the metadata as
+annotations, signs each one, and pushes it by digest into the registry.
+Its answer is machine-readable: the digest, the version and each
+attestation's reference, so another system can take it as its input.
+Neither sluice nor moon knows tailrace exists.
+
+## Attestations hang off the digest
+
+Everything tailrace knows about an artifact is a signed statement attached
+to the artifact's digest as an OCI referrer: the build's provenance, with
+the commit, the builder's identity, the machine and the inputs; sluice's
+signed check verdicts for the landed commit; the test results; and, later,
+an independent rebuild that matched and a review's approval. `tailrace
+attest` adds one. A referrer travels with its subject on a referrers-aware
+copy, so an artifact carries its evidence wherever it goes, and a policy
+reads it there.
+
+Signing is bound to an identity rather than a key file. The direction is
+keyless signing in Sigstore's shape: a short-lived certificate from the
+user's own identity provider, and a transparency log. On a machine a
+developer controls, the agent's identity is the developer's, delegated,
+and the record says so.
+
+## Quarantine, then the store
+
+The store is one registry with namespaces drawn along trust and retention,
+the direction being five: the cache, which any edge machine writes and
+which expires early; quarantine, where a push lands and from which nothing
+promotes itself; the artifacts, verified and immutable, which only the
+gate writes; the releases, the channel ledger; and config, the policies
+and environment definitions packaged from git. A machine an agent runs on
+writes only to the cache and to quarantine. A poisoned upload sits in
+quarantine and goes nowhere.
+
+`tailrace publish` is the gate's move: it verifies a quarantined
+artifact's signatures and attestations against the policy, copies it into
+the artifacts namespace by the same digest, and points `beta` at the
+version the landing made. `tailrace verify` is the same check with no
+move, for anyone who wants to read the evidence.
+
+## Channels moved only by proof
+
+A channel such as `beta` or `stable` is a mutable pointer, an OCI tag, to
+a version. A landing on `main` makes a version and attaches it to `beta`;
+`tailrace promote <version> --to stable` moves `stable` to it. Every
+promotion is an append-only signed record: the version and its digest, the
+channel, who or what promoted it, when, and the policy evidence. The
+ledger is the audit trail, and a rollback is a promotion to an older
+version. The direction for `stable` is an independent rebuild by a builder
+the first one does not control, with the shared cache off, whose matching
+digest is one more attestation, and two signatures before `stable` moves.
+
+## Consumers read under a policy
+
+`tailrace sync` fills each ecosystem's own local layout from the store: an
+npm cache, a Maven repository, a PyPI index, a Go module cache, a Cargo
+registry, a NuGet feed, a container image layout, a directory of
+CloudFormation templates or site bundles. `tailrace serve` is a localhost
+server speaking the read protocol of the ecosystems that need HTTP, npm
+first. Both read under a policy: a version is served only when its
+attestations satisfy it, so a developer's install and an agent's build see
+only what the policy admits. The same store is moon's remote cache, and
+the direction is a Nix binary cache over it.
+
+## Environments converge
+
+An environment is a target, a channel it subscribes to, a policy, `auto`
+or `manual`, and a reconciler, push or pull. Under `auto` the environment
+converges as soon as the channel moves; under `manual` it waits for an
+approval. Publishing to a package manager is an environment subscribed to
+`stable`. Kubernetes needs no reconciler of tailrace's: channels are OCI
+tags, and Flux or Argo consume them, with a hook that reports what each
+runs. Where no good pull tool exists, CloudFormation, Lambda, a static
+site, a Clan fleet, tailrace brings its own. `tailrace status` says what
+each channel points at, what each environment runs, and what waits on a
+promotion.
+
+## One store, three levels of trust
+
+| level | means | who writes it |
+|---|---|---|
+| a cache hit | someone built this | any machine an agent runs on |
+| an artifact | the merge queue built and signed it, and the gate accepted it | sluice, tailrace, then the gate |
+| a release | it was promoted, with proof | a promotion under the policy |
+
+The bytes that passed the gate are the bytes that run. Trust is
+centralized only as a thin layer: identity, policy and the signed ledger.
+Execution stays on the machines the agents run on.
+
+## What tailrace keeps
+
+The family's tools keep their state in git, and tailrace's small things
+go there: manifests, signatures, attestations and the ledger. Large blobs
+do not: the direction is a file-based OCI layout on disk, synced to object
+storage, that git only points at by digest. Policies and environment
+definitions are edited in git and, on landing, packaged as a signed
+artifact into config, so everything that executes reads from the store.

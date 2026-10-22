@@ -1,0 +1,20 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+# The site, published to https://agentplot.github.io/tailrace by
+# .github/workflows/pages.yml. bun comes from the devenv shell.
+language: 'typescript'
+layer: 'application'
+
+tasks:
+  # The pinned dependencies, from bun.lock. It reaches the registry, so it
+  # is never replayed.
+  install:
+    command: 'bun install --frozen-lockfile'
+    inputs: ['package.json', 'bun.lock']
+    options: {cache: false}
+  build:
+    command: 'bun run build'
+    deps: ['~:install']
+    inputs: ['src/**/*', 'public/**/*', 'astro.config.mjs', 'package.json', 'bun.lock', 'tsconfig.json', '/devenv.nix', '/devenv.lock', '/.prototools']
+    outputs: ['dist']
+    tags: [check-fast]

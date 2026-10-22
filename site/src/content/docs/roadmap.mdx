@@ -1,0 +1,79 @@
+---
+title: Roadmap
+description: The steps that build tailrace, in order, and what each one is done by.
+---
+
+The statement is being written, and nothing is built. These steps build
+tailrace in the order the design pack proposes, the first crate arriving
+with the first ADR. Each is done by a check or an observation, never by a
+list ticked by hand. Nothing hosted is built until people running the
+open-source tool ask for it.
+
+**T1 · Write the statement.** tailrace's invariants as numbered clauses in
+agentplot/blueprints, with the operator's rulings on the questions the
+design pack leaves open: the policy language, the promotion record's
+schema, the OCI conventions, and where a local-first store keeps its
+blobs.\
+*Needs* the operator's rulings. *Done when* Vale is clean and the operator
+agrees to land it on main.
+
+**T2 · Scaffold the crate.** The founding decisions as ADRs, with the
+rules in `docs/architecture/core.md`: a Rust binary with seams for the
+registry, the signer and the targets; `.config/tailrace.toml`; devenv,
+moon and sluice's gate.\
+*Needs* T1. *Done when* sluice protects main and the first change lands
+through it.
+
+**T3 · Push, by digest.** `tailrace push` packages what the build left,
+signs it, and pushes it into quarantine in a file-based OCI layout on disk
+or ECR, with the provenance and sluice's verdicts as referrers and a
+machine-readable answer; `tailrace publish` as the smallest gate, copying
+the same digest into the artifacts and pointing `beta` at it.\
+*Needs* T2. *Done when* an artifact pushed from a landing on one of the
+family's own repositories verifies, with its referrers, from a second
+machine.
+
+**T4 · The cache.** moon's remote cache backed by the cache namespace of
+the same store.\
+*Needs* T3. *Done when* a task that passed on one host replays from the
+store on another.
+
+**T5 · Channels, by proof.** `beta` and `stable` from the command line;
+`tailrace promote` writes a signed record to an append-only ledger, and
+`tailrace status` reads it.\
+*Needs* T3. *Done when* a promotion made on one machine is read on
+another, and a rollback is a promotion to an older version.
+
+**T6 · Sync and serve.** `tailrace sync` fills npm's local layout from the
+store under a policy, then the other ecosystems; `tailrace serve` answers
+npm's read protocol on localhost.\
+*Needs* T5. *Done when* `npm install` in a repository resolves a package
+only from a version whose attestations satisfy the policy, and a version
+that fails it is refused with the reason.
+
+**T7 · The Nix spike.** A Nix binary cache over the store, measured
+against Attic on one closure.\
+*Needs* T4. *Done when* the measurement says whether tailrace serves store
+paths itself or layers on Attic, and the statement records it.
+
+**T8 · Environments.** A target, a channel, an `auto` or `manual` policy
+and a reconciler, push or pull; Flux and Argo consuming the channel tags
+with a status hook; reconcilers of tailrace's own for CloudFormation,
+Lambda, static sites and Clan.\
+*Needs* T5. *Done when* a `stable` promotion converges a staging
+environment under `auto`, and production waits under `manual` until
+approved.
+
+**T9 · Verified releases.** The independent rebuild with the shared cache
+off, its matching digest as an attestation, and two signatures before
+`stable` moves; a reference self-hosted Sigstore.\
+*Needs* T8. *Done when* a `stable` promotion is refused without the second
+signature, and accepted with it.
+
+## After tailrace
+
+The formats and the command line freeze at 1.0. A hosted trust plane, a
+private certificate authority tied to the user's identity provider, a
+transparency log, promotion policy and countersigning, comes only when
+people running the open-source tool ask for it, and holds none of their
+artifacts and none of their ledger.

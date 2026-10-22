@@ -1,0 +1,49 @@
+---
+title: How it fits
+description: tailrace stands after sluice and before the environments, in a family of tools that turn outside events into work that lands and runs.
+---
+
+import Family from '@agentplot/site-theme/Family.astro';
+
+tailrace is one of a family of tools that turn what happens outside a
+repository into work that lands in it. Each tool stands alone, and each
+one's site is its own.
+
+<Family highlight="tailrace" />
+
+## After the landing
+
+The family runs as a mill does. headwater and eddy notice what happens
+upstream; millpond keeps it as an inbox; flume carries each item to one
+agent in one worktree; the agents work; sluice tests each change as merged
+and lands it. tailrace is the channel that carries the water away after
+it has done its work: what sluice landed goes out to the environments as
+signed artifacts, and the family diagram above ends where tailrace begins.
+
+tailrace reads two things the family already makes: sluice's refs, which
+say which commit landed and what its checks said, and moon's task hashes,
+which say what the build left. Neither sluice nor moon knows tailrace
+exists. The verdicts sluice signed for the landed commit become an
+attestation on each artifact the landing produced, so a consumer can read
+at the registry what the merge queue decided.
+
+## Alone, or as a layer
+
+tailrace needs none of the others. Any repository whose build leaves
+artifacts can push them with their provenance, and any registry with the
+referrers API, or a directory on disk, can hold them. Publishing stands
+alone; channels and environments are layers on it, each optional, so a
+platform that keeps its own channels and promotion takes tailrace's
+publishing and leaves the rest. sluice and tailrace make a delivery pair:
+one decides what lands, the other what runs, and the digest passes between
+them with its proof attached.
+
+## A thin center
+
+What the family centralizes is small: identity, policy and a signed
+ledger. Builds, tests and packaging run where the agents run, on
+developer machines and agent hosts, and the artifacts stay in the user's
+own registry. The direction is a hosted trust plane later, a private
+certificate authority tied to the user's identity provider, a transparency
+log, promotion policy and countersigning, that holds none of the
+artifacts and none of the ledger; both stay in the user's account.

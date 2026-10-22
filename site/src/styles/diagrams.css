@@ -1,0 +1,23 @@
+/* The diagram's palette: the family theme's tokens (@agentplot/site-theme's
+   tokens.css) and tailrace's accent, --ap-accent, so the drawing follows
+   the theme and its toggle. A landing or a passed verification takes the
+   theme's ok colour, --ap-ok; a version a policy refuses takes --ap-warn. */
+:root {
+  --d-bg: var(--ap-bg-2);
+  --d-panel: var(--ap-bg-3);
+  --d-fg: var(--ap-fg);
+  --d-muted: var(--ap-fg-3);
+  --d-faint: var(--ap-fg-4);
+  --d-rule: var(--ap-line);
+  --d-soft: var(--ap-line-soft);
+  --d-accent: var(--ap-accent);
+  --d-accent-soft: color-mix(in oklab, var(--ap-accent) 22%, transparent);
+  --d-on-accent: var(--ap-bg);
+  --d-ok: var(--ap-ok);
+  --d-bad: var(--ap-warn);
+  --d-shadow: rgb(0 0 0 / 0.45);
+}
+
+:root[data-theme='light'] {
+  --d-shadow: rgb(40 36 20 / 0.18);
+}

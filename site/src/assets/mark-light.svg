@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="6 16 112 88" width="112" height="88" role="img" aria-label="tailrace">
+  <title>tailrace</title>
+  <circle cx="40" cy="48" r="21" fill="none" stroke="#0E1116" stroke-width="9"/>
+  <circle cx="40" cy="48" r="5" fill="#0E1116"/>
+  <path d="M16 94 H112" fill="none" stroke="#1D7368" stroke-width="11" stroke-linecap="round"/>
+  <path d="M72 78 H108" fill="none" stroke="#1D7368" stroke-width="6" stroke-linecap="round" opacity=".6"/>
+</svg>

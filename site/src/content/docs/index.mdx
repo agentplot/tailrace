@@ -1,0 +1,98 @@
+---
+title: tailrace
+description: Build once, sign everything, promote with proof, in your own account.
+template: splash
+hero:
+  tagline: tailrace delivers what the merge queue lands. Signed OCI artifacts with attestations, channels moved only by a signed promotion, and environments that converge on them, in a registry you own.
+  actions:
+    - text: How it works
+      link: /tailrace/how-it-works/
+      icon: right-arrow
+    - text: Read the design
+      link: https://agentplot.github.io/blueprints/tailrace/
+      icon: external
+      variant: secondary
+    - text: GitHub
+      link: https://github.com/agentplot/tailrace
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+After [sluice](https://agentplot.github.io/sluice/) lands a change, tailrace
+versions, packages, signs and pushes what the build left as OCI artifacts
+into a registry you own: ECR, GHCR, Harbor, zot, or a file-based OCI layout
+on disk. To each artifact's digest it attaches attestations as OCI
+referrers: the build's provenance, sluice's signed check verdicts for the
+landed commit, and the test results. The bytes that passed the gate are the
+bytes that run. Your artifacts, in your account.
+
+[The roadmap](/tailrace/roadmap/) orders the work of building it.
+
+## One store, three jobs
+
+A cache hit, an artifact and a release are the same content-addressed bytes
+at three levels of trust. tailrace keeps them in one store, so nothing is
+rebuilt on its way to production.
+
+<CardGrid>
+  <Card title="A build cache" icon="rocket">
+    moon's remote cache and Nix store paths, written by any machine an
+    agent runs on. A hit says someone built it. Disposable, expired early.
+  </Card>
+  <Card title="An artifact repository" icon="seti:folder">
+    What Artifactory or GitHub Packages would hold: npm, Maven, PyPI, Go,
+    Cargo and NuGet packages, container images, CloudFormation templates and
+    site bundles, each one immutable, signed and addressed by its digest.
+  </Card>
+  <Card title="A release system" icon="rocket">
+    Channels such as `beta` and `stable` point at versions and move only by
+    a signed promotion. Environments subscribe to a channel and a reconciler
+    converges them, push or pull.
+  </Card>
+  <Card title="Attestations that travel" icon="approve-check">
+    Provenance, sluice's verdicts, test results and reviews hang off the
+    artifact's digest as OCI referrers, so a copy carries them and a policy
+    can read them wherever the artifact goes.
+  </Card>
+</CardGrid>
+
+## What it never does
+
+tailrace never rebuilds an artifact on its way to a release: the digest the
+merge queue signed is the digest a channel points at. A machine an agent
+runs on writes only to the cache and to quarantine, and never promotes.
+A consumer is never served a version whose attestations fail the policy.
+And tailrace never holds your artifacts: the registry is yours, and
+tailrace keeps no copy of it.
+
+## Where you meet it
+
+<CardGrid>
+  <Card title="Command line" icon="seti:shell">
+    `push`, `attest`, `publish`, `verify`, `sync`, `serve`, `promote` and
+    `status`, each with a machine-readable answer, so another system can
+    take tailrace's result as its input.
+  </Card>
+  <Card title="Your registry" icon="seti:db">
+    Any OCI registry with the referrers API, or a file-based OCI layout on
+    disk that oras and skopeo read without a server.
+  </Card>
+  <Card title="Your package manager" icon="seti:npm">
+    `tailrace sync` fills each ecosystem's own local layout from the store;
+    `tailrace serve` answers npm's read protocol on localhost. Either way, a
+    policy decides which versions are served.
+  </Card>
+  <Card title="Your cluster" icon="setting">
+    Channels are OCI tags, so Flux or Argo consume them as they are; no
+    reconciler of tailrace's own stands between. [How it fits](/tailrace/how-it-fits/).
+  </Card>
+</CardGrid>
+
+## Its first user
+
+The family's own repositories, which sluice already lands, run tailrace
+first: a file-based OCI layout on disk, ECR as the registry, moon's remote
+cache backed by the store, and `beta` and `stable` channels moved from the
+command line with signed promotion records.
