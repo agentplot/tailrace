@@ -20,11 +20,11 @@ A consumer's client wants a registry it already understands. A localhost server 
 
 1. A localhost server for every ecosystem, applying the policy per request.
 2. Sync renders each ecosystem's own local-registry layout from the store under the policy, every file a link into one blob store; serve is a static server over the layout for ecosystems whose clients read no files, and a miss runs the same render on demand.
-3. A client plugin per ecosystem.
+3. A localhost server for every ecosystem, with the policy applied at the render all the same.
 
 ## Decision outcome
 
-Option 2. The policy moves from serve to sync: a version has a layout entry only after its verdict is satisfied (47), so the layouts hold nothing a client should not have, and a refusal is printed where someone is looking, with its reason, instead of a status code a client cannot explain. Serve then needs no policy. Eager sync reads what the repository's lockfiles pin and fetches exactly those versions (50); lazy serve fetches one miss the same way. The recorded address is a fixed name or path on every host (49), so lockfiles carry no host.
+Option 2. The statement fixes that a layout holds only what the policy admits (47); the choice this record makes is file layouts over a daemon wherever the ecosystem reads files. The policy moves from serve to sync: a version has a layout entry only after its verdict is satisfied (47), so the layouts hold nothing a client should not have, and a refusal is printed where someone is looking, with its reason, instead of a status code a client cannot explain. Serve then needs no policy. Eager sync reads what the repository's lockfiles pin and fetches exactly those versions (50); lazy serve fetches one miss the same way. The recorded address is a fixed name or path on every host (49), so lockfiles carry no host.
 
 ### Consequences
 

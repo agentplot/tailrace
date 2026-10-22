@@ -20,7 +20,7 @@ A package manager per ecosystem, an image registry, a bucket for templates and a
 
 1. A package manager per ecosystem (CodeArtifact, npm, PyPI) as the source of truth, with OCI for images alone.
 2. One OCI registry as the substrate for everything; npm, Maven, PyPI, Nix and templates are projections rendered out of it; attestations are referrers on the digest.
-3. A storage service of tailrace's own.
+3. One OCI registry tailrace standardises on (ECR), with no file layout and no second registry.
 
 ## Decision outcome
 

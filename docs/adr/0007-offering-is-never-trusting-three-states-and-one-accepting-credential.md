@@ -18,16 +18,16 @@ Builds run on machines the developer controls, and a stolen build credential or 
 
 ## Considered options
 
-1. Trust the pusher: whatever a build host pushes is released.
+1. Two states, offered and released, with a trusted build farm the only party that may offer.
 2. Rebuild everything in a trusted farm before release.
 3. Three states, offered, accepted and released, where any host may offer, only the gate accepts by judging attached claims against the policy, and only a promotion the gate makes moves a channel; the offering credential and the accepting credential are never the same.
 
 ## Decision outcome
 
-Option 3. The gate is a verifier, never a builder: it reads claims and a policy, changes no bytes, and its acceptance is one more claim on the digest (26, 29). Where a policy asks for an independent rebuild, a second signer the first builder does not control makes it and attaches a claim; the gate counts the claim (30). A thief with a build credential can offer and write cache entries, and what it offered sits unaccepted and attributable (S9). Nothing accepted is ever un-accepted; a channel moves away (25, 38), and the ledger holds every move before anyone reads it (33, 34).
+Option 3. The statement fixes the three states and the one accepting party (25, 27, 32); the choices this record makes are that the gate runs in the owner's trusted place and never on a host that builds (96), and that acceptance is a claim attached in place, never a copy to a second store (26). The gate is a verifier, never a builder: it reads claims and a policy, changes no bytes, and its acceptance is one more claim on the digest (26, 29). Where a policy asks for an independent rebuild, a second signer the first builder does not control makes it and attaches a claim; the gate counts the claim (30). A thief with a build credential can offer and write cache entries, and what it offered sits unaccepted and attributable (S9). Nothing accepted is ever un-accepted; a channel moves away (25, 38), and the ledger holds every move before anyone reads it (33, 34).
 
 ### Consequences
 
 - No host that builds holds the accepting credential (27, core.14); the gate runs in the owner's trusted place.
 - Whether a solo user may run both on one host, with one person's two credentials, is open on the book's open page.
-- The ledger needs a home where the store has no append-only primitive; the lean is git plus a referrer per promotion (39).
+- The ledger's source of truth where the store has no append-only primitive is an open question (101); the lean is git, with a referrer per promotion as the projection (39).

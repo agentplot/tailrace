@@ -20,13 +20,15 @@ What a build left has three lives: a cache entry, an artifact a consumer install
 
 1. Three tools: a remote cache, a package publisher, a release manager.
 2. One tool around three concepts, artifacts, channels and environments, where publish stands alone and channels and environments are optional layers over it.
-3. One tool that is only useful whole.
+3. One tool, with channels and environments required wherever publish is used.
 
 ## Decision outcome
 
 Option 2. One content-addressed store is what makes a cache entry, an artifact and a release the same bytes at three levels of trust, and three tools would each hold a copy. Publish stands alone: a publish offers and does nothing more (20), its answer is machine-readable (19), and a deployment that owns its own channels and promotion, Switchboard's, consumes that answer with tailrace's channel layer off. A repository turns on channels and environments by declaring them, and nothing in publish changes when it does.
 
 ### Consequences
+
+- A seam with a single profile is documented as such in the record that bound it (core.3), so a second profile is a known gap and never a surprise.
 
 - The core knows artifacts, claims, versions, channels, environments and nothing of any ecosystem, registry, build or target: those are seams (ADR 0003, 0005, 0006).
 - `publish` never reaches a channel or a target (core.10); the Switchboard hybrid is a consequence, not a special case.
