@@ -4,10 +4,11 @@
 // own account, where its attestations hang off its digest as referrers. The
 // gate reads the policy, in the repo, and stamps the offered artifact
 // accepted; the channels point at accepted versions and move only by a
-// promotion, each written to the ledger first. sync and serve read the
-// store under the policy. Each environment follows a channel, a reconciler
-// converges it, pushed to or pulling, now or after an approval, and it
-// reports what it runs beside what it should. One claim: the bytes that
+// promotion, each written to the ledger first. Two paths leave the store:
+// consumers read, through sync and serve, into a laptop's and a build's
+// layouts under the policy; environments converge, each following a
+// channel through a reconciler, pushed to or pulling, now or after an
+// approval, reporting what it runs beside what it should. One claim: the bytes that
 // passed the gate are the bytes that run; your hands are on the policy and
 // the promotions. Drawn twice, wide and tall; Figure.astro shows the one
 // that fits.
@@ -81,15 +82,16 @@ const style = `
 
 const title = 'tailrace: from a landing, through the gate, to the environments';
 const desc =
-  'sluice lands commit 9f3e21c on main. tailrace publish derives the version from history, packs and signs what the build left, and offers it into the store, in your own account. There the artifact app 1.4.2 holds its attestations as referrers of its digest: the build provenance, sluice’s verdict and the tests. The gate reads the policy, which lives in the repo, and stamps the offered artifact accepted. Two channels point at accepted versions, beta at 1.4.2 and stable at 1.4.1; only a promotion moves a channel, and every move is written to the ledger first: stable 1.4.0 to 1.4.1 by an approver, beta 1.4.1 to 1.4.2 by the gate. tailrace sync and tailrace serve fill npm, Maven and pip layouts from the store under the policy. Three environments follow a channel: a laptop follows beta, pushed to, and runs 1.4.2; staging follows beta, pulling with Flux, and runs 1.4.2; production follows stable, pushed to after an approver says so, and runs 1.4.1. A reconciler converges each, pushed to or pulling, now or after an approval, and verifies before it applies; each reports what it runs, and tailrace status shows what it should run, what it runs, and where the two differ. The bytes that passed the gate are the bytes that run; your hands are on the policy and the promotions.';
+  'sluice lands commit 9f3e21c on main. tailrace publish derives the version from history, packs and signs what the build left, and offers it into the store, in your own account. There the artifact app 1.4.2 holds its attestations as referrers of its digest: the build provenance, sluice’s verdict and the tests. The gate reads the policy, which lives in the repo, and stamps the offered artifact accepted. Two channels point at accepted versions, beta at 1.4.2 and stable at 1.4.1; only a promotion moves a channel, and every move is written to the ledger first: stable 1.4.0 to 1.4.1 by an approver, beta 1.4.1 to 1.4.2 by the gate. Two paths leave the store. Consumers read: tailrace sync and tailrace serve fill npm, Maven and pip layouts for a laptop and a build, under the policy, which is where a developer’s or an agent’s install reads from. Environments converge: from each channel, reconcilers carry the version to the environments that follow it, and sync and serve are not on that path. A laptop follows beta, pushed to, on its own, and runs 1.4.2; staging follows beta, pulling with Flux, on its own, and runs 1.4.2; production follows stable, pushed to once an approver says so, and runs 1.4.1. A reconciler converges each, pushed to or pulling, now or after an approval, and verifies before it applies; each reports what it runs, and tailrace status shows what it should run, what it runs, and where the two differ. The bytes that passed the gate are the bytes that run; your hands are on the policy and the promotions.';
 
 const envs: Array<{ name: string; channel: string; how: string; runs: string; should: string }> = [
-  { name: 'laptop', channel: 'beta', how: 'push · converges now', runs: '1.4.2', should: '1.4.2' },
-  { name: 'staging', channel: 'beta', how: 'pull (Flux) · converges now', runs: '1.4.2', should: '1.4.2' },
+  { name: 'laptop', channel: 'beta', how: 'push · auto', runs: '1.4.2', should: '1.4.2' },
+  { name: 'staging', channel: 'beta', how: 'pull (Flux) · auto', runs: '1.4.2', should: '1.4.2' },
   { name: 'production', channel: 'stable', how: 'push · waits for an approver', runs: '1.4.1', should: '1.4.1' },
 ];
 const ledger = ['stable 1.4.0 → 1.4.1 · approver', 'beta 1.4.1 → 1.4.2 · gate'];
 const reconciler = 'a reconciler converges each: pushed to, or pulling; now, or after an approval; it verifies before it applies';
+const reads = 'consumers read; environments converge.';
 const claim = 'The bytes that passed the gate are the bytes that run; your hands are on the policy and the promotions.';
 
 /** One environment's card: the channel it follows, how it converges, what it runs beside what it should. */
@@ -115,7 +117,7 @@ function wide(): string {
   o.push(text(20, 38, 'hd', 'SLUICE LANDS'));
   o.push(text(170, 38, 'hd', 'PUBLISH'));
   o.push(text(340, 38, 'hd', 'THE STORE, IN YOUR ACCOUNT'));
-  o.push(text(684, 38, 'hd', 'SYNC · SERVE'));
+  o.push(text(684, 38, 'hd', 'CONSUMERS'));
 
   // sluice lands a commit.
   o.push(rect(20, 58, 130, 70, 'box'));
@@ -169,13 +171,14 @@ function wide(): string {
   o.push(text(356, 370, 'xxs m', 'every move is in the ledger first'));
   o.push(path('M660,93 H677') + head(684, 93, 'r'));
 
-  // sync and serve, under the policy.
-  o.push(rect(684, 58, 196, 70, 'box'));
+  // The consumer path: sync and serve, to a laptop and a build, under the policy.
+  o.push(rect(684, 58, 196, 86, 'box'));
   o.push(text(698, 82, 'xs b mono', 'tailrace sync · serve'));
-  o.push(text(698, 100, 'xs m', 'layouts: npm · Maven · pip'));
-  o.push(text(698, 116, 'xs m', 'under the policy'));
-  for (const [i, s] of ['a laptop or a CI host reads', 'its ecosystem’s own form,', 'only what the policy admits'].entries()) {
-    o.push(text(684, 148 + i * 14, 'xxs m', s));
+  o.push(text(698, 100, 'xs m', 'to a laptop and a build:'));
+  o.push(text(698, 116, 'xs m', 'npm · Maven · pip layouts,'));
+  o.push(text(698, 132, 'xs m', 'under the policy'));
+  for (const [i, s] of ['where a developer’s or an', 'agent’s install reads from'].entries()) {
+    o.push(text(684, 164 + i * 14, 'xxs m', s));
   }
 
   // From each channel to the environments that follow it.
@@ -183,9 +186,12 @@ function wide(): string {
   o.push(path(`M356,269 H332 V404 H${cx[0]} V423 M332,404 H${cx[1]} V423`));
   o.push(head(cx[0], 430, 'd') + head(cx[1], 430, 'd'));
   o.push(path(`M578,269 H676 V404 H${cx[2]} V423`) + head(cx[2], 430, 'd'));
+  o.push(text(240, 399, 'xxs m', 'reconcilers', 'middle'));
+  o.push(text(629, 399, 'xxs m', 'reconcilers', 'middle'));
 
   // The environments, each on a channel, and the status that reads their reports.
   o.push(text(20, 420, 'hd', 'ENVIRONMENTS'));
+  o.push(text(880, 420, 'xs b', reads, 'end'));
   for (const [i, e] of envs.entries()) envCard(o, 20 + i * 228, 430, 212, e);
   statusChip(o, 708, 441, 172);
   o.push(path(`M${cx[0]},496 V518 H794 V492 M${cx[1]},496 V518 M${cx[2]},496 V518`, 'rep') + head(794, 485, 'u'));
@@ -199,7 +205,7 @@ function wide(): string {
 
 function tall(): string {
   const W = 360;
-  const H = 1064;
+  const H = 1112;
   const x = 20;
   const w = 320;
   const mid = x + w / 2;
@@ -255,11 +261,15 @@ function tall(): string {
   o.push(text(x + 16, 498, 'xxs m', 'only a promotion moves a channel;'));
   o.push(text(x + 16, 512, 'xxs m', 'every move is in the ledger first'));
   o.push(path(`M${x + 135},522 V535`) + head(x + 135, 542, 'd'));
+  o.push(text(x + 145, 536, 'xxs m', 'sync · serve'));
 
-  // sync and serve, under the policy.
-  o.push(rect(x, 542, 270, 56, 'box'));
+  // The consumer path: sync and serve, to a laptop and a build, under the policy.
+  o.push(rect(x, 542, 270, 84, 'box'));
   o.push(text(x + 16, 566, 'xs b mono', 'tailrace sync · serve'));
-  o.push(text(x + 16, 584, 'xs m', 'npm, Maven, pip layouts, under the policy'));
+  o.push(text(x + 16, 582, 'xs m', 'to a laptop and a build:'));
+  o.push(text(x + 16, 598, 'xs m', 'npm · Maven · pip layouts,'));
+  o.push(text(x + 16, 614, 'xs m', 'under the policy'));
+  o.push(text(x, 652, 'xs b', reads));
 
   // The environments, each on a channel; the rails from the channels on the
   // right, the reports to the status on the left.
@@ -267,28 +277,29 @@ function tall(): string {
   const stable = x + 310;
   const cxl = x + 20;
   const cw = 250;
-  const cy = [640, 718, 796];
-  o.push(text(x, 628, 'hd', 'ENVIRONMENTS'));
+  const cy = [688, 766, 844];
+  o.push(text(x, 676, 'hd', 'ENVIRONMENTS'));
   for (const [i, e] of envs.entries()) envCard(o, cxl, cy[i], cw, e);
   // beta: out of its pill, right under the stable pill, down the outer rail.
   o.push(path(`M${x + 68},424 V430 H${beta} V${cy[1] + 33} H${cxl + cw + 7} M${beta},${cy[0] + 33} H${cxl + cw + 7}`));
   o.push(head(cxl + cw, cy[0] + 33, 'l') + head(cxl + cw, cy[1] + 33, 'l'));
   // stable: out of its pill's right edge, down the inner rail.
   o.push(path(`M${x + 238},411 H${stable} V${cy[2] + 33} H${cxl + cw + 7}`) + head(cxl + cw, cy[2] + 33, 'l'));
+  o.push(`<text transform="rotate(-90)" x="-640" y="${x + 286}" class="${c('xxs m')}">reconcilers</text>`);
   // reports: each card to the status, down the left.
-  statusChip(o, cxl, 880, cw);
+  statusChip(o, cxl, 928, cw);
   const rail = x + 8;
-  o.push(path(`M${cxl},${cy[0] + 50} H${rail} V902 H${cxl - 7} M${cxl},${cy[1] + 50} H${rail} M${cxl},${cy[2] + 50} H${rail}`, 'rep'));
-  o.push(head(cxl, 902, 'r'));
-  o.push(text(cxl + 4, 874, 'xxs acc', 'reports'));
+  o.push(path(`M${cxl},${cy[0] + 50} H${rail} V950 H${cxl - 7} M${cxl},${cy[1] + 50} H${rail} M${cxl},${cy[2] + 50} H${rail}`, 'rep'));
+  o.push(head(cxl, 950, 'r'));
+  o.push(text(cxl + 4, 922, 'xxs acc', 'reports'));
   for (const [i, s] of ['a reconciler converges each: pushed to, or pulling;', 'now, or after an approval;', 'it verifies before it applies'].entries()) {
-    o.push(text(x, 948 + i * 14, 'xs m', s));
+    o.push(text(x, 996 + i * 14, 'xs m', s));
   }
 
   // The claim.
-  o.push(text(x, 1006, 'sm b', 'The bytes that passed the gate'));
-  o.push(text(x, 1024, 'sm b', 'are the bytes that run; your hands'));
-  o.push(text(x, 1042, 'sm b', 'are on the policy and the promotions.'));
+  o.push(text(x, 1054, 'sm b', 'The bytes that passed the gate'));
+  o.push(text(x, 1072, 'sm b', 'are the bytes that run; your hands'));
+  o.push(text(x, 1090, 'sm b', 'are on the policy and the promotions.'));
   return svg(W, H, o, 't');
 }
 
