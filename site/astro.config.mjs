@@ -36,6 +36,13 @@ export default defineConfig({
         { label: 'Start', link: '/' },
         { label: 'How it works', link: '/how-it-works/' },
         { label: 'How it fits', link: '/how-it-fits/' },
+        {
+          label: 'Guides',
+          items: [
+            { label: 'Self-hosting', link: '/guides/self-hosting/' },
+            { label: 'Integrations', items: [{ autogenerate: { directory: 'guides/integrations' } }] },
+          ],
+        },
         { label: 'Design', link: '/design/' },
         { label: 'Roadmap', link: '/roadmap/' },
       ],

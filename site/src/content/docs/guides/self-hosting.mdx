@@ -1,0 +1,71 @@
+---
+title: Self-hosting
+description: What a self-hosted tailrace is, what one laptop needs and what a team needs, and what stays yours.
+---
+
+tailrace is designed, not built, and this page says what running it
+yourself will be. There is no hosted tailrace: self-hosted is the only
+kind. Everything here follows
+[the statement](https://github.com/agentplot/blueprints/blob/main/design/tailrace/requirements.md),
+whose [Part C](https://github.com/agentplot/blueprints/blob/main/design/tailrace/requirements.md#part-c-profiles)
+names the profiles a host binds.
+
+## What a self-hosted tailrace is
+
+- **One binary.** `tailrace` runs where the agents run: a laptop, an
+  agent host, a build machine. There is no server of tailrace's own to
+  keep up, apart from `tailrace serve` on localhost for the ecosystems
+  that read over HTTP.
+- **A store you own.** An OCI registry you already have, Amazon ECR,
+  GitHub's registry, Harbor, zot or the reference distribution, or an OCI
+  image layout in a directory on disk, read and written with no server.
+  The [stores](/tailrace/guides/integrations/stores/) guide lists them.
+- **A signer you hold.** A key in a key service your host's cloud
+  identity may use and never export, a key file on the host as sluice's
+  signers keep theirs, or a short-lived certificate from your own identity
+  provider, keyless. The [signers](/tailrace/guides/integrations/signers/)
+  guide says which fits where.
+- **The policy in the repository.** `.config/tailrace.toml` at the landed
+  revision says what the repository publishes and through which
+  projections, the signers and what each may claim, what each audience
+  requires, the channels, and the environments with their targets.
+- **The gate in your trusted place.** Acceptance and promotion run
+  wherever you trust a signer to stand: a laptop for one person, a
+  machine of its own for a team. A machine an agent runs on writes the
+  cache and quarantine, and never promotes.
+- **sluice beside it.** tailrace reads sluice's refs for the landed
+  revision and its signed verdicts; sluice does not know tailrace exists.
+  A branch sluice does not run is landed by its history alone, with no
+  verdicts.
+
+## One laptop
+
+A solo user needs the binary, a directory for the store in the OCI image
+layout, a host key, and the policy file in the repository. sluice lands,
+tailrace pushes into the layout on disk, the same laptop accepts and
+promotes, and `tailrace sync` fills the laptop's own npm cache, Cargo
+registry or Python index from the store. The layout syncs to a registry
+later, or never.
+
+## A team
+
+A team needs a registry its hosts share, a signer bound to each host's
+identity rather than a file that travels, and a trusted place for the
+gate: a machine that holds the signer the acceptance policy names, which
+no agent writes to. Each developer's laptop and each agent host pushes
+to quarantine with a signer the policy admits for that; only the gate's
+signer may accept and promote. Environments subscribe to the channels the
+gate moves, and converge through the
+[targets](/tailrace/guides/integrations/targets/) the repository binds.
+
+## What stays yours
+
+- Every byte: the store is your registry or your disk, and tailrace keeps
+  no copy.
+- Every signature: made by a signer you hold, bound to an identity you
+  issued.
+- Every ledger entry: promotions are signed records in your store, and a
+  rollback is one more.
+- Every policy: a file in your repository, at the revision that landed.
+- Nothing hosted: no account with anyone, no service in the path from a
+  landing to an environment.

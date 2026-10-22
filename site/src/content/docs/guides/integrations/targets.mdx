@@ -1,0 +1,45 @@
+---
+title: Targets
+description: The target seam, and the registries, sites, stacks, functions, clusters, fleets and caches designed to be converged.
+sidebar:
+  order: 6
+---
+
+A target is where an environment runs. An environment is a target, a
+channel it subscribes to, a policy, `auto` or `manual`, and a reconciler,
+push or pull; the target answers what the environment wants, what it
+runs, and converges the two. Any number of targets are bound at once, by
+the repository's authors (92).
+
+## The contract
+
+The seam is four operations (88 to 91). **desired** takes an environment
+and answers the digest its channel names, or that the channel is empty.
+**current** answers the digest the environment runs, or that it cannot
+be read, with the reason. **apply** takes an environment and a version
+the reconciler has verified and leaves the environment converged, or
+says what stopped it. **report** records what the environment runs and
+when it last converged, where every asker reads it. A reconciler verifies
+the claims it is told to require before any apply, and an environment is
+never handed a version except through its channel.
+
+## Members
+
+| target | reconciler | status |
+|---|---|---|
+| a package registry: CodeArtifact, npmjs, PyPI, Maven Central | push: publish the version's projection with the target's own credential; current is what the registry lists | designed |
+| a static site: a bucket behind a distribution | push: sync the version's bundle; current is a marker the sync writes | designed |
+| a CloudFormation stack | push: one stack operation on the version's template with the environment's parameters; current is the stack's recorded version | designed |
+| a function | push: point the function at the version's image by digest | designed |
+| Kubernetes, via Flux or Argo | pull: the channel's tag, verified by Flux or Argo against the gate's signature; current reported by a watcher | designed |
+| a Nix fleet, via Clan | pull: each machine verifies and applies the release assigned to it, realising store paths from the cache | designed |
+| a Nix binary cache, such as Attic | push: the version's store paths pushed to the cache | designed |
+
+A target's credential is the environment's, reached at the moment of
+use; tailrace keeps none.
+
+## Adding one
+
+A target profile implements the one target interface and nothing of the
+core. It passes the one conformance suite, which holds it to Parts A and
+B; a profile that fails the suite is not one (93).

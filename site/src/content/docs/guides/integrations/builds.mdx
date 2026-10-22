@@ -1,0 +1,37 @@
+---
+title: Builds
+description: The build seam, and the task runner and the declared command designed to fill it.
+sidebar:
+  order: 2
+---
+
+A build is a run of the repository's own commands over one revision
+that leaves outputs. tailrace never builds; it asks the build seam to
+make sure an output exists and to say where it came from. The same
+revision and the same inputs give the same build identity on every host
+(76).
+
+## The contract
+
+The seam is two operations (74, 75). **ensure** takes a revision and the
+outputs the authors declare and leaves those outputs present for that
+revision, or says the build could not make them, naming which. **report**
+takes a revision and an output and answers the build identity the output
+came from, the build's outcome, and where the output's files are. A
+publish reads every declared output's outcome before any artifact is
+offered, and offers an output only when its build identity is one the
+landing's verdicts name.
+
+## Members
+
+| member | profile | how | status |
+|---|---|---|---|
+| moon | C.3 | an output is a task's declared outputs; the build identity is moon's task hash, which sluice's verdict also carries; ensure is one run of the named tasks, replaying what is cached; report reads moon's own state of each task | designed |
+| a declared command | C.4 | where no task runner declares outputs, the repository declares, per output, the command, its inputs and the shell to run it through; the build identity is the git tree hash of the declared inputs at the revision | designed |
+
+## Adding one
+
+A build profile implements the one build interface and nothing of the
+core, and is bound in the repository by its authors (92). It passes the
+one conformance suite, which holds it to Parts A and B; a profile that
+fails the suite is not one (93).

@@ -1,0 +1,36 @@
+---
+title: Landings
+description: The landing seam, and the merge queue and the plain branch designed to fill it.
+sidebar:
+  order: 3
+---
+
+A landing is the event by which a revision reaches a branch through the
+repository's own gate, sluice or its like, which is not tailrace's gate.
+tailrace publishes only landed revisions, and reads exactly one landing
+(92). The landing does not know tailrace exists.
+
+## The contract
+
+The seam is two operations (77, 78). **landed** takes a branch and a
+revision and answers whether the branch has landed it. **verdicts-of**
+takes a revision and answers every signed verdict the landing recorded
+for it, each naming its check, its build identity, its outcome and its
+signer, as the landing recorded them. A publish refuses a revision the
+landing has not landed before anything is read or offered, and where the
+landing has verdicts, offers only outputs whose build identity a verdict
+names.
+
+## Members
+
+| member | profile | how | status |
+|---|---|---|---|
+| sluice | C.5 | a revision is landed when sluice's log for the branch holds its landing; verdicts are the signed results under `refs/sluice/runs/<signer>` for the combination that landed it, each an in-toto statement in a DSSE envelope with the test's key and system as its subject and moon's hash as its digest | designed |
+| a plain git branch | C.6 | where sluice does not run a branch, a revision is landed when the branch's history contains it, and there are no verdicts | designed |
+
+## Adding one
+
+A landing profile implements the one landing interface and nothing of
+the core, and is bound for a host by the operator (92). It passes the
+one conformance suite, which holds it to Parts A and B; a profile that
+fails the suite is not one (93).

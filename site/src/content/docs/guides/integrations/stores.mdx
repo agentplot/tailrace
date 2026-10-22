@@ -1,0 +1,53 @@
+---
+title: Stores
+description: The store seam, and the registries and the layout on disk designed to fill it.
+sidebar:
+  order: 1
+---
+
+A store holds bytes by digest, never alters them, and answers the same
+bytes for the same digest for as long as it holds them; one that cannot
+is not a store (73). Exactly one store is written by a publish (92).
+
+## The contract
+
+The seam is seven operations (66 to 72). **put-bytes** takes bytes and
+their digest and says whether the store held them already; the same
+bytes put twice are held once. **put-artifact** takes an artifact's
+metadata and the digests of its bytes and answers the artifact's digest,
+which the store names it by thereafter. **attach** puts an attestation
+beside a digest, where **claims-of** reads every attestation attached to
+that digest, as attached, or says the digest is not held. **name** moves
+a name to a digest only from the digest it is expected to be at, and
+otherwise refuses, naming the digest it is at; a name moved from nothing
+is a name made. **resolve** answers the digest a name names, or that it
+names nothing. **read** answers a digest's bytes, or that the digest is
+not held.
+
+## Members
+
+| member | profile | how | status |
+|---|---|---|---|
+| Amazon ECR | C.1, an OCI registry | over the distribution protocol; referrers API; a repository per ecosystem name where push creates one | designed |
+| GitHub Container Registry | C.1 | the same, under the owner's packages | designed |
+| Harbor | C.1 | the same, in a project of the operator's | designed |
+| zot | C.1 | the same, on a host or on object storage | designed |
+| the reference distribution | C.1 | the same, the smallest registry | designed |
+| an OCI layout on disk | C.2, an OCI image layout | a directory, every operation a file write under the digest's path; attestations as index entries with a subject annotation | designed |
+
+In a registry an artifact is an OCI manifest whose artifact type names
+the ecosystem, whose layer is the ecosystem's own bytes and whose config
+is its own metadata; an attestation is a DSSE envelope holding an
+in-toto statement, attached as a referrer with the predicate type as its
+artifact type; a name is a tag, moved with the expected digest where the
+registry supports it and checked after the move where it does not. A
+registry that does not create repositories on push takes one declared
+repository with the name escaped into the tag. The digest is the address
+either way.
+
+## Adding one
+
+A store profile implements the one store interface and nothing of the
+core, and is bound for a host by the operator (92). It passes the one
+conformance suite, which holds it to Parts A and B; a profile that fails
+the suite is not one (93).

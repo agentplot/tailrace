@@ -14,8 +14,10 @@ devenv shell -- bash -c 'cd site && bun run shots <dir>'   # screenshots, after 
 ## Where the pages live
 
 `src/content/docs/`, one file per page, in the sidebar `astro.config.mjs`
-lists: the start page (`index.mdx`), how it works, how it fits, the design
-and the roadmap. The theme's banner says tailrace is designed, not built,
+lists: the start page (`index.mdx`), how it works, how it fits, the
+guides (`guides/self-hosting.mdx`, and `guides/integrations/`, one page
+per kind of thing tailrace binds, listed in the sidebar by their `order`),
+the design and the roadmap. The theme's banner says tailrace is designed, not built,
 on every page, until its entry in the theme's family list says otherwise.
 
 ## The look and the diagram

@@ -1,0 +1,40 @@
+---
+title: Signers
+description: The signer seam, and the key service, the host key and keyless signing designed to fill it.
+sidebar:
+  order: 4
+---
+
+tailrace signs only as the party running it and only what that party
+observed; a claim another party made is carried as made, never
+re-signed. A signer's identity is bound to the party that holds it and
+expires with that party's standing; a signature by an identity that has
+expired is reported as such, never as valid and never as absent (81).
+
+## The contract
+
+The seam is two operations (79, 80). **sign** takes a claim and the
+identity of the party running tailrace and answers the claim signed, or
+that no identity is at hand. **verify** takes an attestation and the
+signers a policy names and answers which signer made it, or that none
+of them did. A claim counts for a verdict only through a signer the
+policy names and a claim that signer may make, never through what the
+claim says of itself.
+
+## Members
+
+| member | profile | how | status |
+|---|---|---|---|
+| a key in AWS KMS | C.7, a key in a key service | a key the host's cloud identity may use and never export, through the host's role; the signer's name is the key's, and verification uses its public half | designed |
+| a host key | C.8 | a key file on the host, as sluice's signers hold theirs; verification uses the public key the policy lists | designed |
+| keyless with Sigstore | C.9 | a short-lived certificate bound to an identity from the owner's identity provider, logged in a transparency log, as Sigstore issues and cosign uses, public or private | designed |
+
+The operator binds the signers for a host (92). A machine an agent runs
+on holds an offering signer; the gate holds the accepting one; and no
+host configuration holds both.
+
+## Adding one
+
+A signer profile implements the one signer interface and nothing of the
+core. It passes the one conformance suite, which holds it to Parts A and
+B; a profile that fails the suite is not one (93).

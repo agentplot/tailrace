@@ -1,0 +1,44 @@
+---
+title: Projections
+description: The projection seam, and the ecosystems designed to be projected out of the store.
+sidebar:
+  order: 5
+---
+
+A projection is how one ecosystem's bytes come out of the store and into
+the form that ecosystem's own clients read. The store holds the bytes
+once, by digest; a projection packs an output into them on the way in and
+renders a consumer layout from them on the way out. Any number are bound
+at once, by the repository's authors (92).
+
+## The contract
+
+The seam is three operations (84 to 86). **pack** takes an output and the
+version and answers the ecosystem's own bytes for it and the metadata the
+ecosystem gives them. **render** takes a set of artifacts and their
+metadata and answers a consumer layout in the ecosystem's own form, and
+which versions it holds. **serve** takes a consumer layout and answers the
+ecosystem's own clients over the protocol they read, for an ecosystem
+whose clients read no files. The same outputs and the same version pack
+to the same bytes, or the projection says it cannot promise so (87). A
+layout holds only versions whose verdict under its policy is satisfied.
+
+## Members
+
+| ecosystem | pack | render | serve | status |
+|---|---|---|---|---|
+| npm | the tarball `npm pack` writes, with `package.json` as metadata | a packument and tarballs under a registry read layout | a localhost registry, since npm reads no files | designed |
+| Maven | the jar and its POM | a `maven2` layout with checksums and `maven-metadata.xml` | not needed: a `file://` repository | designed |
+| Python | the wheel and sdist, with their metadata | a simple index per PEP 503 | not needed: `find-links` or a `file://` index | designed |
+| Go | the module zip | the module proxy layout | not needed: `GOPROXY=file://` | designed |
+| Cargo | the crate file | a local registry per lockfile | not needed: source replacement | designed |
+| NuGet | the package file | a folder feed in the v3 layout | not needed | designed |
+| a file | any file, with a declared media type | a directory | not needed | designed |
+| an image | an image as pushed | the OCI layout itself | the layout served as a registry | designed |
+
+## Adding one
+
+A projection profile implements the one projection interface and nothing
+of the core, and reaches the store only through the store seam. It passes
+the one conformance suite, which holds it to Parts A and B; a profile
+that fails the suite is not one (93).

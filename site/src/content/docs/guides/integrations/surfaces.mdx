@@ -1,0 +1,39 @@
+---
+title: Surfaces
+description: Where an asker meets tailrace, and the surfaces designed to answer from the one core.
+sidebar:
+  order: 7
+---
+
+A surface is where a person or a program asks tailrace a question. Every
+surface answers from one core, and the same question on any surface gets
+the same answer (56). No surface computes a verdict, a version or a
+channel of its own.
+
+## The contract
+
+A surface is not a seam of Part B; it is bound by Part A's rules for
+askers (56 to 60). Every answer is readable by a program on request, in
+a form that names digests, versions, channels and verdicts as the
+statement names them (57). tailrace never answers a refusal as an
+absence, an absence as a refusal, or either as unknown; a refusal names
+the first claim found wanting and why, and carries the underlying
+store's, signer's or ecosystem's own words verbatim beside tailrace's
+(58, 59). Asking what tailrace holds reaches no store, no signer and no
+target, and writes nothing (60).
+
+## Members
+
+| surface | what it is | status |
+|---|---|---|
+| the command line | `push`, `attest`, `publish`, `verify`, `sync`, `serve`, `promote` and `status`, each with a machine-readable answer | designed |
+| Claude Code | a plugin whose skill and command read status and verdicts in a session, and refuse the ecosystem's own publish command where tailrace is bound | designed |
+| herdr | a pane beside the agents showing each channel's head, each environment's state and what waits on a promotion | designed |
+| Flywheel, through millpond | a promotion waiting on approval, or an environment that failed to converge, handed to millpond, the inbox, as a capture | designed |
+
+## Adding one
+
+A surface calls the one core and renders its answer; it reads no store
+itself and derives nothing from a tag listing. A surface in the
+repository is a moon project of its own, held to the same gate as the
+rest; the conformance suite holds the core it calls (93).
