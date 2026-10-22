@@ -5,7 +5,7 @@
     "": {
       "name": "tailrace-site",
       "dependencies": {
-        "@agentplot/site-theme": "github:agentplot/site-theme#8538a7ce301fb9edc0dc4b31dafa2878a8872cff",
+        "@agentplot/site-theme": "github:agentplot/site-theme#3d73b031074f55f25c355cce984f8a642e5a46b0",
         "@astrojs/starlight": "0.42.6",
         "astro": "7.3.8",
         "sharp": "0.35.5",
@@ -17,7 +17,7 @@
     },
   },
   "packages": {
-    "@agentplot/site-theme": ["@agentplot/site-theme@github:agentplot/site-theme#8538a7c", { "dependencies": { "@fontsource/ibm-plex-mono": "5.3.0", "@fontsource/ibm-plex-sans": "5.3.0", "@fontsource/space-grotesk": "5.3.0" }, "peerDependencies": { "@astrojs/starlight": ">=0.42.0", "astro": ">=7.2.0" }, "optionalPeers": ["@astrojs/starlight"] }, "agentplot-site-theme-8538a7c", "sha512-MWwTlLEZQrEBoB3BVVJ+0V9bzMtg7tDClaY8gUXqrn+X1BVfIkEsdG5Y7ZEjBEZXBlidLtlpwxpja6h/FcnE+g=="],
+    "@agentplot/site-theme": ["@agentplot/site-theme@github:agentplot/site-theme#3d73b03", { "dependencies": { "@fontsource/ibm-plex-mono": "5.3.0", "@fontsource/ibm-plex-sans": "5.3.0", "@fontsource/space-grotesk": "5.3.0" }, "peerDependencies": { "@astrojs/starlight": ">=0.42.0", "astro": ">=7.2.0" }, "optionalPeers": ["@astrojs/starlight"] }, "agentplot-site-theme-3d73b03", "sha512-Lg0Kqr5t5pyY0nLtwk3KR2Mlr9MK7l+TjWHNOyIu6JbgyYiK/f1eXv2KujXH/G4sC0b96hO3GM3/j75y5W05Rw=="],
 
     "@astrojs/compiler-binding": ["@astrojs/compiler-binding@0.5.2", "", { "optionalDependencies": { "@astrojs/compiler-binding-android-arm64": "0.5.2", "@astrojs/compiler-binding-darwin-arm64": "0.5.2", "@astrojs/compiler-binding-darwin-x64": "0.5.2", "@astrojs/compiler-binding-linux-arm64-gnu": "0.5.2", "@astrojs/compiler-binding-linux-arm64-musl": "0.5.2", "@astrojs/compiler-binding-linux-x64-gnu": "0.5.2", "@astrojs/compiler-binding-linux-x64-musl": "0.5.2", "@astrojs/compiler-binding-wasm32-wasi": "0.5.2", "@astrojs/compiler-binding-win32-arm64-msvc": "0.5.2", "@astrojs/compiler-binding-win32-x64-msvc": "0.5.2" } }, "sha512-lEn76+0JcMQ5RDXU0wSMWJg2ZppiZvSULpghC29cfv4o9bhvWFDbQjsCtvjjXN9iVLFQ7fL3wTR2L2UU13mP8g=="],
 
