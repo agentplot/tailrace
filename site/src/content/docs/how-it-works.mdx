@@ -3,6 +3,9 @@ title: How it works
 description: How tailrace packages and signs what the merge queue lands, keeps it in a store you own, moves channels by proof, and serves consumers under a policy.
 ---
 
+import Figure from '../../components/Figure.astro';
+import { environmentsSvg } from '../../diagrams/environments';
+
 tailrace answers one question about a landed change: what did it produce,
 and where may it run. It pushes, it attests, it promotes, and it serves.
 Where the design pack proposes a mechanism Chuck has not yet ruled on, this
@@ -80,16 +83,44 @@ the direction is a Nix binary cache over it.
 
 ## Environments converge
 
-An environment is a target, a channel it subscribes to, a policy, `auto`
-or `manual`, and a reconciler, push or pull. Under `auto` the environment
-converges as soon as the channel moves; under `manual` it waits for an
-approval. Publishing to a package manager is an environment subscribed to
-`stable`. Kubernetes needs no reconciler of tailrace's: channels are OCI
-tags, and Flux or Argo consume them, with a hook that reports what each
-runs. Where no good pull tool exists, CloudFormation, Lambda, a static
-site, a Clan fleet, tailrace brings its own. `tailrace status` says what
-each channel points at, what each environment runs, and what waits on a
-promotion.
+An environment is one target, the channel it follows, whether it moves on
+its own or waits for an approver, and a reconciler. No environment is
+told a version: what it should run is its channel's head, and nothing
+else, so a channel that moves is the whole of a deploy's cause.
+
+<Figure wide={environmentsSvg('wide')} tall={environmentsSvg('tall')} />
+
+**Auto or manual.** An environment that moves on its own converges as
+soon as its channel's head moves. One that waits shows the promotion and
+converges only after an approver says so; the approval is recorded with
+the promotion it answers, so the ledger says who let production move and
+when.
+
+**Push or pull.** Whether an environment is pushed to or pulls is the
+target's own, and the ledger, the channel and the policy are the same
+either way. Where no good pull tool stands, tailrace brings a reconciler:
+a package registry such as CodeArtifact or npmjs is pushed the version's
+projection; a static site is synced by digest; a CloudFormation stack
+gets one stack operation with the environment's parameters; a function
+is pointed at the version's image. Where a pull tool already watches,
+tailrace adds nothing but a watcher: a Kubernetes cluster's Flux or Argo
+follows the channel's tag and verifies the gate's signature before it
+applies; a Nix fleet's machines realise the release assigned to them from
+the cache. [The targets](/tailrace/guides/integrations/targets/) lists
+each.
+
+**Verify before apply.** A reconciler reads the version's bytes by digest
+and verifies the claims its policy requires before it applies anything.
+It runs with the environment's own credentials in the environment's own
+place; tailrace holds no credential that reaches a target.
+
+**What runs where.** Every reconciler reports what the environment runs,
+by digest, and when it last converged. `tailrace status` answers, for
+every environment, what it should run, what it runs, and that the two
+differ where they do; an environment whose state cannot be read is
+reported unread with the reason, never as converged. A rollback is a
+promotion back to the earlier version, recorded like any other, and the
+same convergence in reverse.
 
 ## One store, three levels of trust
 

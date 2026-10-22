@@ -39,6 +39,8 @@ export default defineConfig({
         {
           label: 'Guides',
           items: [
+            { label: 'The Claude Code plugin', link: '/guides/claude-code/' },
+            { label: 'The herdr plugin', link: '/guides/herdr/' },
             { label: 'Self-hosting', link: '/guides/self-hosting/' },
             { label: 'Integrations', items: [{ autogenerate: { directory: 'guides/integrations' } }] },
           ],

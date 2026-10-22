@@ -28,6 +28,7 @@ taken from GitHub at the commit `package.json` names.
 | file | what |
 |---|---|
 | `src/styles/diagrams.css` | the diagram's palette, the only colours it draws with: the family's tokens, tailrace's accent, `--ap-accent`, the theme's ok colour for a landing, and its warning colour for a version a policy refuses |
+| `src/diagrams/environments.ts` | how it works, still: a channel moves and the environments that follow it converge, one on its own, one waiting on an approver, one pulling, each reporting what it runs |
 | `src/diagrams/hero.ts` | the start page, still: the pipeline from the landing to the environments, the artifact with its referrers and the channels in a store the user owns |
 | `src/components/Hero.astro` | the start page's hero: the name, the tagline, the actions and the diagram |
 | `src/components/Figure.astro` | a diagram drawn wide and tall, the tall one on a phone |

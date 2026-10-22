@@ -69,24 +69,30 @@ tailrace keeps no copy of it.
 
 ## Where you meet it
 
+One core answers every surface the same way, so a person at the command
+line, an agent in its session and a pane beside the agents all see one
+answer: what each landing published, where each channel stands, and what
+every environment runs.
+
 <CardGrid>
   <Card title="Command line" icon="seti:shell">
     `push`, `attest`, `publish`, `verify`, `sync`, `serve`, `promote` and
     `status`, each with a machine-readable answer, so another system can
     take tailrace's result as its input.
   </Card>
-  <Card title="Your registry" icon="seti:db">
-    Any OCI registry with the referrers API, or a file-based OCI layout on
-    disk that oras and skopeo read without a server.
+  <Card title="Claude Code" icon="puzzle">
+    A hook that refuses `npm publish` and its kin and names `tailrace
+    publish`; the publish's answer read back after a landing; `sync` in a
+    fresh worktree before an install. [The plugin](/tailrace/guides/claude-code/).
   </Card>
-  <Card title="Your package manager" icon="seti:npm">
-    `tailrace sync` fills each ecosystem's own local layout from the store;
-    `tailrace serve` answers npm's read protocol on localhost. Either way, a
-    policy decides which versions are served.
+  <Card title="herdr" icon="list-format">
+    A sidebar row per repository, a popup with channels, environments and
+    the last refusals, a toast when a channel moves, and one key to
+    promote as the approver. [The plugin](/tailrace/guides/herdr/).
   </Card>
-  <Card title="Your cluster" icon="setting">
-    Channels are OCI tags, so Flux or Argo consume them as they are; no
-    reconciler of tailrace's own stands between. [How it fits](/tailrace/how-it-fits/).
+  <Card title="Flywheel" icon="random">
+    An adapter that prints a capture for each publish and each refusal,
+    which millpond lands once. [How it fits](/tailrace/how-it-fits/).
   </Card>
 </CardGrid>
 

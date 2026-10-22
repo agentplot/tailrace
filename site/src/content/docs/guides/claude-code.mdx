@@ -1,0 +1,86 @@
+---
+title: The Claude Code plugin
+description: What tailrace's Claude Code plugin does in a session, how a repository is set up through it, and what an agent does with it after sluice lands.
+sidebar:
+  order: -2
+---
+
+The plugin teaches Claude Code to use tailrace: to set a repository up for
+it, to read what each landing published and where it stands, and to never
+publish any other way. It lives in tailrace's own repository, so it changes
+with the commands it describes. Like everything here it is designed, not
+built; the page says what it will do.
+
+## Install
+
+At the prompt of a Claude Code session in a terminal:
+
+```
+/plugin marketplace add agentplot/tailrace
+/plugin install tailrace@tailrace
+```
+
+The first line adds the repository's marketplace, named `tailrace`; the
+second installs the plugin from it. Choose the user scope to have it in
+every session.
+
+## Set up a repository
+
+In a repository sluice already lands, ask:
+
+```
+set up tailrace here
+```
+
+Claude checks for the `tailrace` binary first and shows how it would
+install it before it does. Then it reads what the repository already
+declares and proposes a `.config/tailrace.toml` to match:
+
+- what the repository publishes: each workspace member the ecosystem
+  itself marks public, each moon task whose outputs are a package, image,
+  template or site bundle, and the projection each takes;
+- the version rule, git-cliff over conventional commits unless the
+  repository has another;
+- the store, the one the owner names, an OCI registry or a layout on disk;
+- the signers, and what each may claim: the host's key for verdicts and
+  provenance, a fleet's key where one builds, a reviewer's identity where
+  the policy wants an approval;
+- the policies: what acceptance requires, what `beta` and `stable`
+  require, what a consumer layout requires;
+- the channels and the environments that follow each, and whether each
+  moves on its own or waits.
+
+It shows the file, asks what to change, and ends by publishing the branch's
+last landing through tailrace and reading the answer back, so the setup is
+proved by one real publish before the session ends.
+
+## What your agents do with it
+
+In a repository with a `.config/tailrace.toml`, Claude:
+
+- never runs `npm publish`, `mvn deploy`, `uv publish`, `cargo publish` or
+  `docker push`. A hook refuses each and names `tailrace publish`, which
+  is the only way bytes leave the repository, and only for a revision
+  sluice has landed.
+- reads the publish's answer after its submission lands: the version, the
+  index digest, each artifact's digest, and which claims were attached.
+  The answer is JSON, so the agent quotes digests rather than guessing
+  them.
+- runs `tailrace sync` in a fresh worktree before it installs, so the
+  first-party packages its lockfile pins are there with no registry
+  login, and reads any refusal the sync prints with the claim found
+  wanting.
+- asks `tailrace status --json` before it reasons about what is released
+  or running where, and `tailrace verify <ref> --policy <audience>
+  --json` before it tells a person a version is good.
+- never promotes. A promotion is an approver's act, made from the herdr
+  pane or the command line by a person, or by a rule the policy names.
+
+## What a session sees
+
+At a session's start the plugin prints two lines: what the repository
+publishes and which channel its last landing reached, and whether any
+environment that follows a channel is behind its head. `/tailrace` opens
+the same status as a pane beside the conversation: channels with their
+heads, environments with what each should run and runs, the last
+refusals, and a publish in flight with its progress.

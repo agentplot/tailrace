@@ -1,0 +1,66 @@
+---
+title: The herdr plugin
+description: tailrace's plugin for herdr, the terminal multiplexer for coding agents, showing channels, environments and refusals beside the agents, with one key to promote.
+sidebar:
+  order: -1
+---
+
+[herdr](https://herdr.dev) runs coding agents in panes. tailrace's herdr
+plugin shows, beside them, what the agents' landings became: each channel's
+head, each environment's state, a publish in flight, and the last
+refusals. It reads; the one thing it writes is a promotion, when a person
+presses the key for it and confirms. Designed, not built.
+
+## Install
+
+```sh
+herdr plugin install agentplot/tailrace/plugins/herdr
+```
+
+It reads what it shows from `tailrace overview --json --watch`, the same
+document the [Claude Code plugin](/tailrace/guides/claude-code/) reads, in
+each repository with a `.config/tailrace.toml` that one of your panes is
+in. The sluice plugin shows the queue up to the landing; this one starts
+where that ends.
+
+## What it shows
+
+- **In the sidebar**, a row under each repository: `beta 1.5.0 · stable
+  1.4.0 · 3 envs · 1 behind`. A row turns the accent while a publish runs
+  and red when a verdict refused something.
+- **The status popup**, on its key: the channels with their heads and when
+  each moved; the environments with what each should run, what it runs,
+  and a mark where they differ; a publish in flight, with the artifact it
+  is on; the last refusals, each naming the version and the claim found
+  wanting, with the refusing source's own words.
+- **Under an agent's pane**, the publish its landing produced: the version
+  and the index digest, or the refusal, tied to the pane of the agent that
+  submitted the work.
+- **A toast** when a landing's publish ends and when a channel moves, so
+  a person across the room from the panes sees `beta → 1.5.0`.
+
+## Keys
+
+The setup action shows the snippets to add to herdr's `config.toml`, with
+your paths filled in, and never edits it:
+
+```sh
+herdr plugin action invoke agentplot.tailrace.setup
+```
+
+- `prefix+t`: the status popup.
+- In the popup, `enter` on a refusal opens the reason whole, with the
+  claims that were attached and the signers the policy names.
+- `p` on a version: promote. The plugin asks which channel and shows what
+  the policy requires and which claims satisfy it, then runs
+  `tailrace promote <version> --to <channel>` as you, the approver; the
+  promotion is recorded in the ledger before the pane shows the move.
+- `s` on an environment: the sync command for its target and whether the
+  reconciler's last report differs from the channel's head.
+
+## What it never does
+
+The plugin never publishes, never changes a policy, and never moves a
+channel on its own. A rule that follows each publish is the gate's; the
+key is a person's. It reads no store itself and derives nothing from a tag
+listing: everything it shows is tailrace's answer.
