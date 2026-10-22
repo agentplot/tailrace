@@ -1,0 +1,6 @@
+# What the kit standard reads first about this repository (kit:kit.1): its
+# profile and org (docs/profiles.md, docs/orgs/ in afterthought/kit-standard),
+# and the version of the standard it was last reconciled to.
+profile = "code"
+org = "agentplot"
+standard = "unreleased"

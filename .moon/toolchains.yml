@@ -1,0 +1,6 @@
+$schema: 'https://moonrepo.dev/schemas/toolchains.json'
+
+# The proto that installs and runs the toolchains: devenv's, so a shell and
+# moon agree on it.
+proto:
+  version: '0.63.1'

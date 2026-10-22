@@ -1,0 +1,16 @@
+# moon runs tailrace's checks. Each check is tagged with its layer:
+#   check-fast    the site's build: under a minute
+# A task whose inputs are identical to a run that passed on this host, in
+# any worktree, replays from .moon/cache/outputs (a link into the git common
+# dir, made by devenv.nix), so every task's inputs name everything it reads.
+$schema: 'https://moonrepo.dev/schemas/workspace.json'
+
+projects:
+  site: 'site'
+
+# --affected compares against the merge-base with main.
+vcs:
+  client: 'git'
+  defaultBranch: 'main'
+
+telemetry: false
