@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tailrace in Claude Code</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .frame { display: grid; grid-template-rows: 1fr auto auto; }
+  .top { display: grid; grid-template-columns: minmax(0, 1fr) 560px; min-height: 0; }
+  .session { line-height: 1.62; padding: 22px 14px 10px 12px; display: flex; flex-direction: column; min-height: 0; }
+  .session .start { margin-top: 18px; color: var(--fg-3); white-space: pre-wrap; }
+  .turns { margin-top: 18px; flex: 1; min-height: 0; overflow: hidden; }
+  .turn .out pre { white-space: pre-wrap; }
+  .turn { margin-bottom: 10px; }
+  .turn .user { display: inline-block; background: var(--bg-3); padding: 0 6px; }
+  .turn .call { display: flex; gap: 8px; }
+  .turn .call .dot { color: var(--ok); }
+  .turn .out { margin-left: 18px; display: flex; gap: 10px; }
+  .turn .out .elbow { color: var(--fg-3); }
+  .turn .out.refused .dot { color: var(--bad); }
+  .turn .reply { display: flex; gap: 8px; max-width: 680px; }
+  .turn .reply .dot { color: var(--claude); }
+  .band { margin-top: 8px; color: var(--fg-2); white-space: nowrap; overflow: hidden; }
+  .pane { white-space: normal; overflow-wrap: anywhere; border-left: 1px solid var(--line); padding: 10px 14px 10px 12px; position: relative; background: var(--bg-2); }
+  .pane .close { position: absolute; right: 14px; top: 2px; color: var(--fg-3); }
+  .pane .path { color: var(--fg-3); margin-bottom: 10px; }
+  .pane .sec { font-weight: 700; margin-top: 10px; }
+  .pane .row { display: grid; grid-template-columns: 90px 72px 1fr; padding-left: 16px; }
+  .pane .env { display: grid; grid-template-columns: 20px 86px 72px 1fr; }
+  .prompt { border-top: 1px solid var(--line); padding: 8px 14px; }
+  .prompt .cursor { display: inline-block; width: 8px; height: 17px; border: 1.5px solid var(--blue); vertical-align: -3px; margin-left: 6px; }
+  .status { border-top: 1px solid var(--line); padding: 6px 14px 10px 28px; }
+  .status .warn-line { color: var(--warn); }
+  .status .tag { display: inline-block; width: 16px; margin-left: -18px; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="top">
+    <div class="session">
+      <div class="cc-head">
+        <div class="glyph"></div>
+        <div class="lines">
+          <div><b>Claude Code</b> <span class="dim2">v2.1.296</span></div>
+          <div class="dim2">Opus 5.5 · Claude Max</div>
+          <div class="dim2">/private/tmp/tailrace-demo/acme-kit-wt/ui-polish</div>
+        </div>
+      </div>
+      <pre class="start">tailrace: acme-kit publishes @acme/ui and acme-api · last landing reached beta 1.4.3
+tailrace: prod follows stable and runs 1.4.0 · laptop and staging follow beta</pre>
+      <div class="turns">
+        <div class="turn"><span class="dim">❯</span> <span class="user">land this and publish what lands</span></div>
+        <div class="turn">
+          <div class="call"><span class="dot">●</span><span><b>Bash</b><span class="dim">(sluice submit main)</span></span></div>
+          <div class="out"><span class="elbow">⎿</span><pre class="dim2">#7 queued · unit/ui-polish ui-polish
+#7 landed as 9f3e21c</pre></div>
+        </div>
+        <div class="turn">
+          <div class="call"><span class="dot">●</span><span><b>Bash</b><span class="dim">(tailrace publish 9f3e21c --json)</span></span></div>
+          <div class="out"><span class="elbow">⎿</span><pre><span class="ok">published 1.5.0</span> from 9f3e21c
+index      sha256:4f2a9c7e1b…d31a
+@acme/ui   npm tgz   sha256:7c1e0d4a92…9f02
+acme-api   image     sha256:a8d53b16c0…44e7
+claims     provenance (fleet) · verdict (sluice, carried) · tests
+<span class="ok">beta moved to 1.5.0 by rule</span></pre></div>
+        </div>
+        <div class="turn">
+          <div class="call"><span class="dot">●</span><span><b>Bash</b><span class="dim">(npm publish --access public)</span></span></div>
+          <div class="out refused"><span class="elbow">⎿</span><pre><span class="bad">tailrace is bound here: publish with `tailrace publish`, which offers only a landed revision.</span>
+<span class="dim">hook tailrace:publish refused the command</span></pre></div>
+        </div>
+        <div class="turn">
+          <div class="reply"><span class="dot">●</span><span>1.5.0 is published from 9f3e21c and beta moved to it by rule. Both artifacts carry the fleet's provenance, sluice's verdict and the tests. The npm publish was refused: nothing leaves here except through tailrace. prod stays on 1.4.0 until an approver promotes.</span></div>
+        </div>
+      </div>
+      <div class="band">tailrace · beta → 1.5.0 · prod waits on an approver ·… <b>[hide]</b> [-]</div>
+    </div>
+    <div class="pane">
+      <span class="close">×</span>
+      <div class="path">/private/tmp/tailrace-demo/acme-kit/.git · ghcr.io/acme</div>
+      <div><b>acme-kit · beta 1.5.0 · stable 1.4.0 · 3 envs · 1 behind</b></div>
+      <div class="sec">CHANNELS</div>
+      <div class="row"><span>beta</span><span>1.5.0</span><span class="dim2">2 min ago · by rule</span></div>
+      <div class="row"><span>stable</span><span>1.4.0</span><span class="dim2">Fri · by approval</span></div>
+      <div class="sec">ENVIRONMENTS</div>
+      <div class="env"><span class="ok">✓</span><span>laptop</span><span class="dim2">beta</span><span>runs 1.5.0</span></div>
+      <div class="env"><span class="ok">✓</span><span>staging</span><span class="dim2">beta</span><span>runs 1.5.0</span></div>
+      <div class="env"><span class="warn">◦</span><span>prod</span><span class="dim2">stable</span><span>runs 1.4.0 · <span class="warn">waits: approval</span></span></div>
+      <div class="sec">REFUSALS</div>
+      <div style="padding-left:16px"><span class="bad">✗ 1.4.3 · stable: no rebuild claim from a second signer</span></div>
+      <div class="sec">PUBLISH</div>
+      <div style="padding-left:16px" class="dim2">none in flight · last 1.5.0 from 9f3e21c, 2 min ago</div>
+      <div style="margin-top:14px" class="dim">beta follows each publish · stable waits on release-approvers</div>
+    </div>
+  </div>
+  <div class="prompt"><span class="dim2">❯</span><span class="cursor"></span></div>
+  <div class="status">
+    <div class="warn-line"><span class="tag">⚠</span>tailrace: acme-kit · beta 1.5.0 · stable 1.4.0 · prod waits on an approver</div>
+    <div class="dim2"><span class="tag">⏸</span>manual mode on · ? for shortcuts · ← for agents</div>
+  </div>
+</div>
+<script src="glyph.js"></script>
+</body>
+</html>

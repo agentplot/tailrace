@@ -28,7 +28,7 @@ export default defineConfig({
         Hero: './src/components/Hero.astro',
       },
       // The family's type, layout and accent, then the diagram's palette.
-      customCss: ['@agentplot/site-theme/starlight.css', './src/styles/diagrams.css'],
+      customCss: ['@agentplot/site-theme/starlight.css', './src/styles/diagrams.css', './src/styles/screenshots.css'],
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/agentplot/tailrace' }],
       editLink: { baseUrl: 'https://github.com/agentplot/tailrace/edit/main/site/' },
       plugins: [starlightLinksValidator()],

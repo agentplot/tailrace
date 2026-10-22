@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>tailrace in herdr</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  :root { --violet: #6f4fd8; --sel: #e8e8ee; --pane-line: #c4c4c8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0e1117; --bg-2: #121622; --bg-3: #1a1f2e; --line: #2d3447; --line-soft: #222838; --violet: #a28cf5; --sel: #1c2132; --pane-line: #3a4360; }
+  }
+  body { font-size: 12.5px; line-height: 1.55; }
+  .frame { display: grid; grid-template-columns: 192px 1fr; border-radius: 6px; }
+  .side { display: flex; flex-direction: column; padding: 8px 0 6px 12px; border-right: 1px solid var(--line-soft); }
+  .side h4 { margin: 0 0 8px; font-weight: 500; color: var(--fg-3); }
+  .side .row { padding: 4px 6px 4px 6px; margin: 0 6px 2px -6px; display: grid; grid-template-columns: 14px 1fr; column-gap: 6px; }
+  .side .row.sel { background: var(--sel); }
+  .side .row .ring { color: var(--fg-3); }
+  .side .row.ok .ring { color: var(--ok); }
+  .side .row.busy .ring { color: var(--accent); }
+  .side .row .l2 { grid-column: 2; color: var(--fg-3); }
+  .side .row .l2.violet { color: var(--violet); }
+  .side .row .l2.accent { color: var(--accent); }
+  .side .spacer { flex: 1; }
+  .side .foot { display: flex; justify-content: space-between; padding-right: 12px; color: var(--fg-3); margin-bottom: 8px; }
+  .side .foot .dot { color: var(--blue); }
+  .side .agents { display: flex; justify-content: space-between; padding-right: 12px; margin-bottom: 8px; color: var(--fg-3); }
+  .side .collapse { text-align: right; padding-right: 10px; color: var(--fg-3); margin-top: auto; }
+  .main { display: grid; grid-template-rows: 26px 1fr; min-width: 0; position: relative; }
+  .tabs { display: flex; align-items: center; gap: 0; padding: 4px 8px 0 8px; background: var(--bg-2); border-bottom: 1px solid var(--line-soft); }
+  .tabs .tab { background: var(--blue); color: #fff; padding: 0 22px; line-height: 20px; }
+  .tabs .plus { padding: 0 12px; color: var(--fg-3); }
+  .tabs .seg { margin-left: auto; color: var(--accent); padding: 0 6px; }
+  .tabs .seg b { font-weight: 500; }
+  .panes { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 10px; padding: 8px 8px 8px 8px; min-height: 0; }
+  .pane { border: 1px solid var(--pane-line); display: flex; flex-direction: column; padding: 8px 10px 4px; min-height: 0; overflow: hidden; }
+  .pane.focus { border-color: var(--blue); }
+  .pane .cc-head { padding: 6px 0 0 2px; }
+  .pane .cc-head .lines { line-height: 1.55; }
+  .pane .fill { flex: 1; }
+  .pane .plugin { color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pane .plugin.dim { color: var(--fg-3); }
+  .pane .try { border-top: 1px solid var(--line-soft); margin-top: 4px; padding-top: 6px; color: var(--fg-3); white-space: nowrap; overflow: hidden; }
+  .pane .mode { border-top: 1px solid var(--line-soft); margin-top: 4px; padding: 4px 0 2px 14px; color: var(--fg-2); white-space: nowrap; overflow: hidden; }
+  .popup { position: absolute; left: 84px; top: 128px; width: 900px; height: 486px; border: 1.5px solid var(--blue); background: var(--bg); box-shadow: 0 12px 40px var(--shadow); padding: 10px 12px 8px 10px; }
+  .popup .title { position: absolute; top: -11px; left: 6px; background: var(--bg); color: var(--blue); padding: 0 3px; }
+  .popup .inner { border: 1px solid var(--pane-line); height: 100%; padding: 6px 10px; display: flex; flex-direction: column; }
+  .popup .path { color: var(--fg-3); margin-bottom: 8px; }
+  .popup .sec { font-weight: 700; margin-top: 6px; padding-left: 14px; }
+  .popup .row { display: grid; grid-template-columns: 24px 88px 68px 1fr; padding-left: 14px; }
+  .popup .row.sel { background: var(--sel); margin: 0 -6px; padding-left: 20px; padding-right: 6px; }
+  .popup .row.pub { grid-template-columns: 24px 104px 1fr; }
+  .popup .reason { padding-left: 62px; color: var(--fg-2); display: grid; grid-template-columns: 92px 1fr; }
+  .popup .reason .k { color: var(--fg-3); }
+    .popup .keys { margin-top: auto; padding-top: 6px; color: var(--fg-2); }
+  .toast { position: absolute; right: 18px; bottom: 16px; background: var(--bg-3); border: 1px solid var(--accent); color: var(--fg); padding: 4px 12px; box-shadow: 0 6px 20px var(--shadow); }
+  .toast b { color: var(--accent); font-weight: 500; }
+</style>
+</head>
+<body>
+<div class="frame">
+  <div class="side">
+    <h4>spaces</h4>
+    <div class="row sel"><span class="ring">○</span><span><b>acme-kit</b></span><span class="l2">beta 1.5.0 · stable 1.4.0</span><span class="l2">3 envs · 1 behind</span></div>
+    <div class="spacer"></div>
+    <div class="foot"><span>new</span><span><span class="dot">●</span> menu</span></div>
+    <div class="agents"><span>agents</span><span>grouped</span></div>
+    <div class="row ok sel"><span class="ring">○</span><span><b>acme-kit</b></span><span class="l2">ui-polish</span><span class="l2">published 1.5.0</span></div>
+    <div class="row busy"><span class="ring">○</span><span><b>acme-kit</b></span><span class="l2">api-retry</span><span class="l2 accent">landed, publishing…</span></div>
+    <div class="row"><span class="ring">○</span><span><b>acme-kit</b></span><span class="l2">search-index</span><span class="l2">idle</span></div>
+    <div class="row"><span class="ring">○</span><span><b>acme-kit</b></span><span class="l2">docs-sweep</span><span class="l2">idle</span></div>
+    <div class="collapse">«</div>
+  </div>
+  <div class="main">
+    <div class="tabs"><span class="tab">1</span><span class="plus">+</span><span class="seg">tailrace beta 1.5.0 ▲</span></div>
+    <div class="panes">
+      <div class="pane focus">
+        <div class="cc-head"><div class="glyph"></div><div class="lines"><div><b>Claude Code</b> <span class="dim2">v2.1.296</span></div><div class="dim2">Opus 5.5 · Claude Max</div><div class="dim2">/private/tmp/tailrace-demo/acme-kit-wt/ui-polish</div></div></div>
+        <div class="fill"></div>
+        <div class="plugin">tailrace · 9f3e21c published 1.5.0 · index sha256:4f2a9c7e1b…d31a · beta</div>
+        <div class="try"><span class="dim2">❯</span> Try "write a test for the new ui"</div>
+        <div class="mode">⏸ manual mode on · ? for shortcuts · ← for agents</div>
+      </div>
+      <div class="pane">
+        <div class="cc-head"><div class="glyph"></div><div class="lines"><div><b>Claude Code</b> <span class="dim2">v2.1.296</span></div><div class="dim2">Opus 5.5 · Claude Max</div><div class="dim2">/private/tmp/tailrace-demo/acme-kit-wt/api-retry</div></div></div>
+        <div class="fill"></div>
+        <div class="plugin">tailrace · 3c8b1e0 landed · publishing 1.5.1 · acme-api building</div>
+        <div class="try"><span class="dim2">❯</span> Try "edit api-retry to…"</div>
+        <div class="mode">⏸ manual mode on · ? for shortcuts · ← for agents</div>
+      </div>
+      <div class="pane">
+        <div class="cc-head"><div class="glyph"></div><div class="lines"><div><b>Claude Code</b> <span class="dim2">v2.1.296</span></div><div class="dim2">Opus 5.5 · Claude Max</div><div class="dim2">/private/tmp/tailrace-demo/acme-kit-wt/search-index</div></div></div>
+        <div class="fill"></div>
+        <div class="plugin dim">tailrace · nothing landed from this pane yet</div>
+        <div class="try"><span class="dim2">❯</span> Try "fix lint errors"</div>
+        <div class="mode">⏸ manual mode on · ? for shortcuts · ← for agents</div>
+      </div>
+      <div class="pane">
+        <div class="cc-head"><div class="glyph"></div><div class="lines"><div><b>Claude Code</b> <span class="dim2">v2.1.296</span></div><div class="dim2">Opus 5.5 · Claude Max</div><div class="dim2">/private/tmp/tailrace-demo/acme-kit-wt/docs-sweep</div></div></div>
+        <div class="fill"></div>
+        <div class="plugin dim">tailrace · nothing landed from this pane yet</div>
+        <div class="try"><span class="dim2">❯</span> Try "refactor the docs build"</div>
+        <div class="mode">⏸ manual mode on · ? for shortcuts · ← for agents</div>
+      </div>
+    </div>
+    <div class="popup">
+      <span class="title">tailrace</span>
+      <div class="inner">
+        <div class="path">/private/tmp/tailrace-demo/acme-kit/.git · ghcr.io/acme</div>
+        <div><b>acme-kit · beta 1.5.0 · stable 1.4.0 · 3 environments · 1 behind</b></div>
+        <div class="sec">CHANNELS</div>
+        <div class="row"><span></span><span>beta</span><span>1.5.0</span><span class="dim2">2 min ago · by rule, after ui-polish's publish</span></div>
+        <div class="row"><span></span><span>stable</span><span>1.4.0</span><span class="dim2">Fri 14:10 · by approval (mara)</span></div>
+        <div class="sec">ENVIRONMENTS</div>
+        <div class="row"><span class="ok">✓</span><span>laptop</span><span class="dim2">beta</span><span>should run 1.5.0 · runs 1.5.0</span></div>
+        <div class="row"><span class="ok">✓</span><span>staging</span><span class="dim2">beta</span><span>should run 1.5.0 · runs 1.5.0</span></div>
+        <div class="row"><span class="warn">◦</span><span>prod</span><span class="dim2">stable</span><span>should run 1.4.0 · runs 1.4.0 · <span class="warn">waits: approval</span></span></div>
+        <div class="sec">PUBLISH</div>
+        <div class="row pub"><span class="accent">▶</span><span class="accent">api-retry</span><span><span class="accent">3c8b1e0 → 1.5.1</span> &nbsp;acme-api &nbsp;<span class="bar" style="width:96px"><i style="width:55%"></i></span> &nbsp;1/2 artifacts · 48s</span></div>
+        <div class="sec">REFUSALS</div>
+        <div class="row sel"><span class="bad">✗</span><span class="bad" style="grid-column: 2 / 5">1.4.3 · stable: no rebuild claim from a second signer</span></div>
+        <div class="reason"><span class="k">refused by</span><span>verdict for policy <b>stable</b>, on acme-api sha256:c17f…e0a9</span></div>
+        <div class="reason"><span class="k">its words</span><span>"no rebuild claim for sha256:c17f…e0a9 from a signer other than fleet-a"</span></div>
+        <div class="reason"><span class="k">requires</span><span>provenance (fleet-a) · rebuild (fleet-b or fleet-c) · verdict (sluice) · approval (release-approvers)</span></div>
+        <div class="reason"><span class="k">attached</span><span><span class="ok">provenance (fleet-a) ✓</span> · <span class="ok">verdict (sluice, carried) ✓</span> · <span class="ok">tests ✓</span> · <span class="bad">rebuild: none</span></span></div>
+        <div class="keys">enter: reason · p: promote · s: sync · esc</div>
+      </div>
+    </div>
+    <div class="toast">tailrace · <b>beta → 1.5.0</b></div>
+  </div>
+</div>
+<script src="glyph.js"></script>
+</body>
+</html>
