@@ -9,7 +9,7 @@ added. Nothing under `crates/tailrace-core/src/` names `cargo`, `moon`,
 
 ## 1. Dependencies
 
-- [ ] 1.1 Add to `[workspace.dependencies]` in `Cargo.toml`: `git-cliff-core = { version = "2.14", default-features = false, features = ["repo"] }`, `git2 = { version = "0.21", default-features = false }`, `glob = "0.3"`, `regex = "1"`, `semver = "1"`, `tempfile = "3"`; take the first five and `toml` in `crates/tailrace-core/Cargo.toml`, and `tempfile` and `tailrace-fakes` as dev-dependencies; in `crates/tailrace-core/moon.yml` add `fakes` to `dependsOn` and `/crates/tailrace-fakes/**/*` to the test task's inputs (design D3, D8). Verify `cargo check --workspace --all-targets` succeeds and `Cargo.lock` holds one `git2` (`cargo tree -d -p tailrace-core` shows no second git2).
+- [x] 1.1 Add to `[workspace.dependencies]` in `Cargo.toml`: `git-cliff-core = { version = "2.14", default-features = false, features = ["repo"] }`, `git2 = { version = "0.21", default-features = false }`, `glob = "0.3"`, `regex = "1"`, `semver = "1"`, `tempfile = "3"`; take the first five and `toml` in `crates/tailrace-core/Cargo.toml`, and `tempfile` and `tailrace-fakes` as dev-dependencies; in `crates/tailrace-core/moon.yml` add `fakes` to `dependsOn` and `/crates/tailrace-fakes/**/*` to the test task's inputs (design D3, D8). Verify `cargo check --workspace --all-targets` succeeds and `Cargo.lock` holds one `git2` (`cargo tree -d -p tailrace-core` shows no second git2).
 
 ## 2. The answers this change gives
 
