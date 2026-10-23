@@ -1,15 +1,19 @@
 //! The version a landed revision takes per component, derived from the
 //! history alone by the authors' rule, and which components a landing
-//! touched (21, 23, 24, 123, 124, rules core.13, core.37; design D5).
-//! Nothing here takes the build seam: the build never learns the version.
+//! touched, and the claim of its name in the shared history (21 to 24,
+//! 123, 124, rules core.6, core.13, core.37; design D5, D6). Nothing here
+//! takes the build seam: the build never learns the version.
 
 use git_cliff_core::changelog::Changelog;
 use git_cliff_core::commit::Commit as CliffCommit;
 use git_cliff_core::config::{Bump, ChangelogConfig, Config, GitConfig, RemoteConfig};
 use git_cliff_core::release::Release;
 use semver::{BuildMetadata, Prerelease, Version};
-use tailrace_seams::{Answer, Component, ComponentName, Not, Source, Version as Named};
+use tailrace_seams::{
+    Answer, Component, ComponentName, Not, Revision, Source, Version as Named, Why,
+};
 
+use crate::history::Pushed;
 use crate::{Commit, Declared, History, Landed, Rule, Tag, LOCAL};
 
 /// Whether a version is a release or a prerelease of the next one.
@@ -207,4 +211,71 @@ pub fn touched(history: &History, landed: &Landed, declared: &Declared) -> Answe
         }
     }
     Ok(touched)
+}
+
+/// A version's name claimed at a landed revision.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Claimed {
+    pub name: String,
+    pub revision: Revision,
+    /// The remote holding the shared history the name was claimed in;
+    /// none when the branch shares no history beyond the local one.
+    pub shared: Option<String>,
+}
+
+/// 22: claims `versioned`'s name as a tag at the landed revision, in the
+/// local history and then the shared one, before anything is packed. A
+/// lightweight tag is made without force and pushed without force, so a
+/// name the same revision already holds is claimed again with nothing
+/// changed, and a name another revision holds, in either history, is
+/// refused [`Why::NameHeld`] naming both with git's words, the local tag
+/// this claim made removed and no tag moved (rule core.6). A shared
+/// history that cannot be reached is unreadable with git's words, and the
+/// local tag stays for a later claim at the revision to push again.
+pub fn claim(history: &History, landed: &Landed, versioned: &Versioned) -> Answer<Claimed> {
+    let name = &versioned.name;
+    let revision = history.revision(landed)?;
+    let held = |at: &str, other: Revision, said: Option<String>| {
+        Not::refused(
+            &Source::history(at),
+            Why::NameHeld {
+                name: name.clone(),
+                revision: revision.clone(),
+                other,
+            },
+            said,
+        )
+    };
+
+    let made = match history.tag_at(name)? {
+        Some(other) if other != revision => return Err(held(LOCAL, other, None)),
+        Some(_) => false,
+        None => {
+            history.make_tag(name, landed)?;
+            true
+        }
+    };
+    let claimed = |shared: Option<String>| Claimed {
+        name: name.clone(),
+        revision: revision.clone(),
+        shared,
+    };
+    let Some(remote) = history.remote(landed.branch())? else {
+        return Ok(claimed(None));
+    };
+    match history.push_tag(&remote, name)? {
+        Pushed::Held => Ok(claimed(Some(remote))),
+        Pushed::Rejected(words) => match history.remote_tag(&remote, name)? {
+            Some(other) if other == revision => Ok(claimed(Some(remote))),
+            other => {
+                if made {
+                    history.drop_tag(name)?;
+                }
+                Err(match other {
+                    Some(other) => held(&remote, other, Some(words)),
+                    None => Not::refused(&Source::history(&remote), Why::Said, Some(words)),
+                })
+            }
+        },
+    }
 }

@@ -43,6 +43,14 @@ pub struct Tag {
     pub revision: Revision,
 }
 
+/// What a push of a tag to the shared history came to.
+pub(crate) enum Pushed {
+    /// The shared history holds the tag where it was pushed from.
+    Held,
+    /// The shared history refused it, in git's words.
+    Rejected(String),
+}
+
 fn local() -> Source {
     Source::history(LOCAL)
 }
@@ -270,6 +278,74 @@ impl History {
             }
         }
         Ok(tags)
+    }
+
+    /// The revision the local tag `name` names, peeled, or none when the
+    /// local history holds no such tag.
+    pub(crate) fn tag_at(&self, name: &str) -> Answer<Option<Revision>> {
+        let what = format!("the tag {name}");
+        let unreadable = |e: git2::Error| Not::unreadable(&local(), what.clone(), words(&e));
+        match self.git.revparse_single(&format!("refs/tags/{name}")) {
+            Ok(object) => Ok(peeled(object)
+                .map_err(unreadable)?
+                .map(|oid| Revision::new(oid.to_string()))),
+            Err(e) if e.code() == ErrorCode::NotFound => Ok(None),
+            Err(e) => Err(unreadable(e)),
+        }
+    }
+
+    /// A lightweight tag `name` at the landed revision in the local
+    /// history, never forced over one already there (rule core.6).
+    pub(crate) fn make_tag(&self, name: &str, landed: &Landed) -> Answer<()> {
+        let what = format!("the tag {name}");
+        let commit = self.commit(landed.revision())?;
+        self.git
+            .tag_lightweight(name, commit.as_object(), false)
+            .map(|_| ())
+            .map_err(|e| Not::unreadable(&local(), what, words(&e)))
+    }
+
+    /// Removes the local tag `name`, made by a claim the shared history
+    /// refused.
+    pub(crate) fn drop_tag(&self, name: &str) -> Answer<()> {
+        self.git
+            .tag_delete(name)
+            .map_err(|e| Not::unreadable(&local(), format!("the tag {name}"), words(&e)))
+    }
+
+    /// Pushes the local tag `name` to `remote` without force, by the git
+    /// command, so the host's own credential helper answers (rule
+    /// core.21).
+    pub(crate) fn push_tag(&self, remote: &str, name: &str) -> Answer<Pushed> {
+        let what = format!("{remote}, pushing {name}");
+        let refspec = format!("refs/tags/{name}:refs/tags/{name}");
+        let out = self.git(remote, &what, &["push", "--porcelain", remote, &refspec])?;
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        // Each ref's line is its flag, the refspec and git's summary.
+        let flag = stdout.lines().find_map(|line| {
+            let mut fields = line.split('\t');
+            let flag = fields.next()?;
+            (fields.next()? == refspec).then_some(flag)
+        });
+        match flag {
+            Some("*" | "=") if out.status.success() => Ok(Pushed::Held),
+            Some("!") => Ok(Pushed::Rejected(format!(
+                "{stdout}{}",
+                String::from_utf8_lossy(&out.stderr)
+            ))),
+            _ => Err(Not::unreadable(&Source::history(remote), what, said(&out))),
+        }
+    }
+
+    /// The revision the tag `name` names in `remote`'s history, peeled,
+    /// or none when it holds no such tag.
+    pub(crate) fn remote_tag(&self, remote: &str, name: &str) -> Answer<Option<Revision>> {
+        let refname = format!("refs/tags/{name}");
+        Ok(self
+            .remote_tags(remote, &refname)?
+            .into_iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, oid)| Revision::new(oid.to_string())))
     }
 }
 
