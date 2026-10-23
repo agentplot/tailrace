@@ -35,7 +35,9 @@ macro_rules! text {
 }
 
 pub mod artifact;
+pub mod claim;
 pub mod digest;
 
 pub use artifact::*;
+pub use claim::*;
 pub use digest::*;
