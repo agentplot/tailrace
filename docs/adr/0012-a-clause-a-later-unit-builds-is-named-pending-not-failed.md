@@ -1,7 +1,7 @@
 ---
 number: 12
 title: A clause a later unit builds is named pending, not failed
-status: proposed
+status: accepted
 date: 2026-10-23
 decision-makers:
 - Chuck Swanberg
@@ -9,7 +9,7 @@ decision-makers:
 
 # A clause a later unit builds is named pending, not failed
 
-Status: proposed to the user on 2026-10-23, as `briefs.15` has it; accepted only on their yes.
+Status: accepted by the user on 2026-10-23, on their card.
 
 Deciders: madswan-design, 2026-10-23, on the question of trc-1's construct of the-conformance-suite-over-the-fakes (bolt tailrace-the-core); the user on their card.
 Sources: statement clause 93 and section 12 (`agentplot/blueprints:design/tailrace/requirements.md`); rule core.33; `design/tailrace/models/phase-1-bolts.md` at 251de29; flywheel-next's `machines/pending.yaml` and `check.py` (fcaac6be), the same rule in the sister kit.

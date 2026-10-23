@@ -62,7 +62,7 @@ part exists.
 - **[core.30]** No code path turns a cache entry into an artifact, names one from a channel, an index or a policy, or refuses to build because one is gone.
 - **[core.31]** Every surface calls the one core and renders its answer; no surface computes a verdict, a version or a channel of its own.
 - **[core.32]** A read of what tailrace holds opens no connection to a store, a signer or a target and writes nothing.
-- **[core.33]** Every profile passes the one conformance suite, and every scenario of the suite cites the clauses it exercises; a clause no scenario cites is named in the suite's register with the unit of the plan that will cite it and why, and leaves the register with the commit that cites it. (Proposed 2026-10-23, record 0012, on the user's card; accepted only on their yes.)
+- **[core.33]** Every profile passes the one conformance suite, and every scenario of the suite cites the clauses it exercises; a clause no scenario cites is named in the suite's register with the unit of the plan that will cite it and why, and leaves the register with the commit that cites it.
 
 ### Design and records
 
