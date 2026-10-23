@@ -7,7 +7,7 @@ entry is added.
 
 ## 1. Dependencies
 
-- [ ] 1.1 Add `sha2` to `[workspace.dependencies]` in `Cargo.toml`; in `crates/tailrace-seams/Cargo.toml` take `sha2` and `serde_json` from the workspace and drop `anyhow`; in `crates/tailrace-fakes/Cargo.toml` drop `tailrace-core` and `anyhow`, and in its `moon.yml` drop `core` from `dependsOn` and `/crates/tailrace-core/**/*` from the test task's inputs (design D3, D9). Verify `cargo check --workspace` succeeds and `Cargo.lock` gains `sha2`.
+- [x] 1.1 Add `sha2` to `[workspace.dependencies]` in `Cargo.toml`; in `crates/tailrace-seams/Cargo.toml` take `sha2` and `serde_json` from the workspace and drop `anyhow`; in `crates/tailrace-fakes/Cargo.toml` drop `tailrace-core` and `anyhow`, and in its `moon.yml` drop `core` from `dependsOn` and `/crates/tailrace-core/**/*` from the test task's inputs (design D3, D9). Verify `cargo check --workspace` succeeds and `Cargo.lock` gains `sha2`.
 
 ## 2. The answers and the shared types
 

@@ -7,8 +7,6 @@ description = "In-memory profiles of every seam, scriptable per test."
 
 [dependencies]
 tailrace-seams = { path = "../tailrace-seams" }
-tailrace-core = { path = "../tailrace-core" }
-anyhow.workspace = true
 serde_json.workspace = true
 
 [lib]
