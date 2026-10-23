@@ -42,7 +42,7 @@ comments.
 
 ## 7. The site
 
-- [ ] 7.1 Rewrite the paragraph of `site/src/content/docs/how-it-works.mdx` that begins "`tailrace publish` is the gate's move" to say that publish offers a landed revision's artifacts, each with its provenance and the landing's verdicts carried, the index last, and moves nothing; and that `tailrace verify` says which signer the policy names made each claim, and counts none another made (20, 25, 9). Verify the site's moon build task passes in the gate (8.1) and `grep -n "gate's move" site/src/content/docs/how-it-works.mdx` finds nothing.
+- [x] 7.1 Rewrite the paragraph of `site/src/content/docs/how-it-works.mdx` that begins "`tailrace publish` is the gate's move" to say that publish offers a landed revision's artifacts, each with its provenance and the landing's verdicts carried, the index last, and moves nothing; and that `tailrace verify` says which signer the policy names made each claim, and counts none another made (20, 25, 9). Verify the site's moon build task passes in the gate (8.1) and `grep -n "gate's move" site/src/content/docs/how-it-works.mdx` finds nothing.
 
 ## 8. The gate
 
