@@ -6,7 +6,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Digest, OutputName, SignerId};
+use crate::{Branch, ComponentName, Digest, OutputName, Revision, SignerId};
 
 /// What every seam operation answers: what was asked, or [`Not`].
 pub type Answer<T> = Result<T, Not>;
@@ -102,9 +102,16 @@ impl Source {
             profile: profile.into(),
         }
     }
+
+    /// The repository's history, read through git: `at` the remote that
+    /// holds the shared history, or `local` for the repository's own.
+    pub fn history(at: impl fmt::Display) -> Self {
+        Source::new(Seam::History, format!("git, {at}"))
+    }
 }
 
-/// The eight seams of Part B.
+/// The eight seams of Part B, and beside them the repository's history,
+/// which the core reads itself through git (section 9).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Seam {
@@ -116,6 +123,10 @@ pub enum Seam {
     Projection,
     Target,
     Keeper,
+    /// No seam of Part B: the repository's history, local or shared,
+    /// whose files, commits and tags the core reads at a landed revision
+    /// and where it claims a version's name (21, 22).
+    History,
 }
 
 /// The refusals the seams answer, each naming what its clause says it
@@ -139,6 +150,23 @@ pub enum Why {
         predecessor: Option<Digest>,
         claims: Vec<Digest>,
     },
+    /// 14, 65, 77: `branch` has not landed `revision`, so nothing of the
+    /// repository is read at it.
+    NotLanded { branch: Branch, revision: Revision },
+    /// 123: the components `first` and `second` declare one name or one
+    /// prefix, `what` naming which and its text.
+    DeclaredTwice {
+        first: ComponentName,
+        second: ComponentName,
+        what: String,
+    },
+    /// 22: the version's name `name` is held by `other`, not by
+    /// `revision`, where it was claimed.
+    NameHeld {
+        name: String,
+        revision: Revision,
+        other: Revision,
+    },
     /// A refusal that names nothing beyond the source's own words.
     Said,
 }
@@ -154,6 +182,7 @@ impl fmt::Display for Seam {
             Seam::Projection => "projection",
             Seam::Target => "target",
             Seam::Keeper => "keeper",
+            Seam::History => "history",
         })
     }
 }
@@ -204,6 +233,19 @@ impl fmt::Display for Why {
                 list(claims),
                 or_nothing(predecessor)
             ),
+            Why::NotLanded { branch, revision } => {
+                write!(f, "{branch} has not landed {revision}")
+            }
+            Why::DeclaredTwice {
+                first,
+                second,
+                what,
+            } => write!(f, "the components {first} and {second} declare one {what}"),
+            Why::NameHeld {
+                name,
+                revision,
+                other,
+            } => write!(f, "{name} is held by {other}, not by {revision}"),
             Why::Said => write!(f, "it refused"),
         }
     }
@@ -346,6 +388,29 @@ mod tests {
                 "gate, host".into(),
             ),
             (
+                Why::NotLanded {
+                    branch: Branch::new("main"),
+                    revision: Revision::new("4f2a9c1"),
+                },
+                "main has not landed 4f2a9c1".into(),
+            ),
+            (
+                Why::DeclaredTwice {
+                    first: ComponentName::new("lib"),
+                    second: ComponentName::new("web"),
+                    what: "prefix \"v\"".into(),
+                },
+                "lib and web declare one prefix \"v\"".into(),
+            ),
+            (
+                Why::NameHeld {
+                    name: "lib-v1.3.0".into(),
+                    revision: Revision::new("4f2a9c1"),
+                    other: Revision::new("77b0e3d"),
+                },
+                "lib-v1.3.0 is held by 77b0e3d, not by 4f2a9c1".into(),
+            ),
+            (
                 Why::Fork {
                     predecessor: Some(head.clone()),
                     claims: vec![Digest::of(b"a"), Digest::of(b"b")],
@@ -363,5 +428,62 @@ mod tests {
             let not = Not::refused(&store(), why.clone(), None);
             assert_eq!(round_trip(&not), not);
         }
+    }
+
+    #[test]
+    fn the_history_answers_as_a_source_with_gits_words() {
+        const GIT: &str = " ! [rejected]        lib-v1.3.0 -> lib-v1.3.0 (already exists)\n\
+                           error: failed to push some refs to '/srv/shared.git'\n\
+                           hint: Updates were rejected because the tag already exists in the remote.\n";
+        let origin = Source::history("origin");
+        assert_eq!(origin.seam, Seam::History);
+        assert_eq!(origin.to_string(), "the history (git, origin)");
+        assert_eq!(Source::history("local").profile, "git, local");
+        let nots = [
+            Not::refused(
+                &Source::new(Seam::Landing, "fake"),
+                Why::NotLanded {
+                    branch: Branch::new("main"),
+                    revision: Revision::new("4f2a9c1"),
+                },
+                None,
+            ),
+            Not::refused(
+                &Source::history("local"),
+                Why::DeclaredTwice {
+                    first: ComponentName::new("lib"),
+                    second: ComponentName::new("web"),
+                    what: "prefix \"v\"".into(),
+                },
+                None,
+            ),
+            Not::refused(
+                &origin,
+                Why::NameHeld {
+                    name: "lib-v1.3.0".into(),
+                    revision: Revision::new("4f2a9c1"),
+                    other: Revision::new("77b0e3d"),
+                },
+                Some(GIT.into()),
+            ),
+            Not::unreadable(&origin, "the tags of origin", Some(GIT.into())),
+        ];
+        for not in &nots {
+            let back = round_trip(not);
+            assert_eq!(&back, not);
+            assert_eq!(back.source(), not.source());
+        }
+        let Not::Refused(r) = round_trip(&nots[2]) else {
+            panic!("refused read back as another answer")
+        };
+        assert_eq!(r.source, Source::history("origin"));
+        assert_eq!(r.said.unwrap().as_bytes(), GIT.as_bytes());
+        let Not::Unreadable(u) = round_trip(&nots[3]) else {
+            panic!("unreadable read back as another answer")
+        };
+        assert_eq!(u.said.unwrap().as_bytes(), GIT.as_bytes());
+        let json = serde_json::to_value(&nots[2]).unwrap();
+        assert_eq!(json["refused"]["source"]["seam"], "history", "{json}");
+        assert_eq!(json["refused"]["why"]["name_held"]["other"], "77b0e3d");
     }
 }

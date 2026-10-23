@@ -13,7 +13,7 @@ added. Nothing under `crates/tailrace-core/src/` names `cargo`, `moon`,
 
 ## 2. The answers this change gives
 
-- [ ] 2.1 In `crates/tailrace-seams/src/answer.rs` add the history as a source (`Source::history`, naming git and the remote or `local`) and the refusals `Why::NotLanded { branch, revision }`, `Why::DeclaredTwice { first, second, what }` and `Why::NameHeld { name, revision, other }` (design D7). Verify with unit tests in `answer.rs` that each round-trips through JSON with its source and git's words byte for byte.
+- [x] 2.1 In `crates/tailrace-seams/src/answer.rs` add the history as a source (`Source::history`, naming git and the remote or `local`) and the refusals `Why::NotLanded { branch, revision }`, `Why::DeclaredTwice { first, second, what }` and `Why::NameHeld { name, revision, other }` (design D7). Verify with unit tests in `answer.rs` that each round-trips through JSON with its source and git's words byte for byte.
 
 ## 3. The landed revision and the history
 
