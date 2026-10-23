@@ -18,8 +18,8 @@ entry is added.
 
 ## 3. The eight traits and the binding
 
-- [ ] 3.1 Write `store.rs`, `build.rs`, `landing.rs`, `signer.rs`, `policy.rs`, `projection.rs`, `target.rs` and `keeper.rs`, each with its trait and the types only it passes, with the signatures of design D6 and each method's doc comment citing the clause it is, and `Required` as the enum by audience (83). Verify `cargo clippy -p tailrace-seams --all-targets -- -D warnings` passes and a test that boxes each trait as `dyn` compiles (spec: One interface per seam).
-- [ ] 3.2 Write `bind.rs`: `Seams` holding one store, build, landing, policy and keeper, the signers, projections by ecosystem and targets by environment, with lookups by ecosystem and environment (design D8). Its test lands with the fakes, in 4.3.
+- [x] 3.1 Write `store.rs`, `build.rs`, `landing.rs`, `signer.rs`, `policy.rs`, `projection.rs`, `target.rs` and `keeper.rs`, each with its trait and the types only it passes, with the signatures of design D6 and each method's doc comment citing the clause it is, and `Required` as the enum by audience (83). Verify `cargo clippy -p tailrace-seams --all-targets -- -D warnings` passes and a test that boxes each trait as `dyn` compiles (spec: One interface per seam).
+- [x] 3.2 Write `bind.rs`: `Seams` holding one store, build, landing, policy and keeper, the signers, projections by ecosystem and targets by environment, with lookups by ecosystem and environment (design D8). Its test lands with the fakes, in 4.3.
 - [ ] 3.3 Rewrite `lib.rs`'s doc comment as the table of seams, traits and clauses, as `sluice-seams` keeps one, and re-export every module. Verify `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace-seams/src` finds nothing (spec: The seams name no tool, core.1).
 
 ## 4. The fakes

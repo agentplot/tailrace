@@ -304,9 +304,9 @@ impl std::error::Error for BadMeta {}
 
 #[cfg(test)]
 mod tests {
-    use serde::de::DeserializeOwned;
 
     use super::*;
+    use crate::round_trip;
 
     fn meta(version: &str) -> ArtifactMeta {
         ArtifactMeta::new(
@@ -322,11 +322,6 @@ mod tests {
             digest: Digest::of(bytes),
             meta: meta(version),
         }
-    }
-
-    fn round_trip<T: Serialize + DeserializeOwned + PartialEq + fmt::Debug>(value: T) {
-        let json = serde_json::to_string(&value).unwrap();
-        assert_eq!(serde_json::from_str::<T>(&json).unwrap(), value, "{json}");
     }
 
     #[test]
