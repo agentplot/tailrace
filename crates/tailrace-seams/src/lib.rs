@@ -1,10 +1,29 @@
-//! The eight seams of tailrace, Part B of the statement in
-//! agentplot/blueprints `design/tailrace/requirements.md`: the store (B.1),
-//! the build (B.2), the landing (B.3), the signer (B.4), the policy (B.5),
-//! a projection (B.6), a target (B.7) and the keeper (B.8). Each is one
-//! trait here, which a profile implements and nothing of the core (rule
-//! core.2). Nothing is bound yet: bolt 1's units add each trait with the
-//! profile that first implements it.
+//! The seams of tailrace: exactly eight, one trait each (rule core.2,
+//! statement Part B, in agentplot/blueprints
+//! `design/tailrace/requirements.md`).
+//!
+//! | seam | trait | statement |
+//! |---|---|---|
+//! | the store | [`Store`] | B.1, 66 to 73 |
+//! | the build | [`Build`] | B.2, 74 to 76 |
+//! | the landing | [`Landing`] | B.3, 77, 78 |
+//! | the signer | [`Signer`] | B.4, 79 to 81 |
+//! | the policy | [`Policy`] | B.5, 82, 83 |
+//! | a projection | [`Projection`] | B.6, 84 to 87 |
+//! | a target | [`Target`] | B.7, 88 to 91 |
+//! | the keeper | [`Keeper`] | B.8, 120 to 122 |
+//!
+//! The core is handed them as one [`Seams`] (B.9, 92). A profile
+//! implements one of these traits and nothing of the core, and the core
+//! reaches every seam through these traits alone, so the types that cross
+//! a seam are defined here and nowhere else, each readable by a program
+//! (57).
+//!
+//! Every operation answers an [`Answer`]: what was asked, or [`Not`],
+//! which is absent, refused or unreadable, naming the seam and profile
+//! that answered and carrying the source's own words verbatim where it
+//! gave any (58, 59, rule core.19). No operation answers an error of any
+//! other kind, an empty value for a failed read, or unknown.
 
 /// A name the statement gives a thing, held as its text.
 macro_rules! text {
