@@ -22,7 +22,7 @@ added. Nothing under `crates/tailrace-core/src/` names `cargo`, `moon`,
 
 ## 4. The components and the rule
 
-- [ ] 4.1 Write `crates/tailrace-core/src/declared.rs`: `Declared { rule, components }` and `Declared::read(&History, &Landed)` over the shape of design D4, with the rustdoc listing every key and its default. Verify with tests in `crates/tailrace-core/tests/declared.rs`, one per scenario of spec landed-policy: a checkout's edit and a later commit are not read; two components are read with their own outputs, paths and prefixes; two with one prefix or one name are refused naming both; no file and a file with no component give one component named `repository` over `**` with the default or declared rule; a malformed file is unreadable naming the file and revision with the parser's words.
+- [x] 4.1 Write `crates/tailrace-core/src/declared.rs`: `Declared { rule, components }` and `Declared::read(&History, &Landed)` over the shape of design D4, with the rustdoc listing every key and its default. Verify with tests in `crates/tailrace-core/tests/declared.rs`, one per scenario of spec landed-policy: a checkout's edit and a later commit are not read; two components are read with their own outputs, paths and prefixes; two with one prefix or one name are refused naming both; no file and a file with no component give one component named `repository` over `**` with the default or declared rule; a malformed file is unreadable naming the file and revision with the parser's words.
 
 ## 5. The version and its claim
 
