@@ -73,8 +73,7 @@ a version. A landing on `main` makes a version and attaches it to `beta`;
 promotion is a signed record that names the one before it: the version
 and its digest, the channel, who or what promoted it, when, and the
 policy evidence. The chain is the ledger, ordered and tamper-evident
-wherever it is held; a keeper holds it, a git ref the gate pushes by
-default, and the same records sit in the registry beside the versions
+wherever it is held, in a git ref the gate pushes by default, and the same records sit in the registry beside the versions
 they moved. The ledger is the audit trail, and a rollback is a promotion
 to an older version. The direction for `stable` is an independent rebuild by a builder
 the first one does not control, with the shared cache off, whose matching
