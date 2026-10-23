@@ -36,3 +36,6 @@ toml = "0.9"
 too_many_arguments = "allow"
 type_complexity = "allow"
 large_enum_variant = "allow"
+# A refusal or an unreadable answer carries what its clause names and the
+# source's own words verbatim (59), so it is as large as they are.
+result_large_err = "allow"

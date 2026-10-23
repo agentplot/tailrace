@@ -1839,10 +1839,13 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "serde",
+ "serde_json",
  "tailrace-conformance",
  "tailrace-core",
  "tailrace-fakes",
  "tailrace-seams",
+ "tempfile",
 ]
 
 [[package]]
@@ -1878,6 +1881,7 @@ dependencies = [
 name = "tailrace-fakes"
 version = "0.0.0"
 dependencies = [
+ "serde",
  "serde_json",
  "tailrace-seams",
 ]
