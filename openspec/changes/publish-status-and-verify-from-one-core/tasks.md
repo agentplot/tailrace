@@ -13,7 +13,7 @@ comments.
 
 ## 1. The answers this change gives
 
-- [ ] 1.1 In `crates/tailrace-seams/src/answer.rs` add `Source::host(<path>)` and the refusals `Why::NotPassed { output, build, outcome }`, `Why::Unnamed { output, build, carried }`, `Why::NoProjection { component, output }`, `Why::OtherBytes { expected, answered }`, `Why::Differed { artifact, first, now }`, `Why::KeptOther { path }` and `Why::WhichComponent { declared }` (design D2 to D4, D6, D9, D10); in `claim.rs` add `ClaimKind::Provenance` if the seams do not hold it. Verify with unit tests in `answer.rs` that each round-trips through JSON with its source and the source's words byte for byte.
+- [x] 1.1 In `crates/tailrace-seams/src/answer.rs` add `Source::host(<path>)` and the refusals `Why::NotPassed { output, build, outcome }`, `Why::Unnamed { output, build, carried }`, `Why::NoProjection { component, output }`, `Why::OtherBytes { expected, answered }`, `Why::Differed { artifact, first, now }`, `Why::KeptOther { path }` and `Why::WhichComponent { declared }` (design D2 to D4, D6, D9, D10); in `claim.rs` add `ClaimKind::Provenance` if the seams do not hold it. Verify with unit tests in `answer.rs` that each round-trips through JSON with its source and the source's words byte for byte.
 
 ## 2. What publish reads before it offers
 

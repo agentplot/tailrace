@@ -3,10 +3,13 @@
 //! (58, 59, rule core.19; design D1).
 
 use std::fmt;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Branch, ComponentName, Digest, OutputName, Revision, SignerId};
+use crate::{
+    ArtifactMeta, Branch, BuildId, ComponentName, Digest, Outcome, OutputName, Revision, SignerId,
+};
 
 /// What every seam operation answers: what was asked, or [`Not`].
 pub type Answer<T> = Result<T, Not>;
@@ -108,10 +111,16 @@ impl Source {
     pub fn history(at: impl fmt::Display) -> Self {
         Source::new(Seam::History, format!("git, {at}"))
     }
+
+    /// The host itself, by the file or directory of its own it read: the
+    /// record of the versions it published, or its bindings (61, 92).
+    pub fn host(path: impl AsRef<Path>) -> Self {
+        Source::new(Seam::Host, path.as_ref().display().to_string())
+    }
 }
 
 /// The eight seams of Part B, and beside them the repository's history,
-/// which the core reads itself through git (section 9).
+/// which the core reads itself through git (section 9), and the host.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Seam {
@@ -127,6 +136,10 @@ pub enum Seam {
     /// whose files, commits and tags the core reads at a landed revision
     /// and where it claims a version's name (21, 22).
     History,
+    /// No seam of Part B: the host running tailrace, whose own record of
+    /// the versions it published and whose bindings the core reads (61,
+    /// 92).
+    Host,
 }
 
 /// The refusals the seams answer, each naming what its clause says it
@@ -167,6 +180,43 @@ pub enum Why {
         revision: Revision,
         other: Revision,
     },
+    /// 16, 111: `output` came from `build`, whose outcome, by the build
+    /// or by the landing's verdicts naming it, is `outcome`.
+    NotPassed {
+        output: OutputName,
+        build: BuildId,
+        outcome: Outcome,
+    },
+    /// 15: `output` came from `build`, which none of the landing's
+    /// verdicts names; `carried` is every build identity they name.
+    Unnamed {
+        output: OutputName,
+        build: BuildId,
+        carried: Vec<BuildId>,
+    },
+    /// C.10: `component` declares `output` and names no projection to
+    /// pack it.
+    NoProjection {
+        component: ComponentName,
+        output: OutputName,
+    },
+    /// 2: the store named bytes `answered` whose digest is `expected`.
+    OtherBytes { expected: Digest, answered: Digest },
+    /// 18, 87: `artifact` packed again is other bytes or other metadata
+    /// than the index holds: `first` the bytes' digest the index names,
+    /// `None` when it names no such artifact, and `now` the digest of the
+    /// bytes packed now.
+    Differed {
+        artifact: ArtifactMeta,
+        first: Option<Digest>,
+        now: Digest,
+    },
+    /// 61: the record already holds an entry at `path` with other
+    /// content.
+    KeptOther { path: String },
+    /// 123: the repository declares several components, `declared`, and
+    /// the question named none of them.
+    WhichComponent { declared: Vec<ComponentName> },
     /// A refusal that names nothing beyond the source's own words.
     Said,
 }
@@ -183,6 +233,7 @@ impl fmt::Display for Seam {
             Seam::Target => "target",
             Seam::Keeper => "keeper",
             Seam::History => "history",
+            Seam::Host => "host",
         })
     }
 }
@@ -199,6 +250,13 @@ fn list(items: impl IntoIterator<Item = impl fmt::Display>) -> String {
         "none".into()
     } else {
         items.join(", ")
+    }
+}
+
+fn outcome_name(outcome: Outcome) -> &'static str {
+    match outcome {
+        Outcome::Pass => "pass",
+        Outcome::Fail => "fail",
     }
 }
 
@@ -246,6 +304,49 @@ impl fmt::Display for Why {
                 revision,
                 other,
             } => write!(f, "{name} is held by {other}, not by {revision}"),
+            Why::NotPassed {
+                output,
+                build,
+                outcome,
+            } => write!(
+                f,
+                "{output} came from build {build}, whose outcome is {}",
+                outcome_name(*outcome)
+            ),
+            Why::Unnamed {
+                output,
+                build,
+                carried,
+            } => write!(
+                f,
+                "{output} came from build {build}, which no verdict names; the verdicts name {}",
+                list(carried)
+            ),
+            Why::NoProjection { component, output } => {
+                write!(f, "{component} names no projection for {output}")
+            }
+            Why::OtherBytes { expected, answered } => write!(
+                f,
+                "the store named the bytes {answered}, and their digest is {expected}"
+            ),
+            Why::Differed {
+                artifact,
+                first,
+                now,
+            } => write!(
+                f,
+                "{} {} {} packs to {now} and the index names {}",
+                artifact.ecosystem(),
+                artifact.name(),
+                artifact.version(),
+                or_nothing(first)
+            ),
+            Why::KeptOther { path } => write!(f, "{path} already holds another entry"),
+            Why::WhichComponent { declared } => write!(
+                f,
+                "several components are declared, {}, and none was named",
+                list(declared)
+            ),
             Why::Said => write!(f, "it refused"),
         }
     }
@@ -485,5 +586,110 @@ mod tests {
         let json = serde_json::to_value(&nots[2]).unwrap();
         assert_eq!(json["refused"]["source"]["seam"], "history", "{json}");
         assert_eq!(json["refused"]["why"]["name_held"]["other"], "77b0e3d");
+    }
+
+    #[test]
+    fn the_host_answers_as_a_source_of_its_own() {
+        let record = Source::host("/srv/repo.git/tailrace/published");
+        assert_eq!(record.seam, Seam::Host);
+        assert_eq!(record.profile, "/srv/repo.git/tailrace/published");
+        assert_eq!(
+            record.to_string(),
+            "the host (/srv/repo.git/tailrace/published)"
+        );
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(json["seam"], "host");
+    }
+
+    #[test]
+    fn the_refusals_of_publish_verify_and_status_keep_their_words_through_json() {
+        let meta = ArtifactMeta::new(
+            crate::Ecosystem::new("eco"),
+            crate::EcosystemName::new("pkg"),
+            crate::Version::new("1.3.0"),
+        )
+        .unwrap();
+        let first = Digest::of(b"first");
+        let now = Digest::of(b"now");
+        let cases = [
+            (
+                store(),
+                Why::NotPassed {
+                    output: OutputName::new("site"),
+                    build: BuildId::new("b7e1"),
+                    outcome: Outcome::Fail,
+                },
+                "site came from build b7e1, whose outcome is fail".to_string(),
+            ),
+            (
+                Source::new(Seam::Landing, "fake"),
+                Why::Unnamed {
+                    output: OutputName::new("site"),
+                    build: BuildId::new("b7e1"),
+                    carried: vec![BuildId::new("c001"), BuildId::new("c002")],
+                },
+                "which no verdict names; the verdicts name c001, c002".into(),
+            ),
+            (
+                Source::host("/srv/repo/.config/tailrace.toml"),
+                Why::NoProjection {
+                    component: ComponentName::new("lib"),
+                    output: OutputName::new("lib-pack"),
+                },
+                "lib names no projection for lib-pack".into(),
+            ),
+            (
+                store(),
+                Why::OtherBytes {
+                    expected: first.clone(),
+                    answered: now.clone(),
+                },
+                format!("named the bytes {now}, and their digest is {first}"),
+            ),
+            (
+                Source::new(Seam::Projection, "fake"),
+                Why::Differed {
+                    artifact: meta.clone(),
+                    first: Some(first.clone()),
+                    now: now.clone(),
+                },
+                format!("eco pkg 1.3.0 packs to {now} and the index names {first}"),
+            ),
+            (
+                Source::new(Seam::Projection, "fake"),
+                Why::Differed {
+                    artifact: meta,
+                    first: None,
+                    now: now.clone(),
+                },
+                format!("packs to {now} and the index names nothing"),
+            ),
+            (
+                Source::host("/srv/repo.git/tailrace/published"),
+                Why::KeptOther {
+                    path: "/srv/repo.git/tailrace/published/lib/lib-v1.3.0.json".into(),
+                },
+                "lib/lib-v1.3.0.json already holds another entry".into(),
+            ),
+            (
+                Source::host("/srv/repo/.config/tailrace.toml"),
+                Why::WhichComponent {
+                    declared: vec![ComponentName::new("lib"), ComponentName::new("web")],
+                },
+                "several components are declared, lib, web, and none was named".into(),
+            ),
+        ];
+        for (source, why, names) in cases {
+            let text = why.to_string();
+            assert!(text.contains(&names), "{text} does not name {names}");
+            let not = Not::refused(&source, why, Some(WORDS.into()));
+            let back = round_trip(&not);
+            assert_eq!(back, not);
+            assert_eq!(back.source(), &source);
+            let Not::Refused(r) = back else {
+                panic!("refused read back as another answer")
+            };
+            assert_eq!(r.said.unwrap().as_bytes(), WORDS.as_bytes());
+        }
     }
 }
