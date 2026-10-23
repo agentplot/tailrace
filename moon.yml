@@ -1,0 +1,31 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+# The workspace as a whole: a candidate is held to what the commit hooks
+# hold a commit to.
+tasks:
+  # Every formatter treefmt.nix configures, writing nothing it would change
+  # and keeping no cache outside the tree. It reads every tracked file: one
+  # that no formatter claims and no exclude names fails it (core.25).
+  format:
+    command: 'treefmt --ci'
+    inputs: ['/**/*']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
+  lint:
+    command: 'cargo clippy --workspace --all-targets -- -D warnings'
+    inputs: ['/crates/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '/rust-toolchain.toml']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
+  # rustc, cargo, clippy and rustfmt are the build .prototools pins, on
+  # whichever host runs the gate (core.26). It reads the tools it checks
+  # from outside the tree, so it never replays.
+  toolchain:
+    command: 'sh check-toolchain.sh'
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true, cache: false}
+  # No two decision records share a number (check-adrs.sh).
+  adrs:
+    command: 'sh check-adrs.sh'
+    inputs: ['/docs/adr/*.md', '/check-adrs.sh']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}

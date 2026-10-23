@@ -1,0 +1,18 @@
+[package]
+name = "tailrace-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "What tailrace does with its seams: Part A of the statement, naming no tool (rule core.1)."
+
+[dependencies]
+tailrace-seams = { path = "../tailrace-seams" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true

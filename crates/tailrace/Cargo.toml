@@ -1,0 +1,27 @@
+[package]
+name = "tailrace"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Build once, sign everything, promote with proof, in your own account."
+build = "build.rs"
+
+[[bin]]
+name = "tailrace"
+path = "src/main.rs"
+
+[dependencies]
+tailrace-seams = { path = "../tailrace-seams" }
+tailrace-core = { path = "../tailrace-core" }
+anyhow.workspace = true
+clap.workspace = true
+
+[dev-dependencies]
+tailrace-fakes = { path = "../tailrace-fakes" }
+tailrace-conformance = { path = "../tailrace-conformance" }
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true

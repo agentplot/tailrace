@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/tailrace-seams",
+  "crates/tailrace-core",
+  "crates/tailrace-fakes",
+  "crates/tailrace-conformance",
+  "crates/tailrace",
+]
+
+[workspace.package]
+# The released version is the tag's, given to the flake as TAILRACE_VERSION
+# and never to the binary: a binary names the revision it was built from
+# and the build that made it (statement 24, C.11).
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive", "env"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+
+[workspace.lints.clippy]
+too_many_arguments = "allow"
+type_complexity = "allow"
+large_enum_variant = "allow"

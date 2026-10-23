@@ -1,8 +1,10 @@
 # tailrace
 
-**Designed, not built.** The design is being settled in
-[agentplot/blueprints](https://github.com/agentplot/blueprints); no code
-exists yet.
+**Designed; the scaffold is built and nothing of the design yet.** The
+design is settled in
+[agentplot/blueprints](https://github.com/agentplot/blueprints); the
+[roadmap](https://agentplot.github.io/tailrace/roadmap/) says what each
+bolt delivers.
 
 **Build once, sign everything, promote with proof, in your own account.**
 

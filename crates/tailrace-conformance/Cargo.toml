@@ -1,0 +1,20 @@
+[package]
+name = "tailrace-conformance"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The conformance suite: each scenario cites the clauses it exercises (93)."
+publish = false
+
+[dependencies]
+tailrace-seams = { path = "../tailrace-seams" }
+tailrace-core = { path = "../tailrace-core" }
+tailrace-fakes = { path = "../tailrace-fakes" }
+anyhow.workspace = true
+serde_json.workspace = true
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true

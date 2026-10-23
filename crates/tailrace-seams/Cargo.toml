@@ -1,0 +1,16 @@
+[package]
+name = "tailrace-seams"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "The eight seams of tailrace, Part B of the statement: one trait each (rule core.2)."
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true

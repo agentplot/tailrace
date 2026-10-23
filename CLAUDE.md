@@ -8,8 +8,10 @@ policy. The design is the statement of invariants in agentplot/blueprints,
 number and never restates them. The design book is at
 https://agentplot.github.io/blueprints/tailrace/.
 
-Nothing is built yet. The language is Rust, as sluice's; the first crate
-comes with the first ADR.
+The scaffold is built and nothing of the design yet (ADR 0011): five
+crates as sluice's under `crates/`, the gate, the flake and the release
+workflow. The language is Rust. Every cargo and moon command runs inside
+`devenv shell`.
 
 ## Rules
 
@@ -28,7 +30,7 @@ Run a repository tool through the shell per command,
 
 | layer | what | about |
 |---|---|---|
-| `check-fast` | the site's build, `moon run site:build` | under a minute |
+| `check-fast` | format, lint, the toolchain pins, the records' numbers, each crate's tests, the site's build: `moon run ':#check-fast'` | under a minute |
 
 ## The site
 

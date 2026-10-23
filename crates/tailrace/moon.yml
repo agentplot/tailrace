@@ -1,0 +1,11 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'rust'
+dependsOn: [seams, core, fakes, conformance]
+
+tasks:
+  test:
+    command: 'cargo test -p tailrace'
+    inputs: ['/crates/tailrace/**/*', '/crates/tailrace-seams/**/*', '/crates/tailrace-core/**/*', '/crates/tailrace-fakes/**/*', '/crates/tailrace-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock']
+    tags: [cargo-test, check-fast]
+    options: {runFromWorkspaceRoot: true}

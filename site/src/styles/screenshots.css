@@ -1,7 +1,7 @@
 /* The plugins' screenshots, a light and a dark frame each, each a link to
    itself at full size: only the one for the site's theme shows. */
-:root[data-theme='light'] .screenshot-dark,
-:root[data-theme='dark'] .screenshot-light {
+:root[data-theme="light"] .screenshot-dark,
+:root[data-theme="dark"] .screenshot-light {
   display: none;
 }
 .screenshot-light img,

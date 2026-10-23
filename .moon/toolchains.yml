@@ -4,3 +4,8 @@ $schema: 'https://moonrepo.dev/schemas/toolchains.json'
 # moon agree on it.
 proto:
   version: '0.63.1'
+
+# Rust at the version .prototools pins. Its version is part of every rust
+# task's hash, so a toolchain change never replays an older result.
+rust:
+  versionFromPrototools: true

@@ -1,0 +1,34 @@
+# tailrace's gate: sluice gates every merge into a bolt and onto main
+# (kit:gate.1) on the checks moon tags, in tailrace's devenv shell
+# (kit:gate.2). main and the bolts live on GitHub: every round fetches them
+# from origin and forms on what it holds, and a landing is a leased push as
+# the host's [forge] app (kit:gate.4). crew makes each bolt there with
+# `sluice branch create`.
+[tests]
+runner = "moon"
+toolchain = ["devenv", "print-dev-env"]
+
+# A place starts from the build of the last candidate that passed with the
+# same lock file and compiler.
+[[checkout.cache]]
+key = ["Cargo.lock", ".prototools"]
+paths = ["target"]
+
+[branches."bolt/*"]
+required = ["#check-fast"]
+parallel = 2
+batch = false
+flaky = "fail"
+timeout = "20m"
+remote = "origin"
+
+[branches.main]
+required = ["#check-fast"]
+parallel = 2
+batch = true
+flaky = "fail"
+timeout = "20m"
+remote = "origin"
+
+[branches.main.pull_requests]
+reviews = 0
