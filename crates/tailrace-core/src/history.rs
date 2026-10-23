@@ -282,3 +282,61 @@ fn peeled(mut object: Object<'_>) -> Result<Option<Oid>, git2::Error> {
         }
     }
 }
+
+impl History {
+    /// The commit the local branch `branch` names, by its full id; absent
+    /// when the repository holds no such branch.
+    pub fn head(&self, branch: &Branch) -> Answer<Revision> {
+        let what = format!("branch {branch}");
+        match self
+            .git
+            .find_branch(branch.as_str(), git2::BranchType::Local)
+        {
+            Ok(found) => found
+                .get()
+                .peel_to_commit()
+                .map(|c| Revision::new(c.id().to_string()))
+                .map_err(|e| Not::unreadable(&local(), what, words(&e))),
+            Err(e) if e.code() == ErrorCode::NotFound => Err(Not::absent(&local(), what)),
+            Err(e) => Err(Not::unreadable(&local(), what, words(&e))),
+        }
+    }
+
+    /// The commit `text` names, a full or short id, a branch, a tag or
+    /// any revision git reads, by its full id, so every act records the
+    /// revision it acted on (rule core.4); absent with git's words when it
+    /// names no commit.
+    pub fn resolve(&self, text: &str) -> Answer<Revision> {
+        let absent =
+            |e: git2::Error| Not::absent(&local(), format!("commit named {text}: {}", e.message()));
+        let object = match self.git.revparse_single(text) {
+            Ok(object) => object,
+            Err(e)
+                if matches!(
+                    e.code(),
+                    ErrorCode::NotFound | ErrorCode::Ambiguous | ErrorCode::InvalidSpec
+                ) =>
+            {
+                return Err(absent(e));
+            }
+            Err(e) => {
+                return Err(Not::unreadable(
+                    &local(),
+                    format!("the revision {text}"),
+                    words(&e),
+                ))
+            }
+        };
+        object
+            .peel_to_commit()
+            .map(|c| Revision::new(c.id().to_string()))
+            .map_err(absent)
+    }
+
+    /// The repository's common git directory, which every worktree of it
+    /// on the host shares and no push carries (62).
+    pub fn common_dir(&self) -> PathBuf {
+        let dir = self.git.commondir();
+        dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())
+    }
+}

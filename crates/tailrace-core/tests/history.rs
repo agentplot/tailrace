@@ -170,3 +170,72 @@ fn a_branch_with_no_remote_shares_no_history() {
     repo.touch("feat: one", &["a"]);
     assert_eq!(repo.history().remote(&Branch::new("main")).unwrap(), None);
 }
+
+#[test]
+fn a_short_id_and_head_resolve_to_the_full_id() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    let first = repo.commit("chore: start", &[("a", "a")]);
+    let second = repo.commit("feat: more", &[("b", "b")]);
+    repo.tag("v0.1.0", &first);
+
+    let history = repo.history();
+    assert_eq!(history.resolve(&second.as_str()[..7]).unwrap(), second);
+    assert_eq!(history.resolve("HEAD").unwrap(), second);
+    assert_eq!(history.resolve("HEAD~1").unwrap(), first);
+    assert_eq!(history.resolve("v0.1.0").unwrap(), first);
+    assert_eq!(history.resolve(second.as_str()).unwrap(), second);
+    assert_eq!(history.head(&Branch::new("main")).unwrap(), second);
+}
+
+#[test]
+fn a_name_that_is_no_commit_is_absent_with_gits_words() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a", "a")]);
+
+    let history = repo.history();
+    let Err(Not::Absent(a)) = history.resolve("no-such-thing") else {
+        panic!("a name that is no commit resolved")
+    };
+    assert_eq!(a.source.seam, Seam::History);
+    let git = git2::Repository::open(&repo.path)
+        .unwrap()
+        .revparse_single("no-such-thing")
+        .unwrap_err();
+    assert_eq!(
+        a.what,
+        format!("commit named no-such-thing: {}", git.message())
+    );
+    let tree = repo.git(&["rev-parse", "HEAD^{tree}"]);
+    assert!(matches!(history.resolve(&tree), Err(Not::Absent(_))));
+    assert!(matches!(
+        history.head(&Branch::new("elsewhere")),
+        Err(Not::Absent(a)) if a.what == "branch elsewhere"
+    ));
+}
+
+#[test]
+fn two_worktrees_of_one_repository_answer_one_common_directory() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a", "a")]);
+    let other = fixture.path("other");
+    repo.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "other",
+        other.to_str().unwrap(),
+    ]);
+
+    let here = repo.history().common_dir();
+    let there = History::open(&other).unwrap().common_dir();
+    assert_eq!(here, there);
+    assert_eq!(here, repo.path.join(".git").canonicalize().unwrap());
+
+    let elsewhere = fixture.repo("elsewhere");
+    elsewhere.commit("chore: start", &[("a", "a")]);
+    assert_ne!(elsewhere.history().common_dir(), here);
+}
