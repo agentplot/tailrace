@@ -123,8 +123,6 @@ impl<S, Op> Clone for Fake<S, Op> {
     }
 }
 
-// The fakes of each seam, which use what is crate-private here, land next.
-#[allow(dead_code)]
 impl<S, Op: Copy + PartialEq> Fake<S, Op> {
     pub(crate) fn with(seam: Seam, state: S) -> Self {
         Fake(Rc::new(RefCell::new((state, Script::new(seam)))))
