@@ -30,26 +30,34 @@ back.\
 from a laptop into a layout on disk, and a second machine verifies the
 index and every referrer from a copy of that layout.
 
-**Bolt 2 · the gate and the channels, on a registry.** The OCI registry
-store with ECR's referrer fallback, and a layout synced to it; a key
-in a key service as the signer; the gate accepting under the policy
-and `beta` following each publish; `tailrace promote` appending a
-signed claim to the chain in a git ref the gate pushes, the same claim
-attached in the store, a rollback a promotion back; `tailrace status`
-reading channels and the chain on any machine.\
-*Done when* a promotion made on one machine is read on another from the
-ledger alone, a promotion from a stale predecessor is refused naming
-the head, and a rollback is a promotion to an older version.
+**Bolt 2 · the cache, on a registry.** The OCI registry store with
+ECR's referrer fallback, and a layout synced to it; the cache namespace
+in the same store, where a cache entry is never an artifact; a step
+after a landing pushing the archives the landing's build left; `tailrace
+sync` filling moon's outputs directory on any host with the entries
+whose task hashes the landing's verdicts name, shared by every checkout
+on the host.\
+*Done when* a task that passed on one host replays from the store on
+another, and a checkout's first build of a landed revision runs nothing
+the landing already ran.
 
-**Bolt 3 · sync, serve and the cache.** Consumer layouts under a
-policy: npm rendered and served by one process per host at a fixed
-port, Cargo's local registry, moon's outputs directory filled from the
-task hashes the landing's verdicts name; the Claude Code plugin whose
-hook refuses `npm publish` and names tailrace's.\
+**Bolt 3 · the gate and the channels.** A key in a key service as the
+signer; the gate accepting under the policy and `beta` following each
+publish; `tailrace promote` appending a signed claim to the chain in a
+git ref the gate pushes, the same claim attached in the store, a
+rollback a promotion back; `tailrace status` reading channels and the
+chain on any machine.\
+*Done when* a promotion made on one machine is read on another from the
+ledger alone, a promotion from a stale predecessor is refused naming the
+head, and a rollback is a promotion to an older version.
+
+**Bolt 4 · sync and serve.** Consumer layouts under a policy: npm
+rendered and served by one process per host at a fixed port, Cargo's
+local registry; the Claude Code plugin whose hook refuses `npm publish`
+and names tailrace's.\
 *Done when* `npm install` and `cargo build` in a family repository
 resolve a package only from a version whose claims satisfy the policy,
-a version that fails it is refused with the reason, and a task that
-passed on one host replays from the store on another.
+and a version that fails it is refused with the reason.
 
 ## Phase 2 · Open to others
 
