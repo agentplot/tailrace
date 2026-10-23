@@ -1,79 +1,100 @@
 ---
 title: Roadmap
-description: The steps that build tailrace, in order, and what each one is done by.
+description: The three phases that build tailrace, what each delivers as an installed binary, and what each is done by.
 ---
 
-The statement is being written, and nothing is built. These steps build
-tailrace in the order the design pack proposes, the first crate arriving
-with the first ADR. Each is done by a check or an observation, never by a
-list ticked by hand. Nothing hosted is built until people running the
-open-source tool ask for it.
+The statement is written and ruled; nothing is built. tailrace is built
+in three phases, each a few bolts, and each bolt ends in a binary
+installed the way sluice is, `nix profile install
+github:agentplot/tailrace`, a release tarball or `cargo install`, that
+does something a person uses the same day. A phase is done by a check
+or an observation, never by a list ticked by hand. Nothing hosted is
+built until people running the open-source tool ask for it.
 
-**T1 · Write the statement.** tailrace's invariants as numbered clauses in
-agentplot/blueprints, with the operator's rulings on the questions the
-design pack leaves open: the policy language, the promotion record's
-schema, the OCI conventions, and where a local-first store keeps its
-blobs.\
-*Needs* the operator's rulings. *Done when* Vale is clean and the operator
-agrees to land it on main.
+## Phase 1 · Useful on the family's own repositories
 
-**T2 · Scaffold the crate.** The founding decisions as ADRs, with the
-rules in `docs/architecture/core.md`: a Rust binary with seams for the
-registry, the signer and the targets; `.config/tailrace.toml`; devenv,
-moon and sluice's gate.\
-*Needs* T1. *Done when* sluice protects main and the first change lands
-through it.
+**Goal.** Build once, promote forever, every day, on sluice, tailrace,
+crew and the blueprints: a landing becomes a version in a store the
+owner holds, a channel moves only by a signed promotion, and a checkout
+installs what the channel names.
 
-**T3 · Push, by digest.** `tailrace push` packages what the build left,
-signs it, and pushes it into quarantine in a file-based OCI layout on disk
-or ECR, with the provenance and sluice's verdicts as referrers and a
-machine-readable answer; `tailrace publish` as the smallest gate, copying
-the same digest into the artifacts and pointing `beta` at it.\
-*Needs* T2. *Done when* an artifact pushed from a landing on one of the
-family's own repositories verifies, with its referrers, from a second
-machine.
+**Bolt 1 · publish, on one laptop.** The crate, the gate on its own
+main, release binaries and the flake; the policy file read at the
+landed revision, units and the version rule; the store as an OCI
+layout on disk; moon as the build and sluice or a plain branch as the
+landing; a host key as the signer; `tailrace publish` offering a
+version with provenance and sluice's verdicts attached, its answer
+machine-readable; `tailrace status` and `tailrace verify` reading it
+back.\
+*Done when* a landing on one of the family's repositories is published
+from a laptop into a layout on disk, and a second machine verifies the
+index and every referrer from a copy of that layout.
 
-**T4 · The cache.** moon's remote cache backed by the cache namespace of
-the same store.\
-*Needs* T3. *Done when* a task that passed on one host replays from the
-store on another.
+**Bolt 2 · the gate and the channels, on a registry.** The OCI registry
+store with ECR's referrer fallback, and a layout synced to it; a key
+in a key service as the signer; the gate accepting under the policy
+and `beta` following each publish; `tailrace promote` appending a
+signed claim to the chain in a git ref the gate pushes, the same claim
+attached in the store, a rollback a promotion back; `tailrace status`
+reading channels and the chain on any machine.\
+*Done when* a promotion made on one machine is read on another from the
+ledger alone, a promotion from a stale predecessor is refused naming
+the head, and a rollback is a promotion to an older version.
 
-**T5 · Channels, by proof.** `beta` and `stable` from the command line;
-`tailrace promote` writes a signed record to an append-only ledger, and
-`tailrace status` reads it.\
-*Needs* T3. *Done when* a promotion made on one machine is read on
-another, and a rollback is a promotion to an older version.
+**Bolt 3 · sync, serve and the cache.** Consumer layouts under a
+policy: npm rendered and served by one process per host at a fixed
+port, Cargo's local registry, moon's outputs directory filled from the
+task hashes the landing's verdicts name; the Claude Code plugin whose
+hook refuses `npm publish` and names tailrace's.\
+*Done when* `npm install` and `cargo build` in a family repository
+resolve a package only from a version whose claims satisfy the policy,
+a version that fails it is refused with the reason, and a task that
+passed on one host replays from the store on another.
 
-**T6 · Sync and serve.** `tailrace sync` fills npm's local layout from the
-store under a policy, then the other ecosystems; `tailrace serve` answers
-npm's read protocol on localhost.\
-*Needs* T5. *Done when* `npm install` in a repository resolves a package
-only from a version whose attestations satisfy the policy, and a version
-that fails it is refused with the reason.
+## Phase 2 · Open to others
 
-**T7 · The Nix spike.** A Nix binary cache over the store, measured
-against Attic on one closure.\
-*Needs* T4. *Done when* the measurement says whether tailrace serves store
-paths itself or layers on Attic, and the statement records it.
+**Goal.** Anyone with a git repository, a registry and a key runs it,
+and every seam has the profiles the statement names.
 
-**T8 · Environments.** A target, a channel, an `auto` or `manual` policy
-and a reconciler, push or pull; Flux and Argo consuming the channel tags
-with a status hook; reconcilers of tailrace's own for CloudFormation,
-Lambda, static sites and Clan.\
-*Needs* T5. *Done when* a `stable` promotion converges a staging
-environment under `auto`, and production waits under `manual` until
-approved.
+- The remaining projections: Maven, Python, Go, NuGet, and a file and
+  an image as rendered layouts.
+- Targets that push: a package registry, a static site, a
+  CloudFormation stack or StackSet, a function; the environment that
+  waits for an approver, whose approval is a promotion.
+- Keyless signing against a public or private issuer; the verifier's
+  independent rebuild as a claim.
+- The conformance suite published, so a profile anyone writes is held
+  to Parts A and B.
+- The Nix spike: a closure over the store measured against Attic, and
+  the statement's open question answered.
+- Guides: bring your own registry, a key in a key service, the policy
+  file, each ecosystem's packager setup.
 
-**T9 · Verified releases.** The independent rebuild with the shared cache
-off, its matching digest as an attestation, and two signatures before
-`stable` moves; a reference self-hosted Sigstore.\
-*Needs* T8. *Done when* a `stable` promotion is refused without the second
-signature, and accepted with it.
+*Done when* a repository outside the family publishes, promotes and
+syncs with no change to tailrace, and its operator wrote no code.
+
+## Phase 3 · 1.0
+
+**Goal.** The formats and the command line freeze, and an environment is
+told nothing but its channel.
+
+- Targets that pull: Kubernetes through Flux or Argo with a status
+  watcher, a Nix fleet through Clan.
+- Two signatures before `stable` moves, the second an independent
+  rebuild with the shared cache off; a reference self-hosted Sigstore.
+- The herdr pane of channels and environments, and the Flywheel plugin
+  whose adapter prints a capture for each publish and each refusal.
+- A hosted backend as a keeper profile and a pool target, for a control
+  plane that keeps its own tables and fans out to many instances.
+
+*Done when* a `stable` promotion is refused without the second signature
+and accepted with it, and converges a production environment that
+waited for a person.
 
 ## After tailrace
 
-The formats and the command line freeze at 1.0. A hosted trust plane, a
+The formats and the command line stay frozen. Anything hosted, a
 private certificate authority tied to the user's identity provider, a
-transparency log, promotion policy and countersigning, comes only when
-people running the open-source tool ask for it, and holds none of their
-artifacts and none of their ledger.
+transparency log, countersigning, comes only when people running the
+open-source tool ask for it, and holds none of their artifacts and none
+of their ledger.
