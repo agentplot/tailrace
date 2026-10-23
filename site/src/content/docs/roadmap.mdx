@@ -4,8 +4,8 @@ description: The three phases that build tailrace, what each delivers as an inst
 ---
 
 The statement is written and ruled; nothing is built. tailrace is built
-in three phases, each a few bolts, and each bolt ends in a binary
-installed the way sluice is, `nix profile install
+in three phases, each a few bolts, and each bolt after the first ends in
+a binary installed the way sluice is, `nix profile install
 github:agentplot/tailrace`, a release tarball or `cargo install`, that
 does something a person uses the same day. A phase is done by a check
 or an observation, never by a list ticked by hand. Nothing hosted is
@@ -18,19 +18,25 @@ crew and the blueprints: a landing becomes a version in a store the
 owner holds, a channel moves only by a signed promotion, and a checkout
 installs what the channel names.
 
-**Bolt 1 · publish, on one laptop.** The crate, the gate on its own
-main, release binaries and the flake; the policy file read at the
-landed revision, components and the version rule; the store as an OCI
-layout on disk; moon as the build and sluice or a plain branch as the
-landing; a host key as the signer; `tailrace publish` offering a
-version with provenance and sluice's verdicts attached, its answer
-machine-readable; `tailrace status` and `tailrace verify` reading it
-back.\
+**Bolt 1 · the core.** Every seam's trait and the types they pass, the
+in-memory fakes, the conformance suite with each scenario citing its
+clauses; the policy file read at the landed revision, components and
+the version rule; claims and envelopes; `tailrace publish`, `status`
+and `verify` running end to end over the fakes. Built by one agent in
+sequence, so every later bolt codes against it.\
+*Done when* the conformance suite passes over the fakes and a publish
+runs against an in-memory store in the tests.
+
+**Bolt 2 · publish, on one laptop.** The store as an OCI layout on
+disk; moon as the build and sluice or a plain branch as the landing; a
+host key as the signer; the host's bindings beside the landing's; a
+version offered with provenance and sluice's verdicts attached, its
+answer machine-readable.\
 *Done when* a landing on one of the family's repositories is published
 from a laptop into a layout on disk, and a second machine verifies the
 index and every referrer from a copy of that layout.
 
-**Bolt 2 · the cache, on a registry.** The OCI registry store with
+**Bolt 3 · the cache, on a registry.** The OCI registry store with
 ECR's referrer fallback, and a layout synced to it; the cache namespace
 in the same store, where a cache entry is never an artifact; a step
 after a landing pushing the archives the landing's build left; `tailrace
@@ -41,7 +47,7 @@ on the host.\
 another, and a checkout's first build of a landed revision runs nothing
 the landing already ran.
 
-**Bolt 3 · the gate and the channels.** A key in a key service as the
+**Bolt 4 · the gate and the channels.** A key in a key service as the
 signer; the gate accepting under the policy and `beta` following each
 publish; `tailrace promote` appending a signed claim to the chain in a
 git ref the gate pushes, the same claim attached in the store, a
@@ -51,7 +57,7 @@ chain on any machine.\
 ledger alone, a promotion from a stale predecessor is refused naming the
 head, and a rollback is a promotion to an older version.
 
-**Bolt 4 · sync and serve.** Consumer layouts under a policy: npm
+**Bolt 5 · sync and serve.** Consumer layouts under a policy: npm
 rendered and served by one process per host at a fixed port, Cargo's
 local registry; the Claude Code plugin whose hook refuses `npm publish`
 and names tailrace's.\
