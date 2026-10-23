@@ -33,4 +33,4 @@ added. Nothing under `crates/tailrace-core/src/` names `cargo`, `moon`,
 ## 6. The gate
 
 - [ ] 6.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, every crate's tests and the site's build.
-- [ ] 6.2 Verify by hand that `nix build` of the flake's default package still builds with libgit2 compiled from source, since no check-fast task builds the flake (design, Risks).
+- [x] 6.2 Verify by hand that `nix build` of the flake's default package still builds with libgit2 compiled from source, since no check-fast task builds the flake (design, Risks).
