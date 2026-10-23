@@ -23,6 +23,11 @@ whose clients read no files. The same outputs and the same version pack
 to the same bytes, or the projection says it cannot promise so (87). A
 layout holds only versions whose verdict under its policy is satisfied.
 
+pack is the ecosystem's own packager run against outputs the build left,
+with the version handed over the way that packager takes it, and never
+an archive opened and edited (C.11). A compiled binary carries the
+revision and the build identity, never the version (24).
+
 ## Members
 
 | ecosystem | pack | render | serve | status |
