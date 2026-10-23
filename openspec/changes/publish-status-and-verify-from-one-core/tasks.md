@@ -17,7 +17,7 @@ comments.
 
 ## 2. What publish reads before it offers
 
-- [ ] 2.1 In `crates/tailrace-core/src/declared.rs` read `projections` per component and at top level, and give `Component::projection_of` (design D3). Verify with tests in `crates/tailrace-core/tests/declared.rs`: a component's outputs read with their ecosystems; the one component's projections read from the top level; a projection naming an undeclared output unreadable naming it; the earlier unit's tests still pass.
+- [x] 2.1 In `crates/tailrace-core/src/declared.rs` read `projections` per component and at top level, and give `Component::projection_of` (design D3). Verify with tests in `crates/tailrace-core/tests/declared.rs`: a component's outputs read with their ecosystems; the one component's projections read from the top level; a projection naming an undeclared output unreadable naming it; the earlier unit's tests still pass.
 - [ ] 2.2 In `crates/tailrace-core/src/history.rs` add `head(&Branch)`, the commit the local branch names, `resolve(&str)`, a revision text to its commit id with git's words when it names none, and `common_dir()` (design D9 to D11). Verify with tests in `crates/tailrace-core/tests/history.rs`: a short id and `HEAD` resolve to the full id; a name that is no commit is absent with git's words; two worktrees of one repository answer one common directory.
 
 ## 3. Publish

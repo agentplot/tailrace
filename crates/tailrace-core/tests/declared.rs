@@ -215,3 +215,87 @@ fn a_component_missing_a_key_is_unreadable_with_the_parsers_words() {
     let said = u.said.unwrap();
     assert!(said.contains("missing field `prefix`"), "{said}");
 }
+
+#[test]
+fn a_components_outputs_are_read_with_their_ecosystems() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    let policy = TWO
+        .replace(
+            "prefix = \"lib-v\"\n",
+            "prefix = \"lib-v\"\nprojections = { lib-pack = \"eco-a\" }\n",
+        )
+        .replace(
+            "prefix = \"web-v\"\n",
+            "prefix = \"web-v\"\n[component.projections]\nsite = \"file\"\ncli = { ecosystem = \"eco-b\", later = \"a later reader's\" }\n",
+        );
+    repo.commit("chore: policy", &[(POLICY_FILE, &policy)]);
+    let declared = read(&repo).unwrap();
+    let of = |c: &str, o: &str| {
+        declared
+            .projection_of(&ComponentName::new(c), &OutputName::new(o))
+            .map(|e| e.as_str().to_string())
+    };
+    assert_eq!(of("lib", "lib-pack").as_deref(), Some("eco-a"));
+    assert_eq!(of("web", "site").as_deref(), Some("file"));
+    assert_eq!(of("web", "cli").as_deref(), Some("eco-b"));
+    assert_eq!(of("lib", "site"), None);
+    assert_eq!(of("other", "lib-pack"), None);
+    assert_eq!(declared.projections[&ComponentName::new("web")].len(), 2);
+}
+
+#[test]
+fn the_one_components_projections_are_read_from_the_top_level() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit(
+        "chore: policy",
+        &[(
+            POLICY_FILE,
+            "outputs = [\"site\", \"cli\"]\n[projections]\nsite = \"file\"\n",
+        )],
+    );
+    let declared = read(&repo).unwrap();
+    let one = ComponentName::new("repository");
+    assert_eq!(
+        declared
+            .projection_of(&one, &OutputName::new("site"))
+            .map(|e| e.as_str()),
+        Some("file")
+    );
+    assert_eq!(declared.projection_of(&one, &OutputName::new("cli")), None);
+}
+
+#[test]
+fn a_projection_naming_an_undeclared_output_is_unreadable_naming_it() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    let policy = TWO.replace(
+        "prefix = \"lib-v\"\n",
+        "prefix = \"lib-v\"\nprojections = { site = \"file\" }\n",
+    );
+    let rev = repo.commit("chore: policy", &[(POLICY_FILE, &policy)]);
+    let Err(Not::Unreadable(u)) = read(&repo) else {
+        panic!("a projection for an output lib does not declare was read")
+    };
+    assert_eq!(u.what, format!("{POLICY_FILE} at {rev}"));
+    let said = u.said.unwrap();
+    assert!(
+        said.contains("component lib: projections names site"),
+        "{said}"
+    );
+
+    let one = Fixture::new();
+    let repo = one.repo("repo");
+    repo.commit(
+        "chore: policy",
+        &[(
+            POLICY_FILE,
+            "outputs = [\"site\"]\n[projections]\ncli = \"file\"\n",
+        )],
+    );
+    let Err(Not::Unreadable(u)) = read(&repo) else {
+        panic!("a projection for an output the repository does not declare was read")
+    };
+    assert!(u.said.unwrap().contains("projections names cli"));
+}
