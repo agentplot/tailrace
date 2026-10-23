@@ -30,4 +30,4 @@ entry is added.
 
 ## 5. The gate
 
-- [ ] 5.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, every crate's tests and the site's build.
+- [x] 5.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, every crate's tests and the site's build.
