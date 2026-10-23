@@ -33,7 +33,7 @@ comments.
 ## 5. Verify
 
 - [x] 5.1 Write `crates/tailrace-core/src/verify.rs`: `VerifyAsk`, `Verified`, `Told` and `verify` as design D10 orders it. Verify with tests in `crates/tailrace-core/tests/verify.rs`, one per scenario of spec attestation-verification, each over a version published by `publish` in the test: the index digest and every artifact named; a version never published absent; the policy asked once for acceptance at the tag's revision after the landing; no policy for the audience absent; provenance by the host's signer and carried verdicts by the landing's; an expired signer marked expired and still counting where in reach; a verdict from a signer the policy does not name kept, not counted, with the signers checked, and still attached (S5); a signer beyond its reach not counting; a changed attestation from no named signer; claims-of unreadable carrying `connection refused` verbatim; and no put, attach, name or sign recorded and the record unchanged.
-- [ ] 5.2 Rewrite `crates/tailrace-core/src/lib.rs`'s doc comment to list the new modules and the clauses each keeps, and re-export them. Verify `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace-core/src` finds nothing (core.1).
+- [x] 5.2 Rewrite `crates/tailrace-core/src/lib.rs`'s doc comment to list the new modules and the clauses each keeps, and re-export them. Verify `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace-core/src` finds nothing (core.1).
 
 ## 6. The command line
 
