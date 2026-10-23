@@ -36,6 +36,7 @@ macro_rules! text {
 
 pub mod answer;
 pub mod artifact;
+pub mod bind;
 pub mod build;
 pub mod claim;
 pub mod digest;
@@ -49,6 +50,7 @@ pub mod target;
 
 pub use answer::*;
 pub use artifact::*;
+pub use bind::*;
 pub use build::*;
 pub use claim::*;
 pub use digest::*;
