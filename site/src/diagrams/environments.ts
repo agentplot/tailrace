@@ -41,7 +41,7 @@ const style = `
 
 const title = 'tailrace: a channel moves and its environments converge';
 const desc =
-  'The stable channel moves from 1.4.1 to 1.4.2 by a signed promotion, recorded in the ledger. Three environments follow stable. A static site moves on its own: a push reconciler syncs the bundle, and it reports running 1.4.2. A CloudFormation stack waits: it shows the promotion and runs 1.4.1 until an approver says so. A Kubernetes cluster pulls: Flux watches the channel tag, verifies the gate’s signature and applies it, and a watcher reports 1.4.2. Each reports what it runs beside what it should run, and where the two differ the status says so.';
+  'The stable channel moves from 1.4.1 to 1.4.2 by a signed promotion, recorded in the ledger. Three environments follow stable. A static site moves on its own: a push reconciler syncs the bundle, and it reports running 1.4.2. A CloudFormation stack waits: it follows its own channel prod, bound to stable, and runs 1.4.1 until an approver promotes prod. A Kubernetes cluster pulls: Flux watches the channel tag, verifies the gate’s signature and applies it, and a watcher reports 1.4.2. Each reports what it runs beside what it should run, and where the two differ the status says so.';
 
 const env = (
   o: string[],
@@ -89,7 +89,7 @@ function wide(): string {
 
   env(o, 520, 58, 360, 'static site · moves on its own', 'push: the bundle is synced by digest', 'converged when the head moved', 'runs 1.4.2', true);
   o.push(text(880, 82, 'xs m', 'auto', 'end'));
-  env(o, 520, 130, 360, 'CloudFormation stack · waits', 'push: one stack operation, once approved', 'the promotion shown; nothing applied yet', 'runs 1.4.1 · behind', false, true);
+  env(o, 520, 130, 360, 'CloudFormation stack · waits', 'follows prod, bound to stable', 'the promotion shown; prod not yet promoted', 'runs 1.4.1 · behind', false, true);
   o.push(text(880, 154, 'xs m', 'manual', 'end'));
   env(o, 520, 202, 360, 'Kubernetes · pulls', 'Flux watches the tag, verifies the gate’s signature', 'a watcher reports what runs', 'runs 1.4.2', true);
   o.push(text(880, 226, 'xs m', 'pull', 'end'));
@@ -119,7 +119,7 @@ function tall(): string {
 
   env(o, 20, 202, 320, 'static site · moves on its own', 'push: the bundle is synced by digest', 'converged when the head moved', 'runs 1.4.2', true);
   o.push(path('M180,298 V311') + head(180, 318, 'd'));
-  env(o, 20, 318, 320, 'CloudFormation stack · waits', 'push: one stack operation, once approved', 'the promotion shown; nothing applied yet', 'runs 1.4.1 · behind', false, true);
+  env(o, 20, 318, 320, 'CloudFormation stack · waits', 'follows prod, bound to stable', 'the promotion shown; prod not yet promoted', 'runs 1.4.1 · behind', false, true);
   o.push(path('M180,414 V427', 'pull') + head(180, 434, 'd'));
   env(o, 20, 434, 320, 'Kubernetes · pulls', 'Flux verifies the gate’s signature, applies', 'a watcher reports what runs', 'runs 1.4.2', true);
   o.push(text(20, 548, 'xs m', 'each follows a channel; each reports what it runs.'));

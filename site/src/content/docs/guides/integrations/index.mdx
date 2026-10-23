@@ -1,6 +1,6 @@
 ---
 title: Integrations
-description: The seven kinds of thing tailrace binds, the seam of the statement each one binds, and the members designed for each.
+description: The eight kinds of thing tailrace binds, the seam of the statement each one binds, and the members designed for each.
 sidebar:
   order: 0
 ---
@@ -18,13 +18,15 @@ below is designed, and each page says what its seam asks of it.
 | [builds](/tailrace/guides/integrations/builds/) | B.2, the build: ensure an output, report its identity | moon, a declared command |
 | [landings](/tailrace/guides/integrations/landings/) | B.3, the landing: has a branch landed a revision, and with what verdicts | sluice, a plain git branch |
 | [signers](/tailrace/guides/integrations/signers/) | B.4, the signer: sign a claim as the party running tailrace, verify who signed | a key in AWS KMS, a host key, keyless with Sigstore |
-| [projections](/tailrace/guides/integrations/projections/) | B.6, a projection: pack an output into an ecosystem's bytes, render a layout, serve it | npm, Maven, Python, Go, Cargo, NuGet, a file, an image |
+| [keepers](/tailrace/guides/integrations/keepers/) | B.8, the keeper: append a promotion after its predecessor, answer a channel's chain | a git ref the gate pushes, the store where it retains claims |
+| [projections](/tailrace/guides/integrations/projections/) | B.6, a projection: pack an output into an ecosystem's bytes, render a layout, serve it | npm, Maven, Python, Go, Cargo, NuGet, a file, an image, moon's cache |
 | [targets](/tailrace/guides/integrations/targets/) | B.7, a target: what an environment wants, what it runs, converge it, report | a package registry such as CodeArtifact or npmjs, a static site, a CloudFormation stack, a function, Kubernetes via Flux or Argo, a Nix fleet via Clan, a Nix binary cache such as Attic |
 | [surfaces](/tailrace/guides/integrations/surfaces/) | A.10, askers and surfaces: one core, every answer the same, readable by a program | the command line, Claude Code, herdr, Flywheel through millpond |
 
 The repository's authors bind the build, the projections and the targets
-in the repository; the operator binds the store, the signers and the
-landing for a host. Any number of projections and targets are bound at
-once; exactly one store is written by a publish, and exactly one landing
-is read (92). One conformance suite holds every profile to Parts A and
+in the repository; the operator binds the store, the signers, the
+landing and the keeper for a host, in one file beside the landing's own
+(92, 118). Any number of projections and targets are bound at once;
+exactly one store is written by a publish, exactly one landing is read,
+and exactly one keeper is appended to (92). One conformance suite holds every profile to Parts A and
 B, and a profile that fails it is not one (93).

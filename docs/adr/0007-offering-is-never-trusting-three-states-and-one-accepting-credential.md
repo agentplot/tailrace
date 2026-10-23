@@ -29,5 +29,4 @@ Option 3. The statement fixes the three states and the one accepting party (25, 
 ### Consequences
 
 - No host that builds holds the accepting credential (27, core.14); the gate runs in the owner's trusted place.
-- Whether a solo user may run both on one host, with one person's two credentials, is open on the book's open page.
-- The ledger's source of truth where the store has no append-only primitive is an open question (101); the lean is git, with a referrer per promotion as the projection (39).
+- Whether a solo user may run both on one host, and where the ledger is the truth, were open here and are settled by ADR 0009.

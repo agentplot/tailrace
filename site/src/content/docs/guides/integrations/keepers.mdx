@@ -1,0 +1,45 @@
+---
+title: Keepers
+description: The keeper seam, which holds the ledger, and the git ref and the store designed to fill it.
+sidebar:
+  order: 5
+---
+
+The ledger is a chain per channel: every promotion is a claim the gate
+signs that names the digest of the promotion it follows, so the chain is
+ordered and tamper-evident wherever it is held (105). The keeper is
+where it is held. The gate alone appends, so a person who promotes from
+a terminal or a phone asks the gate, and the gate writes wherever the
+keeper the operator bound says; nobody's device commits anything. The
+same claims are attached in the store to the versions they move to, and
+where the store disagrees with the keeper, the gate rewrites the store
+from the keeper (106).
+
+## The contract
+
+The seam is two operations (120, 121). **append** takes a promotion
+claim and the digest of the promotion it names as its predecessor, and
+holds the claim at the head of its channel's chain, or refuses it naming
+the claim at the head. **chain** takes a channel and answers every
+promotion claim of it in order from the first, or that none is held. A
+keeper never removes or reorders a claim, and answers the same chain to
+every reader for as long as it holds it (122). Two claims that name one
+predecessor are a fork, which the gate reports and never resolves by
+choosing.
+
+## Members
+
+| member | profile | how | status |
+|---|---|---|---|
+| a git ref | C.13 | one ref per channel in the repository, `refs/tailrace/ledger/<channel>`, each commit holding one promotion claim; append is a push that fast-forwards, and a push the remote refuses is a predecessor that is not the head; the gate's own identity pushes | designed, the default |
+| the store | C.14 | the chain as the promotion claims attached to the versions they move to, walked by predecessor from the channel's tag; for a store the operator can trust to retain untagged claims, which a registry whose retention rules expire them by age is not | designed |
+
+A hosted backend binds its own append-only log as its keeper; the chain
+is the same bytes, so a ledger moves between keepers by copying claims.
+
+## Adding one
+
+A keeper profile implements the one keeper interface and nothing of the
+core, and is bound for a host by the operator (92). It passes the one
+conformance suite, which holds it to Parts A and B; a profile that fails
+the suite is not one (93).

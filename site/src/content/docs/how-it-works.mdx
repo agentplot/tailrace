@@ -62,10 +62,13 @@ move, for anyone who wants to read the evidence.
 A channel such as `beta` or `stable` is a mutable pointer, an OCI tag, to
 a version. A landing on `main` makes a version and attaches it to `beta`;
 `tailrace promote <version> --to stable` moves `stable` to it. Every
-promotion is an append-only signed record: the version and its digest, the
-channel, who or what promoted it, when, and the policy evidence. The
-ledger is the audit trail, and a rollback is a promotion to an older
-version. The direction for `stable` is an independent rebuild by a builder
+promotion is a signed record that names the one before it: the version
+and its digest, the channel, who or what promoted it, when, and the
+policy evidence. The chain is the ledger, ordered and tamper-evident
+wherever it is held; a keeper holds it, a git ref the gate pushes by
+default, and the same records sit in the registry beside the versions
+they moved. The ledger is the audit trail, and a rollback is a promotion
+to an older version. The direction for `stable` is an independent rebuild by a builder
 the first one does not control, with the shared cache off, whose matching
 digest is one more attestation, and two signatures before `stable` moves.
 
@@ -91,10 +94,11 @@ else, so a channel that moves is the whole of a deploy's cause.
 <Figure wide={environmentsSvg('wide')} tall={environmentsSvg('tall')} />
 
 **Auto or manual.** An environment that moves on its own converges as
-soon as its channel's head moves. One that waits shows the promotion and
-converges only after an approver says so; the approval is recorded with
-the promotion it answers, so the ledger says who let production move and
-when.
+soon as its channel's head moves. One that waits follows a channel of
+its own, bound to the one it waits on: `prod` follows `prod`, which
+takes versions only from `stable`, and a person's yes is the promotion
+of `prod`. Every approval is a promotion, so the ledger says who let
+production move and when.
 
 **Push or pull.** Whether an environment is pushed to or pulls is the
 target's own, and the ledger, the channel and the policy are the same

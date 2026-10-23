@@ -2,7 +2,7 @@
 title: Projections
 description: The projection seam, and the ecosystems designed to be projected out of the store.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 A projection is how one ecosystem's bytes come out of the store and into
@@ -35,6 +35,7 @@ layout holds only versions whose verdict under its policy is satisfied.
 | NuGet | the package file | a folder feed in the v3 layout | not needed | designed |
 | a file | any file, with a declared media type | a directory | not needed | designed |
 | an image | an image as pushed | the OCI layout itself | the layout served as a registry | designed |
+| moon's cache | a task's output archive, by task hash | moon's outputs directory, one archive per hash, shared by every checkout on the host and rendered from the task hashes the landing's verdicts name | not needed: moon reads the directory before any remote | designed |
 
 ## Adding one
 

@@ -43,11 +43,14 @@ part exists.
 - **[core.29]** A reconciler verifies the claims it is told to require before any apply, and no apply path skips the verify.
 - **[core.15]** A promotion is written to the ledger before the channel is read as moved, and nothing deletes or rewrites a ledger entry.
 - **[core.16]** A channel moves only from the version it is at, and an environment is never handed a version except through its channel.
+- **[core.34]** A promotion is appended to its channel's chain only after the claim it names as predecessor is the chain's head, and two claims naming one predecessor are reported as a fork, never chosen between.
+- **[core.35]** No code path converges an environment that waits except by a promotion of the channel it follows; there is no approval that is not a promotion.
 
 ### Consumers
 
 - **[core.17]** A consumer layout holds only versions whose verdict under its policy is satisfied, and a refused version is reported naming the claim found wanting.
 - **[core.18]** An address a client records names no host and no one owner's store.
+- **[core.36]** One serving process answers a host, at one fixed name and port with the repository in the path, and no checkout starts one of its own.
 
 ### Answers and records
 
@@ -72,7 +75,7 @@ part exists.
 
 ## Details
 
-- **core.1** Rules out: the strings `oci`, `ecr`, `ghcr`, `oras`, `cosign`, `moon`, `sluice`, `kms`, `npm`, `maven`, `cargo`, `flux`, `gh` in any source module outside a profile directory or a plugin directory; an import of a profile from the core. Not ruled out: `git`, which section 9 of the statement fixes; the in-toto and DSSE forms, the givens' default for every attestation; `.moon/` and the other configuration of this repository's own checks, which are no module; a plugin, which is a surface outside the core and names the ecosystem command it refuses. Source: statement preamble, clause 92; ADRs 0002, 0003, 0005.
+- **core.1** Rules out: the strings `oci`, `ecr`, `ghcr`, `oras`, `cosign`, `moon`, `sluice`, `kms`, `npm`, `maven`, `cargo`, `flux`, `gh` in any source module outside a profile directory or a plugin directory; an import of a profile from the core. Not ruled out: `git`, which section 9 of the statement fixes, except in the ledger's code, which reaches its keeper through the keeper seam (B.8) and names no git; the in-toto and DSSE forms, the givens' default for every attestation; `.moon/` and the other configuration of this repository's own checks, which are no module; a plugin, which is a surface outside the core and names the ecosystem command it refuses. Source: statement preamble, clause 92; ADRs 0002, 0003, 0005.
 - **core.2** Rules out: a profile calling another profile; a core function with a profile-specific branch; a projection that reaches the store other than through the store seam. Source: clauses 92, 93; ADR 0002.
 - **core.3** Rules out: a seam whose only profile is undocumented as such. Source: ADR 0008.
 - **core.4** Rules out: reading a tag, a version or a channel and acting on what it names without resolving it; a record of an act that names a tag and no digest; a channel head read to decide what to deploy without the digest beside it. Source: clauses 3, 40; ADR 0003.
@@ -85,11 +88,14 @@ part exists.
 - **core.11** Rules out: publishing a session's head, a candidate under test or a worktree's tree; checking the landing after artifacts are offered. Source: clause 14; ADR 0004.
 - **core.12** Rules out: offering an artifact while another output's build is still running or has failed; offering the index before every artifact it names is held. Source: clauses 16, 17; ADR 0004.
 - **core.13** Rules out: a version a publisher passes on the command line that the rule did not derive; packing before the name is claimed; a build task given the version in its environment. Not ruled out: a prerelease derived from a branch's name under the authors' rule. Source: clauses 21, 22, 24; ADR 0004.
-- **core.14** Rules out: a publish path that also accepts; a host configuration holding the accepting credential beside the offering one; acceptance by anything that is not the gate. A solo user's two credentials on one host is forbidden as the statement stands, and a ruling that admits it amends 27 and 96 before this rule changes. Source: clauses 25, 27, 96; ADR 0007.
+- **core.14** Rules out: a publish path that also accepts; a host configuration holding the accepting credential beside the offering one; acceptance by anything that is not the gate. Not ruled out: the one host a policy names as both offerer and gate for a repository with one publisher (108), whose acceptance claim says it accepted what it offered. Source: clauses 25, 27, 96, 108; ADRs 0007, 0009.
 - **core.15** Rules out: moving a tag and writing the ledger after; a ledger entry edited, compacted or pruned; a rollback that removes the entry it undoes. Source: clauses 33, 34; ADR 0007.
 - **core.16** Rules out: a promotion without the expected starting version; a reconciler given a version to apply rather than a channel to follow. Source: clauses 35, 40; ADR 0007.
+- **core.34** Rules out: an append that does not read the chain's head first; a keeper that resolves a fork by timestamp or by order of arrival; a promotion claim with no predecessor digest but the first of its channel. Source: clauses 105, 106, 120 to 122; ADR 0009.
+- **core.35** Rules out: an approval claim a reconciler checks for apart from its channel's head; an environment configured to wait that follows a channel it does not own. Source: clauses 41, 97; ADR 0009.
 - **core.17** Rules out: a layout rendered with no policy; a version left in a layout after its policy refuses it; a refusal swallowed into an absent version. Source: clauses 47, 51; ADR 0006.
 - **core.18** Rules out: a served registry whose name differs per host; a layout path that embeds a registry host or an account; a lockfile written with a class's or an owner's host in it. Source: clause 49; ADR 0006.
+- **core.36** Rules out: a port chosen at start and written into a client's configuration; a server started by a worktree's agent; two servers on one host for two checkouts of one repository. Source: clauses 114, 115; ADR 0006, interview 1.
 - **core.19** Rules out: an empty list for a failed read; a 404 treated like a refusal; a refusal rewritten in tailrace's words alone; `unknown` as a verdict. Source: clauses 58, 59.
 - **core.20** Rules out: state held only in a running process; a record only a server reads; a layout treated as a source of truth; a record that cannot be rebuilt and is not the version claim. Source: clauses 61 to 63.
 - **core.21** Rules out: a token written into a client's configuration by tailrace; a credential cached in tailrace's own state; a reconciler that holds a target's credential outside the environment. Not ruled out: a client's own credential helper the ecosystem provides. Source: clauses 45, 64.
