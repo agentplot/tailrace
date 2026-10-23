@@ -5,3 +5,7 @@
 //! trait here, which a profile implements and nothing of the core (rule
 //! core.2). Nothing is bound yet: bolt 1's units add each trait with the
 //! profile that first implements it.
+
+pub mod digest;
+
+pub use digest::*;
