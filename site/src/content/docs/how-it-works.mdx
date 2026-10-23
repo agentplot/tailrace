@@ -23,6 +23,14 @@ Its answer is machine-readable: the digest, the version and each
 attestation's reference, so another system can take it as its input.
 Neither sluice nor moon knows tailrace exists.
 
+What takes a version is a unit: the outputs the repository's authors
+declare to version together, the paths whose changes version them and
+the prefix their tags carry. A repository that declares none is one
+unit. A landing that touches one unit's paths alone gives that unit a
+version and the others none, so a library, a service image and an
+infrastructure template in one repository keep their own tag series,
+and a channel belongs to one unit.
+
 ## Attestations hang off the digest
 
 Everything tailrace knows about an artifact is a signed statement attached
