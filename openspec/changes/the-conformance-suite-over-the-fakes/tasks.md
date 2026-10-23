@@ -3,13 +3,15 @@
 Every cargo and moon command runs as `devenv shell -- <command>`. This
 change builds on `the-seams-and-their-fakes`,
 `a-landed-revision-takes-its-version` and
-`publish-status-and-verify-from-one-core` as they land. Before starting,
-read the seams (`answer.rs`, `artifact.rs`, `claim.rs`, `bind.rs` and
-the eight trait modules), the fakes and their scripting, and the core's
-`landed.rs`, `history.rs`, `declared.rs`, `version.rs`, `publish.rs`,
-`verify.rs`, `status.rs` and `published.rs`, with the core's test
-fixture. Where the names that landed differ from the design's, take the
-landed names. This change adds a binary to an existing crate and no
+`publish-status-and-verify-from-one-core` as they stand. Before
+starting, read the seams (`answer.rs`, `artifact.rs`, `claim.rs`,
+`bind.rs` and the eight trait modules), the fakes and their scripting
+(`script.rs` and each fake's own methods), the core's `landed.rs`,
+`history.rs`, `declared.rs`, `version.rs`, `publish.rs`, `verify.rs`,
+`status.rs` and `published.rs`, the core's test world and fixture
+(`crates/tailrace-core/tests/world/mod.rs`, `tests/common/mod.rs`), and
+the binary's `src/lib.rs` and `tests/cli.rs`. Where a name differs from
+the design's, take the name as it stands. This change adds a binary to an existing crate and no
 crate, language or file type. Its one new check is a moon task of the
 conformance project (core.25). No trait, fake or core function is
 changed. A scenario that cannot be written against what landed is a
@@ -25,7 +27,7 @@ word core.1 lists, in code, strings or comments.
 ## 2. The seams' groups over the fakes
 
 - [ ] 2.1 Write `src/seams/store.rs`, `build.rs`, `landing.rs` and `signer.rs`, each with its rig trait (design D3), its scenarios with the citations of design D5, and its marker as the last line of its list. Write their fake rigs in `src/fakes.rs`. Write `tests/fakes.rs` with one `#[test]` per group, running the group over its fake rig with `run(..).assert()`. Verify `cargo test -p tailrace-conformance --test fakes` passes every scenario of spec conformance-suite under: The store's contract; The build's contract; The landing's contract; The signer's contract; A source that cannot be reached is unreadable on every seam.
-- [ ] 2.2 Write `src/seams/policy.rs`, `projection.rs`, `target.rs` and `keeper.rs` the same way, with their fake rigs and tests. The target rig's `verified` gets a `Verified` the way the seams let a caller make one; if none can without a core function bolt 1 lacks, stop and say so with `crew needs` (design D5). Verify `cargo test -p tailrace-conformance --test fakes` passes every scenario of spec conformance-suite under: The policy's contract; A projection's contract; A target's contract; The keeper's contract.
+- [ ] 2.2 Write `src/seams/policy.rs`, `projection.rs`, `target.rs` and `keeper.rs` the same way, with their fake rigs and tests. The target rig's `verified` makes the seams' `Verified` with `Verified::new`, as the core does after its verify (design D5). Verify `cargo test -p tailrace-conformance --test fakes` passes every scenario of spec conformance-suite under: The policy's contract; A projection's contract; A target's contract; The keeper's contract.
 - [ ] 2.3 Write `src/seams/binding.rs` with its two scenarios, and `tests/broken.rs` with a wrapper over the fake store that always answers "not held already" and a fake store scripted to hold other bytes under a digest (design D9). Verify with `cargo test -p tailrace-conformance --test broken`: each broken store fails the store group, and the report's text names the profile given for the test, the store, the failing scenarios, their clauses (1, 5 and 66 for the bytes put twice) and the store's answer, in the same form as any profile's report. Verify the binding group passes in `tests/fakes.rs` (spec: The binding; A failing profile is reported the same way, a fake included).
 
 ## 3. The core's groups over the fakes

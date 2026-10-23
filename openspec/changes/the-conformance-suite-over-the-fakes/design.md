@@ -2,17 +2,28 @@
 
 ## Context
 
-Three units land before this one in bolt 1, and this one builds on them
-as they land. `the-seams-and-their-fakes` gives the eight traits, the
+Three units come before this one in bolt 1, and their code is built on
+their branches. `the-seams-and-their-fakes` gives the eight traits, the
 four answers (`Answer<T>`, whose `Not` keeps absent, refused and
-unreadable apart), the `Seams` binding and a fake per seam that records
-every call and can be scripted to fault (its D1, D6 to D8).
-`a-landed-revision-takes-its-version` gives `Landed`, `History`,
-`Declared`, `derive`, `touched` and `claim` (its D2 to D6).
-`publish-status-and-verify-from-one-core` gives `publish`, `verify`,
-`status`, `Kept`, `answer_json`, and `tailrace::run` for the command
-line (its D1, D8 to D11). Where the names that landed differ from the
-ones below, the coder takes the landed names and keeps the behaviour.
+unreadable apart, each naming its `Source`), the `Seams` binding, and
+in `tailrace-fakes` a `Fake` per seam over one `Script`: every clone a
+view of the same state, `calls()` listing every operation in order, and
+`fault(op, Fault::Refused | Unreadable(words), Times::Once |
+UntilHealed)` and `heal(op)`. `Fakes` keeps a handle on each and binds
+clones with `seams()`. Each fake's own scripting is what the rigs use:
+`FakeStore::corrupt`, `FakeBuild::made`, `FakeLanding::land` and
+`verdict`, `FakeSigner::hold` and `expire`, `FakePolicy::require_at`,
+`FakeProjection::named` and `unsteady`, `FakeTarget::head`, `runs` and
+`unreadable`, `FakeKeeper::fork`. `a-landed-revision-takes-its-version`
+gives `Landed::check`, `History::open`, `Declared::read`, `derive`,
+`touched` and `claim`, with the policy file (`POLICY_FILE`) declaring
+each `[[component]]` by `name`, `outputs`, `paths`, `prefix` and
+`projections`. `publish-status-and-verify-from-one-core` gives
+`publish(seams, history, kept, ask)`, `verify(seams, history, ask)`,
+`status(kept, ask)`, `Kept::at(history)`, `answer_json`, and
+`tailrace::run(cli, Option<&Binding>, at, out)` with `Binding { seams,
+signer }` for the command line. Where a name moves before this unit is
+built, the coder takes the name as it stands and keeps the behaviour.
 
 `tailrace-conformance` is the scaffold's crate: a doc comment, a moon
 project with one `test` task tagged `check-fast`, depending on the
@@ -20,8 +31,8 @@ seams, the core, the fakes, `anyhow` and `serde_json`. The `tailrace`
 crate already takes it as a dev-dependency, and its moon project
 already depends on it.
 
-The rule is core.33 as record 0012 amends it (proposed, on the user's
-card): a clause no scenario cites is named in the register with the
+The rule is core.33 as record 0012 amends it, accepted by the user on
+2026-10-23: a clause no scenario cites is named in the register with the
 unit that will cite it and why, and leaves the register with the
 commit that cites it. Section 12 (blueprints 5b00e15) says the same.
 The register's form is this unit's (record 0012, More information).
@@ -116,8 +127,11 @@ rig extends `Rig { fn profile(&self) -> String; }`. In outline:
 
 The rig that a profile's tests write is the profile's to make; this
 unit writes the rigs over the fakes in `src/fakes.rs`, each a `Fakes`
-with scripting behind the setup methods. `unreachable()` over a fake
-scripts the fault until healed, with the words `connection refused`.
+with the fake's own scripting behind the setup methods (Context).
+`unreachable()` over a fake faults every operation of the seam with
+`Fault::Unreadable("connection refused")` and `Times::UntilHealed`.
+`Rig::profile()` over a fake is `fake`, the profile the fakes' `Source`
+names.
 
 The runner:
 
@@ -143,16 +157,20 @@ The core's groups (version, publish, verify, status) are about the
 core, not a profile, and many of them script faults no real profile can
 be told to make. So they take a concrete `FakeWorld` (in
 `src/world.rs`), not a rig trait, as sluice's fault scenarios take its
-`Harness`:
+`Harness`. The core's own tests have such a world (`tests/world/mod.rs`
+over `tests/common/mod.rs`), which another crate cannot import; this
+one is written after it, in the conformance crate's `src/`:
 
 - `Fakes` bound as `Seams`, with two projections (ecosystems `file` and
-  `image`), one target and one signer whose identity is the host's;
+  `image`), one target and one signer holding the host's identity;
 - a git fixture (`src/fixture.rs`): a temporary directory (`tempfile`)
   holding a bare repository standing for the shared history and a
-  clone, made with the git command under a fixed author, committer and
-  date so revisions are the same every run; `commit(files, message)`,
-  `tag`, `clone_again()` for a second publisher, and
-  `policy_file(text)`, which commits `.config/tailrace.toml`;
+  clone, made with the git command as the core's fixture runs it (no
+  global or system configuration, a fixed author and committer), and a
+  fixed author and committer date as well, so revisions are the same
+  every run; `commit(files, message)`, `tag`, `clone_again()` for a
+  second publisher, and `policy_file(text)`, which commits
+  `POLICY_FILE`;
 - `History` and `Kept` opened over the clone;
 - `land(revision, verdicts)`, which tells the fake landing the branch
   holds the revision and scripts its verdicts, and `outputs(revision,
@@ -162,9 +180,9 @@ be told to make. So they take a concrete `FakeWorld` (in
   `build_calls()`.
 
 The two-component fixture for S15 is `FakeWorld::two_components()`: a
-policy file declaring `lib` over `lib/**` with prefix `lib-v` and `app`
-over `app/**` with prefix `app-v`, each with one output, and a first
-release tag on each.
+policy file declaring two `[[component]]`s, `lib` over `lib/**` with
+prefix `lib-v` and `app` over `app/**` with prefix `app-v`, each with
+one output and its projection, and a first release tag on each.
 
 The world is fixed and deterministic, so the surfaces group (D6) can
 ask the same question of a surface and of the core and compare.
@@ -251,11 +269,13 @@ gate refuses or accepts, so S5's "nothing moves" is checked as no name
 moved but the version's own and no keeper append. S13's "refuses" is
 checked as verify finding no verdict claim that counts.
 
-The target group's "converged and reported" needs a `Verified`, which
-the seams say only the core makes. The rig gets one the way the seams
-let a caller make one. If only a core function can make one and bolt 1
-has none, the scenario is reported with `crew needs` rather than given
-a back door.
+The target group's "converged and reported" hands the target a
+`Verified` (the seams' type, not the core's verify answer of the same
+name). The seams make it with the public `Verified::new(index,
+version)`, for the core to call after its verify; a profile is handed
+one and never makes one. The rig's `verified` calls it as the core
+would, since the suite stands in the core's place here, and no profile
+code makes one.
 
 ### D6. The surfaces group runs over the command line
 
@@ -272,9 +292,12 @@ question through the surface and of the core (`answer_json` of
 asked through the surface first, then of the core. The core's answer is
 then a repeat, which the publish design makes equal to the first. Verify
 and status write nothing, so the order does not matter.
-`crates/tailrace/tests/conformance.rs` implements `Surface` with
-`tailrace::run` over the world's seams and repository, parses the
-printed JSON, and runs the group. The conformance crate does not depend
+`crates/tailrace/tests/conformance.rs` implements `Surface` as the
+binary's own `tests/cli.rs` asks the command line: the arguments with
+`--json` through `Cli::try_parse_from`, then
+`tailrace::run(&cli, Some(&Binding { seams: world.fakes.seams(), signer
+}), clone, &mut out)`, then parses the printed JSON, and runs the
+group. The conformance crate does not depend
 on the binary's crate, so there is no cycle.
 
 ### D7. The clauses and the register are Rust constants
