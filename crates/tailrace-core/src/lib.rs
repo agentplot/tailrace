@@ -8,7 +8,9 @@
 pub mod declared;
 pub mod history;
 pub mod landed;
+pub mod version;
 
 pub use declared::*;
 pub use history::*;
 pub use landed::*;
+pub use version::*;

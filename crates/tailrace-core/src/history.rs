@@ -77,6 +77,13 @@ impl History {
             .map_err(|e| Not::unreadable(&local(), format!("the revision {revision}"), words(&e)))
     }
 
+    /// The landed revision by its full git id, as tags name revisions.
+    pub fn revision(&self, landed: &Landed) -> Answer<Revision> {
+        Ok(Revision::new(
+            self.commit(landed.revision())?.id().to_string(),
+        ))
+    }
+
     /// The file at `path` in the landed revision's tree, never the working
     /// tree's (65); absent when the tree holds nothing there.
     pub fn blob(&self, landed: &Landed, path: &str) -> Answer<Vec<u8>> {
