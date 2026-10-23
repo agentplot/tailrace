@@ -9,10 +9,14 @@ pub mod declared;
 pub mod history;
 pub mod landed;
 pub mod provenance;
+pub mod publish;
+pub mod published;
 pub mod version;
 
 pub use declared::*;
 pub use history::*;
 pub use landed::*;
 pub use provenance::*;
+pub use publish::*;
+pub use published::*;
 pub use version::*;
