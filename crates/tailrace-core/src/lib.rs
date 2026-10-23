@@ -5,6 +5,12 @@
 //! trait of `tailrace_seams`. Empty until bolt 1's units bring the policy,
 //! the version rule and publish.
 
+pub mod declared;
+pub mod history;
+pub mod landed;
 pub mod provenance;
 
+pub use declared::*;
+pub use history::*;
+pub use landed::*;
 pub use provenance::*;
