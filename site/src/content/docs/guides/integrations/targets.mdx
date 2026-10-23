@@ -29,7 +29,7 @@ never handed a version except through its channel.
 |---|---|---|
 | a package registry: CodeArtifact, npmjs, PyPI, Maven Central | push: publish the version's projection with the target's own credential; current is what the registry lists | designed |
 | a static site: a bucket behind a distribution | push: sync the version's bundle; current is a marker the sync writes | designed |
-| a CloudFormation stack | push: one stack operation on the version's template with the environment's parameters; current is the stack's recorded version | designed |
+| a CloudFormation stack or StackSet | push: one stack operation on the version's template with the environment's parameters, which a StackSet carries to every stack instance it holds, a list kept outside tailrace; current is the stack's or the StackSet's recorded version | designed |
 | a function | push: point the function at the version's image by digest | designed |
 | Kubernetes, via Flux or Argo | pull: the channel's tag, verified by Flux or Argo against the gate's signature; current reported by a watcher | designed |
 | a Nix fleet, via Clan | pull: each machine verifies and applies the release assigned to it, realising store paths from the cache | designed |
