@@ -34,7 +34,7 @@ part exists.
 - **[core.11]** A publish refuses a revision the landing seam has not landed, before anything is read or offered.
 - **[core.12]** Every declared output's outcome is read before any artifact is offered, and the index is offered last.
 - **[core.13]** The version's name is derived from history by the authors' rule and claimed in the shared history before any artifact is packed, and no build is handed a version.
-- **[core.37]** A version is derived for one declared unit over the commits that touch its paths and the tags that carry its prefix, and no code path derives a version, claims a name or moves a channel without naming the unit.
+- **[core.37]** A version is derived for one declared component over the commits that touch its paths and the tags that carry its prefix, and no code path derives a version, claims a name or moves a channel without naming the component.
 
 ### Acceptance and channels
 
@@ -89,7 +89,7 @@ part exists.
 - **core.11** Rules out: publishing a session's head, a candidate under test or a worktree's tree; checking the landing after artifacts are offered. Source: clause 14; ADR 0004.
 - **core.12** Rules out: offering an artifact while another output's build is still running or has failed; offering the index before every artifact it names is held. Source: clauses 16, 17; ADR 0004.
 - **core.13** Rules out: a version a publisher passes on the command line that the rule did not derive; packing before the name is claimed; a build task given the version in its environment. Not ruled out: a prerelease derived from a branch's name under the authors' rule. Source: clauses 21, 22, 24; ADR 0004.
-- **core.37** Rules out: a version computed from the whole tree in a repository that declares units; a tag pushed without the unit's prefix; a channel that names versions of two units; a publish of one unit that re-versions another. Not ruled out: two units naming one path. Source: clauses 22, 110, 123 to 125; ADR 0010.
+- **core.37** Rules out: a version computed from the whole tree in a repository that declares components; a tag pushed without the component's prefix; a channel that names versions of two components; a publish of one component that re-versions another. Not ruled out: two components naming one path. Source: clauses 22, 110, 123 to 125; ADR 0010.
 - **core.14** Rules out: a publish path that also accepts; a host configuration holding the accepting credential beside the offering one; acceptance by anything that is not the gate. Not ruled out: the one host a policy names as both offerer and gate for a repository with one publisher (108), whose acceptance claim says it accepted what it offered. Source: clauses 25, 27, 96, 108; ADRs 0007, 0009.
 - **core.15** Rules out: moving a tag and writing the ledger after; a ledger entry edited, compacted or pruned; a rollback that removes the entry it undoes. Source: clauses 33, 34; ADR 0007.
 - **core.16** Rules out: a promotion without the expected starting version; a reconciler given a version to apply rather than a channel to follow. Source: clauses 35, 40; ADR 0007.
