@@ -217,10 +217,10 @@ pub struct NamedSigner {
 
 #[cfg(test)]
 mod tests {
-    use serde::de::DeserializeOwned;
     use serde_json::json;
 
     use super::*;
+    use crate::round_trip;
 
     fn claim(build: Option<&str>) -> Claim {
         Claim {
@@ -241,11 +241,6 @@ mod tests {
                 sig: vec![1, 2, 3],
             },
         }
-    }
-
-    fn round_trip<T: Serialize + DeserializeOwned + PartialEq + fmt::Debug>(value: T) {
-        let json = serde_json::to_string(&value).unwrap();
-        assert_eq!(serde_json::from_str::<T>(&json).unwrap(), value, "{json}");
     }
 
     #[test]
