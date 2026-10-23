@@ -5,6 +5,8 @@
 //! trait of `tailrace_seams`. Empty until bolt 1's units bring the policy,
 //! the version rule and publish.
 
+pub mod history;
 pub mod landed;
 
+pub use history::*;
 pub use landed::*;
