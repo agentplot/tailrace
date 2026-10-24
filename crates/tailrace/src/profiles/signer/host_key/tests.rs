@@ -7,9 +7,11 @@ use std::path::{Path, PathBuf};
 
 use serde_json::json;
 use ssh_key::rand_core::OsRng;
-use ssh_key::{Algorithm, LineEnding, PrivateKey, SshSig};
+use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey, SshSig};
+use tailrace_fakes::FakeSigner;
 use tailrace_seams::{
-    Answer, Claim, ClaimKind, Digest, Envelope, Not, Revision, Seam, Signer, SignerId, Why, IN_TOTO,
+    Answer, Claim, ClaimKind, Digest, Envelope, Made, NamedSigner, Not, Revision, Seam, Signature,
+    Signer, SignerId, Why, IN_TOTO,
 };
 use tempfile::TempDir;
 
@@ -347,4 +349,245 @@ fn the_profile_is_its_signer_and_its_path_alone() {
     let HostKey { signer, key } = bound;
     assert_eq!(signer, SignerId::new("host"));
     assert_eq!(key, path);
+}
+
+/// `id` as a policy lists it, verified by `key`'s public half and, where
+/// given, valid before `before`, for every kind of claim.
+fn listing(id: &str, key: &PrivateKey, before: Option<&str>) -> NamedSigner {
+    let public = key.public_key().to_openssh().unwrap();
+    NamedSigner {
+        id: SignerId::new(id),
+        verified_by: match before {
+            Some(time) => format!("valid-before=\"{time}\" {public} {id}@a-host"),
+            None => format!("{public} {id}@a-host"),
+        },
+        kinds: vec![ClaimKind::Provenance, ClaimKind::Verdict],
+        checks: vec![],
+    }
+}
+
+/// A host's envelope, signed with a key in a directory of its own.
+fn signed_by(key: &PrivateKey) -> Envelope {
+    let dir = TempDir::new().unwrap();
+    sign(&host(&written(dir.path(), "host", key))).unwrap()
+}
+
+/// A profile with no key file, as a machine that only verifies has.
+fn verifier() -> HostKey {
+    HostKey::new(SignerId::new("a verifier"), "/no/key/file/here")
+}
+
+fn made(id: &str, expired: bool) -> Answer<Made> {
+    Ok(Made {
+        signer: SignerId::new(id),
+        expired,
+    })
+}
+
+/// The words of a refusal that none of `checked` made the envelope.
+fn none_of(answer: Answer<Made>, checked: &[&str]) -> String {
+    match answer {
+        Err(Not::Refused(r)) => {
+            assert_eq!(r.source, HostKey::source());
+            assert_eq!(
+                r.why,
+                Why::NoNamedSigner {
+                    checked: checked.iter().map(|id| SignerId::new(*id)).collect()
+                }
+            );
+            r.said.expect("the refusal says why")
+        }
+        other => panic!("answered {other:?}, not refused naming the signers checked"),
+    }
+}
+
+#[test]
+fn verified_with_no_key_file_names_the_host() {
+    let dir = TempDir::new().unwrap();
+    let key = new_key();
+    let path = written(dir.path(), "host", &key);
+    let envelope = sign(&host(&path)).unwrap();
+    fs::remove_file(&path).unwrap();
+    let signers = [listing("host", &key, None)];
+    assert_eq!(host(&path).verify(&envelope, &signers), made("host", false));
+    assert_eq!(verifier().verify(&envelope, &signers), made("host", false));
+}
+
+#[test]
+fn the_name_the_envelope_gives_itself_decides_nothing() {
+    let (key, other) = (new_key(), new_key());
+    let mut envelope = signed_by(&key);
+    envelope.signature.signer = SignerId::new("gate");
+    let signers = [listing("gate", &other, None), listing("host", &key, None)];
+    assert_eq!(verifier().verify(&envelope, &signers), made("host", false));
+}
+
+#[test]
+fn an_envelope_changed_after_signing_is_refused() {
+    let key = new_key();
+    let envelope = signed_by(&key);
+    let signers = [listing("host", &key, None)];
+    let payload = Envelope {
+        payload: Claim {
+            subject: Digest::of(b"another index"),
+            ..claim()
+        }
+        .payload(),
+        ..envelope.clone()
+    };
+    let payload_type = Envelope {
+        payload_type: "application/json".into(),
+        ..envelope.clone()
+    };
+    let fingerprint = key.public_key().fingerprint(HashAlg::Sha256).to_string();
+    for changed in [payload, payload_type] {
+        let said = none_of(verifier().verify(&changed, &signers), &["host"]);
+        assert!(said.contains(&fingerprint), "{said}");
+    }
+    assert_eq!(verifier().verify(&envelope, &signers), made("host", false));
+}
+
+#[test]
+fn another_profiles_envelope_is_refused_never_unreadable() {
+    let fake = FakeSigner::new();
+    fake.hold(&SignerId::new("host"));
+    let envelope = fake.sign(&claim(), &SignerId::new("host")).unwrap();
+    let signers = [listing("host", &new_key(), None)];
+    let said = none_of(verifier().verify(&envelope, &signers), &["host"]);
+    assert_eq!(said, "the signature is not an SSH signature");
+    let binary = Envelope {
+        signature: Signature {
+            signer: SignerId::new("host"),
+            sig: vec![0xff, 0xfe, 0x00],
+        },
+        ..envelope
+    };
+    let said = none_of(verifier().verify(&binary, &signers), &["host"]);
+    assert_eq!(said, "the signature is not an SSH signature");
+}
+
+#[test]
+fn a_signature_in_another_namespace_is_refused_naming_it() {
+    let key = new_key();
+    let payload = claim().payload();
+    let sig = key
+        .sign("git", HashAlg::Sha512, &pae(IN_TOTO, &payload))
+        .unwrap()
+        .to_pem(LineEnding::LF)
+        .unwrap();
+    let envelope = Envelope {
+        payload_type: IN_TOTO.into(),
+        payload,
+        signature: Signature {
+            signer: SignerId::new("host"),
+            sig: sig.into_bytes(),
+        },
+    };
+    let said = none_of(
+        verifier().verify(&envelope, &[listing("host", &key, None)]),
+        &["host"],
+    );
+    assert_eq!(
+        said,
+        "the signature was made in the namespace git, not tailrace-claim"
+    );
+}
+
+#[test]
+fn a_signer_verified_by_a_keys_name_is_passed_over_and_checked() {
+    let key = new_key();
+    let by_name = NamedSigner {
+        id: SignerId::new("landing"),
+        verified_by: "a key's name".into(),
+        kinds: vec![ClaimKind::Verdict],
+        checks: vec![],
+    };
+    let signers = [by_name.clone(), listing("host", &key, None)];
+    assert_eq!(
+        verifier().verify(&signed_by(&key), &signers),
+        made("host", false)
+    );
+    none_of(
+        verifier().verify(&signed_by(&new_key()), &signers),
+        &["landing", "host"],
+    );
+}
+
+#[test]
+fn a_listing_past_its_valid_before_is_told_as_expired() {
+    let key = new_key();
+    let envelope = signed_by(&key);
+    let signers = [listing("host", &key, Some("20000101Z"))];
+    assert_eq!(verifier().verify(&envelope, &signers), made("host", true));
+}
+
+/// The date `days` after 1970-01-01, as `YYYYMMDD`.
+fn date(days: i64) -> String {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let of_era = z - era * 146_097;
+    let year_of_era = (of_era - of_era / 1_460 + of_era / 36_524 - of_era / 146_096) / 365;
+    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted = (5 * of_year + 2) / 153;
+    let day = of_year - (153 * shifted + 2) / 5 + 1;
+    let month = if shifted < 10 {
+        shifted + 3
+    } else {
+        shifted - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!("{year:04}{month:02}{day:02}")
+}
+
+#[test]
+fn a_listing_still_standing_is_not_expired() {
+    assert_eq!(date(0), "19700101");
+    assert_eq!(date(10_957), "20000101");
+    assert_eq!(date(19_782), "20240229");
+    let ahead = format!("{}Z", date(now() / 86_400 + 365));
+    let key = new_key();
+    let signers = [listing("host", &key, Some(&ahead))];
+    assert_eq!(
+        verifier().verify(&signed_by(&key), &signers),
+        made("host", false)
+    );
+}
+
+#[test]
+fn a_listing_that_cannot_be_read_makes_verify_unreadable_naming_its_signer() {
+    let key = new_key();
+    let envelope = signed_by(&key);
+    for (verified_by, words) in [
+        (
+            "ssh-ed25519 notakey".to_string(),
+            ssh_key::PublicKey::from_openssh("ssh-ed25519 notakey")
+                .unwrap_err()
+                .to_string(),
+        ),
+        (
+            format!(
+                "valid-before=\"20991231\" {}",
+                key.public_key().to_openssh().unwrap()
+            ),
+            "the valid-before time 20991231 must end in Z, so every host reads it in UTC".into(),
+        ),
+    ] {
+        let signers = [
+            listing("host", &key, None),
+            NamedSigner {
+                id: SignerId::new("gate"),
+                verified_by,
+                kinds: vec![ClaimKind::Acceptance],
+                checks: vec![],
+            },
+        ];
+        match verifier().verify(&envelope, &signers) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source, HostKey::source());
+                assert_eq!(u.what, "the key the policy lists for the signer gate");
+                assert_eq!(u.said.as_deref(), Some(words.as_str()));
+            }
+            other => panic!("answered {other:?}, not unreadable"),
+        }
+    }
 }

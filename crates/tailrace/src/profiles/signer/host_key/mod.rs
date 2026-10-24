@@ -14,15 +14,14 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey};
+use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey, SshSig};
 use tailrace_seams::{
     Answer, Claim, Envelope, Made, NamedSigner, Not, Seam, Signature, Signer, SignerId, Source,
     Why, IN_TOTO,
 };
 
-// Read by verify, which design D7 writes next.
-#[allow(dead_code)]
 mod listed;
 #[cfg(test)]
 mod tests;
@@ -175,8 +174,65 @@ impl Signer for HostKey {
         })
     }
 
-    fn verify(&self, _attestation: &Envelope, _signers: &[NamedSigner]) -> Answer<Made> {
-        unimplemented!("verify by the listed key, design D7")
+    /// 80: the first of `signers`, in order, whose listed key made a
+    /// valid signature in tailrace's namespace over exactly this envelope,
+    /// expired once its listing's `valid-before` has passed (81). No key
+    /// file is read and nothing is reached, and the name the envelope gives
+    /// its signer decides nothing (rule core.7). A signature this profile
+    /// cannot read is refused, never unreadable, so the core asks the next
+    /// signer bound (design D7).
+    fn verify(&self, attestation: &Envelope, signers: &[NamedSigner]) -> Answer<Made> {
+        let source = HostKey::source();
+        let mut keys = Vec::new();
+        for named in signers {
+            if let Some(key) = listed::read(named)? {
+                keys.push((named, key));
+            }
+        }
+        let refused = |said: String| {
+            Not::refused(
+                &source,
+                Why::NoNamedSigner {
+                    checked: signers.iter().map(|n| n.id.clone()).collect(),
+                },
+                Some(said),
+            )
+        };
+        let sig = std::str::from_utf8(&attestation.signature.sig)
+            .ok()
+            .and_then(|pem| SshSig::from_pem(pem).ok())
+            .ok_or_else(|| refused("the signature is not an SSH signature".into()))?;
+        if sig.namespace() != NAMESPACE {
+            return Err(refused(format!(
+                "the signature was made in the namespace {}, not {NAMESPACE}",
+                sig.namespace()
+            )));
+        }
+        let signed = pae(&attestation.payload_type, &attestation.payload);
+        let made = keys.iter().find(|(_, listed)| {
+            listed.key.key_data() == sig.public_key()
+                && listed.key.verify(NAMESPACE, &signed, &sig).is_ok()
+        });
+        match made {
+            Some((named, listed)) => Ok(Made {
+                signer: named.id.clone(),
+                expired: listed.valid_before.is_some_and(|before| now() >= before),
+            }),
+            None => Err(refused(format!(
+                "signed by the key {}, which the envelope names {}; no signer checked \
+                 lists that key with a signature over this envelope",
+                sig.public_key().fingerprint(HashAlg::Sha256),
+                attestation.signature.signer
+            ))),
+        }
+    }
+}
+
+/// Seconds since the epoch, now.
+fn now() -> i64 {
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(after) => i64::try_from(after.as_secs()).unwrap_or(i64::MAX),
+        Err(before) => -i64::try_from(before.duration().as_secs()).unwrap_or(i64::MAX),
     }
 }
 
