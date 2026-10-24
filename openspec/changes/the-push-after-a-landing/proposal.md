@@ -61,11 +61,15 @@ state (63, S12).
 
 Out of scope, and what each waits on:
 
-- Cache entries in an OCI registry, and so the replay from ECR the
-  bolt's goal names: the registry store's name refuses a digest that
-  holds bytes rather than a manifest (`moons-cache-namespace`, named for
-  the design agent). The push writes to any store that can name bytes,
-  and is proven over the fakes and the OCI layout.
+- Proving the push against a registry, and so the replay from ECR the
+  bolt's goal names: the push needs nothing of its own there. A
+  registry names a cache entry through a manifest of tailrace's
+  cache-entry type, whose one layer is the entry's bytes, and a tag at
+  that manifest resolves to the layer's digest, so `cache/<build
+  identity>` is at the bytes' digest on a registry as on a layout (C.1,
+  ADR 0014). `the-registry-store` builds that manifest and proves it
+  against zot and ECR; this unit proves the push over the fakes and the
+  OCI layout.
 - Wiring a driver to run the push after every landing in a given
   repository (a watcher of sluice's log, a forge's push event, a plan's
   step): the host operator's, outside tailrace (ADR 0005).

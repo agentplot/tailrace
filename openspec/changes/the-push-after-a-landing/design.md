@@ -293,10 +293,12 @@ scratch directory, as `laptop.rs` keeps its host.
 - [The policy file at the asked revision no longer declares a component
   it once did] → That component's versions are not rebuilt; asking a
   rebuild at an older landed revision reaches them.
-- [Cache entries on a registry] → Unchanged from `moons-cache-namespace`:
-  the registry store cannot name bytes yet, so the push is proven on the
-  layout; on a registry, every write answers that refusal per build
-  identity.
+- [Cache entries on a registry] → The registry profile names each
+  entry through its cache manifest, and resolve answers the layer's
+  digest (C.1, ADR 0014, `the-registry-store` D14), so the push's
+  answers are the same there as on the layout. The push is proven on
+  the fakes and the layout; the cache manifest is proven against zot and
+  ECR by `the-registry-store`.
 
 ## Open Questions
 
