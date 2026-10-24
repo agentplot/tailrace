@@ -10,9 +10,11 @@ tasks:
     tags: [cargo-test, check-fast]
     options: {runFromWorkspaceRoot: true}
   # The profiles' tests that run moon, sluice and ssh-keygen against
-  # scratch repositories, behind the `tools` feature: the tools layer.
+  # scratch repositories, and the registry store's against a zot and a
+  # reference distribution each started for the test, behind the `tools`
+  # feature: the tools layer.
   tools:
-    command: 'cargo test -p tailrace --features tools --test build_moon --test landing_sluice --test landings_end_to_end --test laptop'
+    command: 'cargo test -p tailrace --features tools --test build_moon --test landing_sluice --test landings_end_to_end --test laptop --test registry_store'
     inputs: ['/crates/tailrace/**/*', '/crates/tailrace-seams/**/*', '/crates/tailrace-core/**/*', '/crates/tailrace-fakes/**/*', '/crates/tailrace-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools']
     tags: [check-tools]
     options: {runFromWorkspaceRoot: true}
