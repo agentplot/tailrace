@@ -1,10 +1,11 @@
 //! Spec registry-store, its run against ECR: the conformance suite's
-//! store group over the repository the host names in
-//! `env.TAILRACE_TOOLS_ECR` of its `devenv.local.nix`, reached with the
-//! host's Docker credentials, ECR's helper among them, every name the
-//! group passes prefixed by the run so no run's names meet an earlier
-//! one's (design D12). It fails naming the setting on a host that names
-//! no repository, rather than pass without running.
+//! store group and the cache manifest's scenarios over the repository the
+//! host names in `env.TAILRACE_TOOLS_ECR` of its `devenv.local.nix`,
+//! reached with the host's Docker credentials, ECR's helper among them,
+//! every name they pass prefixed by the run so no run's names meet an
+//! earlier one's (design D12, D14). It refuses to run, naming the
+//! setting, on a host that names no repository, rather than pass without
+//! running.
 
 #![cfg(feature = "tools")]
 
@@ -14,7 +15,7 @@ use std::cell::{Cell, RefCell};
 use std::net::TcpListener;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use registry::free_port;
+use registry::{cache_entries, free_port};
 use tailrace::profiles::store::registry::Registry;
 use tailrace_conformance::seams::store::{self, StoreRig};
 use tailrace_conformance::{run, Rig};
@@ -123,14 +124,19 @@ impl StoreRig for EcrRig {
     }
 }
 
-#[test]
-fn ecr_keeps_the_stores_contract() {
-    let repository = repository();
+/// A prefix no earlier run's names carry.
+fn run_prefix() -> String {
     let started = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("a clock after 1970")
         .as_secs();
-    let run_prefix = format!("run{started}-{}", std::process::id());
+    format!("run{started}-{}", std::process::id())
+}
+
+#[test]
+fn ecr_keeps_the_stores_contract() {
+    let repository = repository();
+    let run_prefix = run_prefix();
     let scenario = Cell::new(0);
     let report = run(store::GROUP, &store::scenarios(), &|| {
         scenario.set(scenario.get() + 1);
@@ -145,4 +151,13 @@ fn ecr_keeps_the_stores_contract() {
     );
     assert_eq!(report.ran, store::scenarios().len());
     assert_eq!(report.not_applicable, [], "{report}");
+}
+
+#[test]
+fn ecr_names_a_cache_entry_through_a_cache_manifest() {
+    let repository = repository();
+    cache_entries(&Prefixed {
+        registry: Registry::new(&repository).expect("the repository the host names"),
+        prefix: format!("{}-cache-", run_prefix()),
+    });
 }
