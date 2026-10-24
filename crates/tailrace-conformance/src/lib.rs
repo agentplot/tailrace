@@ -73,6 +73,7 @@ pub mod fakes;
 pub mod fixture;
 pub mod scenario;
 pub mod seams;
+pub mod statement;
 pub mod world;
 
 pub use scenario::*;
