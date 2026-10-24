@@ -53,4 +53,4 @@ word core.1 lists, in code, strings or comments.
 
 ## 6. The gate
 
-- [ ] 6.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, every crate's tests, the conformance project's `coverage` task, and the site's build. Verify the gate's output shows the coverage task's pending lines on this passing run (spec: Coverage is a check of the gate; A registered clause is reported as pending on every run).
+- [x] 6.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, every crate's tests, the conformance project's `coverage` task, and the site's build. Verify the gate's output shows the coverage task's pending lines on this passing run (spec: Coverage is a check of the gate; A registered clause is reported as pending on every run).
