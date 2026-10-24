@@ -4,6 +4,7 @@
 
 pub mod file;
 pub mod image;
+pub mod moon_cache;
 
 use std::collections::BTreeMap;
 use std::fs;
