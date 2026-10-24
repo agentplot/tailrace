@@ -33,7 +33,6 @@ const REBUILD: &str = "phase 2 · the verifier's rebuild";
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 103, unit: REGISTRY, why: "A version copied to another store carries its attestations, and bolt 1 has one store in memory." },
     Pending { clause: 109, unit: REGISTRY, why: "A name moved where the store cannot move it by expected digest needs a store that cannot." },
     Pending { clause: 52, unit: CACHE, why: "Cache entries are written and read by the cache, which bolt 1 does not build." },
     Pending { clause: 53, unit: CACHE, why: "A cache entry is never an artifact, and bolt 1 has no cache entry." },
