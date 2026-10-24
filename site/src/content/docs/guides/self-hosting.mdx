@@ -47,6 +47,85 @@ promotes, and `tailrace sync` fills the laptop's own npm cache, Cargo
 registry or Python index from the store. The layout syncs to a registry
 later, or never.
 
+## The host's bindings
+
+The operator's bindings for a host are one file,
+`~/.config/tailrace/config.toml`, or under `$XDG_CONFIG_HOME` where it
+is set, beside sluice's own `config.toml` and in the same form, readable
+with any file reader (118). It names the store, the landing and the
+signer the host binds, and nothing the repository binds (92):
+
+```toml
+[store]
+layout = "~/.local/share/tailrace/layout"   # C.2
+
+[landing]
+sluice = { remote = "origin" }   # C.5; or: branch = { remote = "origin" }, C.6
+                                 # remote optional; without one, local refs
+
+[signing]                         # sluice's own table, C.8
+signer = "laptop"
+key = "~/.config/tailrace/signing"
+```
+
+- Each seam's table names its profile by its one key; a table naming
+  none or two is refused, naming it. A path is absolute or begins `~/`.
+- `tailrace publish` and `tailrace verify` read it. With no file they
+  answer absent, naming the file's path; a file that is not well formed
+  is unreadable in the parser's own words. `tailrace status` reads no
+  bindings file and answers from the host's record.
+- Only publish makes the layout, the first time, where the path is
+  missing or an empty directory; verify never makes or writes one.
+- A machine that only verifies names no `[signing]`: it verifies by the
+  keys the policy lists and signs nothing, so a copy of the layout and a
+  clone of the repository are all it needs.
+- The build and the projections are the repository's to bind, not the
+  host's: moon is the build, and the policy file names each output's task
+  and the projection that packs it. A `[build]`, `[projections]` or
+  `[ledger]` table is refused, naming it; the ledger is bound by a later
+  bolt.
+
+## The policy's signers and audiences
+
+The policy file names each signer with the key that verifies it and what
+it may claim, and the claims each audience requires, in the order a
+verdict reads them (82, 83, 116, C.10):
+
+```toml
+[signers.laptop]
+ssh = "ssh-ed25519 AAAA… host@laptop"
+kinds = ["provenance"]
+
+[signers.box]
+ssh = "ssh-ed25519 BBBB…"
+kinds = ["verdict"]
+checks = ["cli:test", "core:test"]       # by the landing's names (116)
+
+[signers.gate]
+ssh = "ssh-ed25519 CCCC…"
+kinds = ["acceptance"]
+
+[acceptance]
+require = [
+  { kind = "provenance", signers = ["laptop"] },
+  { kind = "verdict", check = "cli:test", signers = ["box"] },
+]
+
+[layout]
+require = [{ kind = "provenance", signers = ["laptop"] }]
+
+[channels.stable]
+bound_to = "beta"
+require = [{ kind = "acceptance", signers = ["gate"] }]
+```
+
+A signer's one key besides `kinds` and `checks` is what its signer
+profile verifies it by: for a host key, its public key as ssh-keygen
+lists one. `require` names its signers by their `[signers]` names, and a
+name `[signers]` does not hold is refused, naming it; only a channel
+names `bound_to`. The policy is read at the landed revision, never from
+a checkout (65).
+
 ## A team
 
 A team needs a registry its hosts share, a signer bound to each host's

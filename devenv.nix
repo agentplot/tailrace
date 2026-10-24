@@ -42,6 +42,42 @@ let
       '';
     };
 
+  # sluice's own release build, for the tools layer's tests of the sluice
+  # landing (crates/tailrace/tests/landing_sluice.rs): the version tailrace
+  # reads the records of. Linux takes the build's dynamic loader and
+  # libraries from nixpkgs. On a system sluice releases nothing for,
+  # sluice is not in the shell, and those tests fail at their first step
+  # naming it.
+  sluice =
+    let
+      version = "0.37.0";
+      system = pkgs.stdenv.hostPlatform.system;
+      hashes = {
+        aarch64-darwin = "bd34de2c1768c45143da4349899dab6a9e19e3dac1f8eca022f6f2fec6b60fb1";
+        aarch64-linux = "663c2e87d8bcc9027d53713e609b8813cff8258baff48ca04aed11f8abb8bdeb";
+        x86_64-linux = "d137876bea447e04f6d83527fa7bfd060ecb35856a357a48d6d8032c36cc7848";
+      };
+    in
+    if hashes ? ${system} then
+      pkgs.stdenv.mkDerivation {
+        pname = "sluice";
+        inherit version;
+        src = pkgs.fetchurl {
+          url = "https://github.com/agentplot/sluice/releases/download/v${version}/sluice-${system}.tar.gz";
+          sha256 = hashes.${system};
+        };
+        sourceRoot = ".";
+        nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.autoPatchelfHook ];
+        buildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.stdenv.cc.cc.lib ];
+        installPhase = ''
+          runHook preInstall
+          install -Dm755 -t $out/bin sluice
+          runHook postInstall
+        '';
+      }
+    else
+      null;
+
   # The application toolchain .prototools pins, on PATH. proto's home is
   # this repository's, in the git common dir so every worktree shares it,
   # and only this repository's pins are read (no global .prototools).
@@ -61,7 +97,7 @@ let
     text = ''
       cd "$(git rev-parse --show-toplevel)"
       ${activate}
-      cargo clippy --workspace --all-targets -- -D warnings
+      cargo clippy --workspace --all-targets --all-features -- -D warnings
     '';
   };
 
@@ -89,15 +125,48 @@ in
     # Chromium its screenshots are taken in (site/scripts/shots.mjs).
     pkgs.bun
     pkgs.playwright-test
-  ];
+    pkgs.sccache
+    # The tools layer: ssh-keygen signs the run records its tests stage as
+    # sluice's signers sign them.
+    pkgs.openssh
+  ]
+  ++ lib.optional (sluice != null) sluice;
 
   env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
+
+  # The tools layer's tests run the pinned sluice and ssh-keygen by these
+  # paths: in a moon task, moon's Rust toolchain puts cargo's own bin
+  # first on PATH, where a sluice built from source may be. Empty where
+  # sluice releases nothing for the system, and the tests say so.
+  env.TAILRACE_TOOLS_SLUICE = lib.optionalString (sluice != null) "${sluice}/bin/sluice";
+  env.TAILRACE_TOOLS_SSH_KEYGEN = "${pkgs.openssh}/bin/ssh-keygen";
 
   # moon's task archives (.moon/cache/outputs) are a link into the git common
   # dir, so every worktree shares them; the rest of .moon/cache records the
   # checkout's absolute paths and stays its own. moon's home is the
-  # repository's too, so no moon of the user's runs in a task.
+  # repository's too, so no moon of the user's runs in a task. In a sluice
+  # run, which sources this before every command, cargo builds and the tests
+  # run on the cores sluice handed the run (SLUICE_JOBS, sluice 0.37.0); a
+  # session's own shell has no SLUICE_JOBS, and cargo takes every core.
+  #
+  # In a session's own shell rustc runs under sccache (RUSTC_WRAPPER), its
+  # cache in the git common dir, so the agents' worktrees on a host reuse the
+  # crates another compiled: the dependencies, which compile where cargo
+  # unpacked them, while a workspace crate's key holds its checkout's path.
+  # Its server listens on a port the common dir derives, below the hosts'
+  # ephemeral ranges (32768 on Linux, 49152 on macOS), so the server a compile
+  # reaches is this repository's, the sccache devenv.lock pins (core.26),
+  # never one another repository started on sccache's default port. A port,
+  # not a socket: two servers starting at once on one socket would share the
+  # cache, which sccache does not survive. In a run sluice starts, which
+  # SLUICE_CHECKOUT in its environment tells, rustc runs unwrapped, and the
+  # run reaches no server or cache of the sessions' (check-sccache.sh).
   enterShell = ''
+    if [ -n "''${SLUICE_JOBS:-}" ]; then
+      CARGO_BUILD_JOBS="$SLUICE_JOBS"
+      RUST_TEST_THREADS="$SLUICE_JOBS"
+      export CARGO_BUILD_JOBS RUST_TEST_THREADS
+    fi
     if _moon_root="$(git rev-parse --show-toplevel 2>/dev/null)" &&
       _moon_common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
       _moon_cache="$_moon_root/.moon/cache"
@@ -111,7 +180,21 @@ in
       export MOON_HOME
     fi
     unset _moon_root _moon_common _moon_cache
+    if [ -z "''${SLUICE_CHECKOUT:-}" ] &&
+      _sccache_common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+      RUSTC_WRAPPER=${lib.getExe pkgs.sccache}
+      SCCACHE_DIR="$_sccache_common/sccache"
+      SCCACHE_SERVER_PORT=$((20000 + $(printf %s "$_sccache_common" | cksum | cut -d' ' -f1) % 10000))
+      export RUSTC_WRAPPER SCCACHE_DIR SCCACHE_SERVER_PORT
+    fi
+    unset _sccache_common
     ${activate}
+    ${lib.optionalString (sluice != null) ''
+      # proto puts cargo's own bin first, where a sluice built from source
+      # may be: the tree's pin comes before it.
+      PATH="${sluice}/bin:$PATH"
+      export PATH
+    ''}
   '';
 
   # The tool versions .prototools lists, installed before enterShell

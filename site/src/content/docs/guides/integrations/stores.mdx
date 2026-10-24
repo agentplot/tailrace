@@ -33,7 +33,7 @@ not held.
 | Harbor | C.1 | the same, in a project of the operator's | designed |
 | zot | C.1 | the same, on a host or on object storage | designed |
 | the reference distribution | C.1 | the same, the smallest registry | designed |
-| an OCI layout on disk | C.2, an OCI image layout | a directory, every operation a file write under the digest's path; attestations as index entries with a subject annotation | designed |
+| an OCI layout on disk | C.2, an OCI image layout | a directory, every operation a file write under the digest's path; an artifact is an OCI manifest, an attestation an entry of `index.json` annotated with its subject, and a name an entry with a ref name, moved only from where it is | built |
 
 In a registry an artifact is an OCI manifest whose artifact type names
 the ecosystem, whose layer is the ecosystem's own bytes and whose config
@@ -44,6 +44,12 @@ registry supports it and checked after the move where it does not. A
 registry that does not create repositories on push takes one declared
 repository with the name escaped into the tag. The digest is the address
 either way.
+
+The layout is bound for a host by its bindings file, `[store] layout =
+"<path>"` (see [self-hosting](/tailrace/guides/self-hosting/)): a
+publish makes the layout there the first time, where the path is missing
+or an empty directory, and writes into it thereafter; verify and status
+never make or write one.
 
 ## Adding one
 

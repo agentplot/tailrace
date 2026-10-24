@@ -38,9 +38,14 @@ revision and the build identity, never the version (24).
 | Go | the module zip | the module proxy layout | not needed: `GOPROXY=file://` | designed |
 | Cargo | the crate file | a local registry per lockfile | not needed: source replacement | designed |
 | NuGet | the package file | a folder feed in the v3 layout | not needed | designed |
-| a file | any file, with a declared media type | a directory | not needed | designed |
-| an image | an image as pushed | the OCI layout itself | the layout served as a registry | designed |
+| a file | any file, with a declared media type | a directory | not needed | pack built: the output's one file, its own bytes under every version, with no media type yet; render designed |
+| an image | an image as pushed | the OCI layout itself | the layout served as a registry | pack built: an OCI image archive, as `docker save` writes one, its own bytes under every version; render and serve designed |
 | moon's cache | a task's output archive, by task hash | moon's outputs directory, one archive per hash, shared by every checkout on the host and rendered from the task hashes the landing's verdicts name | not needed: moon reads the directory before any remote | designed |
+
+The repository binds its projections: the policy file's `[projections]`
+names the ecosystem of the projection that packs each output, such as
+`site = "file"` or `api = "image"` (C.10). A projection not yet built
+answers render and serve absent, naming the operation.
 
 ## Adding one
 

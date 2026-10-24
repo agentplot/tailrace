@@ -1,14 +1,22 @@
+use std::io::Write;
+
 use clap::Parser;
+use tailrace::bindings::{self, For};
+use tailrace::{run, Cli, Command};
 
-/// Build once, sign everything, promote with proof, in your own account.
-#[derive(Parser)]
-#[command(name = "tailrace", version = tailrace::VERSION_LINE, about)]
-struct Cli {}
-
+/// The command line over the host's bindings file (118): publish and
+/// verify are bound by it, only publish making the layout it names, and
+/// status reads none (60).
 fn main() {
-    let Cli {} = Cli::parse();
-    println!("tailrace {}", tailrace::VERSION_LINE);
-    println!(
-        "Nothing of the design is built yet: see https://agentplot.github.io/tailrace/roadmap/"
-    );
+    let cli = Cli::parse();
+    let at = std::env::current_dir().expect("a working directory");
+    let binding = match &cli.command {
+        Command::Publish(_) => bindings::load(&at, For::Publish),
+        Command::Verify(_) => bindings::load(&at, For::Verify),
+        Command::Status(_) => Err(bindings::not_read()),
+    };
+    let mut out = std::io::stdout().lock();
+    let code = run(&cli, &binding, &at, &mut out);
+    let _ = out.flush();
+    std::process::exit(code);
 }
