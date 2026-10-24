@@ -306,11 +306,17 @@ directory:
    --json` there tells every provenance as made by `laptop`, counting,
    and each carried verdict with its `carried_in`.
 
-The same run by hand, with the binary `nix build` makes from the flake
-(the derivation an install takes), against a family repository that
-lands through sluice and declares a file output, and a second machine
-given a copy of the layout and a clone: the gate cannot reach a second
-machine or a family repository's remote.
+This is the unit's proof. What tailrace must show is that a machine
+knowing only the remote and a copied layout reads the landing and says
+every claim holds; a second machine is, to tailrace, a second clone, a
+second config directory and a copy of the layout, and step 4 gives it
+those over real sluice and moon. A family repository adds nothing of
+tailrace's: its remote carries no sluice records until its policy names
+signers (sluice C.6, 78), and a scratch repository on the forge would
+prove the forge's transport, which sluice's own gate proves. The run on
+a family repository from the installed binary is the bolt's acceptance,
+by hand and outside this change, and it is what proves the install: the
+flake's package is built by the forge's CI, never by a gate task.
 
 ### D9. The record names the store as the host's bindings name it
 

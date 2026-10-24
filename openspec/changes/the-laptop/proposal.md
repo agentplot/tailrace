@@ -54,11 +54,13 @@ the laptop).
   key verifies by the keys the policy lists and signs nothing (79, 80).
 - **The proofs.** S1 and S2 played by the built binary against a scratch
   repository gated by real sluice and moon, then a second clone with a
-  copy of the layout verifying it, in the tools layer; and the same run
-  by hand with the flake-built binary against a family repository and a
-  second machine. A conformance scenario cites 118, which leaves the
-  register; the policy file profile passes the policy group; the file and
-  image projections pass the projection group's pack scenarios.
+  copy of the layout verifying it, in the tools layer. A second machine
+  is, to tailrace, a remote carrying sluice's refs, a clone of it, a
+  copied layout and a config directory of its own; the tools layer gives
+  it exactly those, so the end-to-end test is the unit's proof. A
+  conformance scenario cites 118, which leaves the register; the policy
+  file profile passes the policy group; the file and image projections
+  pass the projection group's pack scenarios.
 
 Out of scope, and what each waits on:
 
@@ -78,6 +80,18 @@ Out of scope, and what each waits on:
   unit; a binding holds a ledger that answers absent.
 - Channels, the gate and promotion (bolt 4); a registry store (bolt 3);
   a second build profile (C.4, phase 2).
+- The run against a family repository and the installed binary: the
+  bolt's acceptance, done by hand outside this change. Today it can be
+  run on a family repository with the second machine's bindings naming
+  `[landing] branch` (landed by history, no verdicts, C.6); in the
+  plan's full form once the family's remotes carry sluice's records,
+  which waits on sluice's peers work and each host's signing key (sluice
+  C.6, 78), since no family policy names signers yet. That run is also
+  what proves the install: no gate task builds the flake's package. The
+  forge's CI builds it and runs `--version`, which proves the package
+  builds and nothing of publish or verify; a flake build in the tools
+  layer would rebuild the workspace from scratch in nix's sandbox on
+  every change, minutes in a layer meant to take under one.
 
 ## Capabilities
 
