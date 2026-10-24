@@ -62,9 +62,11 @@ Readings taken for this design:
 
 **Goals:**
 
-- The store group passing against zot, the reference distribution and a
-  real ECR repository with no change to the seam, the suite or the
-  fakes.
+- The store group passing against zot and the reference distribution in
+  the gate, and against a real ECR repository by hand, with no change
+  to the seam, the suite or the fakes.
+- A name at bytes' digest on a registry as on every store, so a cache
+  entry named `cache/<build identity>` resolves to its bytes.
 - One artifact, one digest, in a layout and in a registry, so a copy
   between them changes no digest and loses no claim.
 - What ECR does with tailrace's manifests known from a push, and
@@ -97,15 +99,11 @@ artifact (1).
 ### D2. One declared repository on every registry
 
 The binding names one repository; every blob, manifest, referrer and
-tag lives there. C.1 gives this mode to a registry that does not create
-repositories on push and a repository per ecosystem name to one that
-does. The second cannot be built on this seam: put-bytes, read,
-claims-of and resolve name only a digest or a name, so the profile
-cannot tell which repository holds what it is asked for without keeping
-a map, which the store may not need (61, core.20), or searching the
-registry's catalogue on every read. The design agent is asked to decide
-whether C.1 keeps the per-name mode, and how a digest finds its
-repository if it does.
+tag lives there, as C.1 and ADR 0014 have it. put-bytes, read,
+claims-of and resolve name only a digest or a name, and a registry
+resolves a digest only within a repository, so a repository per
+ecosystem name would need a map the store may not need (61, core.20)
+or a catalogue search on every read.
 
 Alternative: put every blob and manifest in the declared repository and
 also mount each artifact into a repository named for its ecosystem
@@ -151,22 +149,21 @@ with the registry's words.
 | read | `GET /manifests/<d>` accepting both manifest types, read by `oci::read` and the config blob; on 404 `GET /blobs/<d>`; 404 on both is absent; bytes whose digest is not `<d>` are refused `OtherBytes` (2) |
 | attach | the subject's media type and size by `HEAD /manifests/<subject>`, absent on 404; the envelope's canonical JSON and the empty config `{}` by put-bytes; the referrer manifest by `oci::referrer`; `HEAD` it, held already on 200; else `PUT /manifests/<r>`; no `OCI-Subject` in the answer means the referrers tag (D6) |
 | claims-of | the subject held, else absent; `GET /referrers/<d>?artifactType=<envelope type>`, following `Link`; 404 means the referrers tag; descriptors of other types dropped where `OCI-Filters-Applied` is missing; each referrer's manifest and its one layer read and parsed as an `Envelope` |
-| resolve | `HEAD /manifests/<tag>`: `Docker-Content-Digest`, or the digest of a `GET`'s body where a registry omits the header; 404 is absent |
-| name | resolve the tag, refused `NameAt` unless it is at the expected digest; `GET /manifests/<to>` for its bytes and media type (absent on 404, refused naming it when `<to>` is a blob, which no tag can name); `PUT /manifests/<tag>`; resolve again, refused `NameAt` naming what it found when that is not `<to>` (D7) |
+| resolve | `GET /manifests/<tag>`: 404 is absent; a manifest of the cache-entry type answers its one layer's digest (D14); any other answers its own digest, `Docker-Content-Digest` or the digest of the body |
+| name | resolve the tag, refused `NameAt` naming what resolve answered unless that is the expected digest; `GET /manifests/<to>` for its bytes and media type; on 404, when `<to>` is held as a blob, the cache manifest of `<to>` (D14) written and put by its digest, else absent; `PUT /manifests/<tag>`; resolve again, refused `NameAt` naming what it found when that is not `<to>` (D7) |
 
 The referrer manifest is an OCI image manifest: artifact type and its
 one layer's media type the layout's envelope type
 (`application/vnd.agentplot.tailrace.envelope.v1+json`), config the OCI
 empty descriptor, subject the subject's descriptor, and, when the
 envelope's payload type is in-toto and its statement names a predicate
-type, the annotation `in-toto.io/predicate-type` holding it. C.1 says
-the predicate type is the referrer's artifact type, but a predicate
-type is a URI (`https://agentplot.github.io/tailrace/claim/verdict/v1`)
-and an artifact type must be an RFC 6838 media type, which ECR enforces
-(2306). Typing every attestation by the envelope keeps claims-of one
-filtered list, as C.1's table says, and the annotation keeps the
-predicate type readable to other tools. This is named for the design
-agent, to amend C.1's wording.
+type, the annotation `in-toto.io/predicate-type` holding it (C.1). A
+predicate type is a URI
+(`https://agentplot.github.io/tailrace/claim/verdict/v1`) and an
+artifact type must be an RFC 6838 media type, which ECR enforces
+(2306); typing every attestation by the envelope keeps claims-of one
+list filtered by the envelope type, and the annotation keeps the
+predicate type readable to other tools.
 
 attach answers `Envelope::digest()`, which is the digest of the layer
 it pushed, so the answer is the same as the layout's for the same
@@ -271,11 +268,12 @@ puts are held already from earlier runs, which the group allows.
   escaped names, one digest in a layout and in zot, a credential
   helper, a missing credential); the copy from a layout to zot; the
   repair against zot with a fake keeper.
-- `tests/registry_ecr.rs` (a `tools-ecr` task tagged `check-tools`):
-  the group over ECR, failing naming `TAILRACE_TOOLS_ECR` when the host
-  names no repository. The host names it, and the `AWS_PROFILE` ECR's
-  helper reads, in `devenv.local.nix`, and maps the registry host to
-  `ecr-login` in its Docker configuration.
+- `tests/registry_ecr.rs` (a `tools-ecr` task tagged `check-ecr`,
+  outside the gate, core.38): the group over ECR, run by hand with a
+  live AWS session, refusing to run naming `TAILRACE_TOOLS_ECR` when
+  the host names no repository. The host names it, and the
+  `AWS_PROFILE` ECR's helper reads, in `devenv.local.nix`, and maps the
+  registry host to `ecr-login` in its Docker configuration.
 
 Before the fallback test is written, the reference distribution at the
 pin is checked to answer 404 on the referrers API; if it has gained the
@@ -284,15 +282,52 @@ is reported with `crew needs` if neither can be made to lack it.
 
 ### D13. One ADR
 
-`docs/adr/0014-…`: the registry store binds one declared repository,
-types attestations by the envelope with the predicate type annotated,
-checks tags after the move, and reaches the host's Docker credentials;
-and what a push against ECR answered on each issue the registry-store
-spec lists, with the date and region. The issues the store group cannot
-show (a parameterised media type, tag immutability, create on push, a
+ADR 0014 already records one declared repository, the envelope type
+with the predicate type annotated, and the cache manifest. This change
+adds one record with the next number `adrs.toml` gives: the tag checked
+before and read back after (D7), the host's Docker credentials reached
+on the challenge (D4), and what a push against ECR answered on each
+issue the registry-store spec lists, with the date and region, citing
+ADR 0014 for the rest. The issues the store group cannot show (a
+parameterised media type, tag immutability, create on push, a
 lifecycle rule expiring untagged manifests) are read by hand against
 the same account and recorded, since they are ECR's behaviour outside
-anything the store sends.
+anything the store sends. The record waits on the ECR run, and so on
+the user naming the repository (Open Questions).
+
+### D14. A digest held as bytes is named through a cache manifest
+
+A tag names a manifest, never a blob, and a cache entry is bytes named
+`cache/<build identity>` at their own digest (52, 100). When name is
+asked to name a digest the repository holds only as a blob, the profile
+writes the cache manifest of that digest and tags it, as C.1 and ADR
+0014 decide. `oci.rs` writes it in one canonical byte form: an OCI
+image manifest whose artifact type is tailrace's cache-entry type,
+`application/vnd.agentplot.tailrace.cache.v1`, whose config is the OCI
+empty descriptor, whose one layer is the bytes' descriptor with media
+type `application/octet-stream`, and with no annotation and no subject.
+The same bytes therefore always write the same manifest, which a second
+naming finds held already.
+
+Every place the profile reads a tag answers the digest the caller gave:
+resolve, the check before the move, the read back after it, and the
+digest a `NameAt` refusal names are all the layer's digest when the tag
+is at a cache manifest. A name moved from a cache entry to an index, or
+back, is checked against what the caller passed as expected, never
+against the cache manifest's digest, which no caller sees.
+
+The cache-entry type is neither the index type nor an artifact type, so
+`oci::is_tailraces` is false for it and read of the cache manifest's
+own digest answers bytes, never an artifact; its type is not the
+envelope type, so claims-of never lists it (53, core.30). Its config
+is the empty descriptor, which attach already puts, so naming bytes
+puts the config with put-bytes before the manifest. A registry's
+retention may remove an untagged cache manifest with its blob; nothing
+accepted depends on either (54).
+
+Alternative: refusing to name a blob. Rejected by ADR 0014: bolt 3's
+replay from ECR rests on naming a cache entry, and every other store
+names bytes.
 
 ## Risks / Trade-offs
 
@@ -301,10 +336,13 @@ anything the store sends.
   refuses is changed in `oci.rs` for both profiles together, and the
   layout's tests say whether its existing digests change, which the
   ADR records.
-- [The gate host needs ECR credentials for every landing] → the
-  `tools-ecr` task fails naming what is missing rather than passing;
-  the team's ops sets up the repository and the host's Docker
-  configuration before this unit's verify.
+- [ECR is proven only when someone runs it] → the gate cannot hold a
+  person's AWS session (core.38), so ECR is proven by hand under
+  `check-ecr`; the task refuses to run naming what is missing rather
+  than passing, and the ADR records the date of the run it rests on.
+- [ECR refuses the cache manifest] → the same as any other form ECR
+  refuses: changed in `oci.rs`; the layout writes no cache manifest,
+  so no layout digest moves.
 - [An ECR lifecycle rule expiring untagged images would remove
   artifacts only an index names] → the ADR names the rule an operator
   must not set on a store's repository.
@@ -324,5 +362,8 @@ records.
 
 ## Open Questions
 
-- Which ECR repository and AWS profile the gate host's tools layer uses:
-  the team's ops provides them (proposal, final message).
+- Which ECR repository the by-hand run pushes to: a repository in
+  Willdan's dev account (`wldn-dev`), or none in this bolt. The user
+  decides; until then the ECR tasks and the ADR's ECR readings wait,
+  and everything else in this change goes on.
+
