@@ -197,10 +197,21 @@ fn two_checks_on_one_record() {
             Ran::new("app:lint", "6de6b709", "fail"),
         ],
     );
+    let refs = rig.scratch.repo.git(&["for-each-ref"]);
     let verdicts = rig
         .landing
         .verdicts_of(&Revision::new(&landed.commits[0]))
         .unwrap();
+    assert_eq!(
+        rig.landing
+            .landed(&main_branch(), &Revision::new(&landed.commits[0])),
+        Ok(true)
+    );
+    assert_eq!(
+        rig.scratch.repo.git(&["for-each-ref"]),
+        refs,
+        "the landing moved a ref"
+    );
     let read: Vec<_> = verdicts
         .iter()
         .map(|v| {

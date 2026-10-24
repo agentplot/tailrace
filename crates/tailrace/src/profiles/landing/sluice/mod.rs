@@ -120,7 +120,8 @@ impl Sluice {
     }
 
     /// `refs` fetched from `remote` into the repository's objects, with
-    /// no ref written: each is read after by the object the remote's
+    /// no ref written, not even the remote-tracking one a configured
+    /// refspec would move: each is read after by the object the remote's
     /// listing named (design D2).
     fn fetch(&self, remote: &str, refs: &[&str]) -> Answer<()> {
         let mut args = vec![
@@ -128,6 +129,7 @@ impl Sluice {
             "--quiet",
             "--no-tags",
             "--no-write-fetch-head",
+            "--refmap=",
             remote,
         ];
         args.extend(refs);

@@ -104,6 +104,7 @@ impl PlainBranch {
                 "--quiet",
                 "--no-tags",
                 "--no-write-fetch-head",
+                "--refmap=",
                 remote,
                 &name,
             ],

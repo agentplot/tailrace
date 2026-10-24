@@ -120,13 +120,14 @@ fn the_remotes_branch() {
     other.write("pushed.txt", "pushed");
     let pushed = Revision::new(other.commit("feat: pushed from another clone"));
     other.push();
+    let refs = scratch.repo.git(&["for-each-ref"]);
     let local = PlainBranch::new(&scratch.repo.path, None);
     assert_eq!(local.landed(&main_branch(), &pushed), Ok(false));
     let remote = PlainBranch::new(&scratch.repo.path, Some("origin".into()));
     assert_eq!(remote.landed(&main_branch(), &pushed), Ok(true));
     assert_eq!(
-        scratch.repo.git(&["rev-parse", "main"]),
-        scratch.repo.head(),
+        scratch.repo.git(&["for-each-ref"]),
+        refs,
         "the landing moved a ref"
     );
 }
