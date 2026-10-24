@@ -2,7 +2,7 @@
 //! distribution protocol (C.1, ADR 0003): bytes as blobs, an artifact or
 //! an index as a manifest put by its own digest in the bytes the layout
 //! writes, an attestation as a referrer of its subject, and a name as a
-//! tag (design D2 to D8).
+//! tag, at bytes through a cache manifest (design D2 to D8, D14).
 //!
 //! Everything the store holds is held in the one repository the host
 //! names, `<host>[:<port>]/<path>`, addressed by digest, on every
@@ -23,7 +23,9 @@ use tailrace_seams::{
 };
 use ureq::http::{Method, StatusCode};
 
-use super::oci::{self, Descriptor, Referrers, ENVELOPE, IMAGE_INDEX, IMAGE_MANIFEST, OCTETS};
+use super::oci::{
+    self, Descriptor, Referrers, EMPTY_JSON, ENVELOPE, IMAGE_INDEX, IMAGE_MANIFEST, OCTETS,
+};
 use client::{encoded, Answered, Client};
 
 /// What a manifest request accepts: tailrace's two manifest types.
@@ -339,23 +341,40 @@ impl Registry {
         tag::of(name).map_err(|words| Not::refused(&self.source, Why::Said, Some(words)))
     }
 
-    /// The digest `tag` names; none when it names nothing. The digest is
-    /// the one the registry names it by, or the digest of the manifest's
-    /// bytes where it names none.
+    /// The digest `tag` names; none when it names nothing. At a cache
+    /// manifest it is the digest of the bytes the manifest names (design
+    /// D14); at any other manifest the one the registry names it by, or
+    /// the digest of the manifest's bytes where it names none.
     fn tag_at(&self, tag: &str) -> Answer<Option<Digest>> {
         let url = self.url(&format!("manifests/{tag}"));
-        let Some((_, _, named)) = self.manifest_head(tag)? else {
-            return Ok(None);
-        };
-        if let Some(digest) = named {
-            return Ok(Some(digest));
-        }
         let answered = self.send(Method::GET, &url, &[("accept", MANIFESTS)], None)?;
         match answered.status {
-            StatusCode::OK => Ok(Some(Digest::of(&answered.body))),
-            StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(self.other(&url, &answered)),
+            StatusCode::OK => {}
+            StatusCode::NOT_FOUND => return Ok(None),
+            _ => return Err(self.other(&url, &answered)),
         }
+        let cached = oci::cached(&answered.body)
+            .map_err(|words| Not::unreadable(&self.source, &url, Some(words)))?;
+        Ok(Some(cached.unwrap_or_else(|| {
+            answered
+                .header("docker-content-digest")
+                .and_then(|d| Digest::parse(d).ok())
+                .unwrap_or_else(|| Digest::of(&answered.body))
+        })))
+    }
+
+    /// The cache manifest of the bytes held under `digest`, `size` bytes
+    /// long, held in the repository: the empty config put, and the
+    /// manifest put by its digest unless it is held already (design
+    /// D14).
+    fn cache(&self, digest: &Digest, size: u64) -> Answer<Vec<u8>> {
+        let bytes = oci::cache(digest, size);
+        let at = Digest::of(&bytes);
+        if self.manifest_head(at.as_str())?.is_none() {
+            self.put_bytes(EMPTY_JSON)?;
+            self.put_manifest(at.as_str(), IMAGE_MANIFEST, &bytes)?;
+        }
+        Ok(bytes)
     }
 
     fn read_back(&self, tag: &str) {
@@ -593,10 +612,14 @@ impl Store for Registry {
     /// Every envelope a referrer of the envelope's type holds for
     /// `digest`, from the referrers API or, where the registry answers
     /// none, the referrers tag; another tool's referrers are never
-    /// answered (69, design D5, D6).
+    /// answered, and bytes, which attach never makes a subject, have none
+    /// (69, design D5, D6).
     fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
         if self.manifest_head(digest.as_str())?.is_none() {
-            return Err(Not::absent(&self.source, digest.to_string()));
+            return match self.blob_size(digest)? {
+                Some(_) => Ok(Vec::new()),
+                None => Err(Not::absent(&self.source, digest.to_string())),
+            };
         }
         let listed = match self.referrers_api(digest)? {
             Some(listed) => listed,
@@ -609,28 +632,36 @@ impl Store for Registry {
     }
 
     /// The name's tag read first and moved only from `expected`, the
-    /// manifest `to` names put under it, and the tag read back: refused
-    /// naming where it is otherwise, before the put or after it, and
-    /// nothing is retried (70, 109, design D7, rule core.6).
+    /// manifest `to` names put under it, or the cache manifest of the
+    /// bytes it names, and the tag read back: refused naming where it is
+    /// otherwise, before the put or after it, and nothing is retried (70,
+    /// 109, design D7, D14, rule core.6).
     fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
         let tag = self.tag(name)?;
         let at = self.tag_at(&tag)?;
         if at.as_ref() != expected {
             return Err(Not::refused(&self.source, Why::NameAt { at }, None));
         }
-        let Some((bytes, typed)) = self.manifest(to)? else {
-            if self.blob_size(to)?.is_some() {
-                return Err(Not::refused(
-                    &self.source,
-                    Why::Said,
-                    Some(format!(
-                        "{to} is held as bytes, and a tag names only a manifest"
-                    )),
-                ));
+        let (media_type, bytes) = match self.manifest(to)? {
+            Some((bytes, typed)) => {
+                if let Ok(Some(layer)) = oci::cached(&bytes) {
+                    return Err(Not::refused(
+                        &self.source,
+                        Why::Said,
+                        Some(format!(
+                            "{to} is the cache manifest of {layer}, and a name names the bytes, \
+                             {layer}"
+                        )),
+                    ));
+                }
+                let media_type = typed.media_type.unwrap_or_else(|| IMAGE_MANIFEST.into());
+                (media_type, bytes)
             }
-            return Err(Not::absent(&self.source, to.to_string()));
+            None => match self.blob_size(to)? {
+                Some(size) => (IMAGE_MANIFEST.to_string(), self.cache(to, size)?),
+                None => return Err(Not::absent(&self.source, to.to_string())),
+            },
         };
-        let media_type = typed.media_type.unwrap_or_else(|| IMAGE_MANIFEST.into());
         self.put_manifest(&tag, &media_type, &bytes)?;
         self.read_back(&tag);
         let found = self.tag_at(&tag)?;
@@ -640,7 +671,8 @@ impl Store for Registry {
         Ok(())
     }
 
-    /// The digest the name's tag names (71).
+    /// The digest the name's tag names, the bytes' at a cache manifest
+    /// (71, design D14).
     fn resolve(&self, name: &Name) -> Answer<Digest> {
         let tag = self.tag(name)?;
         self.tag_at(&tag)?

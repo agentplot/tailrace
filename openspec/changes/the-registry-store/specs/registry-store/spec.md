@@ -70,16 +70,17 @@ answered held already and not put again (5).
 
 ### Requirement: An attestation is a referrer of its subject
 
-attach SHALL push a manifest whose subject is the digest and whose one
-layer is the envelope, and answer the envelope's own digest; claims-of
-SHALL answer every envelope so attached to a digest, byte for byte (8,
-68, 69, core.27). Both SHALL answer absent for a digest the repository
-does not hold, and attach SHALL write nothing then.
+attach SHALL push a referrer of tailrace's envelope type whose subject
+is the digest and whose one layer is the envelope, with the statement's
+predicate type annotated, and answer the envelope's own digest;
+claims-of SHALL answer every envelope so attached, byte for byte (8,
+68, 69, C.1, core.27). Both SHALL answer absent for a digest the
+repository does not hold, and attach SHALL write nothing then.
 
 #### Scenario: Two attestations read back
 
 - **WHEN** two attestations are attached to one artifact
-- **THEN** claims-of answers both envelopes byte for byte, and the registry lists two referrers of the artifact
+- **THEN** claims-of answers both envelopes byte for byte, and the registry lists two referrers of the artifact, each of the envelope type and annotated with its statement's predicate type
 
 #### Scenario: The same attestation attached twice
 
@@ -134,8 +135,45 @@ core.6). A name SHALL be escaped into a valid tag, one name to one tag.
 
 #### Scenario: A name no tag can carry as written
 
+
 - **WHEN** a name holding characters a tag cannot hold, such as `/` and `+`, is made and resolved, and so is a name differing from it only in those characters
 - **THEN** each resolves to its own digest, and the repository holds a valid tag for each
+
+### Requirement: A cache entry's bytes are named through a cache manifest
+
+To name a digest held only as bytes, the registry store SHALL tag a
+manifest of tailrace's cache-entry type whose one layer is those bytes,
+and every reading of that tag, by resolve, by name's check and read
+back, and in a refusal, SHALL answer the bytes' digest (52, 70, 71,
+100, C.1, ADR 0014). The cache manifest is no artifact: read SHALL
+never answer it as one, and claims-of SHALL never list it (53,
+core.30).
+
+
+#### Scenario: A cache entry named and resolved
+
+- **WHEN** bytes are put and a name is made from nothing at their digest
+- **THEN** resolve answers the bytes' digest, and the tag is at a manifest of the cache-entry type whose one layer is those bytes
+
+#### Scenario: The same bytes named twice
+
+- **WHEN** two names are made at the digest of the same bytes
+- **THEN** both resolve to the bytes' digest, and the repository holds one cache manifest for them
+
+#### Scenario: A cache entry's name moved
+
+- **WHEN** a name at a cache entry's bytes is moved, with those bytes' digest as expected, to other bytes, and then moved with the first bytes' digest as expected
+- **THEN** the first move succeeds and resolves to the other bytes' digest, and the second is refused naming the other bytes' digest
+
+#### Scenario: The cache manifest is no artifact
+
+- **WHEN** a name is made at bytes and the cache manifest's own digest is read, and claims-of is asked of the bytes' digest
+- **THEN** read answers bytes and never an artifact, and claims-of lists no cache manifest
+
+#### Scenario: Bytes not held
+
+- **WHEN** a name is made at a digest the repository holds neither as a manifest nor as bytes
+- **THEN** name is absent naming the digest, and no manifest or tag is put
 
 ### Requirement: Absent, refused and unreadable kept apart
 
@@ -174,34 +212,43 @@ name none in the bindings file (64, core.21).
 
 ### Requirement: The store's conformance scenarios pass against real registries
 
-The suite's store group SHALL pass against zot, against the reference
-distribution, and against a real ECR repository, each in the tools
-layer (93). The run against ECR SHALL fail, naming what is missing,
-on a host that names no ECR repository, rather than pass without
-running.
+The suite's store group SHALL pass against zot and against the
+reference distribution in the tools layer, which the gate requires,
+and against a real ECR repository in a check of its own outside the
+gate, tagged `check-ecr` and run by hand with a live session, since
+it needs a credential a person signs in for (93, core.38). The ECR
+check SHALL refuse to run, naming the setting it lacks, on a host that
+names no ECR repository, rather than pass without running.
 
 #### Scenario: zot
 
 - **WHEN** the tools layer runs the store group against a zot started for the test
 - **THEN** every scenario of the group passes
 
-#### Scenario: ECR
+#### Scenario: The reference distribution
 
-- **WHEN** the tools layer runs the store group against the ECR repository the host names
-- **THEN** every scenario of the group passes, each run's names apart from every earlier run's
+- **WHEN** the tools layer runs the store group against a reference distribution started for the test
+- **THEN** every scenario of the group passes, attestations held through the referrers tag
+
+#### Scenario: ECR, by hand
+
+- **WHEN** `moon run ':#check-ecr'` runs on a host whose `devenv.local.nix` names an ECR repository, with a live session for it
+- **THEN** every scenario of the group passes against that repository, each run's names apart from every earlier run's
 
 #### Scenario: No ECR repository named
 
-- **WHEN** the ECR run starts on a host that names no ECR repository
-- **THEN** it fails naming the setting the host must give
+- **WHEN** the ECR check starts on a host that names no ECR repository
+- **THEN** it refuses to run naming the setting the host must give
 
 ### Requirement: What ECR answered is recorded
 
 An ADR SHALL record what a push against a real ECR repository
 answered on each open issue the profile rests on: tailrace's artifact
 manifest and image index, a referrer with a subject, the referrers
-list filtered by artifact type, a manifest put by digest alone, a
-media type with a parameter, and tag immutability (ADR 0003).
+list filtered by artifact type, a manifest put by digest alone, the
+cache manifest, a media type with a parameter, and tag immutability
+(ADR 0003, ADR 0014).
+
 
 #### Scenario: The record read
 

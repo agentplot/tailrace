@@ -13,7 +13,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::rc::Rc;
 use std::sync::Mutex;
 
-use registry::{Kind, Proxy, RegistryRig, Server, PASSWORD, USER};
+use registry::{cache_manifest, Kind, Proxy, RegistryRig, Server, PASSWORD, USER};
 use serde_json::{json, Value};
 use tailrace::profiles::store::layout::Layout;
 use tailrace::profiles::store::registry::Registry;
@@ -185,7 +185,8 @@ on_both!(
     another_tools_referrer_is_not_answered_and_is_left,
     a_race_lost_after_the_put_is_refused_naming_the_other_writer,
     two_names_differing_only_in_escaped_characters_resolve_apart,
-    a_name_moved_to_bytes_is_refused_naming_them,
+    bytes_are_named_through_a_cache_manifest,
+    a_race_lost_on_a_cache_entrys_name_is_refused_naming_the_other_writer,
     a_registry_behind_a_credential_helper,
     a_version_in_a_layout_copied_into_a_registry,
     a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger,
@@ -394,6 +395,16 @@ fn another_tools_referrer_is_not_answered_and_is_left(kind: Kind) {
         IMAGE_MANIFEST,
     );
     assert_eq!(status, 200, "their referrer was removed");
+    if kind == Kind::Zot {
+        let (status, _) = get(
+            &format!("{}manifests/sha256-{}", store.base(), subject.hex()),
+            IMAGE_INDEX,
+        );
+        assert_eq!(
+            status, 404,
+            "zot answered a subject, yet a referrers tag was pushed"
+        );
+    }
 }
 
 #[test]
@@ -528,23 +539,101 @@ fn two_names_differing_only_in_escaped_characters_resolve_apart(kind: Kind) {
     assert_eq!(tags, ["a_2fb_2bc", "a_5f2fb_2bc"]);
 }
 
-fn a_name_moved_to_bytes_is_refused_naming_them(kind: Kind) {
+fn bytes_are_named_through_a_cache_manifest(kind: Kind) {
     let server = Server::start(kind);
-    let store = server.store();
-    let bytes = store.put_bytes(b"site").unwrap().digest;
-    let name = Name::new("site-v1");
-    let r = refused(store.name(&name, &bytes, None));
-    assert_eq!(r.why, Why::Said);
-    assert!(r.said.unwrap().contains(bytes.as_str()));
-    assert_eq!(
-        store.resolve(&name),
-        Err(Not::absent(store.source(), "name site-v1"))
-    );
+    let proxy = Proxy::before(&server);
+    let store = proxy.store(&server.repository());
+    registry::cache_entries(&store);
+
+    let entry = b"a cache entry under two names";
+    let bytes = store.put_bytes(entry).unwrap().digest;
+    let manifest = cache_manifest(entry);
+    for (name, tag, writes) in [
+        (
+            "cache/site",
+            "cache_2fsite",
+            vec![Digest::of(&manifest).to_string(), "cache_2fsite".into()],
+        ),
+        (
+            "cache/server",
+            "cache_2fserver",
+            vec!["cache_2fserver".into()],
+        ),
+    ] {
+        proxy.passed();
+        store.name(&Name::new(name), &bytes, None).unwrap();
+        let wrote: Vec<String> = proxy
+            .passed()
+            .into_iter()
+            .filter(|p| p.method != "HEAD" && p.method != "GET")
+            .map(|p| format!("{} {}", p.method, p.path))
+            .collect();
+        let expected: Vec<String> = writes
+            .iter()
+            .map(|r| {
+                format!(
+                    "PUT /v2/{}/manifests/{r}",
+                    store.repository().split_once('/').unwrap().1
+                )
+            })
+            .collect();
+        assert_eq!(wrote, expected, "naming {name}");
+        let (status, held) = get(&format!("{}manifests/{tag}", store.base()), IMAGE_MANIFEST);
+        assert_eq!(status, 200);
+        assert_eq!(
+            held,
+            manifest,
+            "{tag} is at {}",
+            String::from_utf8_lossy(&held)
+        );
+    }
+
     let missing = Digest::of(b"never put");
+    proxy.passed();
     assert_eq!(
-        store.name(&name, &missing, None),
+        store.name(&Name::new("cache/none"), &missing, None),
         Err(Not::absent(store.source(), missing.to_string()))
     );
+    let passed = proxy.passed();
+    assert!(
+        passed
+            .iter()
+            .all(|p| p.method == "HEAD" || p.method == "GET"),
+        "a name at a digest not held wrote: {passed:?}"
+    );
+}
+
+fn a_race_lost_on_a_cache_entrys_name_is_refused_naming_the_other_writer(kind: Kind) {
+    let server = Server::start(kind);
+    let proxy = Proxy::before(&server);
+    let repository = server.repository();
+    let direct = Registry::new(&repository).unwrap();
+    let [at, to, other] =
+        [b"one".as_slice(), b"two", b"three"].map(|bytes| direct.put_bytes(bytes).unwrap().digest);
+    let name = Name::new("cache/site");
+    direct.name(&name, &at, None).unwrap();
+    let mut store = proxy.store(&repository);
+    let (moved, to_) = (other.clone(), to.clone());
+    let writer = Registry::new(&repository).unwrap();
+    store.between_put_and_read_back(move |_| {
+        writer
+            .name(&Name::new("cache/site"), &moved, Some(&to_))
+            .expect("the other writer moves the name");
+    });
+    proxy.passed();
+    assert_eq!(
+        refused(store.name(&name, &to, Some(&at))).why,
+        Why::NameAt {
+            at: Some(other.clone())
+        }
+    );
+    let tagged: Vec<_> = proxy
+        .passed()
+        .into_iter()
+        .filter(|p| p.method == "PUT" && p.path.ends_with("manifests/cache_2fsite"))
+        .collect();
+    assert_eq!(tagged.len(), 1, "{tagged:?}");
+    assert_eq!(direct.resolve(&name), Ok(other));
 }
 
 /// Every file under `dir`, by its path from `dir`, with its bytes.

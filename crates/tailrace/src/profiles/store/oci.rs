@@ -7,7 +7,10 @@
 //! bytes, and so the same digest, on every host and in every store (1, 5).
 //! A registry holds an attestation as a referrer, an image manifest whose
 //! subject is the digest it is about and whose one layer is the envelope,
-//! and lists a subject's referrers in a referrers index (design D5, D6).
+//! and lists a subject's referrers in a referrers index (design D5, D6);
+//! and it names bytes through a cache manifest, an image manifest whose
+//! one layer is the bytes, since a tag names only a manifest (design
+//! D14).
 
 use std::collections::BTreeMap;
 
@@ -31,8 +34,11 @@ pub(super) const ENVELOPE: &str = "application/vnd.agentplot.tailrace.envelope.v
 pub(super) const INDEX_TYPE: &str = "application/vnd.agentplot.tailrace.index";
 /// An artifact's artifact type, before its ecosystem.
 const ARTIFACT_TYPE: &str = "application/vnd.agentplot.tailrace.artifact.";
-/// The config of a manifest that has none to give, a referrer's: the
-/// two bytes `{}`.
+/// A cache manifest's artifact type: the manifest a registry names bytes
+/// through, which is no artifact (design D14).
+pub(super) const CACHE: &str = "application/vnd.agentplot.tailrace.cache.v1";
+/// The config of a manifest that has none to give, a referrer's or a
+/// cache manifest's: the two bytes `{}`.
 pub(super) const EMPTY: &str = "application/vnd.oci.empty.v1+json";
 pub(super) const EMPTY_JSON: &[u8] = b"{}";
 
@@ -113,7 +119,19 @@ pub(super) enum Read {
     Index(IndexMeta),
 }
 
-/// Whether `artifact_type` is one tailrace writes.
+/// The descriptor of the empty config, [`EMPTY_JSON`].
+fn empty() -> Descriptor {
+    Descriptor {
+        media_type: EMPTY.into(),
+        digest: Digest::of(EMPTY_JSON),
+        size: EMPTY_JSON.len() as u64,
+        artifact_type: None,
+        annotations: BTreeMap::new(),
+    }
+}
+
+/// Whether `artifact_type` is one tailrace writes an artifact or an
+/// index as; a cache manifest's is not (design D14).
 pub(super) fn is_tailraces(artifact_type: &str) -> bool {
     artifact_type == INDEX_TYPE || artifact_type.starts_with(ARTIFACT_TYPE)
 }
@@ -311,13 +329,7 @@ pub(super) fn referrer(subject: Descriptor, envelope: &Envelope) -> Referrer {
         schema_version: 2,
         media_type: IMAGE_MANIFEST.into(),
         artifact_type: ENVELOPE.into(),
-        config: Descriptor {
-            media_type: EMPTY.into(),
-            digest: Digest::of(EMPTY_JSON),
-            size: EMPTY_JSON.len() as u64,
-            artifact_type: None,
-            annotations: BTreeMap::new(),
-        },
+        config: empty(),
         layers: vec![Descriptor {
             media_type: ENVELOPE.into(),
             digest: Digest::of(&layer),
@@ -370,6 +382,55 @@ pub(super) fn referred(bytes: &[u8]) -> Result<Descriptor, String> {
             layer.media_type
         )),
         Err(layers) => Err(format!("it names {} layers, not one", layers.len())),
+    }
+}
+
+/// The cache manifest of the bytes held under `digest`, `size` bytes
+/// long: an image manifest of the cache-entry type, its config the empty
+/// descriptor and its one layer the bytes, with no annotation and no
+/// subject, so the same bytes always write the same manifest (design
+/// D14).
+pub(super) fn cache(digest: &Digest, size: u64) -> Vec<u8> {
+    canonical(&ImageManifest {
+        schema_version: 2,
+        media_type: IMAGE_MANIFEST.into(),
+        artifact_type: CACHE.into(),
+        config: empty(),
+        layers: vec![Descriptor {
+            media_type: OCTETS.into(),
+            digest: digest.clone(),
+            size,
+            artifact_type: None,
+            annotations: BTreeMap::new(),
+        }],
+    })
+}
+
+/// The digest of the bytes a manifest's `bytes` name when they are a
+/// cache manifest: its one layer's; none for any other manifest; the
+/// parser's or tailrace's words when they hold no JSON, or a cache
+/// manifest of another form (design D14).
+pub(super) fn cached(bytes: &[u8]) -> Result<Option<Digest>, String> {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Typed {
+        #[serde(default)]
+        artifact_type: Option<String>,
+        #[serde(default)]
+        layers: Vec<Value>,
+    }
+    let typed: Typed = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    if typed.artifact_type.as_deref() != Some(CACHE) {
+        return Ok(None);
+    }
+    match <[Value; 1]>::try_from(typed.layers) {
+        Ok([layer]) => Descriptor::deserialize(layer)
+            .map(|layer| Some(layer.digest))
+            .map_err(|e| format!("its layer: {e}")),
+        Err(layers) => Err(format!(
+            "a cache manifest names {} layers, not one",
+            layers.len()
+        )),
     }
 }
 
@@ -724,6 +785,47 @@ mod tests {
         other["artifactType"] = json!("application/vnd.dev.cosign.artifact.sig.v1+json");
         let words = referred(&serde_json::to_vec(&other).unwrap()).unwrap_err();
         assert!(words.contains("cosign"), "{words}");
+    }
+
+    #[test]
+    fn the_same_bytes_write_the_same_cache_manifest() {
+        let digest = Digest::of(b"a cache entry");
+        assert_eq!(cache(&digest, 13), cache(&digest, 13));
+        assert_ne!(cache(&digest, 13), cache(&Digest::of(b"other bytes"), 11));
+    }
+
+    #[test]
+    fn a_cache_manifest_names_the_empty_config_and_the_bytes() {
+        let digest = Digest::of(b"a cache entry");
+        let json: Value = serde_json::from_slice(&cache(&digest, 13)).unwrap();
+        assert_eq!(
+            json,
+            json!({
+                "schemaVersion": 2,
+                "mediaType": IMAGE_MANIFEST,
+                "artifactType": "application/vnd.agentplot.tailrace.cache.v1",
+                "config": {"mediaType": EMPTY, "digest": Digest::of(b"{}"), "size": 2},
+                "layers": [{"mediaType": OCTETS, "digest": digest, "size": 13}],
+            })
+        );
+        assert!(!is_tailraces(CACHE));
+    }
+
+    #[test]
+    fn only_a_cache_manifest_answers_the_bytes_it_names() {
+        let digest = Digest::of(b"a cache entry");
+        assert_eq!(cached(&cache(&digest, 13)), Ok(Some(digest)));
+        for written in [artifact(), index()] {
+            let written = write(&written, &source(), &size).unwrap();
+            assert_eq!(cached(&written.bytes), Ok(None));
+        }
+        let referrer = referrer(subject(), &statement(VERDICT));
+        assert_eq!(cached(&referrer.bytes), Ok(None));
+        let layer = json!({"mediaType": OCTETS, "digest": Digest::of(b"a"), "size": 1});
+        let two = json!({"artifactType": CACHE, "layers": [layer, layer]});
+        let words = cached(&serde_json::to_vec(&two).unwrap()).unwrap_err();
+        assert!(words.contains("2 layers"), "{words}");
+        assert!(cached(b"not json").is_err());
     }
 
     #[test]

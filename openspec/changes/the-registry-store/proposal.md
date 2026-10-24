@@ -24,11 +24,10 @@ write into the store this change binds.
   repository, such as `<account>.dkr.ecr.<region>.amazonaws.com/tailrace`
   or `localhost:5000/tailrace`, and every blob, manifest, attestation
   and tag of the store is held there, addressed by digest. A name is
-  escaped into a valid tag. This is the mode C.1 gives a registry that
-  does not create repositories on push; this change uses it on every
-  registry, including zot, because the store's operations name only a
-  digest and a digest alone cannot say which per-name repository holds
-  it (design D2).
+  escaped into a valid tag. This is C.1's one mode, on every registry,
+  zot included: the store's operations name only a digest, and a
+  registry resolves a digest only within a repository (ADR 0014,
+  design D2).
 - **The same bytes put twice are held once.** A put asks the registry
   first whether it holds the blob or manifest, and writes nothing when
   it does, answering held already (5, 66). A manifest is written in
@@ -36,8 +35,10 @@ write into the store this change binds.
   artifact has the same digest in a layout and in a registry (1).
 - **Attestations are referrers, with the tag-schema fallback.** attach
   pushes a manifest whose subject is the digest and whose one layer is
-  the envelope; claims-of lists the subject's referrers of that type
-  and reads each envelope back, byte for byte (8, 68, 69). Where the
+  the envelope, typed by tailrace's envelope type with the statement's
+  predicate type in the `in-toto.io/predicate-type` annotation;
+  claims-of lists the subject's referrers of the envelope type and
+  reads each envelope back, byte for byte (8, 68, 69, C.1). Where the
   registry has no referrers API, both use the referrers tag the OCI
   distribution specification defines in its place.
 - **A tag is moved from where it is expected, and read back.** No
@@ -46,6 +47,16 @@ write into the store this change binds.
   from anywhere else, naming where it is; after the put it reads the
   tag back, and a tag found at another digest is a lost race, refused
   naming that digest, never retried (70, 71, 109, core.6).
+- **A cache entry's bytes can be named.** A tag names a manifest, never
+  a blob, so when name is asked to name a digest held as bytes, the
+  profile writes a manifest of tailrace's cache-entry type (one layer,
+  the bytes; config, the empty descriptor) and tags that; resolve of a
+  tag at such a manifest answers the layer's digest. A name such as
+  `cache/<build identity>` is then at the bytes' digest on a registry,
+  as on a layout, and the moon cache unit's core needs nothing of its
+  own. The manifest names no ecosystem and carries no metadata, so it
+  is no artifact: read never answers it as one and claims-of never
+  lists it (53, 100, core.30, C.1, ADR 0014).
 - **A lost race on a channel's name is repaired from the ledger.** A
   new core function moves a channel's name to the digest the ledger's
   head promotion is about, and when the store answers that the name is
@@ -60,16 +71,21 @@ write into the store this change binds.
   digests and the same claims.
 - **ECR's open issues are answered by a push against a real
   repository.** The store's conformance scenarios run against a real
-  ECR repository in the tools layer, and an ADR records what ECR
-  answered on each open issue (aws/containers-roadmap 2306 and 2783):
-  whether it takes tailrace's manifests, a referrer with a subject, the
-  referrers list filtered by type, and a manifest put by digest alone.
-- **The store's conformance scenarios pass against ECR and zot.** The
-  profile's tests run the suite's store group against zot, against the
-  reference distribution (a registry with no referrers API, for the
-  fallback), and against ECR, all in the tools layer, which the gate
-  already requires; zot, the reference distribution and ECR's
-  credential helper are pinned in `devenv.nix`.
+  ECR repository, by hand with a live AWS session, and an ADR records
+  what ECR answered on each open issue (aws/containers-roadmap 2306 and
+  2783): whether it takes tailrace's manifests, a referrer with a
+  subject, the referrers list filtered by type, a manifest put by
+  digest alone, and the cache manifest.
+- **The store's conformance scenarios pass against zot in the gate and
+  against ECR by hand.** The profile's tests run the suite's store
+  group against zot and against the reference distribution (a registry
+  with no referrers API, for the fallback) in the tools layer, which
+  the gate requires. The run against ECR needs a credential a person
+  signs in for, so it is a task of its own tagged `check-ecr`, outside
+  the gate, run by hand with `moon run ':#check-ecr'`, and it refuses
+  to run, naming the setting, on a host that names no ECR repository
+  (core.38). zot, the reference distribution and ECR's credential
+  helper are pinned in `devenv.nix`.
 - **Credentials are the host's.** The profile reaches a registry's
   credential at the moment of use through the host's Docker
   configuration and its credential helpers, ECR's among them, and keeps
@@ -89,13 +105,15 @@ Out of scope, and what each waits on:
   and proven in the tests, and the command line belongs to the push
   after a landing, which owns `crates/tailrace/src/commands/` in this
   bolt, or to a later unit the planner names.
-- A repository per ecosystem name on a registry that creates them on
-  push: a design decision C.1 leaves open, named for the design agent.
 - The gate itself, promotion, the ledger's profiles and the chain's
   form: bolt 4. The repair here reads the chain through the ledger seam
   and its fakes, and writes nothing to it.
-- Cache entries in the registry: the cache unit of this bolt, which
-  writes through the store this change binds.
+- What the cache puts and names, and when: the moon cache unit of this
+  bolt, which writes through the store this change binds. This change
+  only lets a registry name bytes, as every store does.
+- Which ECR repository the by-hand run pushes to: the user's to say
+  (a repository in Willdan's dev account, or none in this bolt). The
+  ECR tasks wait on it; nothing else in this change does.
 - GitHub's registry and Harbor: the profile speaks the protocol they
   speak, and they stay designed until something runs the suite against
   them.
@@ -110,9 +128,9 @@ Out of scope, and what each waits on:
 - `registry-store`: the store seam bound to an OCI registry over the
   distribution protocol: where blobs, manifests, attestations and names
   are held in one declared repository, what each operation sends and
-  answers, the referrers fallback, the tag read back, the host's
-  credentials, and the runs against zot, the reference distribution and
-  ECR.
+  answers, the referrers fallback, the tag read back, a cache entry's
+  bytes named through a cache manifest, the host's credentials, and the
+  runs against zot, the reference distribution and ECR.
 - `store-copy`: a version copied from one store to another through the
   store seam, with every attestation attached to its digests, and a
   layout synced to a registry.
@@ -123,8 +141,9 @@ Out of scope, and what each waits on:
 
 - `host-bindings`: `[store]` names a registry by its repository as well
   as a layout by its path.
-- `tools-layer`: the layer runs the registry store against zot, the
-  reference distribution and ECR, each pinned or named on the host.
+- `tools-layer`: the layer runs the registry store against zot and the
+  reference distribution, each pinned; the run against ECR is a check
+  of its own outside the gate, against a repository the host names.
 
 ## Impact
 
@@ -139,13 +158,15 @@ Out of scope, and what each waits on:
   the ledger group's marker, and two register entries removed.
 - `crates/tailrace/tests/registry_store.rs`, `registry_ecr.rs` and the
   rig they share; `crates/tailrace/moon.yml`'s tools task and a
-  `tools-ecr` task.
+  `tools-ecr` task tagged `check-ecr`.
 - `Cargo.toml` and `crates/tailrace/Cargo.toml`: `ureq` for HTTP and
   `docker_credential` for the host's Docker credentials; `Cargo.lock`.
 - `devenv.nix`: zot, the reference distribution and
-  `amazon-ecr-credential-helper`. The ECR repository the tools layer
+  `amazon-ecr-credential-helper`. The ECR repository the ECR check
   pushes to is named per host in `devenv.local.nix`, which git ignores.
-- `docs/adr/`: one record, the registry store and what ECR answered.
+- `docs/adr/`: one record beside ADR 0014, the registry store's tag
+  check and credentials and what ECR answered.
+
 - The site's stores and self-hosting pages.
 - No seam trait or shared type changes.
 

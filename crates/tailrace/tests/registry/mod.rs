@@ -3,8 +3,10 @@
 //! port over a temporary directory and a config the test writes, by the
 //! binary the devenv shell pins, waited on until `GET /v2/` answers, and
 //! stopped when dropped; the store group's rig over a fresh repository of
-//! one; and a proxy in front of one that keeps every request it passes
-//! and alters a response body when told to.
+//! one; a proxy in front of one that keeps every request it passes and
+//! alters a response body when told to; and the cache manifest's
+//! scenarios a registry plays through the store alone, which the run
+//! against ECR pushes as the tools layer does.
 
 #![allow(dead_code)]
 
@@ -22,7 +24,7 @@ use std::time::{Duration, Instant};
 use tailrace::profiles::store::registry::Registry;
 use tailrace_conformance::seams::store::StoreRig;
 use tailrace_conformance::Rig;
-use tailrace_seams::Store;
+use tailrace_seams::{Digest, Held, Name, Not, Store, Why};
 use tempfile::TempDir;
 
 /// The one user the registries that ask for a credential take, and the
@@ -417,4 +419,71 @@ fn pass(
     let mut client = client;
     client.write_all(&answer)?;
     client.flush()
+}
+
+/// The cache manifest the registry store names `bytes` through, written
+/// out here apart from the profile's own form, so a test that finds these
+/// bytes in a registry proves the form (design D14).
+pub fn cache_manifest(bytes: &[u8]) -> Vec<u8> {
+    format!(
+        r#"{{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","artifactType":"application/vnd.agentplot.tailrace.cache.v1","config":{{"mediaType":"application/vnd.oci.empty.v1+json","digest":"{}","size":2}},"layers":[{{"mediaType":"application/octet-stream","digest":"{}","size":{}}}]}}"#,
+        Digest::of(b"{}"),
+        Digest::of(bytes),
+        bytes.len()
+    )
+    .into_bytes()
+}
+
+/// The cache manifest's scenarios a registry plays through the store
+/// alone (spec registry-store, design D14): bytes named from nothing
+/// resolve to their digest, and so do two names at the same bytes; a
+/// name at bytes moved with their digest as expected to other bytes, and
+/// a move from the first bytes then refused naming the others; the cache
+/// manifest's own digest read as bytes, never named, and the bytes'
+/// digest with no claims; a digest held neither way absent.
+pub fn cache_entries(store: &dyn Store) {
+    let (entry, other): (&[u8], &[u8]) = (b"a cache entry", b"another cache entry");
+    let bytes = store.put_bytes(entry).unwrap().digest;
+    let moved = store.put_bytes(other).unwrap().digest;
+    let (one, two) = (Name::new("cache/one"), Name::new("cache/two"));
+    for name in [&one, &two] {
+        store.name(name, &bytes, None).unwrap();
+    }
+    for name in [&one, &two] {
+        assert_eq!(store.resolve(name).as_ref(), Ok(&bytes), "{name}");
+    }
+
+    store.name(&two, &moved, Some(&bytes)).unwrap();
+    assert_eq!(store.resolve(&two).as_ref(), Ok(&moved));
+    match store.name(&two, &bytes, Some(&bytes)) {
+        Err(Not::Refused(r)) => assert_eq!(
+            r.why,
+            Why::NameAt {
+                at: Some(moved.clone())
+            }
+        ),
+        answer => panic!("a move from bytes the name has left answered {answer:?}"),
+    }
+    assert_eq!(store.resolve(&two).as_ref(), Ok(&moved));
+
+    let manifest = cache_manifest(entry);
+    let own = Digest::of(&manifest);
+    assert_eq!(store.read(&own), Ok(Held::Bytes(manifest)));
+    assert_eq!(store.claims_of(&bytes), Ok(vec![]));
+    match store.name(&one, &own, Some(&bytes)) {
+        Err(Not::Refused(r)) => {
+            assert_eq!(r.why, Why::Said);
+            assert!(r.said.unwrap().contains(bytes.as_str()));
+        }
+        answer => panic!("a name at a cache manifest's own digest answered {answer:?}"),
+    }
+    assert_eq!(store.resolve(&one).as_ref(), Ok(&bytes));
+
+    let missing = Digest::of(b"bytes no name names");
+    let three = Name::new("cache/three");
+    match store.name(&three, &missing, None) {
+        Err(Not::Absent(a)) => assert_eq!(a.what, missing.to_string()),
+        answer => panic!("a name at a digest not held answered {answer:?}"),
+    }
+    assert!(matches!(store.resolve(&three), Err(Not::Absent(_))));
 }
