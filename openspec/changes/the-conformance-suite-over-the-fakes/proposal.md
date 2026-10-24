@@ -30,7 +30,10 @@ them in a register instead of failing them.
   rig. A profile that fails gets one report naming the profile, the
   seam, each scenario that failed, the clauses it cites, and why. The
   report is the same for a fake and a real profile, so a fake that
-  breaks its contract fails the suite like any profile (93).
+  breaks its contract fails the suite like any profile (93). A scenario
+  that stages what a profile does not do, by the rig's own word, is
+  named in the report as not applicable, with the reason, and fails
+  nothing.
 - **The seams' contracts over the fakes.** Each seam's group plays its
   Part B clauses (66 to 91, 120 to 122) and the Part A clauses those
   operations keep: same bytes held once, a name moved only from where
@@ -41,6 +44,18 @@ them in a register instead of failing them.
   predecessor refused naming the head, a fork reported and never
   chosen. Each group also checks that a source that cannot be reached
   answers unreadable in its own words (58, 59).
+- **The landing's rig stages what a landing records, and the landing
+  signs.** The rig is handed each verdict's check, build identity,
+  outcome and signer, and the landing makes the envelope; the suite
+  never forges one, since the envelope is the landing's to make and
+  tailrace's only to carry (12, 78, core.8). The verdicts read back
+  must carry those four as recorded, each in an envelope whose
+  signature names the verdict's signer. A rig says whether its landing
+  records verdicts: for a plain branch, which records none (C.6), that
+  scenario is named not applicable, and the landing is still held to
+  answer an empty set, neither absent nor unreadable. This is the
+  design agent's ruling, and `moon-and-the-landings` writes its
+  landings' rigs on the commit that makes it.
 - **The statement's scenarios over the fakes.** S1, S2, S5 and S13 play
   over the fakes and an in-memory store, with a real git history in a
   temporary directory. S1: a landed revision published, two packages at

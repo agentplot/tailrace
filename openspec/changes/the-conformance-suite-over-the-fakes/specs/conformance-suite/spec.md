@@ -83,6 +83,21 @@ fails the run (93).
 - **WHEN** two scenarios of a group fail
 - **THEN** the report names both, and every other scenario of the group was run
 
+### Requirement: A scenario that does not apply is named as not applicable
+
+A scenario SHALL be not applicable to a profile only where its rig says
+the profile does not do what the scenario stages, as a landing that
+records no verdicts says so (C.6). The report SHALL name each such
+scenario as not applicable, with the clauses it cites and the rig's
+reason, and SHALL count it neither as passed nor as failed; a scenario
+not applicable fails no run. A profile that cannot stage what it does
+SHALL fail the scenario, never be reported not applicable.
+
+#### Scenario: Not applicable in the report
+
+- **WHEN** one scenario of a group of three says it does not apply to the rig and the other two pass
+- **THEN** the run passes, and the report says two passed and one is not applicable, naming that scenario, its clauses and the reason
+
 ### Requirement: A source that cannot be reached is unreadable on every seam
 
 Each seam's group SHALL hold its profile to answer unreadable, carrying
@@ -92,8 +107,8 @@ unreachable, and never an empty answer, an absence or a refusal (58,
 
 #### Scenario: A landing that cannot be reached
 
-- **WHEN** the rig makes the landing unreachable and the verdicts of a revision are read
-- **THEN** the answer is unreadable naming the landing, with its words unchanged, and not an empty list
+- **WHEN** a revision is landed with no verdict staged, the rig makes the landing unreachable, and the revision's verdicts are read
+- **THEN** the answer is unreadable naming the landing, with its words unchanged, and not an empty list, over every landing, one that records verdicts or not
 
 ### Requirement: The store's contract
 
@@ -162,7 +177,12 @@ the same build identity on every host.
 
 ### Requirement: The landing's contract
 
-The landing's group SHALL hold a landing to 77 and 78.
+The landing's group SHALL hold a landing to 77 and 78. The rig SHALL
+stage a landed revision from each verdict's check, build identity,
+outcome and signer, and the landing SHALL make the envelope, never the
+suite (12, core.8). The rig SHALL say whether its landing records
+verdicts; for one that records none (C.6), verdicts as the landing
+recorded them SHALL be not applicable.
 
 #### Scenario: Landed and not landed
 
@@ -171,8 +191,18 @@ The landing's group SHALL hold a landing to 77 and 78.
 
 #### Scenario: Verdicts as the landing recorded them
 
-- **WHEN** the verdicts of a revision with two recorded verdicts are read, and of a revision with none
-- **THEN** the first answers both, each naming its check, build identity, outcome and signer, and the second answers an empty list, not absent
+- **WHEN** a revision is landed with a passing and a failing verdict recorded, each naming its check, build identity, outcome and signer, and its verdicts are read
+- **THEN** the answer holds each recorded verdict once, carrying the four as recorded, and each verdict carries an envelope of the in-toto payload type, with a payload, whose signature names the verdict's signer
+
+#### Scenario: A revision with no verdict
+
+- **WHEN** a revision is landed with no verdict recorded, and its verdicts are read
+- **THEN** the answer is an empty set, neither absent nor unreadable, over every landing, one that records verdicts or not
+
+#### Scenario: A landing that records no verdicts
+
+- **WHEN** the landing's group runs over a rig that says its landing records no verdicts
+- **THEN** the report names verdicts as the landing recorded them as not applicable, with the rig's reason, every other scenario of the group runs, and the run passes when they do
 
 ### Requirement: The signer's contract
 

@@ -121,7 +121,7 @@ rig extends `Rig { fn profile(&self) -> String; }`. In outline:
 |---|---|---|
 | `StoreRig` | `store()` | `unreachable()` |
 | `BuildRig` | `build()`, `second_host()` | `revision(&[(output, Made::Pass \| Fail \| Unmade)])`, `unreachable()` |
-| `LandingRig` | `landing()`, `branch()` | `landed(verdicts)`, `not_landed()`, `unreachable()` |
+| `LandingRig` | `landing()`, `branch()`, `records_verdicts()` | `landed(&[Recorded])`, `not_landed()`, `unreachable()` |
 | `SignerRig` | `signer()`, `identity()`, `named(&SignerId)`, `stranger()` | `no_identity()`, `expire(&SignerId)`, `unreachable()` |
 | `PolicyRig` | `policy()` | `at(revision, audience, Required)`, `unreachable()` |
 | `ProjectionRig` | `projection()`, `output()`, `artifacts(n)` | `serves() -> bool`, `unreachable()` |
@@ -150,9 +150,77 @@ anything failed. Every caller, the fakes' tests here and a profile's
 tests later, calls `run(..).assert()`, so a fake is reported exactly as
 any profile (93).
 
+A scenario that does not apply to its rig calls
+`not_applicable(why) -> !`, which unwinds with a `NotApplicable(why)`
+payload through `std::panic::resume_unwind`, so no panic hook prints
+it. The runner tells that payload from a panic: the scenario goes into
+the report's `not_applicable` list (scenario, plays, clauses, why), not
+its failures, and `passed()` counts only failures. The report's text
+reads `2 passed, 1 not applicable` and lists each not-applicable
+scenario under its own line, `- \`verdicts as the landing recorded
+them\` (clause 78): not applicable: <why>`, on a pass as on a failure.
+A scenario calls it only on what the rig says of its profile, never on
+a setup that went wrong, which is a failure.
+
 Alternatives: one rig shared by a group's scenarios, where one
 scenario's state leaks into the next; stopping at the first failure,
-which hides the rest of a profile's debt.
+which hides the rest of a profile's debt; an `applies` field on every
+scenario, which every group's list would carry for the one scenario
+that needs it.
+
+### D3a. The landing's rig stages what a landing records
+
+The design agent ruled it (madswan-design, 2026-10-23, on the question
+`moon-and-the-landings`' construct raised): the envelope is the
+landing's to make and tailrace's only to carry (12, 78, core.8), so a
+suite that forges one could be met by no real landing. So `landed`
+takes what a landing records of each verdict and the landing makes the
+rest:
+
+```rust
+pub struct Recorded { pub check: Check, pub build: BuildId, pub outcome: Outcome, pub signer: SignerId }
+
+pub trait LandingRig: Rig {
+    fn landing(&self) -> &dyn Landing;
+    fn branch(&self) -> Branch;
+    /// Whether the landing records verdicts; a plain branch records none (C.6).
+    fn records_verdicts(&self) -> bool;
+    /// A new revision the branch has landed, the landing recording `verdicts` for it.
+    fn landed(&self, verdicts: &[Recorded]) -> Revision;
+    fn not_landed(&self) -> Revision;
+    fn unreachable(&self) -> String;
+}
+```
+
+The suite hands `landed` a non-empty list only where
+`records_verdicts()` is true. The scenarios:
+
+- *verdicts as the landing recorded them*: where the rig records none,
+  `not_applicable("the landing records no verdicts")`. Otherwise a
+  revision landed with a passing `test` and a failing `lint` verdict,
+  each naming the signer `landing`, is read back. The answer holds each
+  recorded verdict once, in any order, with its check, build identity,
+  outcome and signer as recorded, and each verdict's envelope has the
+  in-toto payload type, a payload, and a signature naming the verdict's
+  signer. The suite asserts nothing of the payload's body, which is the
+  landing's (C.5 says what sluice's holds).
+- *a revision with no verdict*: over every landing, a revision landed
+  with none answers an empty set, neither absent nor unreadable (78,
+  C.6, as `seam-contracts` already requires of the trait).
+- *a landing that cannot be reached*: a revision landed with no verdict
+  staged, so it runs over every landing.
+
+The fake rig records verdicts. It makes each envelope as the fake
+landing records it, in `src/fakes.rs`: a verdict claim about the build,
+its payload, and a signature by the verdict's signer over the payload's
+digest, then hands the whole `Verdict` to `FakeLanding::verdict`. The
+envelope helper leaves `src/seams/landing.rs`, which makes no envelope.
+`FakeLandingRig::recording_none()` is the same fake saying it records
+none, standing for a plain branch (C.6), so the suite's handling of a
+landing that records no verdicts runs in this crate.
+
+This group is committed on its own, since `moon-and-the-landings` writes
+its landings' rigs on that commit.
 
 ### D4. The core's groups run over one world of fakes and git
 
@@ -210,6 +278,7 @@ asserts what the clause requires of the case it sets up.
 | build | a build that cannot be reached | | 58, 59 |
 | landing | landed and not landed | | 77 |
 | landing | verdicts as the landing recorded them | | 78 |
+| landing | a revision with no verdict | | 78 |
 | landing | a landing that cannot be reached | | 58, 59, 78 |
 | signer | signed and verified | | 7, 79, 80 |
 | signer | no identity at hand | | 79 |
@@ -407,6 +476,13 @@ section 12's "on every run".
   group, the scenarios, their clauses and the reason. This is how the
   binding group's "a broken profile fails the suite" is proved, and the
   scenario itself runs the same wrapper.
+- `crates/tailrace-conformance/tests/fakes.rs` also runs the landing
+  group over `FakeLandingRig::recording_none()`, asserting the run
+  passes and the report names *verdicts as the landing recorded them*
+  as not applicable with its reason.
+- `crates/tailrace-conformance/src/scenario.rs` unit tests: a group
+  with one scenario not applicable reports it, counts it neither passed
+  nor failed, and passes.
 - `crates/tailrace-conformance/src/coverage.rs` unit tests: each finding
   over hand-made inputs.
 - `crates/tailrace/tests/conformance.rs`: the surfaces group over the
