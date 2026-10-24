@@ -48,4 +48,4 @@ word core.1 rules out.
 
 ## 6. The gate
 
-- [ ] 6.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage, every crate's tests and the site's build.
+- [x] 6.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage, every crate's tests and the site's build.
