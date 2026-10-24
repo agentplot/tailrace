@@ -148,6 +148,17 @@ impl Registry {
         self.client.send(method, url, headers, body)
     }
 
+    /// What a `HEAD` the operation does not take is: what a `GET` of
+    /// the same URL answers, which carries the registry's words where the
+    /// `HEAD` carried none.
+    fn other_head(&self, url: &str, accept: &[(&str, &str)], head: &Answered) -> Not {
+        match self.send(Method::GET, url, accept, None) {
+            Ok(got) if !got.status.is_success() => self.other(url, &got),
+            Ok(_) => self.other(url, head),
+            Err(not) => not,
+        }
+    }
+
     /// What an answer the operation does not take is: refused in the
     /// registry's words, or unreadable naming `url` for a 5xx.
     fn other(&self, url: &str, answered: &Answered) -> Not {
@@ -201,7 +212,7 @@ impl Registry {
         match answered.status {
             StatusCode::OK => self.length(&url, &answered).map(Some),
             StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(self.other(&url, &answered)),
+            _ => Err(self.other_head(&url, &[], &answered)),
         }
     }
 
@@ -209,7 +220,8 @@ impl Registry {
     /// tag, names; none when it names none.
     fn manifest_head(&self, reference: &str) -> Answer<Option<(String, u64, Option<Digest>)>> {
         let url = self.url(&format!("manifests/{reference}"));
-        let answered = self.send(Method::HEAD, &url, &[("accept", MANIFESTS)], None)?;
+        let accept = [("accept", MANIFESTS)];
+        let answered = self.send(Method::HEAD, &url, &accept, None)?;
         match answered.status {
             StatusCode::OK => {
                 let size = self.length(&url, &answered)?;
@@ -223,7 +235,7 @@ impl Registry {
                 Ok(Some((media_type, size, digest)))
             }
             StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(self.other(&url, &answered)),
+            _ => Err(self.other_head(&url, &accept, &answered)),
         }
     }
 
