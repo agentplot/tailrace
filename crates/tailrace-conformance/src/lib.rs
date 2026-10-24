@@ -69,6 +69,7 @@
 //! its own crate's tests.
 
 pub mod core;
+pub mod coverage;
 pub mod fakes;
 pub mod fixture;
 pub mod register;
