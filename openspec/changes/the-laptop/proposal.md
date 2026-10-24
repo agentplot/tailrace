@@ -148,6 +148,7 @@ crates/tailrace/src/profiles/*/mod.rs
 crates/tailrace/src/profiles/policy/**
 crates/tailrace/src/profiles/projection/**
 crates/tailrace/src/profiles/signer/host_key/mod.rs
+crates/tailrace/src/profiles/signer/host_key/tests.rs
 crates/tailrace/tests/**
 crates/tailrace/moon.yml
 crates/tailrace-core/src/publish.rs
