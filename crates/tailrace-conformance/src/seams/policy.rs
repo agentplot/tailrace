@@ -1,11 +1,11 @@
 //! The policy's group: 82 and 83, and 116 as a policy keeps it (B.5).
 
 use tailrace_seams::{
-    Audience, ChannelName, Check, ClaimKind, NamedSigner, Not, Policy, Required, RequiredClaim,
+    Audience, ChannelName, Check, ClaimKind, NamedSigner, Policy, Required, RequiredClaim,
     Revision, Seam, SignerId,
 };
 
-use crate::seams::unreadable;
+use crate::seams::{absent, unreadable};
 use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "policy";
@@ -146,20 +146,14 @@ fn no_policy_for_an_audience(rig: &dyn PolicyRig) {
         Audience::Acceptance,
         Required::Acceptance { claims: claims() },
     )]);
-    match rig.policy().policy_for(&at, &Audience::Layout) {
-        Err(Not::Absent(a)) => {
-            assert_eq!(a.source.seam, Seam::Policy, "{a:?}");
-            assert!(
-                a.what.contains("layout"),
-                "the absence names no audience: {a:?}"
-            );
-            assert!(
-                a.what.contains(at.as_str()),
-                "the absence names no revision: {a:?}"
-            );
-        }
-        other => panic!("policy-for an audience with no policy answered {other:?}"),
-    }
+    // The policy's absence names the audience alone; the revision beside
+    // it is verify's to name (82).
+    absent(
+        rig.policy().policy_for(&at, &Audience::Layout),
+        Seam::Policy,
+        "layout",
+        "policy-for an audience with no policy",
+    );
 }
 
 fn a_policy_that_cannot_be_reached(rig: &dyn PolicyRig) {
