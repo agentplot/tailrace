@@ -8,6 +8,20 @@ use std::process::{Command, Stdio};
 
 use tailrace_seams::{Answer, Not, Source};
 
+/// The variables that point git at another repository, work tree or
+/// index than the one a profile names, as a hook or a gate running
+/// tailrace may have set them: every profile's git, and moon, runs with
+/// them removed.
+pub(crate) const GIT_REPOSITORY_ENV: &[&str] = &[
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_PREFIX",
+];
+
 /// A program a profile runs, and the source its answers name: the seam
 /// and the profile that ran it.
 #[derive(Clone, Debug)]
@@ -21,6 +35,8 @@ pub(crate) struct Tool {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Ran {
     pub code: Option<i32>,
+    /// The exit as the operating system words it.
+    pub status: String,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
 }
@@ -53,6 +69,21 @@ impl Tool {
         env_drop: &[&str],
         allowed: &[i32],
     ) -> Answer<Ran> {
+        let ran = self.ran(dir, args, env_drop)?;
+        if ran.code.is_some_and(|code| allowed.contains(&code)) {
+            return Ok(ran);
+        }
+        Err(self.failed(args, &ran))
+    }
+
+    /// The tool run as [`output`](Tool::output) runs it, whatever it
+    /// exits with: unreadable only when it cannot start.
+    pub fn ran<S: AsRef<OsStr>>(
+        &self,
+        dir: Option<&Path>,
+        args: &[S],
+        env_drop: &[&str],
+    ) -> Answer<Ran> {
         let mut command = Command::new(&self.program);
         command
             .args(args)
@@ -75,23 +106,26 @@ impl Tool {
         let out = command
             .output()
             .map_err(|e| self.unreadable(args, e.to_string()))?;
-        let ran = Ran {
+        Ok(Ran {
             code: out.status.code(),
+            status: out.status.to_string(),
             stdout: out.stdout,
             stderr: out.stderr,
-        };
-        if ran.code.is_some_and(|code| allowed.contains(&code)) {
-            return Ok(ran);
-        }
+        })
+    }
+
+    /// Unreadable naming the command `ran` came from, carrying its
+    /// stderr, trimmed, or its exit where it printed nothing.
+    pub fn failed<S: AsRef<OsStr>>(&self, args: &[S], ran: &Ran) -> Not {
         let words = String::from_utf8_lossy(&ran.stderr).trim().to_string();
-        Err(self.unreadable(
+        self.unreadable(
             args,
             if words.is_empty() {
-                out.status.to_string()
+                ran.status.clone()
             } else {
                 words
             },
-        ))
+        )
     }
 
     /// The tool run as [`output`](Tool::output) runs it, exit 0 alone
@@ -106,7 +140,7 @@ impl Tool {
     }
 
     /// Unreadable naming the command run and carrying `said`.
-    fn unreadable<S: AsRef<OsStr>>(&self, args: &[S], said: String) -> Not {
+    pub fn unreadable<S: AsRef<OsStr>>(&self, args: &[S], said: String) -> Not {
         let mut what = self.program.display().to_string();
         for arg in args {
             what.push(' ');
