@@ -30,9 +30,9 @@ bolt, beside `check-fast`. A test that needs only git SHALL stay in
 
 moon, sluice, OpenSSH, zot, the reference distribution and ECR's
 credential helper SHALL be the versions the tree pins, on every host
-that runs the layer: moon by `.prototools`, sluice by its release
-binary's version and hash in `devenv.nix`, and the others by
-`devenv.lock` (core.26). The ECR repository the layer pushes to SHALL
+that runs the layer: moon by `.prototools`, sluice and zot each by its
+release binary's version and per-system hash in `devenv.nix`, and the
+others by `devenv.lock` (core.26). The ECR repository the layer pushes to SHALL
 be the host's, named in its `devenv.local.nix`.
 
 #### Scenario: sluice in the shell
