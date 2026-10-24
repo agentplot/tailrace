@@ -30,7 +30,7 @@ fn repository() -> String {
         Ok(repository) if !repository.trim().is_empty() => repository.trim().to_string(),
         _ => panic!(
             "the ECR run names no repository: set env.{SETTING} in devenv.local.nix to the ECR \
-             repository the tools layer pushes to, with the AWS_PROFILE its credential helper \
+             repository the ECR check pushes to, with the AWS_PROFILE its credential helper \
              reads and the registry host mapped to ecr-login in the Docker configuration's \
              credHelpers"
         ),

@@ -20,9 +20,12 @@ tasks:
     options: {runFromWorkspaceRoot: true}
   # The registry store's group against the ECR repository the host names
   # in devenv.local.nix (env.TAILRACE_TOOLS_ECR), behind the `tools`
-  # feature; it fails naming the setting on a host that names none.
+  # feature; it fails naming the setting on a host that names none. It
+  # needs a person's live AWS session, so it runs outside the gate under a
+  # tag of its own, by hand with `moon run ':#check-ecr'` or by a job that
+  # holds an identity of its own (core.38).
   tools-ecr:
     command: 'cargo test -p tailrace --features tools --test registry_ecr'
     inputs: ['/crates/tailrace/**/*', '/crates/tailrace-seams/**/*', '/crates/tailrace-core/**/*', '/crates/tailrace-fakes/**/*', '/crates/tailrace-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '$TAILRACE_TOOLS_ECR']
-    tags: [check-tools]
+    tags: [check-ecr]
     options: {runFromWorkspaceRoot: true}
