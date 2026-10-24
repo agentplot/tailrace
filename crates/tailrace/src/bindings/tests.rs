@@ -258,6 +258,102 @@ fn a_profile_no_family_knows_is_unreadable_naming_the_table() {
     }
 }
 
+#[test]
+fn a_registry_binds_a_store_named_by_its_repository() {
+    let host = Host::new();
+    host.write("[store]\nregistry = \"localhost:5000/tailrace\"\n\n[landing]\nbranch = {}\n");
+    let binding = bind(
+        &host.file(),
+        Some(&host.home()),
+        host.dir.path(),
+        For::Verify,
+    )
+    .unwrap();
+    assert_eq!(
+        binding.store,
+        Source::new(Seam::Store, "registry localhost:5000/tailrace")
+    );
+
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    host.write(&format!(
+        "[store]\nregistry = \"127.0.0.1:{port}/tailrace\"\n\n[landing]\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n"
+    ));
+    let binding = bind(
+        &host.file(),
+        Some(&host.home()),
+        host.dir.path(),
+        For::Publish,
+    )
+    .unwrap();
+    match binding
+        .seams
+        .store
+        .resolve(&tailrace_seams::Name::new("v1.0.0"))
+    {
+        Err(Not::Unreadable(u)) => assert_eq!(
+            u.source,
+            Source::new(
+                Seam::Store,
+                format!("OCI registry 127.0.0.1:{port}/tailrace")
+            )
+        ),
+        other => panic!("a registry nothing listens for answered {other:?}"),
+    }
+}
+
+#[test]
+fn a_registry_named_by_what_is_no_repository_is_unreadable_naming_the_key_and_the_value() {
+    let host = Host::new();
+    for (value, names) in [("\"tailrace\"", "\"tailrace\""), ("5000", "5000")] {
+        host.write(&format!(
+            "[store]\nregistry = {value}\n\n[landing]\nbranch = {{}}\n"
+        ));
+        match bind(
+            &host.file(),
+            Some(&host.home()),
+            host.dir.path(),
+            For::Verify,
+        ) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source, Source::host(host.file()));
+                assert_eq!(
+                    u.what,
+                    format!("{}, [store] registry", host.file().display())
+                );
+                let said = u.said.unwrap();
+                assert!(said.contains(names), "{said}");
+            }
+            other => panic!("registry = {value} answered {:?}", other.err()),
+        }
+    }
+}
+
+#[test]
+fn a_store_key_no_profile_reads_is_unreadable_listing_both_keys() {
+    let host = Host::new();
+    host.write("[store]\nbucket = \"/b\"\n\n[landing]\nbranch = {}\n");
+    match bind(
+        &host.file(),
+        Some(&host.home()),
+        host.dir.path(),
+        For::Verify,
+    ) {
+        Err(Not::Unreadable(u)) => assert_eq!(
+            u.said.as_deref(),
+            Some(
+                "[store] names bucket, which no store profile is bound by; \
+                 it reads layout or registry"
+            )
+        ),
+        other => panic!("answered {:?}", other.err()),
+    }
+}
+
 /// A file binding the layout at `layout`, a branch with no remote and,
 /// where `signing`, the signer `laptop`; and the binding it makes for
 /// `command`.

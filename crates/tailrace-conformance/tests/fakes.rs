@@ -1,7 +1,7 @@
 //! Every group of the suite over the fakes: one test per group, each run
 //! with the runner and reported as any profile is (93; design D9).
 
-use tailrace_conformance::core::{publish, status, verify, version};
+use tailrace_conformance::core::{cache, copy, ledger, publish, status, verify, version};
 use tailrace_conformance::fakes::{
     FakeBindingRig, FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig,
     FakeSignerRig, FakeStoreRig, FakeTargetRig,
@@ -11,7 +11,7 @@ use tailrace_conformance::seams::{
     binding, build, keeper, landing, policy, projection, signer, target,
 };
 use tailrace_conformance::world::FakeWorld;
-use tailrace_conformance::{run, Scenario};
+use tailrace_conformance::{run, Report, Scenario};
 use tailrace_seams::{Digest, Not};
 
 #[test]
@@ -93,12 +93,51 @@ fn the_fake_policy_keeps_the_policys_contract() {
     .assert();
 }
 
+/// The scenarios a projection group's report names not applicable.
+fn inapplicable(report: &Report) -> Vec<(&str, &str)> {
+    report
+        .not_applicable
+        .iter()
+        .map(|n| (n.scenario, n.why.as_str()))
+        .collect()
+}
+
 #[test]
 fn the_fake_projection_keeps_a_projections_contract() {
-    run(projection::GROUP, &projection::scenarios(), &|| {
+    let report = run(projection::GROUP, &projection::scenarios(), &|| {
         Box::new(FakeProjectionRig::new())
-    })
-    .assert();
+    });
+    report.assert();
+    assert_eq!(
+        inapplicable(&report),
+        [(
+            "a projection that packs no cache entries",
+            "the projection packs cache entries"
+        )],
+        "{report}"
+    );
+}
+
+#[test]
+fn a_fake_projection_packing_no_cache_entries_keeps_a_projections_contract() {
+    let report = run(projection::GROUP, &projection::scenarios(), &|| {
+        Box::new(FakeProjectionRig::packing_no_cache_entries())
+    });
+    report.assert();
+    assert_eq!(
+        inapplicable(&report),
+        [
+            (
+                "a cache entry packed with no version",
+                "the projection packs no cache entries"
+            ),
+            (
+                "a layout of the build identities given",
+                "the projection packs no cache entries"
+            )
+        ],
+        "{report}"
+    );
 }
 
 #[test]
@@ -145,6 +184,30 @@ fn the_core_verifies_over_the_fakes() {
 fn the_core_versions_over_the_fakes() {
     run(version::GROUP, &version::scenarios(), &|| {
         Box::new(FakeWorld::two_components())
+    })
+    .assert();
+}
+
+#[test]
+fn the_core_copies_over_the_fakes() {
+    run(copy::GROUP, &copy::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_core_follows_the_ledger_over_the_fakes() {
+    run(ledger::GROUP, &ledger::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_core_keeps_the_cache_over_the_fakes() {
+    run(cache::GROUP, &cache::scenarios(), &|| {
+        Box::new(FakeWorld::new())
     })
     .assert();
 }

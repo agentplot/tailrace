@@ -385,6 +385,27 @@ impl History {
         }
     }
 
+    /// The newest revision of the local branch `branch` that the
+    /// checkout's head descends from, their common ancestor, by its full
+    /// id (design D4); absent naming the branch when the repository holds
+    /// no such branch or the two share no history.
+    pub fn base(&self, branch: &Branch) -> Answer<Revision> {
+        let tip = self.head(branch)?;
+        let what = format!("a revision of branch {branch} that HEAD descends from");
+        let unreadable = |e: git2::Error| Not::unreadable(&local(), what.clone(), words(&e));
+        let head = self
+            .git
+            .head()
+            .and_then(|h| h.peel_to_commit())
+            .map_err(unreadable)?;
+        let tip = Oid::from_str(tip.as_str()).map_err(unreadable)?;
+        match self.git.merge_base(head.id(), tip) {
+            Ok(base) => Ok(Revision::new(base.to_string())),
+            Err(e) if e.code() == ErrorCode::NotFound => Err(Not::absent(&local(), what)),
+            Err(e) => Err(unreadable(e)),
+        }
+    }
+
     /// The commit `text` names, a full or short id, a branch, a tag or
     /// any revision git reads, by its full id, so every act records the
     /// revision it acted on (rule core.4); absent with git's words when it

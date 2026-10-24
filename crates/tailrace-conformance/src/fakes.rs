@@ -408,7 +408,8 @@ impl PolicyRig for FakePolicyRig {
 }
 
 /// The fake projection of the ecosystem `file`, whose clients the group
-/// treats as reading no files, so it serves.
+/// treats as reading no files, so it serves; it packs cache entries
+/// unless made with [`FakeProjectionRig::packing_no_cache_entries`].
 pub struct FakeProjectionRig {
     pub projection: FakeProjection,
 }
@@ -421,6 +422,13 @@ impl FakeProjectionRig {
         FakeProjectionRig {
             projection: FakeProjection::new(Ecosystem::new(Self::ECOSYSTEM)),
         }
+    }
+
+    /// The fake projection scripted to pack no cache entries (84, 85).
+    pub fn packing_no_cache_entries() -> Self {
+        let rig = Self::new();
+        rig.projection.packs_no_cache_entries();
+        rig
     }
 }
 
@@ -467,6 +475,10 @@ impl ProjectionRig for FakeProjectionRig {
 
     fn serves(&self) -> bool {
         true
+    }
+
+    fn caches(&self) -> bool {
+        self.projection.caches()
     }
 
     fn unreachable(&self) -> String {

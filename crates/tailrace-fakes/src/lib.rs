@@ -10,7 +10,7 @@
 //! | the landing | [`FakeLanding`] | revisions landed per branch, verdicts per revision |
 //! | the signer | [`FakeSigner`] | the identity at hand, the identities expired |
 //! | the policy | [`FakePolicy`] | what each audience requires, per revision |
-//! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes |
+//! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes, whether it packs cache entries |
 //! | a target | [`FakeTarget`] | per environment, its channel's head and what it runs |
 //! | the keeper | [`FakeKeeper`] | per channel, a chain of promotion claims |
 //!
@@ -124,8 +124,9 @@ impl Fakes {
 mod tests {
     use serde_json::Value;
     use tailrace_seams::{
-        Artifact, Audience, Branch, ChannelName, Claim, ClaimKind, Environment, Layout, Manifest,
-        Name, NamedSigner, Output, OutputName, Required, Revision, SignerId, Verified, Version,
+        Artifact, Audience, Branch, BuildId, ChannelName, Claim, ClaimKind, Contents, Environment,
+        Layout, Manifest, Name, NamedSigner, Output, OutputName, Required, Revision, SignerId,
+        Verified, Version,
     };
 
     use super::*;
@@ -166,18 +167,20 @@ mod tests {
                     name: OutputName::new("site"),
                     files: vec![],
                 },
-                &Version::new("1.0.0"),
+                &BuildId::new("b7e1"),
+                Some(&Version::new("1.0.0")),
             )
             .unwrap();
-        assert_eq!(packed.meta.ecosystem(), &eco_a);
+        let meta = packed.meta.expect("a versioned pack names metadata");
+        assert_eq!(meta.ecosystem(), &eco_a);
         let artifact = Artifact {
             digest: digest.clone(),
-            meta: packed.meta.clone(),
+            meta: meta.clone(),
         };
         let index = seams
             .store
             .put_artifact(&Manifest::Artifact {
-                meta: packed.meta,
+                meta,
                 layers: vec![digest.clone()],
             })
             .unwrap()
@@ -224,16 +227,21 @@ mod tests {
                     name: OutputName::new("cli"),
                     files: vec![],
                 },
-                &Version::new("1.0.0"),
+                &BuildId::new("b7e1"),
+                Some(&Version::new("1.0.0")),
             )
             .is_ok());
-        let rendered = projection.render(&[artifact], "layouts/eco-b").unwrap();
+        let rendered = projection
+            .render(Contents::Artifacts(&[artifact]), "layouts/eco-b")
+            .unwrap();
         assert_eq!(
             projection.serve(&rendered.layout).unwrap().address,
             "fake://eco-b/layouts/eco-b"
         );
         let projection = seams.projection(&eco_a).unwrap();
-        assert!(projection.render(&[], "layouts/eco-a").is_ok());
+        assert!(projection
+            .render(Contents::Artifacts(&[]), "layouts/eco-a")
+            .is_ok());
         assert!(projection
             .serve(&Layout {
                 at: "layouts/eco-a".into()
@@ -336,7 +344,8 @@ mod tests {
                     name: OutputName::new("site"),
                     files: vec![],
                 },
-                &Version::new("1.0.0"),
+                &BuildId::new("b7e1"),
+                Some(&Version::new("1.0.0")),
             )
             .unwrap()
             .same_again

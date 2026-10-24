@@ -6,10 +6,14 @@
 //! A directory is published by a task that leaves an archive of it,
 //! since tailrace builds nothing (15).
 //!
-//! Its render and serve are not built and answer absent.
+//! It packs no cache entries: a pack with no version and a render of
+//! cache entries answer absent naming them, and read and write nothing
+//! (84, 85). Its render of artifacts and serve are not built and answer
+//! absent.
 
 use tailrace_seams::{
-    Answer, Artifact, Layout, Output, Packed, Projection, Rendered, Seam, Serving, Source, Version,
+    no_cache_entries, Answer, BuildId, Contents, Layout, Output, Packed, Projection, Rendered,
+    Seam, Serving, Source, Version,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -35,20 +39,28 @@ impl FileProjection {
 
 impl Projection for FileProjection {
     /// 84, 87: the output's one file's bytes unchanged, named by the
-    /// output and the version, packing the same again.
-    fn pack(&self, output: &Output, version: &Version) -> Answer<Packed> {
+    /// output and the version, packing the same again at every build
+    /// identity; absent for a cache entry, which it packs none of.
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
         let source = FileProjection::source();
+        let Some(version) = version else {
+            return Err(no_cache_entries(&source));
+        };
         let file = one_file(output, &source, ECOSYSTEM)?;
         let bytes = read(file, &source)?;
         Ok(Packed {
             bytes,
-            meta: meta(ECOSYSTEM, output, version, &source)?,
+            meta: Some(meta(ECOSYSTEM, output, version, &source)?),
             same_again: true,
         })
     }
 
-    fn render(&self, _: &[Artifact], _: &str) -> Answer<Rendered> {
-        Err(not_built("render", ECOSYSTEM, &FileProjection::source()))
+    fn render(&self, contents: Contents<'_>, _: &str) -> Answer<Rendered> {
+        let source = FileProjection::source();
+        match contents {
+            Contents::Artifacts(_) => Err(not_built("render", ECOSYSTEM, &source)),
+            Contents::CacheEntries(_) => Err(no_cache_entries(&source)),
+        }
     }
 
     fn serve(&self, _: &Layout) -> Answer<Serving> {
@@ -61,7 +73,8 @@ mod tests {
     use std::fs;
 
     use tailrace_seams::{
-        ArtifactMeta, Digest, Ecosystem, EcosystemName, Not, OutputName, Seam, Why,
+        Artifact, ArtifactMeta, CacheEntry, Digest, Ecosystem, EcosystemName, Not, OutputName,
+        Seam, Why,
     };
     use tempfile::TempDir;
 
@@ -86,17 +99,24 @@ mod tests {
         .unwrap()
     }
 
+    fn b7e1() -> BuildId {
+        BuildId::new("b7e1")
+    }
+
+    /// `output` packed at `b7e1` with `version`.
+    fn pack(output: &Output, version: &str) -> Answer<Packed> {
+        FileProjection.pack(output, &b7e1(), Some(&Version::new(version)))
+    }
+
     #[test]
     fn one_file_packs_as_its_own_bytes_named_by_the_output() {
         let dir = TempDir::new().unwrap();
-        let packed = FileProjection
-            .pack(&site(&dir, b"abc"), &Version::new("1.4.0"))
-            .unwrap();
+        let packed = pack(&site(&dir, b"abc"), "1.4.0").unwrap();
         assert_eq!(
             packed,
             Packed {
                 bytes: b"abc".to_vec(),
-                meta: meta("1.4.0"),
+                meta: Some(meta("1.4.0")),
                 same_again: true,
             }
         );
@@ -106,14 +126,10 @@ mod tests {
     fn two_versions_pack_one_set_of_bytes() {
         let dir = TempDir::new().unwrap();
         let output = site(&dir, b"abc");
-        let first = FileProjection
-            .pack(&output, &Version::new("1.4.0"))
-            .unwrap();
-        let second = FileProjection
-            .pack(&output, &Version::new("1.5.0-pre.1"))
-            .unwrap();
+        let first = pack(&output, "1.4.0").unwrap();
+        let second = pack(&output, "1.5.0-pre.1").unwrap();
         assert_eq!(Digest::of(&first.bytes), Digest::of(&second.bytes));
-        assert_eq!(second.meta, meta("1.5.0-pre.1"));
+        assert_eq!(second.meta, Some(meta("1.5.0-pre.1")));
         assert!(first.same_again && second.same_again);
     }
 
@@ -128,7 +144,7 @@ mod tests {
             name: OutputName::new("site"),
             files,
         };
-        match FileProjection.pack(&output, &Version::new("1.4.0")) {
+        match pack(&output, "1.4.0") {
             Err(Not::Refused(r)) => {
                 assert_eq!(r.source, FileProjection::source());
                 assert_eq!(r.why, Why::Said);
@@ -147,7 +163,7 @@ mod tests {
             files: vec![],
         };
         assert!(matches!(
-            FileProjection.pack(&none, &Version::new("1.4.0")),
+            pack(&none, "1.4.0"),
             Err(Not::Refused(r)) if r.said.as_deref().is_some_and(|s| s.contains("left no file"))
         ));
     }
@@ -158,7 +174,7 @@ mod tests {
         let output = site(&dir, b"abc");
         fs::remove_file(&output.files[0]).unwrap();
         let words = fs::read(&output.files[0]).unwrap_err().to_string();
-        match FileProjection.pack(&output, &Version::new("1.4.0")) {
+        match pack(&output, "1.4.0") {
             Err(Not::Unreadable(u)) => {
                 assert_eq!(u.source.seam, Seam::Projection);
                 assert_eq!(u.what, output.files[0]);
@@ -176,7 +192,7 @@ mod tests {
             digest: Digest::of(b"abc"),
             meta: meta("1.4.0"),
         }];
-        let rendered = FileProjection.render(&artifacts, at.to_str().unwrap());
+        let rendered = FileProjection.render(Contents::Artifacts(&artifacts), at.to_str().unwrap());
         assert_eq!(
             rendered,
             Err(Not::absent(
@@ -195,5 +211,27 @@ mod tests {
                 "serve of the file projection"
             ))
         );
+    }
+
+    #[test]
+    fn a_cache_entry_is_absent_and_nothing_is_read_or_written() {
+        let dir = TempDir::new().unwrap();
+        let output = site(&dir, b"abc");
+        fs::remove_file(&output.files[0]).unwrap();
+        let absent = Not::absent(&FileProjection::source(), "cache entries");
+        assert_eq!(
+            FileProjection.pack(&output, &b7e1(), None),
+            Err(absent.clone())
+        );
+        let at = dir.path().join("layouts").join("file");
+        let entries = [CacheEntry {
+            build: b7e1(),
+            digest: Digest::of(b"abc"),
+        }];
+        assert_eq!(
+            FileProjection.render(Contents::CacheEntries(&entries), at.to_str().unwrap()),
+            Err(absent)
+        );
+        assert!(!at.exists(), "render wrote under {}", at.display());
     }
 }

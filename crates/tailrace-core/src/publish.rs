@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Branch, BuildId, ClaimKind, Component, ComponentName, Digest,
     Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Name, Not, Outcome, Output, OutputName,
-    Packed, Projection, Report, Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
+    Projection, Report, Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
 };
 
 use crate::{
@@ -187,13 +187,22 @@ struct Run<'a> {
     verdicts: Option<Answer<Vec<Verdict>>>,
 }
 
-/// An output with what the build reported of it, the projection that
-/// packs it, and the verdicts naming its build.
+/// An output with what the build reported of it, the ecosystem and
+/// projection that pack it, and the verdicts naming its build.
 struct Judged<'a> {
     name: OutputName,
     report: Report,
+    ecosystem: Ecosystem,
     projection: &'a dyn Projection,
     verdicts: Vec<Verdict>,
+}
+
+/// 84: an output packed as an artifact: the bytes, the metadata the
+/// projection gave them, and whether it promised the same bytes again.
+struct PackedArtifact {
+    bytes: Vec<u8>,
+    meta: ArtifactMeta,
+    same_again: bool,
 }
 
 impl<'a> Run<'a> {
@@ -234,7 +243,7 @@ impl<'a> Run<'a> {
             let projection = seams.projection(ecosystem).ok_or_else(|| {
                 Not::absent(&bound(Seam::Host), format!("projection for {ecosystem}"))
             })?;
-            projections.push(projection);
+            projections.push((ecosystem.clone(), projection));
         }
 
         // 4, 5: the landing's verdicts, then every output in one asking
@@ -242,11 +251,12 @@ impl<'a> Run<'a> {
         let verdicts = self.verdicts()?;
         self.seams.build.ensure(revision, &component.outputs)?;
         let mut outputs = Vec::new();
-        for (output, projection) in component.outputs.iter().zip(projections) {
+        for (output, (ecosystem, projection)) in component.outputs.iter().zip(projections) {
             let report = self.seams.build.report(revision, output)?;
             outputs.push(Judged {
                 name: output.clone(),
                 report,
+                ecosystem,
                 projection,
                 verdicts: Vec::new(),
             });
@@ -270,14 +280,34 @@ impl<'a> Run<'a> {
             Err(not) => return Err(not),
         };
 
-        // 9: each output packed with the version (84).
+        // 9: each output packed at its build identity with the version,
+        // and a pack that names no metadata refused before anything is
+        // offered (84, rule core.12).
         let mut packed = Vec::new();
         for output in &outputs {
             let files = Output {
                 name: output.name.clone(),
                 files: output.report.files.clone(),
             };
-            packed.push(output.projection.pack(&files, &versioned.version)?);
+            let answer =
+                output
+                    .projection
+                    .pack(&files, &output.report.build, Some(&versioned.version))?;
+            let Some(meta) = answer.meta else {
+                return Err(Not::refused(
+                    &Source::new(Seam::Projection, output.ecosystem.as_str()),
+                    Why::Said,
+                    Some(format!(
+                        "{} was packed at {} and the answer names no metadata",
+                        output.name, versioned.version
+                    )),
+                ));
+            };
+            packed.push(PackedArtifact {
+                bytes: answer.bytes,
+                meta,
+                same_again: answer.same_again,
+            });
         }
 
         let artifacts = match held {
@@ -341,7 +371,7 @@ impl<'a> Run<'a> {
     fn again(
         &self,
         outputs: &[Judged],
-        packed: &[Packed],
+        packed: &[PackedArtifact],
         held: &[(Artifact, Vec<Digest>)],
     ) -> Answer<Vec<PublishedArtifact>> {
         let mut same = Vec::new();
@@ -397,7 +427,7 @@ impl<'a> Run<'a> {
         &self,
         versioned: &Versioned,
         outputs: &[Judged],
-        packed: &[Packed],
+        packed: &[PackedArtifact],
         revision: &Revision,
     ) -> Answer<Vec<(Artifact, PublishedArtifact)>> {
         let store = &self.seams.store;
@@ -503,7 +533,7 @@ impl<'a> Run<'a> {
 
 fn answered(
     output: &Judged,
-    packed: &Packed,
+    packed: &PackedArtifact,
     digest: Digest,
     bytes: Digest,
     claims: Vec<Attached>,

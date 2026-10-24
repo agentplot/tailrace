@@ -8,6 +8,7 @@
 //! ```toml
 //! [store]
 //! layout = "~/.local/share/tailrace/layout"
+//! # registry = "registry.example.com/tailrace"   # a registry in its place
 //!
 //! [landing]
 //! branch = { remote = "origin" }   # the remote optional
@@ -167,6 +168,12 @@ impl Table {
             .clone()
             .try_into()
             .map_err(|e: toml::de::Error| unreadable(&self.file, Some(&self.at()), e.to_string()))
+    }
+
+    /// The value could not be read as its profile reads it, for `said`:
+    /// unreadable naming the file, the table and the key.
+    pub fn unreadable(&self, said: impl Into<String>) -> Not {
+        unreadable(&self.file, Some(&self.at()), said)
     }
 
     /// What a seam's profile family answers for a key that names none of
@@ -362,9 +369,9 @@ impl Keeper for NoLedger {
 /// it before anything is read; a file naming no `[store]` or no
 /// `[landing]` is absent naming the table. Every table is read before the
 /// layout is made, so a file that cannot bind leaves nothing behind. The
-/// store is named as the file names it, its key and its path with `~/`
-/// expanded, so the record names a directory a reader finds whoever's
-/// home it was written under (61, 118; design D9).
+/// store is named as the file names it, its key and what it names, a
+/// path with `~/` expanded, so the record names a directory a reader
+/// finds whoever's home it was written under (61, 118; design D9).
 pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
     let bindings = read(file, home)?;
     let signing = bindings.signing.as_ref();
@@ -382,12 +389,9 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         .as_ref()
         .ok_or_else(|| missing("landing"))?;
     let store = bindings.store.as_ref().ok_or_else(|| missing("store"))?;
+    let named = profiles::store::named(store)?;
     let landing = profiles::landing::bind(landing, repository)?;
     let bound = profiles::store::bind(store, command == For::Publish)?;
-    let named = Source::new(
-        Seam::Store,
-        format!("{} {}", store.key(), store.path()?.display()),
-    );
     Ok(Binding {
         seams: Seams {
             store: bound,

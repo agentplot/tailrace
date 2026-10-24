@@ -1,17 +1,21 @@
-//! The OCI forms of what the layout holds, and the keys tailrace names
-//! (design D4): an artifact as an image manifest whose config is its
+//! The OCI forms of what the store profiles hold, and the keys tailrace
+//! names (design D4): an artifact as an image manifest whose config is its
 //! metadata and whose layers are its bytes, an index as an image index
 //! naming each artifact, and an attestation as the envelope's own JSON.
 //! Each is written through one struct whose fields are in a fixed order
 //! and whose annotations are sorted, so the same manifest writes the same
-//! bytes, and so the same digest, on every host (1, 5).
+//! bytes, and so the same digest, on every host and in every store (1, 5).
+//! A registry holds an attestation as a referrer, an image manifest whose
+//! subject is the digest it is about and whose one layer is the envelope,
+//! and lists a subject's referrers in a referrers index (design D5, D6).
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use tailrace_seams::{
     canonical, Answer, Artifact, ArtifactMeta, ComponentName, Digest, Ecosystem, EcosystemName,
-    IndexMeta, Manifest, Not, Source, Version, Why,
+    Envelope, IndexMeta, Manifest, Not, Source, Version, Why, IN_TOTO,
 };
 
 pub(super) const IMAGE_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
@@ -27,6 +31,10 @@ pub(super) const ENVELOPE: &str = "application/vnd.agentplot.tailrace.envelope.v
 pub(super) const INDEX_TYPE: &str = "application/vnd.agentplot.tailrace.index";
 /// An artifact's artifact type, before its ecosystem.
 const ARTIFACT_TYPE: &str = "application/vnd.agentplot.tailrace.artifact.";
+/// The config of a manifest that has none to give, a referrer's: the
+/// two bytes `{}`.
+pub(super) const EMPTY: &str = "application/vnd.oci.empty.v1+json";
+pub(super) const EMPTY_JSON: &[u8] = b"{}";
 
 /// A name's entry in `index.json`.
 pub(super) const REF_NAME: &str = "org.opencontainers.image.ref.name";
@@ -36,6 +44,9 @@ const VERSION: &str = "org.opencontainers.image.version";
 const COMPONENT: &str = "io.github.agentplot.tailrace.component";
 const ECOSYSTEM: &str = "io.github.agentplot.tailrace.ecosystem";
 const NAME: &str = "io.github.agentplot.tailrace.name";
+/// A referrer's annotation: the predicate type of the in-toto statement
+/// its envelope holds, which no media type can carry (design D5).
+pub(super) const PREDICATE_TYPE: &str = "in-toto.io/predicate-type";
 
 /// An OCI descriptor: what a manifest, an index or `index.json` names a
 /// blob by.
@@ -68,6 +79,19 @@ struct ImageIndex {
     media_type: String,
     artifact_type: String,
     manifests: Vec<Descriptor>,
+    annotations: BTreeMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReferrerManifest {
+    schema_version: u32,
+    media_type: String,
+    artifact_type: String,
+    config: Descriptor,
+    layers: Vec<Descriptor>,
+    subject: Descriptor,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     annotations: BTreeMap<String, String>,
 }
 
@@ -249,6 +273,177 @@ pub(super) fn read(media_type: &str, bytes: &[u8]) -> Result<Read, String> {
     }
 }
 
+/// An attestation as a registry holds it (design D5): the referrer's
+/// manifest, and the two blobs it names, the empty config and the
+/// envelope's canonical JSON, whose digest is the envelope's own.
+#[derive(Debug)]
+pub(super) struct Referrer {
+    pub bytes: Vec<u8>,
+    pub config: Vec<u8>,
+    pub layer: Vec<u8>,
+    annotations: BTreeMap<String, String>,
+}
+
+impl Referrer {
+    /// The referrer's descriptor, as a referrers index lists it: its
+    /// artifact type and annotations copied from the manifest (D6).
+    pub(super) fn descriptor(&self) -> Descriptor {
+        Descriptor {
+            media_type: IMAGE_MANIFEST.into(),
+            digest: Digest::of(&self.bytes),
+            size: self.bytes.len() as u64,
+            artifact_type: Some(ENVELOPE.into()),
+            annotations: self.annotations.clone(),
+        }
+    }
+}
+
+/// `envelope` as a referrer of `subject`: an image manifest typed by the
+/// envelope, its config the empty descriptor, its one layer the envelope,
+/// and, when the envelope holds an in-toto statement naming a predicate
+/// type, that type in its annotations (design D5).
+pub(super) fn referrer(subject: Descriptor, envelope: &Envelope) -> Referrer {
+    let layer = canonical(envelope);
+    let annotations = predicate_type(envelope)
+        .map(|t| BTreeMap::from([(PREDICATE_TYPE.to_string(), t)]))
+        .unwrap_or_default();
+    let bytes = canonical(&ReferrerManifest {
+        schema_version: 2,
+        media_type: IMAGE_MANIFEST.into(),
+        artifact_type: ENVELOPE.into(),
+        config: Descriptor {
+            media_type: EMPTY.into(),
+            digest: Digest::of(EMPTY_JSON),
+            size: EMPTY_JSON.len() as u64,
+            artifact_type: None,
+            annotations: BTreeMap::new(),
+        },
+        layers: vec![Descriptor {
+            media_type: ENVELOPE.into(),
+            digest: Digest::of(&layer),
+            size: layer.len() as u64,
+            artifact_type: None,
+            annotations: BTreeMap::new(),
+        }],
+        subject,
+        annotations: annotations.clone(),
+    });
+    Referrer {
+        bytes,
+        config: EMPTY_JSON.to_vec(),
+        layer,
+        annotations,
+    }
+}
+
+/// The predicate type the in-toto statement `envelope` holds names; none
+/// for an envelope of another payload type, or a statement naming none.
+fn predicate_type(envelope: &Envelope) -> Option<String> {
+    #[derive(Deserialize)]
+    struct Typed {
+        #[serde(rename = "predicateType")]
+        predicate_type: String,
+    }
+    if envelope.payload_type != IN_TOTO {
+        return None;
+    }
+    serde_json::from_slice::<Typed>(&envelope.payload)
+        .ok()
+        .map(|t| t.predicate_type)
+}
+
+/// The envelope's descriptor a referrer's bytes name: its one layer,
+/// when its artifact type is the envelope's; the parser's or tailrace's
+/// words when the bytes hold no referrer of this form.
+pub(super) fn referred(bytes: &[u8]) -> Result<Descriptor, String> {
+    let manifest: ReferrerManifest = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    if manifest.artifact_type != ENVELOPE {
+        return Err(format!(
+            "its artifact type is {}, not {ENVELOPE}",
+            manifest.artifact_type
+        ));
+    }
+    match <[Descriptor; 1]>::try_from(manifest.layers) {
+        Ok([layer]) if layer.media_type == ENVELOPE => Ok(layer),
+        Ok([layer]) => Err(format!(
+            "its layer is of media type {}, not {ENVELOPE}",
+            layer.media_type
+        )),
+        Err(layers) => Err(format!("it names {} layers, not one", layers.len())),
+    }
+}
+
+/// A subject's referrers, as the referrers API answers them or the
+/// referrers tag holds them (design D6): an image index whose entries
+/// are kept as written, whoever wrote them, with every other field it
+/// holds.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct Referrers {
+    schema_version: u32,
+    media_type: String,
+    manifests: Vec<Value>,
+    #[serde(flatten)]
+    rest: Map<String, Value>,
+}
+
+impl Referrers {
+    /// A referrers index listing nothing, as a subject's tag starts.
+    pub(super) fn empty() -> Referrers {
+        Referrers {
+            schema_version: 2,
+            media_type: IMAGE_INDEX.into(),
+            manifests: Vec::new(),
+            rest: Map::new(),
+        }
+    }
+
+    /// The referrers index `bytes` hold, or the parser's or tailrace's
+    /// words when they hold no image index.
+    pub(super) fn parse(bytes: &[u8]) -> Result<Referrers, String> {
+        let referrers: Referrers = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+        if referrers.media_type != IMAGE_INDEX {
+            return Err(format!(
+                "its mediaType is {}, and an image index's is {IMAGE_INDEX}",
+                referrers.media_type
+            ));
+        }
+        Ok(referrers)
+    }
+
+    /// Every entry of the envelope's artifact type, in the order listed;
+    /// another tool's entries are never answered.
+    pub(super) fn envelopes(&self) -> Vec<Descriptor> {
+        self.manifests
+            .iter()
+            .filter_map(|v| Descriptor::deserialize(v).ok())
+            .filter(|d| d.artifact_type.as_deref() == Some(ENVELOPE))
+            .collect()
+    }
+
+    /// Whether an entry names `digest`.
+    pub(super) fn lists(&self, digest: &Digest) -> bool {
+        self.manifests
+            .iter()
+            .any(|v| v.get("digest").and_then(Value::as_str) == Some(digest.as_str()))
+    }
+
+    /// `descriptor` added as the last entry, unless an entry names its
+    /// digest already: true when it was added.
+    pub(super) fn add(&mut self, descriptor: &Descriptor) -> bool {
+        if self.lists(&descriptor.digest) {
+            return false;
+        }
+        self.manifests
+            .push(serde_json::to_value(descriptor).expect("a descriptor serializes to JSON"));
+        true
+    }
+
+    pub(super) fn bytes(&self) -> Vec<u8> {
+        serde_json::to_vec(self).expect("a referrers index serializes to JSON")
+    }
+}
+
 /// An artifact's metadata, from its config's bytes.
 pub(super) fn meta(config: &[u8]) -> Result<ArtifactMeta, String> {
     serde_json::from_slice(config).map_err(|e| e.to_string())
@@ -426,5 +621,151 @@ mod tests {
         )
         .unwrap_err();
         assert!(words.contains("no manifest's media type"), "{words}");
+    }
+
+    fn statement(predicate_type: &str) -> Envelope {
+        let payload = json!({
+            "_type": tailrace_seams::STATEMENT,
+            "subject": [{"digest": {"sha256": Digest::of(b"site").hex()}}],
+            "predicateType": predicate_type,
+            "predicate": {},
+        });
+        Envelope::signed(
+            IN_TOTO,
+            serde_json::to_vec(&payload).unwrap(),
+            tailrace_seams::Signature {
+                signer: tailrace_seams::SignerId::new("a tester"),
+                keyid: String::new(),
+                sig: vec![7, 7],
+            },
+        )
+    }
+
+    fn subject() -> Descriptor {
+        Descriptor {
+            media_type: IMAGE_MANIFEST.into(),
+            digest: Digest::of(b"site"),
+            size: 412,
+            artifact_type: None,
+            annotations: BTreeMap::new(),
+        }
+    }
+
+    const VERDICT: &str = "https://agentplot.github.io/tailrace/claim/verdict/v1";
+
+    #[test]
+    fn the_same_envelope_and_subject_write_the_same_referrer() {
+        let envelope = statement(VERDICT);
+        let first = referrer(subject(), &envelope);
+        let second = referrer(subject(), &envelope);
+        assert_eq!(first.bytes, second.bytes);
+        assert_eq!(first.layer, second.layer);
+        assert_eq!(first.descriptor(), second.descriptor());
+    }
+
+    #[test]
+    fn a_referrer_names_its_subject_the_empty_config_and_the_envelope() {
+        let envelope = statement(VERDICT);
+        let written = referrer(subject(), &envelope);
+        let json: Value = serde_json::from_slice(&written.bytes).unwrap();
+        assert_eq!(json["schemaVersion"], 2);
+        assert_eq!(json["mediaType"], IMAGE_MANIFEST);
+        assert_eq!(json["artifactType"], ENVELOPE);
+        assert_eq!(
+            json["subject"],
+            json!({"mediaType": IMAGE_MANIFEST, "digest": Digest::of(b"site"), "size": 412})
+        );
+        assert_eq!(
+            json["config"],
+            json!({"mediaType": EMPTY, "digest": Digest::of(b"{}"), "size": 2})
+        );
+        assert_eq!(written.config, b"{}");
+        let layers = json["layers"].as_array().unwrap();
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0]["mediaType"], ENVELOPE);
+        assert_eq!(layers[0]["digest"], envelope.digest().as_str());
+        assert_eq!(layers[0]["size"], written.layer.len());
+        assert_eq!(Digest::of(&written.layer), envelope.digest());
+        assert_eq!(json["annotations"], json!({PREDICATE_TYPE: VERDICT}));
+        assert_eq!(referred(&written.bytes).unwrap().digest, envelope.digest());
+
+        let descriptor = written.descriptor();
+        assert_eq!(descriptor.digest, Digest::of(&written.bytes));
+        assert_eq!(descriptor.size, written.bytes.len() as u64);
+        assert_eq!(descriptor.artifact_type.as_deref(), Some(ENVELOPE));
+        assert_eq!(descriptor.annotations[PREDICATE_TYPE], VERDICT);
+    }
+
+    #[test]
+    fn an_envelope_holding_no_in_toto_statement_carries_no_annotation() {
+        let theirs = Envelope {
+            payload_type: "application/vnd.their-own+json".into(),
+            ..statement(VERDICT)
+        };
+        let not_json = Envelope {
+            payload: b"not a statement".to_vec(),
+            ..statement(VERDICT)
+        };
+        for envelope in [theirs, not_json] {
+            let written = referrer(subject(), &envelope);
+            let json: Value = serde_json::from_slice(&written.bytes).unwrap();
+            assert!(json.get("annotations").is_none(), "{json}");
+            assert_eq!(written.descriptor().annotations, BTreeMap::new());
+        }
+    }
+
+    #[test]
+    fn a_manifest_of_another_form_is_no_referrer() {
+        let (written, _) = round_trip(&artifact());
+        let words = referred(&written.bytes).unwrap_err();
+        assert!(words.contains("missing field"), "{words}");
+        let mut other: Value =
+            serde_json::from_slice(&referrer(subject(), &statement(VERDICT)).bytes).unwrap();
+        other["artifactType"] = json!("application/vnd.dev.cosign.artifact.sig.v1+json");
+        let words = referred(&serde_json::to_vec(&other).unwrap()).unwrap_err();
+        assert!(words.contains("cosign"), "{words}");
+    }
+
+    #[test]
+    fn a_referrers_index_gains_a_descriptor_once_and_keeps_what_it_did_not_write() {
+        let theirs = json!({
+            "mediaType": IMAGE_MANIFEST,
+            "digest": "sha512:00ff",
+            "size": 7,
+            "artifactType": "application/vnd.dev.cosign.artifact.sig.v1+json",
+            "annotations": {"org.example.kept": "as written"},
+        });
+        let held = json!({
+            "schemaVersion": 2,
+            "mediaType": IMAGE_INDEX,
+            "manifests": [theirs],
+            "annotations": {"org.example.index": "theirs"},
+        });
+        let mut referrers = Referrers::parse(&serde_json::to_vec(&held).unwrap()).unwrap();
+        assert_eq!(referrers.envelopes(), []);
+        let ours = referrer(subject(), &statement(VERDICT)).descriptor();
+        assert!(referrers.add(&ours));
+        assert!(!referrers.add(&ours));
+        assert!(referrers.lists(&ours.digest));
+        let written: Value = serde_json::from_slice(&referrers.bytes()).unwrap();
+        assert_eq!(written["manifests"].as_array().unwrap().len(), 2);
+        assert_eq!(written["manifests"][0], theirs);
+        assert_eq!(written["annotations"]["org.example.index"], "theirs");
+        assert_eq!(
+            Referrers::parse(&referrers.bytes()).unwrap().envelopes(),
+            [ours]
+        );
+
+        let mut empty = Referrers::empty();
+        assert_eq!(empty.envelopes(), []);
+        let other = referrer(subject(), &statement("https://slsa.dev/provenance/v1"));
+        assert!(empty.add(&other.descriptor()));
+        let back: Value = serde_json::from_slice(&empty.bytes()).unwrap();
+        assert_eq!(back["mediaType"], IMAGE_INDEX);
+        assert_eq!(back["schemaVersion"], 2);
+        let words = Referrers::parse(br#"{"schemaVersion":2,"mediaType":"x","manifests":[]}"#)
+            .err()
+            .unwrap();
+        assert!(words.contains("an image index's"), "{words}");
     }
 }
