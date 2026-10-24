@@ -80,6 +80,10 @@ and every seam has the profiles the statement names.
 - Targets that push: a package registry, a static site, a
   CloudFormation stack or StackSet, a function; the environment that
   waits for an approver, whose approval is a promotion.
+- The profiles a control plane binds, generic and held to the
+  conformance suite: the ledger as a database table with conditional
+  writes (C.15), the roster a target answers (126), the pool target
+  (C.12) and the CloudFormation template set projection (C.11).
 - Keyless signing against a public or private issuer; the verifier's
   independent rebuild as a claim.
 - The conformance suite published, so a profile anyone writes is held
@@ -103,8 +107,9 @@ told nothing but its channel.
   rebuild with the shared cache off; a reference self-hosted Sigstore.
 - The herdr pane of channels and environments, and the Flywheel plugin
   whose adapter prints a capture for each publish and each refusal.
-- A hosted backend as a ledger profile and a pool target, for a control
-  plane that keeps its own tables and fans out to many instances.
+- A control plane that keeps its own tables and fans out to many
+  instances, running end to end on the table ledger and the pool
+  target.
 
 *Done when* a `stable` promotion is refused without the second signature
 and accepted with it, and converges a production environment that
