@@ -591,3 +591,34 @@ fn a_listing_that_cannot_be_read_makes_verify_unreadable_naming_its_signer() {
         }
     }
 }
+
+#[test]
+fn s5_a_verdict_from_another_host_is_refused_naming_its_key() {
+    let dir = TempDir::new().unwrap();
+    let (first, second) = (new_key(), new_key());
+    let other = HostKey::new(
+        SignerId::new("another host"),
+        written(dir.path(), "another", &second),
+    );
+    let verdict = Claim {
+        kind: ClaimKind::Verdict,
+        body: json!({ "check": "test", "outcome": "pass" }),
+        ..claim()
+    };
+    let envelope = other
+        .sign(&verdict, &SignerId::new("another host"))
+        .unwrap();
+    let said = none_of(
+        verifier().verify(&envelope, &[listing("host", &first, None)]),
+        &["host"],
+    );
+    let fingerprint = second.public_key().fingerprint(HashAlg::Sha256).to_string();
+    assert!(fingerprint.starts_with("SHA256:"), "{fingerprint}");
+    assert_eq!(
+        said,
+        format!(
+            "signed by the key {fingerprint}, which the envelope names another host; \
+             no signer checked lists that key with a signature over this envelope"
+        )
+    );
+}
