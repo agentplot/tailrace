@@ -30,7 +30,7 @@ words (design D2).
 
 ## 3. A host key that only verifies
 
-- [ ] 3.1 Add `HostKey::verifying()` to `crates/tailrace/src/profiles/signer/host_key/mod.rs`, with no signer and no key path: verify unchanged, sign absent saying no identity is at hand, reading no file (design D6). Verify with unit tests in `host_key/tests.rs`: an envelope a keyed `HostKey` signed as `laptop` is told `laptop` by the verify-only profile given a policy listing `laptop`'s key; sign asked as `laptop` answers absent, with `HOME` pointed at an empty directory so a read would fail.
+- [x] 3.1 Add `HostKey::verifying()` to `crates/tailrace/src/profiles/signer/host_key/mod.rs`, with no signer and no key path: verify unchanged, sign absent saying no identity is at hand, reading no file (design D6). Verify with unit tests in `host_key/tests.rs`: an envelope a keyed `HostKey` signed as `laptop` is told `laptop` by the verify-only profile given a policy listing `laptop`'s key; sign asked as `laptop` answers absent, with `HOME` pointed at an empty directory so a read would fail.
 
 ## 4. The bindings file
 

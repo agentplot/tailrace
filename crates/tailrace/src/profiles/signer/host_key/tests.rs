@@ -154,8 +154,10 @@ fn every_answer_names_the_signer_seam_and_the_host_key() {
     assert_eq!(source.seam, Seam::Signer);
     assert_eq!(source.to_string(), "the signer (host key)");
     let host = host(Path::new("/keys/host"));
-    assert_eq!(host.signer(), &SignerId::new("host"));
-    assert_eq!(host.key(), Path::new("/keys/host"));
+    assert_eq!(host.signer(), Some(&SignerId::new("host")));
+    assert_eq!(host.key(), Some(Path::new("/keys/host")));
+    let verifying = HostKey::verifying();
+    assert_eq!((verifying.signer(), verifying.key()), (None, None));
 }
 
 #[test]
@@ -352,9 +354,17 @@ fn the_profile_is_its_signer_and_its_path_alone() {
     sign(&bound).unwrap();
     // Every field named, so a field added to hold anything of the key
     // fails to compile here.
-    let HostKey { signer, key } = bound;
+    let HostKey {
+        signing: Some(Signing { signer, key }),
+    } = bound
+    else {
+        panic!("a keyed host key holds no signer and path")
+    };
     assert_eq!(signer, SignerId::new("host"));
     assert_eq!(key, path);
+    let HostKey { signing: None } = HostKey::verifying() else {
+        panic!("the verify-only host key holds a signer")
+    };
 }
 
 /// `id` as a policy lists it, verified by `key`'s public half and, where
@@ -667,4 +677,46 @@ fn s5_a_verdict_from_another_host_is_refused_naming_its_key() {
              no signer checked lists that key with a signature over this envelope"
         )
     );
+}
+
+// Requirement: The profile can be bound to verify only
+
+#[test]
+fn a_host_with_no_key_tells_the_laptops_envelope_by_the_listed_key() {
+    let dir = TempDir::new().unwrap();
+    let key = new_key();
+    let laptop = HostKey::new(SignerId::new("laptop"), written(dir.path(), "laptop", &key));
+    let envelope = laptop.sign(&claim(), &SignerId::new("laptop")).unwrap();
+    let signers = [
+        listing("gate", &new_key(), None),
+        listing("laptop", &key, None),
+    ];
+    assert_eq!(
+        HostKey::verifying().verify(&envelope, &signers),
+        made("laptop", false)
+    );
+}
+
+#[test]
+fn a_host_with_no_key_signs_nothing_and_reads_no_file() {
+    // HOME an empty directory for this test alone, so a profile that
+    // looked for a key under it would read nothing there and say so.
+    let home = TempDir::new().unwrap();
+    let before = std::env::var_os("HOME");
+    std::env::set_var("HOME", home.path());
+    let answers = [
+        HostKey::verifying().sign(&claim(), &SignerId::new("laptop")),
+        HostKey::verifying().sign(&claim(), &SignerId::new("host")),
+    ];
+    match before {
+        Some(home) => std::env::set_var("HOME", home),
+        None => std::env::remove_var("HOME"),
+    }
+    for (answer, identity) in answers.into_iter().zip(["laptop", "host"]) {
+        assert_eq!(
+            absent(answer),
+            format!("identity {identity}: no identity is at hand, since this host binds no key")
+        );
+    }
+    assert_eq!(fs::read_dir(home.path()).unwrap().count(), 0);
 }
