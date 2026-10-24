@@ -1,14 +1,17 @@
-//! Spec host-bindings: the laptop end to end, over a scratch repository
-//! that sluice gates and whose builds moon runs, its host bound by a
-//! bindings file naming a fresh layout, sluice and the laptop's key
-//! (118; design D8). Needs moon, sluice and ssh-keygen, so it is in the
-//! tools layer.
+//! Spec host-bindings: the laptop end to end, S1 and S2 played by the
+//! built binary bound by a bindings file, over a scratch repository that
+//! sluice gates and whose builds moon runs (S1, S2, 118; design D8). The
+//! binary runs with its home and its configuration in the scratch
+//! directory, and none of the `SLUICE_*` or `MOON_*` variables of a gate
+//! that may be running these tests. Needs moon, sluice and ssh-keygen, so
+//! it is in the tools layer.
 
 #![cfg(feature = "tools")]
 
 mod fixtures;
 mod scratch;
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -16,7 +19,11 @@ use std::process::Command;
 
 use scratch::gate::{Gate, SIGNER};
 use scratch::recorder::Recorder;
-use scratch::{moon_workspace, policy_file, ssh_keygen, Scratch, Task};
+use scratch::{git_command, moon_workspace, policy_file, ssh_keygen, Repo, Scratch, Task};
+use serde_json::Value;
+use tailrace::profiles::store::layout::Layout;
+use tailrace_core::{History, Kept, Provenance};
+use tailrace_seams::{Claim, Digest, Store};
 
 /// The identity the laptop signs as.
 const LAPTOP: &str = "laptop";
@@ -51,6 +58,41 @@ impl Host {
         fs::create_dir_all(file.parent().unwrap()).unwrap();
         fs::write(file, text).unwrap();
     }
+
+    /// The built binary run in `repo` with `args`: its exit and the one
+    /// JSON document it printed.
+    fn tailrace(&self, repo: &Repo, args: &[&str]) -> (Option<i32>, Value) {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_tailrace"));
+        for (name, _) in std::env::vars_os() {
+            let name = name.to_string_lossy().to_string();
+            if name.starts_with("SLUICE_") || name.starts_with("MOON_") {
+                command.env_remove(&name);
+            }
+        }
+        // git as the scratch repositories are made: none of the host's
+        // configuration, a fixed author.
+        for (name, value) in git_command().get_envs() {
+            match value {
+                Some(value) => command.env(name, value),
+                None => command.env_remove(name),
+            };
+        }
+        let out = command
+            .args(args)
+            .current_dir(&repo.path)
+            .env("HOME", &self.home)
+            .env("XDG_CONFIG_HOME", &self.config)
+            .output()
+            .expect("the binary runs");
+        let json = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| {
+            panic!(
+                "tailrace {args:?} printed no JSON document ({e}): {}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            )
+        });
+        (out.status.code(), json)
+    }
 }
 
 /// An SSH key made by ssh-keygen at `path`, mode 0600; answers its
@@ -68,6 +110,26 @@ fn keygen(path: &Path, comment: &str) -> String {
         .unwrap()
         .trim()
         .to_string()
+}
+
+/// Every file under `dir`, by its path there, with its size and its
+/// bytes' digest.
+fn listing(dir: &Path) -> BTreeMap<PathBuf, (u64, Digest)> {
+    let mut files = BTreeMap::new();
+    let mut dirs = vec![dir.to_path_buf()];
+    while let Some(at) = dirs.pop() {
+        for entry in fs::read_dir(&at).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else {
+                let bytes = fs::read(&path).unwrap();
+                let rel = path.strip_prefix(dir).unwrap().to_path_buf();
+                files.insert(rel, (bytes.len() as u64, Digest::of(&bytes)));
+            }
+        }
+    }
+    files
 }
 
 /// The scratch world: a repository sluice gates, the laptop's host, its
@@ -150,18 +212,107 @@ impl Laptop {
             landed,
         }
     }
+
+    fn publish(&self) -> (Option<i32>, Value) {
+        self.host
+            .tailrace(&self.scratch.repo, &["publish", &self.landed, "--json"])
+    }
+
+    /// The host's record of the versions it published.
+    fn record(&self) -> PathBuf {
+        let history = History::open(&self.scratch.repo.path).unwrap();
+        Kept::at(&history).dir().to_path_buf()
+    }
 }
 
-/// sluice landed the revision on `main`, and the host's bindings file
-/// names a layout no publish has made yet.
+/// The one component's published version, from publish's answer.
+fn published(json: &Value) -> &Value {
+    assert_eq!(json["answer"], "ok", "{json}");
+    let components = json["value"]["components"].as_array().unwrap();
+    assert_eq!(components.len(), 1, "{json}");
+    assert_eq!(components[0]["answer"], "ok", "{json}");
+    let value = &components[0]["value"];
+    assert_eq!(value["published"], "version", "{json}");
+    value
+}
+
 #[test]
-fn the_laptop_is_bound_over_a_sluice_landing() {
+fn the_laptop_publishes_a_sluice_landing_and_publishes_it_again() {
     let laptop = Laptop::new();
-    let repo = &laptop.scratch.repo;
-    assert_eq!(repo.git(&["rev-parse", "origin/main"]), laptop.landed);
-    assert!(laptop.host.config.join("tailrace/config.toml").is_file());
-    assert!(
-        !laptop.layout.exists(),
-        "the layout was made before a publish"
+
+    // S1: the landed revision offered, each artifact with its provenance
+    // signed by the laptop and sluice's verdicts carried in it.
+    let (code, first) = laptop.publish();
+    assert_eq!(code, Some(0), "{first}");
+    let version = published(&first);
+    assert_eq!(version["version"], "0.1.0", "{first}");
+    assert_eq!(version["tag"], "v0.1.0");
+    assert_eq!(version["revision"], laptop.landed.as_str());
+    let index = version["index"].as_str().unwrap().to_string();
+    let artifacts = version["artifacts"].as_array().unwrap();
+    let packed: BTreeSet<(&str, &str)> = artifacts
+        .iter()
+        .map(|a| {
+            (
+                a["ecosystem"].as_str().unwrap(),
+                a["name"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        packed,
+        BTreeSet::from([("file", "notes"), ("image", "image")]),
+        "{first}"
+    );
+    let layout = Layout::open(&laptop.layout).expect("the publish made the layout");
+    for artifact in artifacts {
+        let digest = Digest::parse(artifact["digest"].as_str().unwrap()).unwrap();
+        let claims = artifact["claims"].as_array().unwrap();
+        assert_eq!(claims.len(), 1, "{artifact}");
+        assert_eq!(claims[0]["kind"], "provenance");
+        assert_eq!(claims[0]["signer"], LAPTOP);
+        let held = layout.claims_of(&digest).unwrap();
+        let [envelope] = held.as_slice() else {
+            panic!("{} claims are attached to {digest}", held.len())
+        };
+        assert_eq!(envelope.sole().map(|s| s.signer.as_str()), Some(LAPTOP));
+        let provenance = Claim::from_envelope(envelope)
+            .as_ref()
+            .and_then(Provenance::of)
+            .expect("a provenance of tailrace's form");
+        let task = OUTPUTS
+            .iter()
+            .find(|(output, _, _)| *output == provenance.output.as_str())
+            .map(|(_, task, _)| *task)
+            .unwrap();
+        assert!(!provenance.carried.is_empty(), "no verdict was carried");
+        for carried in &provenance.carried {
+            assert_eq!(carried.check.as_str(), task);
+            assert_eq!(carried.signer.as_str(), SIGNER);
+            assert_eq!(carried.build.as_str(), artifact["build"].as_str().unwrap());
+        }
+    }
+    let named: Vec<String> =
+        serde_json::from_slice::<Value>(&fs::read(laptop.layout.join("index.json")).unwrap())
+            .unwrap()["manifests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|m| m["annotations"]["org.opencontainers.image.ref.name"].as_str())
+            .map(str::to_string)
+            .collect();
+    assert_eq!(named, ["v0.1.0"], "the layout names another ref, a channel");
+
+    // S2: the same revision again answers the same index, and no file of
+    // the layout or the record changed.
+    let before = (listing(&laptop.layout), listing(&laptop.record()));
+    assert!(!before.1.is_empty(), "the host recorded nothing");
+    let (code, again) = laptop.publish();
+    assert_eq!(code, Some(0), "{again}");
+    assert_eq!(published(&again)["index"], index.as_str(), "{again}");
+    assert_eq!(
+        (listing(&laptop.layout), listing(&laptop.record())),
+        before,
+        "the repeat changed a file of the layout or the record"
     );
 }
