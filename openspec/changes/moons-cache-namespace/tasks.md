@@ -22,7 +22,7 @@ so no moon project or formatter entry; its tests run in the existing
 
 ## 2. The cache over the fakes
 
-- [ ] 2.1 Add `FakeStore::forget(&Name)` in `crates/tailrace-fakes/src/store.rs`, removing the name and leaving the bytes, with a test in its module that a forgotten name resolves absent and its digest still reads. Verify `devenv shell -- moon run fakes:test` passes.
+- [x] 2.1 Add `FakeStore::forget(&Name)` in `crates/tailrace-fakes/src/store.rs`, removing the name and leaving the bytes, with a test in its module that a forgotten name resolves absent and its digest still reads. Verify `devenv shell -- moon run fakes:test` passes.
 - [ ] 2.2 Add the six scenarios of design D8 below the marker in `crates/tailrace-conformance/src/core/cache.rs`, citing as its table says, "a removed entry builds again" playing S14; remove 52, 53, 54 and 100 from `register.rs`; in `src/lib.rs` take `cache` out of the groups that hold no scenario and give the cache's row of the module table the `FakeWorld`; run the group over the fakes in `tests/fakes.rs` as the core's other groups are (spec `conformance-suite`, the cache over the fakes). Verify `devenv shell -- moon run conformance:test conformance:coverage` passes, and the coverage output lists 55 as pending and none of 52, 53, 54 or 100.
 
 ## 3. moon's cache projection
