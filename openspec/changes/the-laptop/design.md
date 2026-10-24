@@ -312,6 +312,33 @@ lands through sluice and declares a file output, and a second machine
 given a copy of the layout and a clone: the gate cannot reach a second
 machine or a family repository's remote.
 
+### D9. The record names the store as the host's bindings name it
+
+The host's record keeps, for each version, the store it was offered to
+(61; the host-record spec). Until now the core wrote `bound` there
+(`landed.rs` `BOUND`, `publish.rs` `bound()`), a stand-in from when
+nothing was bound; once the laptop binds a real layout, `bound` names no
+store, and status would answer one word for two layouts.
+
+The name is the binding's, not the store's, so the `Store` trait does
+not change. `Binding` gains `store: Source`, made by `bindings/` from
+the `[store]` table it loaded: seam `store`, profile the table's key and
+the layout's path after `~/` expansion, `layout /home/me/.local/share/tailrace/layout`
+(an absolute path, so a reader of the record finds the directory without
+knowing whose home it was written under). `bindings/` writes the key it
+read and names no tool (core.1). The publish command hands it to the
+core in `Ask.store`, and `publish.rs` uses it wherever publish names the
+store: the entry it writes, the `store` of its answer, and its own
+refusals of what the store answered, in place of `bound(Seam::Store)`.
+The other `bound()` sources (landing, build, projection, signer) are
+left as they are: the record keeps only the store. The surfaces
+conformance binding and the core's tests give their asks a store name of
+their own.
+
+*Alternative:* a `name()` on the `Store` trait, answered by the layout
+as `OCI layout <path>`. Rejected: a trait change for every store profile
+and fake, to carry a name the host's file already holds.
+
 ## Risks / Trade-offs
 
 - [The policy file's signer and audience form is chosen here, and the

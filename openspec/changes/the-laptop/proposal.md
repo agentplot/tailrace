@@ -27,6 +27,11 @@ the laptop).
   file: it answers from the host's record, which names the layout each
   version went into (60). verify and status write nothing; only publish
   makes the layout, the first time it is used.
+- **The host's record names the layout.** Each version publish records
+  names the store it went into as the host's bindings file names it, the
+  layout's path, in place of the word `bound` the core has written since
+  nothing was bound; two layouts on one host are two names in status's
+  answer (61, 118).
 - **The repository binds the build and the projections, not the host.**
   moon is bound as the build in every repository, the tasks each output
   comes from named in the repository's policy file as today, and each
@@ -95,6 +100,8 @@ Out of scope, and what each waits on:
   publish and verify are bound to the file where there is one.
 - `host-key-signer`: the profile can be bound to verify only, with no key
   of its own.
+- `host-record`: an entry names the store as the host's bindings name
+  it.
 
 ## Impact
 
@@ -106,6 +113,9 @@ Out of scope, and what each waits on:
 - `crates/tailrace/src/lib.rs`, `main.rs` and `commands/`: the binary
   loads the bindings and the commands take the binding's answer.
 - `crates/tailrace/src/profiles/signer/host_key/mod.rs`: one constructor.
+- `crates/tailrace-core/src/publish.rs`: the ask carries the store's
+  name, and the entry and the answer name it; the core's tests and the
+  conformance world give their asks one.
 - `crates/tailrace-conformance/`: a host group with one scenario citing
   118; 118 leaves the register.
 - `docs/adr/0013`: the host's bindings file and the policy seam's one
@@ -126,6 +136,9 @@ crates/tailrace/src/profiles/projection/**
 crates/tailrace/src/profiles/signer/host_key/mod.rs
 crates/tailrace/tests/**
 crates/tailrace/moon.yml
+crates/tailrace-core/src/publish.rs
+crates/tailrace-core/tests/**
+crates/tailrace-conformance/src/world.rs
 crates/tailrace-conformance/src/lib.rs
 crates/tailrace-conformance/src/seams/**
 crates/tailrace-conformance/src/register.rs
