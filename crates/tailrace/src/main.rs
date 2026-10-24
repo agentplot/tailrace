@@ -1,16 +1,22 @@
 use std::io::Write;
 
 use clap::Parser;
-use tailrace::{run, Cli};
+use tailrace::bindings::{self, For};
+use tailrace::{run, Cli, Command};
 
-/// The command line over no binding: no host binds its seams until its
-/// bindings file does (118), so publish and verify answer absent and
-/// status reads the host's record.
+/// The command line over the host's bindings file (118): publish and
+/// verify are bound by it, only publish making the layout it names, and
+/// status reads none (60).
 fn main() {
     let cli = Cli::parse();
     let at = std::env::current_dir().expect("a working directory");
+    let binding = match &cli.command {
+        Command::Publish(_) => bindings::load(&at, For::Publish),
+        Command::Verify(_) => bindings::load(&at, For::Verify),
+        Command::Status(_) => Err(bindings::not_read()),
+    };
     let mut out = std::io::stdout().lock();
-    let code = run(&cli, None, &at, &mut out);
+    let code = run(&cli, &binding, &at, &mut out);
     let _ = out.flush();
     std::process::exit(code);
 }

@@ -39,7 +39,7 @@ words (design D2).
 
 ## 5. The commands bound to the file
 
-- [ ] 5.1 Change `run` to take `&Answer<Binding>` and `main` to load the binding for publish and verify only (design D2); remove `unbound()`. publish with no signer answers absent naming the `[signing]` binding before anything is read. Update `crates/tailrace/tests/conformance.rs` to pass `Ok(binding)`. Verify `devenv shell -- moon run cli:test` passes, the surfaces group among it.
+- [x] 5.1 Change `run` to take `&Answer<Binding>` and `main` to load the binding for publish and verify only (design D2); remove `unbound()`. publish with no signer answers absent naming the `[signing]` binding before anything is read. Update `crates/tailrace/tests/conformance.rs` to pass `Ok(binding)`. Verify `devenv shell -- moon run cli:test` passes, the surfaces group among it.
 - [ ] 5.2 Update `crates/tailrace/tests/cli.rs`, which runs the built binary: with `XDG_CONFIG_HOME` at an empty directory, `tailrace publish HEAD` exits 4 naming the bindings file's path and writes no tag, file or record; with a file that is not TOML, `tailrace verify 0.1.0 --json` prints one JSON document saying unreadable with the parser's words and exits 3; with a file naming both sluice and a branch, publish exits 3 naming `[landing]`; `tailrace status --json` with no file prints the record's entry and exits 0. Verify `devenv shell -- moon run cli:test` passes.
 
 ## 6. The host group and the register

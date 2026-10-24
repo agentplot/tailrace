@@ -7,9 +7,9 @@ use std::path::Path;
 
 use clap::Args;
 use tailrace_core::{publish, Ask, History, Kept, Publish, Published};
-use tailrace_seams::{Answer, Branch, ComponentName};
+use tailrace_seams::{Answer, Branch, ComponentName, Not};
 
-use crate::{render, unbound, unsigned, Binding};
+use crate::{render, unsigned, Binding};
 
 #[derive(Debug, Args)]
 pub struct PublishArgs {
@@ -27,7 +27,7 @@ pub struct PublishArgs {
     pub json: bool,
 }
 
-pub fn run(args: &PublishArgs, binding: Option<&Binding>, at: &Path, out: &mut dyn Write) -> i32 {
+pub fn run(args: &PublishArgs, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write) -> i32 {
     let answer = ask(args, binding, at);
     let _ = if args.json {
         render::json(out, &answer)
@@ -40,8 +40,8 @@ pub fn run(args: &PublishArgs, binding: Option<&Binding>, at: &Path, out: &mut d
     }
 }
 
-fn ask(args: &PublishArgs, binding: Option<&Binding>, at: &Path) -> Answer<Publish> {
-    let binding = binding.ok_or_else(unbound)?;
+fn ask(args: &PublishArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Publish> {
+    let binding = binding.as_ref().map_err(Not::clone)?;
     let signer = binding.signer.clone().ok_or_else(unsigned)?;
     let history = History::open(at)?;
     let ask = Ask {

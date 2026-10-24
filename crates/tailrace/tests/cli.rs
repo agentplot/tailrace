@@ -113,15 +113,33 @@ impl Host {
         let cli = Cli::try_parse_from(std::iter::once("tailrace").chain(args.iter().copied()))
             .expect("the arguments parse");
         let mut out = Vec::new();
-        let code = run(&cli, Some(&self.binding()), &self.repo, &mut out);
+        let code = run(&cli, &Ok(self.binding()), &self.repo, &mut out);
         (code, String::from_utf8(out).unwrap())
     }
 
+    /// The scratch directory the repository is in.
+    fn root(&self) -> PathBuf {
+        self.repo.parent().unwrap().to_path_buf()
+    }
+
+    /// Where the built binary looks for the host's bindings file: under
+    /// a configuration directory of the scratch directory's own.
+    fn bindings_file(&self) -> PathBuf {
+        self.root().join("config/tailrace/config.toml")
+    }
+
+    /// The built binary run in the repository, its home and its
+    /// configuration directory in the scratch directory, so it reads no
+    /// bindings file of the host running the tests.
     fn binary(&self, args: &[&str]) -> std::process::Output {
+        let home = self.root().join("home");
+        fs::create_dir_all(&home).unwrap();
         Command::new(env!("CARGO_BIN_EXE_tailrace"))
             .args(args)
             .current_dir(&self.repo)
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", self.root().join("config"))
             .output()
             .expect("the binary runs")
     }
@@ -260,21 +278,26 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
 // Requirement: An unbound host answers absent
 
 #[test]
-fn the_built_binary_on_an_unbound_host_publishes_nothing() {
+fn the_built_binary_on_a_host_with_no_bindings_file_publishes_nothing() {
     let host = Host::new();
+    let file = host.bindings_file();
     let out = host.binary(&["publish", "HEAD"]);
     assert_eq!(out.status.code(), Some(4), "{out:?}");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("binding of the store"), "{stdout}");
-    assert!(stdout.contains("unbound"), "{stdout}");
+    assert!(stdout.contains(&file.display().to_string()), "{stdout}");
     assert_eq!(git(&host.repo, &["tag", "-l"]), "");
     assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
     let history = History::open(&host.repo).unwrap();
     assert!(!Kept::at(&history).dir().exists());
+    assert!(!file.parent().unwrap().exists(), "the publish wrote a file");
 
     let verify = host.binary(&["verify", "0.1.0", "--json"]);
     assert_eq!(verify.status.code(), Some(4));
     let json: Value = serde_json::from_slice(&verify.stdout).unwrap();
     assert_eq!(json["answer"], "absent");
     assert_eq!(json["absent"]["source"]["seam"], "host");
+    assert_eq!(
+        json["absent"]["what"],
+        format!("bindings file at {}", file.display())
+    );
 }

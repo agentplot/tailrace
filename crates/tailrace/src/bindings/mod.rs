@@ -395,3 +395,29 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         signer: signing.map(|s| s.signer.clone()),
     })
 }
+
+/// The binding for `command` in the repository at `repository`, from the
+/// bindings file this process's `XDG_CONFIG_HOME` or `HOME` places;
+/// absent naming both variables where neither is set.
+pub fn load(repository: &Path, command: For) -> Answer<Binding> {
+    let home = std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
+        .map(PathBuf::from);
+    let xdg = std::env::var_os("XDG_CONFIG_HOME");
+    let file = path(xdg.as_deref(), home.as_deref()).ok_or_else(|| {
+        Not::absent(
+            &Source::new(Seam::Host, "bindings"),
+            format!("bindings file: neither XDG_CONFIG_HOME nor HOME is set to place {FILE}"),
+        )
+    })?;
+    bind(&file, home.as_deref(), repository, command)
+}
+
+/// What a command that reads no bindings file is handed in place of a
+/// binding: `status`, which needs no seam (60).
+pub fn not_read() -> Not {
+    Not::absent(
+        &Source::new(Seam::Host, "bindings"),
+        "binding, since the command reads no bindings file",
+    )
+}

@@ -8,15 +8,18 @@
 //! exit codes, and a refusal prints the source's own words beside
 //! tailrace's (58, 59, rule core.19).
 //!
-//! Until the host binds its seams (118), the installed binary answers
-//! `publish` and `verify` absent, naming the seams no binding holds;
-//! `status` needs no seam and reads the host's record (60).
+//! `publish` and `verify` are bound by the host's bindings file (118)
+//! and the repository's policy file ([`bindings`]): on a host with no
+//! bindings file they answer absent naming it, and a broken one
+//! unreadable, each in its own form and with its own exit; `status`
+//! needs no seam, reads no bindings file and answers from the host's
+//! record (60).
 
 use std::io::Write;
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
-use tailrace_seams::{Not, Seam, Seams, SignerId, Source};
+use tailrace_seams::{Answer, Not, Seam, Seams, SignerId, Source};
 
 pub mod bindings;
 pub mod commands;
@@ -68,24 +71,15 @@ pub struct Binding {
     pub signer: Option<SignerId>,
 }
 
-/// `cli` asked in the repository at `at`, over `binding` where the host
-/// binds one, its answer written to `out`; answers the exit code.
-pub fn run(cli: &Cli, binding: Option<&Binding>, at: &Path, out: &mut dyn Write) -> i32 {
+/// `cli` asked in the repository at `at`, over the binding the host's
+/// file made or why it made none, its answer written to `out`; answers
+/// the exit code. A command that needs no seam reads neither.
+pub fn run(cli: &Cli, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write) -> i32 {
     match &cli.command {
         Command::Publish(args) => commands::publish::run(args, binding, at, out),
         Command::Verify(args) => commands::verify::run(args, binding, at, out),
         Command::Status(args) => commands::status::run(args, at, out),
     }
-}
-
-/// 118: what a command that needs the seams answers on a host that binds
-/// none.
-pub(crate) fn unbound() -> Not {
-    Not::absent(
-        &Source::new(Seam::Host, "unbound"),
-        "binding of the store, the build, the landing, the signer, the policy, \
-         the projections, the targets or the keeper",
-    )
 }
 
 /// 79: what publish answers where the host binds no signer, before
