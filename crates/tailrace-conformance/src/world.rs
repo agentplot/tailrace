@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::SystemTime;
 
 use serde_json::json;
@@ -22,7 +23,7 @@ use tailrace_seams::{
     Verdict, Version,
 };
 
-use crate::fixture::{Fixture, Repo, MAIN};
+use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
 use crate::Rig;
 
 /// The identity of the party running tailrace, which signs (11, 79).
@@ -125,6 +126,48 @@ impl Default for FakeWorld {
     }
 }
 
+/// The history of [`FakeWorld::new`], made with git once per process
+/// and copied for each world after.
+fn one_component() -> (Fixture, Revision, Revision) {
+    let fixture = Fixture::new();
+    let repo = &fixture.repo;
+    repo.policy_file(POLICY);
+    let start = repo.commit(
+        &[
+            ("site/index.html", "<p>the first site</p>"),
+            ("server/main.txt", "the first server"),
+        ],
+        "feat: the first site and server",
+    );
+    repo.tag("v0.1.0", &start);
+    let head = repo.commit(
+        &[("server/main.txt", "the server answers")],
+        "feat: the server answers",
+    );
+    repo.push();
+    (fixture, start, head)
+}
+
+/// The history of [`FakeWorld::two_components`], made with git once per
+/// process and copied for each world after.
+fn two_components() -> (Fixture, Revision, Revision) {
+    let fixture = Fixture::new();
+    let repo = &fixture.repo;
+    repo.policy_file(TWO_COMPONENTS);
+    let start = repo.commit(
+        &[
+            ("lib/lib.txt", "the first lib"),
+            ("app/app.txt", "the first app"),
+        ],
+        "feat: the first lib and app",
+    );
+    repo.tag("lib-v0.1.0", &start);
+    repo.tag("app-v0.1.0", &start);
+    let head = repo.commit(&[("lib/lib.txt", "the lib grows")], "feat: the lib grows");
+    repo.push();
+    (fixture, start, head)
+}
+
 /// The build identity the world's build reports `output` at `revision`
 /// from.
 pub fn build_of(output: &str, revision: &Revision) -> BuildId {
@@ -140,23 +183,12 @@ impl FakeWorld {
     /// repository, with outputs `site` and `server`: released as `v0.1.0`
     /// at `start`, one feature since at `head`.
     pub fn new() -> FakeWorld {
-        let fixture = Fixture::new();
-        let repo = &fixture.repo;
-        repo.policy_file(POLICY);
-        let start = repo.commit(
-            &[
-                ("site/index.html", "<p>the first site</p>"),
-                ("server/main.txt", "the first server"),
-            ],
-            "feat: the first site and server",
-        );
-        repo.tag("v0.1.0", &start);
-        let head = repo.commit(
-            &[("server/main.txt", "the server answers")],
-            "feat: the server answers",
-        );
-        repo.push();
-        FakeWorld::over(fixture, start, head)
+        static MADE: OnceLock<(Snapshot, Revision, Revision)> = OnceLock::new();
+        let (snapshot, start, head) = MADE.get_or_init(|| {
+            let (fixture, start, head) = one_component();
+            (fixture.snapshot(), start, head)
+        });
+        FakeWorld::over(Fixture::from(snapshot), start.clone(), head.clone())
     }
 
     /// The repository declaring two components, `lib` over `lib/**` with
@@ -164,21 +196,12 @@ impl FakeWorld {
     /// with one output and its projection, released at `start`; `head`
     /// touches `lib` alone.
     pub fn two_components() -> FakeWorld {
-        let fixture = Fixture::new();
-        let repo = &fixture.repo;
-        repo.policy_file(TWO_COMPONENTS);
-        let start = repo.commit(
-            &[
-                ("lib/lib.txt", "the first lib"),
-                ("app/app.txt", "the first app"),
-            ],
-            "feat: the first lib and app",
-        );
-        repo.tag("lib-v0.1.0", &start);
-        repo.tag("app-v0.1.0", &start);
-        let head = repo.commit(&[("lib/lib.txt", "the lib grows")], "feat: the lib grows");
-        repo.push();
-        FakeWorld::over(fixture, start, head)
+        static MADE: OnceLock<(Snapshot, Revision, Revision)> = OnceLock::new();
+        let (snapshot, start, head) = MADE.get_or_init(|| {
+            let (fixture, start, head) = two_components();
+            (fixture.snapshot(), start, head)
+        });
+        FakeWorld::over(Fixture::from(snapshot), start.clone(), head.clone())
     }
 
     fn over(fixture: Fixture, start: Revision, head: Revision) -> FakeWorld {
@@ -475,11 +498,33 @@ mod tests {
 
     #[test]
     fn two_worlds_built_alike_have_equal_revisions() {
-        let (a, b) = (FakeWorld::new(), FakeWorld::new());
-        assert_eq!((&a.start, &a.head), (&b.start, &b.head));
-        assert_ne!(a.start, a.head);
-        let (c, d) = (FakeWorld::two_components(), FakeWorld::two_components());
-        assert_eq!((&c.start, &c.head), (&d.start, &d.head));
+        let ((_a, a_start, a_head), (_b, b_start, b_head)) = (one_component(), one_component());
+        assert_eq!((&a_start, &a_head), (&b_start, &b_head));
+        assert_ne!(a_start, a_head);
+        let ((_c, c_start, c_head), (_d, d_start, d_head)) = (two_components(), two_components());
+        assert_eq!((&c_start, &c_head), (&d_start, &d_head));
+    }
+
+    #[test]
+    fn a_world_copied_holds_the_history_it_was_copied_from() {
+        let world = FakeWorld::new();
+        let repo = world.repo();
+        assert_eq!(repo.head(), world.head);
+        assert_eq!(repo.tags(), ["v0.1.0"]);
+        assert_eq!(world.shared().tag_at("v0.1.0"), Some(world.start.clone()));
+        let remote = repo.git(&["config", "remote.origin.url"]);
+        assert_eq!(
+            Path::new(&remote).canonicalize().unwrap(),
+            world.shared().path.canonicalize().unwrap()
+        );
+        let next = repo.commit(&[("site/index.html", "<p>again</p>")], "fix: again");
+        repo.push();
+        assert_eq!(world.shared().git(&["rev-parse", MAIN]), next.as_str());
+        assert_ne!(
+            FakeWorld::new().repo().path,
+            repo.path,
+            "two worlds share a directory"
+        );
     }
 
     #[test]

@@ -183,4 +183,76 @@ impl Fixture {
     pub fn root(&self) -> &Path {
         self.root.path()
     }
+
+    /// Every file of the fixture as it stands, to make the same fixture
+    /// again without running git.
+    pub fn snapshot(&self) -> Snapshot {
+        fn walk(root: &Path, dir: &Path, files: &mut Vec<(PathBuf, Vec<u8>)>) {
+            for entry in fs::read_dir(dir).expect("the fixture is readable") {
+                let path = entry.expect("the fixture is readable").path();
+                if path.is_dir() {
+                    walk(root, &path, files);
+                } else {
+                    let bytes = fs::read(&path).expect("the fixture is readable");
+                    let relative = path.strip_prefix(root).expect("under the root");
+                    files.push((relative.to_path_buf(), bytes));
+                }
+            }
+        }
+        let mut files = Vec::new();
+        walk(self.root.path(), self.root.path(), &mut files);
+        Snapshot {
+            root: self.root.path().display().to_string(),
+            canonical: canonical(self.root.path()),
+            files,
+        }
+    }
+
+    /// A fixture of its own holding every file `snapshot` held, the
+    /// clone's remote its own shared history: the same revisions, tags and
+    /// branches, made in a fraction of the time git takes.
+    pub fn from(snapshot: &Snapshot) -> Fixture {
+        let root = TempDir::new().expect("a temporary directory");
+        for (relative, bytes) in &snapshot.files {
+            let path = root.path().join(relative);
+            fs::create_dir_all(path.parent().expect("a file is under the root"))
+                .expect("the fixture is writable");
+            fs::write(&path, bytes).expect("the fixture is writable");
+        }
+        // The clone names its remote by the path git read it at, which
+        // may be the root's canonical path.
+        let config = root.path().join("repo/.git/config");
+        let mut text = fs::read_to_string(&config).expect("the clone has a config");
+        for (was, now) in [
+            (snapshot.canonical.clone(), canonical(root.path())),
+            (snapshot.root.clone(), root.path().display().to_string()),
+        ] {
+            text = text.replace(&was, &now);
+        }
+        fs::write(&config, text).expect("the fixture is writable");
+        Fixture {
+            shared: Repo {
+                path: root.path().join("shared.git"),
+            },
+            repo: Repo {
+                path: root.path().join("repo"),
+            },
+            root,
+        }
+    }
+}
+
+/// Every file of a fixture, by its path under the fixture's root, and the
+/// root it was read from, as given and canonical.
+pub struct Snapshot {
+    root: String,
+    canonical: String,
+    files: Vec<(PathBuf, Vec<u8>)>,
+}
+
+fn canonical(path: &Path) -> String {
+    path.canonicalize()
+        .expect("the root exists")
+        .display()
+        .to_string()
 }
