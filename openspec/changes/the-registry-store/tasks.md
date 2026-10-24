@@ -21,7 +21,7 @@ tools layer (check-tools).
 
 ## 2. One OCI form for both stores
 
-- [ ] 2.1 Move `crates/tailrace/src/profiles/store/layout/oci.rs` to `crates/tailrace/src/profiles/store/oci.rs` with its tests, widening its items' visibility to the store module, and change only the layout's `use` lines (design D1). Verify `devenv shell -- cargo test -p tailrace --test layout_store` and the layout's unit tests pass unchanged, and `git diff --stat` shows no other line of `layout/` changed.
+- [x] 2.1 Move `crates/tailrace/src/profiles/store/layout/oci.rs` to `crates/tailrace/src/profiles/store/oci.rs` with its tests, widening its items' visibility to the store module, and change only the layout's `use` lines (design D1). Verify `devenv shell -- cargo test -p tailrace --test layout_store` and the layout's unit tests pass unchanged, and `git diff --stat` shows no other line of `layout/` changed.
 - [ ] 2.2 Add the referrer manifest's form to `oci.rs`: the empty config descriptor, the subject descriptor, the envelope layer, the envelope type as artifact type, and the `in-toto.io/predicate-type` annotation when the payload is an in-toto statement naming one (design D5); and the referrers index's form for the tag fallback (D6). Verify with unit tests: the same envelope and subject write the same bytes twice; the manifest's JSON names the subject, the empty config (`{}`, size 2) and one layer whose digest is `Envelope::digest()`; an envelope whose payload is not in-toto carries no annotation; a referrers index gains a descriptor once and keeps entries it did not write.
 
 ## 3. The registry handle

@@ -2,6 +2,7 @@
 //! host's `[store]` names.
 
 pub mod layout;
+mod oci;
 
 use std::fs;
 use std::path::Path;
