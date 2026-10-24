@@ -420,6 +420,14 @@ impl FakeWorld {
         self.packs.borrow().clone()
     }
 
+    /// The host's record deleted, its directory and every file in it,
+    /// as a person who deletes what tailrace keeps does (63).
+    pub fn delete_record(&self) {
+        let dir = self.kept().dir().to_path_buf();
+        fs::remove_dir_all(&dir)
+            .unwrap_or_else(|e| panic!("the record at {} was not deleted: {e}", dir.display()));
+    }
+
     /// Every file of the host's record, by path, with its bytes and when
     /// it was last written; none when the record holds nothing.
     pub fn record(&self) -> Vec<(PathBuf, Vec<u8>, SystemTime)> {
