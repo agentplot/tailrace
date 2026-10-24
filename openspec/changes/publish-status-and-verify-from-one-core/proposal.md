@@ -139,6 +139,7 @@ beside the components `a-landed-revision-takes-its-version` reads.
 ## Touches
 
 ```
+Cargo.lock
 crates/tailrace-core/**
 crates/tailrace-seams/src/answer.rs
 crates/tailrace-seams/src/claim.rs
