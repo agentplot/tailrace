@@ -21,7 +21,7 @@ the group that cannot pass without one is reported with `crew needs`.
 
 ## 2. Blobs
 
-- [ ] 2.1 Write `profiles/store/layout/blobs.rs`: the write through a temporary file and a hard link, held already checked against the bytes on disk, and the read with its digest check (design D2, D3); implement `put_bytes` and the bytes half of `read` on them. Verify with unit tests: the same bytes put twice answer one digest, the second held already, with the file's modification time unchanged; a file altered on disk is refused `Why::OtherBytes` naming both digests on read and on put, and left as found; a digest never put is absent naming it; no temporary file remains after a put.
+- [x] 2.1 Write `profiles/store/layout/blobs.rs`: the write through a temporary file and a hard link, held already checked against the bytes on disk, and the read with its digest check (design D2, D3); implement `put_bytes` and the bytes half of `read` on them. Verify with unit tests: the same bytes put twice answer one digest, the second held already, with the file's modification time unchanged; a file altered on disk is refused `Why::OtherBytes` naming both digests on read and on put, and left as found; a digest never put is absent naming it; no temporary file remains after a put.
 
 ## 3. Artifacts and indexes
 
