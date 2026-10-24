@@ -1,19 +1,20 @@
 //! The `tailrace` binary: the command line, tailrace's first surface.
-//! `tailrace publish`, `tailrace verify`, `tailrace status` and `tailrace
-//! sync` each turn their arguments into one question to the one core and
-//! render its answer, as text for a person or, with `--json`, as the
-//! answer itself for a program; none reads a seam, the record or the
-//! history itself, or computes a version, a digest or a signer of its own
-//! (56, 57, rule core.31). Absent, refused and unreadable are three
+//! `tailrace publish`, `tailrace verify`, `tailrace status`, `tailrace
+//! sync`, `tailrace push` and `tailrace rebuild` each turn their
+//! arguments into one question to the one core and render its answer, as
+//! text for a person or, with `--json`, as the answer itself for a
+//! program; none reads a seam, the record or the history itself, or
+//! computes a version, a digest or a signer of its own (56, 57, rule
+//! core.31). Absent, refused and unreadable are three
 //! answers with three exit codes, and a refusal prints the source's own
 //! words beside tailrace's (58, 59, rule core.19).
 //!
-//! `publish`, `verify` and `sync` are bound by the host's bindings file
-//! (118) and the repository's policy file ([`bindings`]): on a host with
-//! no bindings file they answer absent naming it, and a broken one
-//! unreadable, each in its own form and with its own exit; `status`
-//! needs no seam, reads no bindings file and answers from the host's
-//! record (60).
+//! `publish`, `verify`, `sync`, `push` and `rebuild` are bound by the
+//! host's bindings file (118) and the repository's policy file
+//! ([`bindings`]): on a host with no bindings file they answer absent
+//! naming it, and a broken one unreadable, each in its own form and with
+//! its own exit; `status` needs no seam, reads no bindings file and
+//! answers from the host's record (60).
 
 use std::io::Write;
 use std::path::Path;
@@ -64,6 +65,12 @@ pub enum Command {
     /// Render the cache entries a landed revision's passing verdicts name
     /// into this checkout, where its tools read them.
     Sync(commands::sync::SyncArgs),
+    /// Write the cache entries of a landing's passing builds to the store,
+    /// from what its build left on this host, after the landing.
+    Push(commands::push::PushArgs),
+    /// Rebuild this host's record of the versions it published from the
+    /// store and git.
+    Rebuild(commands::rebuild::RebuildArgs),
 }
 
 /// What a host binds (92): the seams; the store as the host's bindings
@@ -86,6 +93,8 @@ pub fn run(cli: &Cli, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write)
         Command::Verify(args) => commands::verify::run(args, binding, at, out),
         Command::Status(args) => commands::status::run(args, at, out),
         Command::Sync(args) => commands::sync::run(args, binding, at, out),
+        Command::Push(args) => commands::push::run(args, binding, at, out),
+        Command::Rebuild(args) => commands::rebuild::run(args, binding, at, out),
     }
 }
 
