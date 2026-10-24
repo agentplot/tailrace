@@ -17,6 +17,9 @@
 //! operation unreadable with git's words (58, 59).
 
 mod checkout;
+// Ensure and report read through it from the task that writes them.
+#[allow(dead_code)]
+mod report;
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;

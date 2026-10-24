@@ -1839,6 +1839,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap",
+ "glob",
  "serde",
  "serde_json",
  "tailrace-conformance",

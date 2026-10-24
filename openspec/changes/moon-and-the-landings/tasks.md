@@ -28,7 +28,7 @@ tests.
 ## 3. moon
 
 - [x] 3.1 Write `profiles/build/moon/mod.rs` with the reading of `[build.outputs.<name>] task` from the policy file at the revision (design D3), and `profiles/build/moon/checkout.rs` with the revision's worktree under the common directory (design D4). Verify with unit tests over a scratch git repository: the task named at a revision, not the one an uncommitted edit names; an output with no table names no task; the checkout holds the revision's tree and is reused for it; a checkout's own uncommitted file is not in it.
-- [ ] 3.2 Write `profiles/build/moon/report.rs`: reading moon's run report (actions, `hash-generation`, status) and a task's declared outputs from `moon task <target> --json` (design D4). Verify with unit tests over run reports captured from moon 2.6.1 (passed, failed, cached, an action that is not `RunTask`), and the paths an output glob matches.
+- [x] 3.2 Write `profiles/build/moon/report.rs`: reading moon's run report (actions, `hash-generation`, status) and a task's declared outputs from `moon task <target> --json` (design D4). Verify with unit tests over run reports captured from moon 2.6.1 (passed, failed, cached, an action that is not `RunTask`), and the paths an output glob matches.
 - [ ] 3.3 Implement `Build` for `Moon`: `ensure` and `report` (design D4). Verify in `crates/tailrace/tests/build_moon.rs` (task 7.1).
 
 ## 4. sluice
