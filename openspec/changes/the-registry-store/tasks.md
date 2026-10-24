@@ -76,6 +76,6 @@ them.
 
 ## 10. The gate
 
-- [ ] 10.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage with 103 and 109 cited, every crate's tests and the site's build.
-- [ ] 10.2 Verify `devenv shell -- moon run ':#check-tools'` passes: the tools task with `registry_store` against zot and the distribution, and no task reaching ECR.
+- [x] 10.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage with 103 and 109 cited, every crate's tests and the site's build.
+- [x] 10.2 Verify `devenv shell -- moon run ':#check-tools'` passes: the tools task with `registry_store` against zot and the distribution, and no task reaching ECR.
 
