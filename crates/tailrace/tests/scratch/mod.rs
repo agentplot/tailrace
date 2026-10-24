@@ -7,6 +7,9 @@
 
 #![allow(dead_code)]
 
+pub mod gate;
+pub mod recorder;
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
