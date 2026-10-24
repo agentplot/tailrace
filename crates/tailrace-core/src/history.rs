@@ -437,6 +437,13 @@ impl History {
             .map_err(absent)
     }
 
+    /// The root of the working tree this history was opened at, absolute;
+    /// none for a bare repository.
+    pub fn workdir(&self) -> Option<PathBuf> {
+        let dir = self.git.workdir()?;
+        Some(dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf()))
+    }
+
     /// The repository's common git directory, which every worktree of it
     /// on the host shares and no push carries (62).
     pub fn common_dir(&self) -> PathBuf {

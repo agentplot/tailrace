@@ -8,11 +8,12 @@ use std::process::Command;
 use clap::Parser;
 use serde_json::Value;
 use tailrace::{run, Binding, Cli};
-use tailrace_core::{answer_json, publish, Ask, Entry, History, Kept};
+use tailrace_core::{answer_json, publish, sync, write, Ask, Entry, History, Kept, SyncAsk};
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
-    Audience, Branch, ComponentName, Digest, Ecosystem, OutputName, Report, Required, Revision,
-    Seam, SignerId, Source, Version,
+    Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, Outcome,
+    Output, OutputName, Report, Required, Revision, Seam, Signer, SignerId, Source, Verdict,
+    Version,
 };
 use tempfile::TempDir;
 
@@ -195,6 +196,87 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
     );
 }
 
+// Requirement: Sync fills the checkout's cache from a landed revision
+
+/// A passing verdict of `test` on `build` at the host's head, signed as
+/// the landing signs, recorded.
+fn passed(host: &Host, build: &str) {
+    let id = SignerId::new("landing");
+    let theirs = tailrace_fakes::FakeSigner::new();
+    theirs.hold(&id);
+    let claim = Claim {
+        subject: Digest::of(build.as_bytes()),
+        kind: ClaimKind::Verdict,
+        revision: host.head.clone(),
+        build: Some(BuildId::new(build)),
+        body: serde_json::json!({ "check": "test", "outcome": Outcome::Pass }),
+    };
+    host.fakes.landing.verdict(
+        &host.head,
+        Verdict {
+            check: Check::new("test"),
+            build: BuildId::new(build),
+            outcome: Outcome::Pass,
+            signer: id.clone(),
+            envelope: theirs.sign(&claim, &id).unwrap(),
+            found: format!("the fake landing's record of test on {build}"),
+        },
+    );
+}
+
+#[test]
+fn sync_with_one_entry_gone_prints_one_rendered_and_one_absent_and_exits_0() {
+    let host = Host::new();
+    passed(&host, "b7e1");
+    passed(&host, "c3d4");
+    let site = Output {
+        name: OutputName::new("site"),
+        files: vec![],
+    };
+    write(&host.fakes.seams(), &site, &BuildId::new("c3d4")).unwrap();
+
+    let (code, printed) = host.run(&["sync", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let entries = &printed["value"]["entries"];
+    assert_eq!(entries[0]["build"], "b7e1");
+    assert_eq!(entries[0]["answer"], "absent");
+    assert_eq!(entries[1]["build"], "c3d4");
+    assert_eq!(entries[1]["answer"], "ok");
+    assert_eq!(printed["value"]["revision"], host.head.as_str());
+
+    let at = History::open(&host.repo).unwrap().workdir().unwrap();
+    let core = sync(
+        &host.fakes.seams(),
+        &SyncAsk {
+            branch: Branch::new("main"),
+            revision: host.head.clone(),
+            at: at.display().to_string(),
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+
+    let (code, printed) = host.run(&["sync"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(lines[0].starts_with("b7e1 absent: "), "{printed}");
+    assert!(
+        lines[1].starts_with("c3d4 rendered by eco, sha256:"),
+        "{printed}"
+    );
+}
+
+#[test]
+fn sync_on_a_branch_the_repository_lacks_is_absent_and_one_that_did_not_land_it_refuses() {
+    let host = Host::new();
+    let (code, printed) = host.run(&["sync", "--branch", "release", "--json"]);
+    assert_eq!(code, 4, "the repository holds no branch release: {printed}");
+    let (code, printed) = host.run(&["sync", "HEAD", "--branch", "release", "--json"]);
+    assert_eq!(code, 1, "{printed}");
+    let json: Value = serde_json::from_str(&printed).unwrap();
+    assert_eq!(json["refused"]["why"]["not_landed"]["branch"], "release");
+}
+
 // Requirement: Every answer is readable by a program on request
 
 #[test]
@@ -315,6 +397,24 @@ fn the_built_binary_on_a_host_with_no_bindings_file_publishes_nothing() {
         json["absent"]["what"],
         format!("bindings file at {}", file.display())
     );
+}
+
+#[test]
+fn the_built_binary_on_a_host_with_no_bindings_file_syncs_nothing() {
+    let host = Host::new();
+    let file = host.bindings_file();
+    let out = host.binary(&["sync", "--json"]);
+    assert_eq!(out.status.code(), Some(4), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["answer"], "absent");
+    assert_eq!(json["absent"]["source"]["seam"], "host");
+    assert_eq!(
+        json["absent"]["what"],
+        format!("bindings file at {}", file.display())
+    );
+    assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
+    assert!(!host.repo.join(".moon").exists(), "the sync wrote a cache");
+    assert!(!file.parent().unwrap().exists(), "the sync wrote a file");
 }
 
 #[test]
