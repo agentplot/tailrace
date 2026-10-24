@@ -51,7 +51,7 @@ tools layer (check-tools).
 
 ## 7. A lost race repaired from the ledger
 
-- [ ] 7.1 Write `crates/tailrace-core/src/repair.rs` and its lines in `src/lib.rs` (design D9). Verify with unit tests over a fake store and a fake keeper: the name moved to the head's subject; an empty chain absent and a fork refused, neither writing the store; a refusal naming the head's subject answered as already there; another writer's move answered as a lost race naming its digest and repaired with two moves in all; a repair refused in turn passed through with nothing retried.
+- [x] 7.1 Write `crates/tailrace-core/src/repair.rs` and its lines in `src/lib.rs` (design D9). Verify with unit tests over a fake store and a fake keeper: the name moved to the head's subject; an empty chain absent and a fork refused, neither writing the store; a refusal naming the head's subject answered as already there; another writer's move answered as a lost race naming its digest and repaired with two moves in all; a repair refused in turn passed through with nothing retried.
 - [ ] 7.2 Add the scenario of design D11 below the marker in `crates/tailrace-conformance/src/core/ledger.rs`, citing 109, and remove 109's entry from `src/register.rs` in the same commit. Verify `devenv shell -- cargo test -p tailrace-conformance` passes and the coverage check reports 109 cited and not pending.
 - [ ] 7.3 Verify in `registry_store.rs`: with a fake keeper whose head promotion is about one index and the hook moving the channel's tag in zot to a second, the repair reports the lost race naming the second and the tag ends at the first.
 
