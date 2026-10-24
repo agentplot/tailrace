@@ -1,7 +1,7 @@
 ---
 number: 14
 title: The registry profile takes one repository and names a cache entry through a cache manifest
-status: proposed
+status: accepted
 date: 2026-10-24
 decision-makers:
 - Chuck Swanberg
@@ -9,7 +9,7 @@ decision-makers:
 
 # The registry profile takes one repository and names a cache entry through a cache manifest
 
-Status: proposed to the user on 2026-10-24, as `briefs.15` has it; accepted only on their yes.
+Status: accepted by the user on 2026-10-24, on their card ("Approved").
 
 Deciders: madswan-design, ruling on three questions batch 9's review raised from the-registry-store and moons-cache-namespace (phase 1, bolts 2 and 3), for the user to accept on this record's card.
 Sources: statement clauses 1, 52, 53, 61, 66, 70, 71, 72, 73, 100, C.1, C.2, and Part C's opening line, "Parts A and B do not change to admit a profile"; rules core.2, core.6, core.20, core.30; the-registry-store's design, D2 and D6; moons-cache-namespace's design, D1.
