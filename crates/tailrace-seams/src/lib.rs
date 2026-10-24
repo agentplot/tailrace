@@ -11,7 +11,7 @@
 //! | the policy | [`Policy`] | B.5, 82, 83 |
 //! | a projection | [`Projection`] | B.6, 84 to 87 |
 //! | a target | [`Target`] | B.7, 88 to 91 |
-//! | the keeper | [`Keeper`] | B.8, 120 to 122 |
+//! | the ledger | [`Keeper`] | B.8, 120 to 122 |
 //!
 //! The core is handed them as one [`Seams`] (B.9, 92). A profile
 //! implements one of these traits and nothing of the core, and the core
