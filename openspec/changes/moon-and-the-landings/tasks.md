@@ -44,7 +44,7 @@ tests.
 
 ## 6. The tools layer
 
-- [ ] 6.1 In `devenv.nix`, add sluice v0.37.0's release binary fetched as proto's is, each asset's sha256 got with `nix-prefetch-url`, and `pkgs.openssh`; add `--all-features` to the commit hook's clippy (design D9, D10). Verify `devenv shell -- sluice --version` prints `sluice 0.37.0` and `devenv shell -- which ssh-keygen` names a path in the Nix store.
+- [x] 6.1 In `devenv.nix`, add sluice v0.37.0's release binary fetched as proto's is, each asset's sha256 got with `nix-prefetch-url`, and `pkgs.openssh`; add `--all-features` to the commit hook's clippy (design D9, D10). Verify `devenv shell -- sluice --version` prints `sluice 0.37.0` and `devenv shell -- which ssh-keygen` names a path in the Nix store.
 - [ ] 6.2 Add the `tools` task tagged `check-tools` to `crates/tailrace/moon.yml`, `--all-features` to the root `moon.yml`'s `lint`, `#check-tools` to `required` on `bolt/*` and `main` in `.config/sluice.toml`, and the layer to `.moon/workspace.yml`'s comment and `CLAUDE.md`'s layers table (design D9, D10). Verify, once group 7 is written, that `devenv shell -- moon run ':#check-tools'` runs the three tools test files and passes, and that `devenv shell -- moon run ':#check-fast'` runs none of them.
 
 ## 7. The rigs, the suite and the end-to-end tests

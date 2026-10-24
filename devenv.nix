@@ -42,6 +42,42 @@ let
       '';
     };
 
+  # sluice's own release build, for the tools layer's tests of the sluice
+  # landing (crates/tailrace/tests/landing_sluice.rs): the version tailrace
+  # reads the records of. Linux takes the build's dynamic loader and
+  # libraries from nixpkgs. On a system sluice releases nothing for,
+  # sluice is not in the shell, and those tests fail at their first step
+  # naming it.
+  sluice =
+    let
+      version = "0.37.0";
+      system = pkgs.stdenv.hostPlatform.system;
+      hashes = {
+        aarch64-darwin = "bd34de2c1768c45143da4349899dab6a9e19e3dac1f8eca022f6f2fec6b60fb1";
+        aarch64-linux = "663c2e87d8bcc9027d53713e609b8813cff8258baff48ca04aed11f8abb8bdeb";
+        x86_64-linux = "d137876bea447e04f6d83527fa7bfd060ecb35856a357a48d6d8032c36cc7848";
+      };
+    in
+    if hashes ? ${system} then
+      pkgs.stdenv.mkDerivation {
+        pname = "sluice";
+        inherit version;
+        src = pkgs.fetchurl {
+          url = "https://github.com/agentplot/sluice/releases/download/v${version}/sluice-${system}.tar.gz";
+          sha256 = hashes.${system};
+        };
+        sourceRoot = ".";
+        nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.autoPatchelfHook ];
+        buildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.stdenv.cc.cc.lib ];
+        installPhase = ''
+          runHook preInstall
+          install -Dm755 -t $out/bin sluice
+          runHook postInstall
+        '';
+      }
+    else
+      null;
+
   # The application toolchain .prototools pins, on PATH. proto's home is
   # this repository's, in the git common dir so every worktree shares it,
   # and only this repository's pins are read (no global .prototools).
@@ -61,7 +97,7 @@ let
     text = ''
       cd "$(git rev-parse --show-toplevel)"
       ${activate}
-      cargo clippy --workspace --all-targets -- -D warnings
+      cargo clippy --workspace --all-targets --all-features -- -D warnings
     '';
   };
 
@@ -89,7 +125,11 @@ in
     # Chromium its screenshots are taken in (site/scripts/shots.mjs).
     pkgs.bun
     pkgs.playwright-test
-  ];
+    # The tools layer: ssh-keygen signs the run records its tests stage as
+    # sluice's signers sign them.
+    pkgs.openssh
+  ]
+  ++ lib.optional (sluice != null) sluice;
 
   env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
 
@@ -120,6 +160,12 @@ in
     fi
     unset _moon_root _moon_common _moon_cache
     ${activate}
+    ${lib.optionalString (sluice != null) ''
+      # proto puts cargo's own bin first, where a sluice built from source
+      # may be: the tree's pin comes before it.
+      PATH="${sluice}/bin:$PATH"
+      export PATH
+    ''}
   '';
 
   # The tool versions .prototools lists, installed before enterShell
