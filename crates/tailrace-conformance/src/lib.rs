@@ -27,7 +27,7 @@
 //! | status | [`core::status`] | the `FakeWorld` |
 //! | the surfaces | [`core::surfaces`] | a [`Surface`](core::surfaces::Surface) |
 //! | the gate | [`core::gate`] | nothing yet: bolt 4's gate unit |
-//! | the ledger | [`core::ledger`] | nothing yet: bolt 4's keeper and promotion |
+//! | the ledger | [`core::ledger`] | the `FakeWorld`; bolt 4's keeper and promotion adds the rest |
 //! | the cache | [`core::cache`] | nothing yet: bolt 3's cache |
 //! | the record | [`core::record`] | nothing yet: bolt 3's push after a landing |
 //! | the layouts | [`core::layouts`] | nothing yet: bolt 5's render under a policy |
@@ -210,7 +210,7 @@ mod tests {
             .filter(|g| g.scenarios.is_empty())
             .map(|g| g.name)
             .collect();
-        assert_eq!(empty, ["gate", "ledger", "cache", "record", "layouts"]);
+        assert_eq!(empty, ["gate", "cache", "record", "layouts"]);
         for seam in [
             "store",
             "build",
