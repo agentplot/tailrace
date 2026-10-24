@@ -9,11 +9,14 @@
 //! or GNU long-name header is skipped by its size like any member, and an
 //! archive that hides the two names is refused, never accepted.
 //!
-//! Its render and serve are not built and answer absent.
+//! It packs no cache entries: a pack with no version and a render of
+//! cache entries answer absent naming them, and read and write nothing
+//! (84, 85). Its render of artifacts and serve are not built and answer
+//! absent.
 
 use tailrace_seams::{
-    Answer, Artifact, Layout, Not, Output, Packed, Projection, Rendered, Seam, Serving, Source,
-    Version, Why,
+    no_cache_entries, Answer, BuildId, Contents, Layout, Not, Output, Packed, Projection, Rendered,
+    Seam, Serving, Source, Version, Why,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -174,10 +177,14 @@ fn holds_a_layout(bytes: &[u8]) -> Result<(), NotAnImage> {
 impl Projection for ImageProjection {
     /// 84, 87: the output's one file's bytes unchanged once it is a tar
     /// holding an OCI image layout at its root, named by the output and
-    /// the version, packing the same again; refused naming the output and
-    /// what the file holds instead.
-    fn pack(&self, output: &Output, version: &Version) -> Answer<Packed> {
+    /// the version, packing the same again at every build identity;
+    /// refused naming the output and what the file holds instead; absent
+    /// for a cache entry, which it packs none of.
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
         let source = ImageProjection::source();
+        let Some(version) = version else {
+            return Err(no_cache_entries(&source));
+        };
         let file = one_file(output, &source, ECOSYSTEM)?;
         let bytes = read(file, &source)?;
         let refused = |why: String| {
@@ -204,13 +211,17 @@ impl Projection for ImageProjection {
         }
         Ok(Packed {
             bytes,
-            meta: meta(ECOSYSTEM, output, version, &source)?,
+            meta: Some(meta(ECOSYSTEM, output, version, &source)?),
             same_again: true,
         })
     }
 
-    fn render(&self, _: &[Artifact], _: &str) -> Answer<Rendered> {
-        Err(not_built("render", ECOSYSTEM, &ImageProjection::source()))
+    fn render(&self, contents: Contents<'_>, _: &str) -> Answer<Rendered> {
+        let source = ImageProjection::source();
+        match contents {
+            Contents::Artifacts(_) => Err(not_built("render", ECOSYSTEM, &source)),
+            Contents::CacheEntries(_) => Err(no_cache_entries(&source)),
+        }
     }
 
     fn serve(&self, _: &Layout) -> Answer<Serving> {
@@ -223,7 +234,7 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use tailrace_seams::{ArtifactMeta, Ecosystem, EcosystemName, OutputName};
+    use tailrace_seams::{ArtifactMeta, CacheEntry, Digest, Ecosystem, EcosystemName, OutputName};
     use tempfile::TempDir;
 
     use super::*;
@@ -238,9 +249,18 @@ mod tests {
         }
     }
 
+    fn b7e1() -> BuildId {
+        BuildId::new("b7e1")
+    }
+
+    /// `output` packed at `b7e1` with `version`.
+    fn pack(output: &Output, version: &str) -> Answer<Packed> {
+        ImageProjection.pack(output, &b7e1(), Some(&Version::new(version)))
+    }
+
     /// The words of a refusal of `output`, once it names this profile.
     fn refused(output: &Output) -> String {
-        match ImageProjection.pack(output, &Version::new("0.3.0")) {
+        match pack(output, "0.3.0") {
             Err(Not::Refused(r)) => {
                 assert_eq!(r.source, ImageProjection::source());
                 assert_eq!(r.why, Why::Said);
@@ -256,19 +276,19 @@ mod tests {
         let archive = fixture::archive();
         let output = api(dir.path(), &archive);
         for version in ["0.3.0", "0.4.0"] {
-            let packed = ImageProjection
-                .pack(&output, &Version::new(version))
-                .unwrap();
+            let packed = pack(&output, version).unwrap();
             assert_eq!(
                 packed,
                 Packed {
                     bytes: archive.clone(),
-                    meta: ArtifactMeta::new(
-                        Ecosystem::new("image"),
-                        EcosystemName::new("api"),
-                        Version::new(version),
-                    )
-                    .unwrap(),
+                    meta: Some(
+                        ArtifactMeta::new(
+                            Ecosystem::new("image"),
+                            EcosystemName::new("api"),
+                            Version::new(version),
+                        )
+                        .unwrap()
+                    ),
                     same_again: true,
                 }
             );
@@ -349,7 +369,7 @@ mod tests {
         let output = api(dir.path(), &fixture::archive());
         fs::remove_file(&output.files[0]).unwrap();
         let words = fs::read(&output.files[0]).unwrap_err().to_string();
-        match ImageProjection.pack(&output, &Version::new("0.3.0")) {
+        match pack(&output, "0.3.0") {
             Err(Not::Unreadable(u)) => {
                 assert_eq!(u.source, ImageProjection::source());
                 assert_eq!(u.what, output.files[0]);
@@ -372,12 +392,34 @@ mod tests {
             ))
         );
         assert_eq!(
-            ImageProjection.render(&[], "layouts/image"),
+            ImageProjection.render(Contents::Artifacts(&[]), "layouts/image"),
             Err(Not::absent(
                 &ImageProjection::source(),
                 "render of the image projection"
             ))
         );
+    }
+
+    #[test]
+    fn a_cache_entry_is_absent_and_nothing_is_read_or_written() {
+        let dir = TempDir::new().unwrap();
+        let output = api(dir.path(), &fixture::archive());
+        fs::remove_file(&output.files[0]).unwrap();
+        let absent = Not::absent(&ImageProjection::source(), "cache entries");
+        assert_eq!(
+            ImageProjection.pack(&output, &b7e1(), None),
+            Err(absent.clone())
+        );
+        let at = dir.path().join("layouts").join("image");
+        let entries = [CacheEntry {
+            build: b7e1(),
+            digest: Digest::of(&fixture::archive()),
+        }];
+        assert_eq!(
+            ImageProjection.render(Contents::CacheEntries(&entries), at.to_str().unwrap()),
+            Err(absent)
+        );
+        assert!(!at.exists(), "render wrote under {}", at.display());
     }
 
     #[test]

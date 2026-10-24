@@ -10,7 +10,7 @@ use serde_json::json;
 use tailrace_core::{publish, Ask, History, Kept, Publish, Published, POLICY_FILE};
 use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, Fakes};
 use tailrace_seams::{
-    Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem,
+    Answer, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem,
     Envelope, Layout, Outcome, Output, OutputName, Packed, Projection, Rendered, Report, Revision,
     Seam, Serving, SignerId, Source, Verdict, Version,
 };
@@ -217,13 +217,13 @@ pub struct Watched<T, F: Fn() -> T> {
 }
 
 impl<T, F: Fn() -> T> Projection for Watched<T, F> {
-    fn pack(&self, output: &Output, version: &Version) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
         self.seen.borrow_mut().push((self.watch)());
-        self.inner.pack(output, version)
+        self.inner.pack(output, at, version)
     }
 
-    fn render(&self, artifacts: &[Artifact], at: &str) -> Answer<Rendered> {
-        self.inner.render(artifacts, at)
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        self.inner.render(contents, at)
     }
 
     fn serve(&self, layout: &Layout) -> Answer<Serving> {

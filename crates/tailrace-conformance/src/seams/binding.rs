@@ -4,8 +4,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use serde_json::json;
 use tailrace_seams::{
-    Claim, ClaimKind, Digest, Ecosystem, EnvironmentName, Output, OutputName, Revision, Seams,
-    SignerId, Version,
+    BuildId, Claim, ClaimKind, Digest, Ecosystem, EnvironmentName, Output, OutputName, Revision,
+    Seams, SignerId, Version,
 };
 
 use crate::seams::store::{self, StoreRig};
@@ -66,11 +66,14 @@ fn one_of_each_any_number_of_projections_and_targets(rig: &dyn BindingRig) {
             .projection(ecosystem)
             .unwrap_or_else(|| panic!("no projection is bound for {ecosystem}"));
         let packed = ok(
-            projection.pack(&output, &Version::new("1.0.0")),
+            projection.pack(&output, &BuildId::new("b7e1"), Some(&Version::new("1.0.0"))),
             &format!("the pack of the projection bound for {ecosystem}"),
         );
+        let meta = packed.meta.unwrap_or_else(|| {
+            panic!("the projection bound for {ecosystem} named no metadata for a version")
+        });
         assert_eq!(
-            packed.meta.ecosystem(),
+            meta.ecosystem(),
             ecosystem,
             "the projection bound for {ecosystem} packs in another"
         );
