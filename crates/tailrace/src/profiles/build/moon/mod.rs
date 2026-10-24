@@ -13,8 +13,10 @@
 //! ```
 //!
 //! Every operation begins by reading the repository's common git
-//! directory, so a repository that cannot be read answers every
-//! operation unreadable with git's words (58, 59).
+//! directory and then moon's version, so a repository or a moon that
+//! cannot be reached answers every operation unreadable with the tool's
+//! or the operating system's words, before any answer of absent or
+//! refused (58, 59).
 
 mod checkout;
 mod report;
@@ -118,6 +120,20 @@ impl Moon {
         ))
     }
 
+    /// The opening read of every operation: the repository's common git
+    /// directory, then moon's version in the repository, so neither
+    /// absent nor refused is answered by a build that cannot run moon
+    /// (design D4).
+    fn open(&self) -> Answer<PathBuf> {
+        let common = self.common()?;
+        let args = ["--version"];
+        let ran = self.moon(&self.repository, &args)?;
+        if ran.code != Some(0) {
+            return Err(self.moon.failed(&args, &ran));
+        }
+        Ok(common)
+    }
+
     /// The commit `revision` names, resolved before anything is read at
     /// it (rule core.4); absent when the repository holds none.
     fn commit(&self, revision: &Revision) -> Answer<String> {
@@ -207,7 +223,7 @@ impl Build for Moon {
     /// its task has no action in the run report, or when the files its
     /// task declares are not there.
     fn ensure(&self, revision: &Revision, outputs: &[OutputName]) -> Answer<()> {
-        let common = self.common()?;
+        let common = self.open()?;
         let commit = self.commit(revision)?;
         let tasks = self.tasks(&commit)?;
         let checkout = self.checkout(&common, &commit)?;
@@ -267,7 +283,7 @@ impl Build for Moon {
     /// from what moon recorded of the last ensure at the revision; absent
     /// naming the output where moon recorded nothing of its task.
     fn report(&self, revision: &Revision, output: &OutputName) -> Answer<Report> {
-        let common = self.common()?;
+        let common = self.open()?;
         let commit = self.commit(revision)?;
         let tasks = self.tasks(&commit)?;
         let absent = || Not::absent(self.source(), format!("output {output} at {commit}"));
