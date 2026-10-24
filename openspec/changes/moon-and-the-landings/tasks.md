@@ -34,7 +34,7 @@ tests.
 ## 4. sluice
 
 - [x] 4.1 Write `profiles/landing/sluice/dsse.rs`: an envelope read from sluice's DSSE JSON into the seams' `Envelope` and written back (design D7); add `base64` to `[workspace.dependencies]` in `Cargo.toml` and to `crates/tailrace/Cargo.toml`. Verify with unit tests over an envelope captured from sluice v0.37.0's own tests' shape: payload, type, key ids and signatures read and written back byte for byte; text that is not base64 or not a DSSE envelope is an error naming why.
-- [ ] 4.2 Write `profiles/landing/sluice/log.rs`: the branch's log read from the remote's state commit or the host's files, and the landings it holds done (design D5). Verify with unit tests over log lines: a landing done, one begun and not done, two landings, lines of other events and fields ignored.
+- [x] 4.2 Write `profiles/landing/sluice/log.rs`: the branch's log read from the remote's state commit or the host's files, and the landings it holds done (design D5). Verify with unit tests over log lines: a landing done, one begun and not done, two landings, lines of other events and fields ignored.
 - [ ] 4.3 Write `profiles/landing/sluice/records.rs`: the run statement, the records under a combination, and the replay search (design D6). Verify with unit tests over statements: results as verdicts with check, key, outcome and signer; a statement naming another combination left out; a replay carried as the ran passes for its key and system, not one on another system; a malformed record unreadable naming its ref and path.
 - [ ] 4.4 Write `profiles/landing/sluice/mod.rs`: `Sluice`, its opening listing, and `Landing` for it (design D2, D5, D6). Verify in `crates/tailrace/tests/landing_sluice.rs` (task 7.2).
 
