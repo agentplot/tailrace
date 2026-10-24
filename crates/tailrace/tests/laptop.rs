@@ -1,10 +1,11 @@
 //! Spec host-bindings: the laptop end to end, S1 and S2 played by the
 //! built binary bound by a bindings file, over a scratch repository that
-//! sluice gates and whose builds moon runs (S1, S2, 118; design D8). The
-//! binary runs with its home and its configuration in the scratch
-//! directory, and none of the `SLUICE_*` or `MOON_*` variables of a gate
-//! that may be running these tests. Needs moon, sluice and ssh-keygen, so
-//! it is in the tools layer.
+//! sluice gates and whose builds moon runs, then a second clone with a
+//! copy of the layout and no key verifying what the laptop published
+//! (S1, S2, 80, 118; design D8). The binary runs with its home and its
+//! configuration in the scratch directory, and none of the `SLUICE_*` or
+//! `MOON_*` variables of a gate that may be running these tests. Needs
+//! moon, sluice and ssh-keygen, so it is in the tools layer.
 
 #![cfg(feature = "tools")]
 
@@ -132,6 +133,20 @@ fn listing(dir: &Path) -> BTreeMap<PathBuf, (u64, Digest)> {
     files
 }
 
+/// `from` copied to `to`, every file and directory under it.
+fn copy(from: &Path, to: &Path) {
+    fs::create_dir_all(to).unwrap();
+    for entry in fs::read_dir(from).unwrap() {
+        let path = entry.unwrap().path();
+        let into = to.join(path.file_name().unwrap());
+        if path.is_dir() {
+            copy(&path, &into);
+        } else {
+            fs::copy(&path, &into).unwrap();
+        }
+    }
+}
+
 /// The scratch world: a repository sluice gates, the laptop's host, its
 /// key, and the revision sluice landed.
 struct Laptop {
@@ -237,7 +252,7 @@ fn published(json: &Value) -> &Value {
 }
 
 #[test]
-fn the_laptop_publishes_a_sluice_landing_and_publishes_it_again() {
+fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() {
     let laptop = Laptop::new();
 
     // S1: the landed revision offered, each artifact with its provenance
@@ -314,5 +329,50 @@ fn the_laptop_publishes_a_sluice_landing_and_publishes_it_again() {
         (listing(&laptop.layout), listing(&laptop.record())),
         before,
         "the repeat changed a file of the layout or the record"
+    );
+
+    // A second machine: a clone, a copy of the layout, and a bindings
+    // file naming the copy and sluice and no key.
+    let clone = laptop.scratch.clone_as("second");
+    let copied = laptop.scratch.path().join("layouts/copied");
+    copy(&laptop.layout, &copied);
+    let second = Host::new(&laptop.scratch, "second");
+    second.bind(&format!(
+        "[store]\nlayout = {:?}\n\n[landing]\nsluice = {{ remote = \"origin\" }}\n",
+        copied.display().to_string()
+    ));
+    let (code, verified) = second.tailrace(&clone, &["verify", "0.1.0", "--json"]);
+    assert_eq!(code, Some(0), "{verified}");
+    assert_eq!(verified["answer"], "ok", "{verified}");
+    let value = &verified["value"];
+    assert_eq!(value["index"], index.as_str());
+    let on: BTreeSet<&str> = artifacts
+        .iter()
+        .map(|a| a["digest"].as_str().unwrap())
+        .collect();
+    let told = value["claims"].as_array().unwrap();
+    let provenances: Vec<&Value> = told.iter().filter(|t| t["kind"] == "provenance").collect();
+    assert_eq!(provenances.len(), artifacts.len(), "{verified}");
+    for provenance in &provenances {
+        assert!(
+            on.contains(provenance["on"].as_str().unwrap()),
+            "{provenance}"
+        );
+        assert_eq!(provenance["made_by"], LAPTOP, "{provenance}");
+        assert_eq!(provenance["counts"], true, "{provenance}");
+    }
+    let verdicts: Vec<&Value> = told.iter().filter(|t| t["kind"] == "verdict").collect();
+    assert!(verdicts.len() >= artifacts.len(), "{verified}");
+    for verdict in verdicts {
+        let carrier = provenances
+            .iter()
+            .find(|p| p["envelope"] == verdict["carried_in"])
+            .unwrap_or_else(|| panic!("{verdict} names no provenance it was carried in"));
+        assert_eq!(carrier["on"], verdict["on"], "{verdict}");
+    }
+    assert_eq!(
+        listing(&copied),
+        before.0,
+        "verify wrote to the copied layout"
     );
 }
