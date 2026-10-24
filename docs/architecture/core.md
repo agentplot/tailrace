@@ -62,7 +62,7 @@ part exists.
 - **[core.30]** No code path turns a cache entry into an artifact, names one from a channel, an index or a policy, or refuses to build because one is gone.
 - **[core.31]** Every surface calls the one core and renders its answer; no surface computes a verdict, a version or a channel of its own.
 - **[core.32]** A read of what tailrace holds opens no connection to a store, a signer or a target and writes nothing.
-- **[core.33]** Every profile passes the one conformance suite, and every scenario of the suite cites the clauses it exercises; a clause no scenario cites is named in the suite's register with the unit of the plan that will cite it and why, and leaves the register with the commit that cites it.
+- **[core.33]** Every profile passes the one conformance suite, and every scenario of the suite cites the clauses it exercises; a clause no scenario cites is named in the suite's register with the unit of the plan that will cite it, or with the phase of the plan while that phase has no units carved, and why, and leaves the register with the commit that cites it.
 
 ### Design and records
 
@@ -112,4 +112,4 @@ part exists.
 - **core.30** Rules out: a channel tag on a cache entry; an index naming a cache entry's digest without a publish; a publish that fails because the cache is empty. Source: clauses 53, 54, 100.
 - **core.31** Rules out: a plugin that reads the store itself; a pane that derives a channel's head from a tag listing. Source: clause 56.
 - **core.32** Rules out: `status` that lists referrers from the registry; a read that refreshes a layout. Source: clause 60.
-- **core.33** Rules out: a profile merged with no suite run; a scenario citing no clause; a scenario citing a clause it does not exercise; a clause neither cited by a scenario nor named in the register; a clause both cited and still in the register; a register entry naming no unit or no reason. Not ruled out: a clause named in the register with the unit that will cite it, reported as pending on every run. Source: clause 93, section 12; ADR 0012.
+- **core.33** Rules out: a profile merged with no suite run; a scenario citing no clause; a scenario citing a clause it does not exercise; a clause neither cited by a scenario nor named in the register; a clause both cited and still in the register; a register entry naming neither a unit nor a phase, or no reason. Not ruled out: a clause named in the register with the unit that will cite it, or with a phase whose units are not yet carved, reported as pending on every run; the planner names the unit when it carves the phase. Source: clause 93, section 12; ADR 0012.
