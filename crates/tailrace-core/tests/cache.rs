@@ -1,12 +1,17 @@
 //! Spec cache-entries: a cache entry written to the store under its
-//! build identity, never an artifact, over the fakes (design D1, D2).
+//! build identity, never an artifact, over the fakes, and the revision
+//! a checkout syncs by default (design D1 to D4).
 
+mod common;
+
+use common::Fixture;
 use tailrace_core::cache::Written;
 use tailrace_core::{cache_name, write};
 use tailrace_fakes::{Fakes, Fault, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
-    Answer, ArtifactMeta, BuildId, Contents, Digest, Ecosystem, EcosystemName, Held, Layout, Name,
-    Not, Output, OutputName, Packed, Projection, Rendered, Seam, Serving, Store, Version, Why,
+    Answer, ArtifactMeta, Branch, BuildId, Contents, Digest, Ecosystem, EcosystemName, Held,
+    Layout, Name, Not, Output, OutputName, Packed, Projection, Rendered, Seam, Serving, Store,
+    Version, Why,
 };
 
 fn site() -> Output {
@@ -234,4 +239,56 @@ fn a_projection_answering_unreadable_is_the_writes_answer() {
         other => panic!("answered {other:?}"),
     }
     assert_eq!(store_ops(&fakes), []);
+}
+
+// Requirement: Sync defaults to the newest landed revision the checkout descends from
+
+#[test]
+fn a_checkout_ahead_of_the_branch_answers_the_revision_it_branched_from() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a", "a")]);
+    let landed = repo.commit("feat: landed", &[("b", "b")]);
+    repo.git(&["checkout", "-q", "-b", "work"]);
+    repo.commit("feat: mine", &[("c", "c")]);
+    repo.commit("feat: mine again", &[("d", "d")]);
+    repo.git(&["checkout", "-q", "main"]);
+    let after = repo.commit("feat: landed after", &[("e", "e")]);
+    repo.git(&["checkout", "-q", "work"]);
+
+    let history = repo.history();
+    let main = Branch::new("main");
+    assert_eq!(history.base(&main).unwrap(), landed);
+    assert_ne!(history.head(&main).unwrap(), landed);
+    assert_eq!(history.head(&main).unwrap(), after);
+
+    repo.git(&["checkout", "-q", "main"]);
+    assert_eq!(repo.history().base(&main).unwrap(), after);
+}
+
+#[test]
+fn a_branch_the_repository_lacks_is_absent_naming_it() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a", "a")]);
+    match repo.history().base(&Branch::new("elsewhere")) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source.seam, Seam::History);
+            assert!(a.what.contains("elsewhere"), "{}", a.what);
+        }
+        other => panic!("answered {other:?}"),
+    }
+}
+
+#[test]
+fn a_branch_that_shares_no_history_with_the_checkout_is_absent_naming_it() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a", "a")]);
+    repo.git(&["checkout", "-q", "--orphan", "apart"]);
+    repo.commit("chore: apart", &[("z", "z")]);
+    match repo.history().base(&Branch::new("main")) {
+        Err(Not::Absent(a)) => assert!(a.what.contains("branch main"), "{}", a.what),
+        other => panic!("answered {other:?}"),
+    }
 }
