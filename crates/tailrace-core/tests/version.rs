@@ -6,7 +6,7 @@ mod common;
 use common::{landed, Fixture, Repo};
 use semver::Version;
 use tailrace_core::{
-    derive, touched, Declared, Derived, Kind, Landed, Rule, Versioned, POLICY_FILE,
+    claim, derive, touched, Declared, Derived, Kind, Landed, Rule, Versioned, POLICY_FILE,
 };
 use tailrace_fakes::Fakes;
 use tailrace_seams::{Branch, Component, ComponentName};
@@ -263,7 +263,7 @@ fn a_path_two_components_name_versions_both() {
 }
 
 #[test]
-fn deriving_asks_nothing_of_the_build() {
+fn deriving_and_claiming_ask_nothing_of_the_build() {
     let fixture = Fixture::new();
     let repo = two_released(&fixture);
     repo.touch("feat: shared", &["shared"]);
@@ -275,6 +275,10 @@ fn deriving_asks_nothing_of_the_build() {
     let history = repo.history();
     let at = Landed::check(seams.landing.as_ref(), &main, &rev).unwrap();
     let declared = Declared::read(&history, &at).unwrap();
-    assert_eq!(touched(&history, &at, &declared).unwrap().len(), 2);
+    let touched = touched(&history, &at, &declared).unwrap();
+    assert_eq!(touched.len(), 2);
+    for v in &touched {
+        claim(&history, &at, v).unwrap();
+    }
     assert!(fakes.build.calls().is_empty(), "the build was asked");
 }
