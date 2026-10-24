@@ -32,7 +32,7 @@ the group that cannot pass without one is reported with `crew needs`.
 
 - [x] 4.1 Write `profiles/store/layout/index.rs`: reading `index.json`, and the locked rewrite through a temporary file and a rename that keeps every entry it does not change (design D5). Verify with unit tests: an entry of a media type tailrace never writes survives a rewrite unchanged; a malformed `index.json` is unreadable naming it with `serde_json`'s words and is left as found.
 - [x] 4.2 Implement `attach` and `claims_of` over the attestation entry. Verify with unit tests: two attestations answer in the order attached, byte for byte; the same attestation attached twice answers held already and is answered once; attach and claims-of for a digest not held are absent naming it and write nothing.
-- [ ] 4.3 Implement `name` and `resolve` over the name entry, the check of the expected digest made under the lock. Verify with unit tests: a name made, moved, and held in exactly one entry; a move from where the name is not, and from nothing when it names a digest, refused `Why::NameAt` naming where it is with nothing written; a move to a digest not held absent; a name never made absent naming it.
+- [x] 4.3 Implement `name` and `resolve` over the name entry, the check of the expected digest made under the lock. Verify with unit tests: a name made, moved, and held in exactly one entry; a move from where the name is not, and from nothing when it names a digest, refused `Why::NameAt` naming where it is with nothing written; a move to a digest not held absent; a name never made absent naming it.
 
 ## 5. The profile's own tests
 
