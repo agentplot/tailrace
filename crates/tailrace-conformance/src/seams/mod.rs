@@ -15,14 +15,6 @@ use std::fmt::Debug;
 
 use tailrace_seams::{Answer, Not, Seam};
 
-/// What `asked` answered, or a panic naming what it answered instead.
-pub(crate) fn ok<T: Debug>(answer: Answer<T>, asked: &str) -> T {
-    match answer {
-        Ok(value) => value,
-        Err(not) => panic!("{asked} answered {not:?}"),
-    }
-}
-
 /// That `asked` answered unreadable, from `seam`, carrying `words`
 /// unchanged (58, 59).
 pub(crate) fn unreadable<T: Debug>(answer: Answer<T>, seam: Seam, words: &str, asked: &str) {

@@ -2,8 +2,8 @@
 
 use tailrace_seams::{Build, Not, Outcome, OutputName, Revision, Seam, Why};
 
-use crate::seams::{ok, unreadable};
-use crate::{Rig, Scenario};
+use crate::seams::unreadable;
+use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "build";
 

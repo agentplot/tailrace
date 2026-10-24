@@ -3,8 +3,7 @@
 
 use tailrace_seams::{Digest, Environment, Not, Seam, Target, Verified};
 
-use crate::seams::ok;
-use crate::{Rig, Scenario};
+use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "target";
 

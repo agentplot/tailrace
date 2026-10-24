@@ -13,9 +13,9 @@ use tailrace_seams::{
     Policy, Required, RequiredClaim, Revision, Seam, SignerId, Store, Verdict,
 };
 
-use crate::core::publish::{ok, one, passing, version_of, TAG, VERSION};
+use crate::core::publish::{one, passing, version_of, TAG, VERSION};
 use crate::world::{build_of, FakeWorld, Write, HOST, LANDING, POLICY};
-use crate::Scenario;
+use crate::{ok, Scenario};
 
 pub const GROUP: &str = "verify";
 

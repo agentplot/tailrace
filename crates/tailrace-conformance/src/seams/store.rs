@@ -7,8 +7,8 @@ use tailrace_seams::{
     Manifest, Name, Not, Revision, Seam, Signature, SignerId, Store, Version, Why, IN_TOTO,
 };
 
-use crate::seams::{ok, unreadable};
-use crate::{Rig, Scenario};
+use crate::seams::unreadable;
+use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "store";
 

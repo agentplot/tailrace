@@ -10,7 +10,7 @@ use tailrace_seams::{
 };
 
 use crate::world::{build_of, FakeWorld, Write, FILE, IMAGE, LANDING};
-use crate::Scenario;
+use crate::{ok, Scenario};
 
 pub const GROUP: &str = "publish";
 
@@ -125,13 +125,6 @@ pub(crate) fn one(answer: Answer<Publish>) -> Answer<Published> {
         .next()
         .expect("one component")
         .1
-}
-
-pub(crate) fn ok<T: std::fmt::Debug>(answer: Answer<T>, asked: &str) -> T {
-    match answer {
-        Ok(value) => value,
-        Err(not) => panic!("{asked} answered {not:?}"),
-    }
 }
 
 /// The version a published answer names, and its index.

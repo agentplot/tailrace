@@ -6,8 +6,8 @@ use tailrace_seams::{
     Signature, SignerId, Verdict, IN_TOTO,
 };
 
-use crate::seams::{ok, unreadable};
-use crate::{Rig, Scenario};
+use crate::seams::unreadable;
+use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "landing";
 

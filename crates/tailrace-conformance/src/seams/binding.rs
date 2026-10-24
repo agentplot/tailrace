@@ -8,9 +8,8 @@ use tailrace_seams::{
     SignerId, Version,
 };
 
-use crate::seams::ok;
 use crate::seams::store::{self, StoreRig};
-use crate::{run, Rig, Scenario};
+use crate::{ok, run, Rig, Scenario};
 
 pub const GROUP: &str = "binding";
 

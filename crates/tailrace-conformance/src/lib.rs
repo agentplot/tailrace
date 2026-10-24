@@ -77,6 +77,14 @@ pub mod world;
 
 pub use scenario::*;
 
+/// What `asked` answered, or a panic naming what it answered instead.
+pub(crate) fn ok<T>(answer: tailrace_seams::Answer<T>, asked: &str) -> T {
+    match answer {
+        Ok(value) => value,
+        Err(not) => panic!("{asked} answered {not:?}"),
+    }
+}
+
 /// A scenario's citations, as the coverage check reads them: its group,
 /// its name, the statement scenario it plays, and its clauses.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -7,8 +7,8 @@ use tailrace_seams::{
     Why,
 };
 
-use crate::seams::{absent, ok, unreadable};
-use crate::{Rig, Scenario};
+use crate::seams::{absent, unreadable};
+use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "signer";
 

@@ -5,8 +5,8 @@ use tailrace_seams::{
     Revision, Seam, SignerId,
 };
 
-use crate::seams::{ok, unreadable};
-use crate::{Rig, Scenario};
+use crate::seams::unreadable;
+use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "policy";
 

@@ -3,8 +3,8 @@
 
 use tailrace_seams::{Artifact, ArtifactMeta, Output, Projection, Seam, Version};
 
-use crate::seams::{ok, unreadable};
-use crate::{Rig, Scenario};
+use crate::seams::unreadable;
+use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "projection";
 
