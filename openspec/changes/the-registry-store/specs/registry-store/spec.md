@@ -215,8 +215,9 @@ name none in the bindings file (64, core.21).
 The suite's store group SHALL pass against zot and against the
 reference distribution in the tools layer, which the gate requires,
 and against a real ECR repository in a check of its own outside the
-gate, tagged `check-ecr` and run by hand with a live session, since
-it needs a credential a person signs in for (93, core.38). The ECR
+gate, tagged `check-ecr` and run by hand with a live session as the
+bolt's acceptance, since it needs a credential a person signs in for
+(93, core.38). The ECR
 check SHALL refuse to run, naming the setting it lacks, on a host that
 names no ECR repository, rather than pass without running.
 
@@ -230,7 +231,7 @@ names no ECR repository, rather than pass without running.
 - **WHEN** the tools layer runs the store group against a reference distribution started for the test
 - **THEN** every scenario of the group passes, attestations held through the referrers tag
 
-#### Scenario: ECR, by hand
+#### Scenario: ECR, by hand, as the bolt's acceptance
 
 - **WHEN** `moon run ':#check-ecr'` runs on a host whose `devenv.local.nix` names an ECR repository, with a live session for it
 - **THEN** every scenario of the group passes against that repository, each run's names apart from every earlier run's
