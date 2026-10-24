@@ -16,7 +16,11 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use tailrace_seams::{Answer, Not, Seam, Source, Why};
+use tailrace_seams::{
+    Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store, Why,
+};
+
+mod blobs;
 
 /// The layout version this store reads and writes.
 const LAYOUT_VERSION: &str = "1.0.0";
@@ -136,6 +140,38 @@ impl Layout {
     /// words.
     fn unreadable(&self, path: &Path, error: &io::Error) -> Not {
         Not::unreadable(&self.source, path_text(path), Some(error.to_string()))
+    }
+}
+
+impl Store for Layout {
+    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
+        self.opened()?;
+        self.write_blob(bytes)
+    }
+
+    fn put_artifact(&self, _manifest: &Manifest) -> Answer<Put> {
+        todo!("put-artifact over the layout")
+    }
+
+    fn attach(&self, _subject: &Digest, _attestation: &Envelope) -> Answer<Put> {
+        todo!("attach over the layout")
+    }
+
+    fn claims_of(&self, _digest: &Digest) -> Answer<Vec<Envelope>> {
+        todo!("claims-of over the layout")
+    }
+
+    fn name(&self, _name: &Name, _to: &Digest, _expected: Option<&Digest>) -> Answer<()> {
+        todo!("name over the layout")
+    }
+
+    fn resolve(&self, _name: &Name) -> Answer<Digest> {
+        todo!("resolve over the layout")
+    }
+
+    fn read(&self, digest: &Digest) -> Answer<Held> {
+        self.opened()?;
+        self.read_blob(digest).map(Held::Bytes)
     }
 }
 
