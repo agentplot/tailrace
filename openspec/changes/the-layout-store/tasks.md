@@ -17,7 +17,7 @@ the group that cannot pass without one is reported with `crew needs`.
 ## 1. The layout and its handle
 
 - [x] 1.1 Add `pub mod profiles;` to `crates/tailrace/src/lib.rs`, and write `crates/tailrace/src/profiles/mod.rs` (its doc comment and `pub mod store;`) and `profiles/store/mod.rs` (`pub mod layout;`) (design D7). Verify `devenv shell -- cargo build -p tailrace` passes.
-- [ ] 1.2 Write `crates/tailrace/src/profiles/store/layout/mod.rs`: `Layout`, its source, `Layout::create` and `Layout::open`, and the check of `oci-layout` every operation begins with (design D1). Verify with unit tests in the module: a layout made holds the `oci-layout`, `index.json` and `blobs/sha256/` the spec names; create refuses a directory holding a file; open of a removed directory is unreadable carrying `File::open`'s words verbatim; an `oci-layout` naming version `2.0.0`, or holding text that is not JSON, is unreadable naming the file.
+- [x] 1.2 Write `crates/tailrace/src/profiles/store/layout/mod.rs`: `Layout`, its source, `Layout::create` and `Layout::open`, and the check of `oci-layout` every operation begins with (design D1). Verify with unit tests in the module: a layout made holds the `oci-layout`, `index.json` and `blobs/sha256/` the spec names; create refuses a directory holding a file; open of a removed directory is unreadable carrying `File::open`'s words verbatim; an `oci-layout` naming version `2.0.0`, or holding text that is not JSON, is unreadable naming the file.
 
 ## 2. Blobs
 
