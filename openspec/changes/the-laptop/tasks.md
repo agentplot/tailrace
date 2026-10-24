@@ -44,7 +44,7 @@ words (design D2).
 
 ## 6. The host group and the register
 
-- [ ] 6.1 Add `crates/tailrace-conformance/src/seams/host.rs` with the `host` group and its rig (design D7), registered in `seams/mod.rs` and `lib.rs` beside the other groups; its one scenario, "the host's bindings beside the landing's", cites 118. Remove 118's line from `register.rs` and, if no other entry names it, the `LAPTOP` constant. Run the group over `bindings/` in `crates/tailrace/tests/host.rs`, the rig's config directory a temporary one holding `sluice/config.toml`. Verify `devenv shell -- moon run conformance:test cli:test` passes and the coverage check (`moon run ':#check-fast'`) reports 118 cited and no longer pending.
+- [x] 6.1 Add `crates/tailrace-conformance/src/seams/host.rs` with the `host` group and its rig (design D7), registered in `seams/mod.rs` and `lib.rs` beside the other groups; its one scenario, "the host's bindings beside the landing's", cites 118. Remove 118's line from `register.rs` and, if no other entry names it, the `LAPTOP` constant. Run the group over `bindings/` in `crates/tailrace/tests/host.rs`, the rig's config directory a temporary one holding `sluice/config.toml`. Verify `devenv shell -- moon run conformance:test cli:test` passes and the coverage check (`moon run ':#check-fast'`) reports 118 cited and no longer pending.
 
 ## 7. The laptop end to end
 
