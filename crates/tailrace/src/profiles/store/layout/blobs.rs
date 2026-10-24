@@ -106,6 +106,18 @@ impl Layout {
         }
         Ok(bytes)
     }
+
+    /// The size of the blob held under `digest`; absent when none is.
+    pub(super) fn blob_size(&self, digest: &Digest) -> Answer<u64> {
+        let path = self.blob_path(digest);
+        match fs::metadata(&path) {
+            Ok(metadata) => Ok(metadata.len()),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                Err(Not::absent(&self.source, digest.to_string()))
+            }
+            Err(e) => Err(self.unreadable(&path, &e)),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -171,6 +183,10 @@ mod tests {
         let digest = Digest::of(b"never put");
         assert_eq!(
             layout.read(&digest),
+            Err(Not::absent(layout.source(), digest.to_string()))
+        );
+        assert_eq!(
+            layout.blob_size(&digest),
             Err(Not::absent(layout.source(), digest.to_string()))
         );
     }
