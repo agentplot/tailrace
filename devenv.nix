@@ -129,6 +129,11 @@ in
     # The tools layer: ssh-keygen signs the run records its tests stage as
     # sluice's signers sign them.
     pkgs.openssh
+    # The tools layer's registries: the registry store's tests start the
+    # reference distribution, a registry with no referrers API, and reach
+    # ECR through its credential helper.
+    pkgs.distribution
+    pkgs.amazon-ecr-credential-helper
   ]
   ++ lib.optional (sluice != null) sluice;
 
@@ -140,6 +145,7 @@ in
   # sluice releases nothing for the system, and the tests say so.
   env.TAILRACE_TOOLS_SLUICE = lib.optionalString (sluice != null) "${sluice}/bin/sluice";
   env.TAILRACE_TOOLS_SSH_KEYGEN = "${pkgs.openssh}/bin/ssh-keygen";
+  env.TAILRACE_TOOLS_DISTRIBUTION = "${pkgs.distribution}/bin/registry";
 
   # moon's task archives (.moon/cache/outputs) are a link into the git common
   # dir, so every worktree shares them; the rest of .moon/cache records the
