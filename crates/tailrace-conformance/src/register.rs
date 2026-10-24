@@ -19,7 +19,6 @@ pub struct Pending {
 }
 
 const LANDINGS: &str = "bolt 2 · the build and the landings";
-const HOST_KEY: &str = "bolt 2 · the host-key signer";
 const LAPTOP: &str = "bolt 2 · the laptop";
 const REGISTRY: &str = "bolt 3 · the registry store";
 const CACHE: &str = "bolt 3 · the cache";
@@ -37,7 +36,6 @@ const REBUILD: &str = "phase 2 · the verifier's rebuild";
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
     Pending { clause: 104, unit: LANDINGS, why: "A verdict's signer is named by the identity the landing gives it, and the fake landing has no identities of its own." },
-    Pending { clause: 64, unit: HOST_KEY, why: "No credential is kept, and bolt 1 has no signer that holds a key." },
     Pending { clause: 118, unit: LAPTOP, why: "The host's bindings file is the laptop's to write and read." },
     Pending { clause: 103, unit: REGISTRY, why: "A version copied to another store carries its attestations, and bolt 1 has one store in memory." },
     Pending { clause: 109, unit: REGISTRY, why: "A name moved where the store cannot move it by expected digest needs a store that cannot." },
