@@ -22,12 +22,10 @@ use tailrace_seams::{
 };
 
 mod blobs;
-// put-artifact, attach, claims-of, name and resolve read and change it in the tasks after.
-#[allow(dead_code)]
 mod index;
 mod oci;
 
-use oci::{Descriptor, ENVELOPE, SUBJECT};
+use oci::{Descriptor, ENVELOPE, OCTETS, REF_NAME, SUBJECT};
 
 /// The layout version this store reads and writes.
 const LAYOUT_VERSION: &str = "1.0.0";
@@ -235,12 +233,40 @@ impl Store for Layout {
             .collect()
     }
 
-    fn name(&self, _name: &Name, _to: &Digest, _expected: Option<&Digest>) -> Answer<()> {
-        todo!("name over the layout")
+    /// `name`'s one entry in `index.json` moved to `to`, only when it is
+    /// at `expected`, read under the lock the change is written under, so
+    /// two writers cannot both move it; refused naming where it is
+    /// otherwise, with nothing written and nothing retried (70, rule
+    /// core.6). The entry carries the media type and size of the manifest
+    /// `to` names, or of its bytes.
+    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        let marker = self.opened()?;
+        let size = self.blob_size(to)?;
+        self.change_index(&marker, |index| {
+            let at = index.named(name.as_str()).map(|d| d.digest.clone());
+            if at.as_ref() != expected {
+                return Err(Not::refused(&self.source, Why::NameAt { at }, None));
+            }
+            let mut entry = index.manifest(to).cloned().unwrap_or_else(|| Descriptor {
+                media_type: OCTETS.into(),
+                digest: to.clone(),
+                size,
+                artifact_type: None,
+                annotations: BTreeMap::new(),
+            });
+            entry.annotations.insert(REF_NAME.into(), name.to_string());
+            index.set_name(name.as_str(), entry);
+            Ok(())
+        })
     }
 
-    fn resolve(&self, _name: &Name) -> Answer<Digest> {
-        todo!("resolve over the layout")
+    /// The digest `name`'s entry names (71).
+    fn resolve(&self, name: &Name) -> Answer<Digest> {
+        self.opened()?;
+        self.read_index()?
+            .named(name.as_str())
+            .map(|d| d.digest.clone())
+            .ok_or_else(|| Not::absent(&self.source, format!("name {name}")))
     }
 
     /// The manifest put-artifact held under `digest`, read by its entry's
@@ -542,5 +568,102 @@ pub(super) mod tests {
         );
         assert_eq!(layout.claims_of(&missing), Err(absent));
         assert_eq!(held(&layout), before);
+    }
+
+    /// The entries of `index.json` with `name` as their ref name.
+    fn entries_named(layout: &Layout, name: &str) -> Vec<serde_json::Value> {
+        held(layout)
+            .1
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|e| e["annotations"][REF_NAME] == name)
+            .cloned()
+            .collect()
+    }
+
+    fn refused_at(answer: Answer<()>) -> Option<Digest> {
+        match answer {
+            Err(Not::Refused(r)) => match r.why {
+                Why::NameAt { at } => at,
+                why => panic!("refused for {why:?}"),
+            },
+            other => panic!("answered {other:?}, not refused"),
+        }
+    }
+
+    #[test]
+    fn a_name_made_and_moved_is_held_in_one_entry() {
+        let (_dir, layout) = fresh();
+        let name = Name::new("site-v1");
+        let bytes = layout.put_bytes(b"site").unwrap().digest;
+        let artifact = layout
+            .put_artifact(&Manifest::Artifact {
+                meta: meta("site"),
+                layers: vec![bytes.clone()],
+            })
+            .unwrap()
+            .digest;
+        layout.name(&name, &bytes, None).unwrap();
+        assert_eq!(layout.resolve(&name), Ok(bytes.clone()));
+        let entries = entries_named(&layout, "site-v1");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["mediaType"], OCTETS);
+        assert_eq!(entries[0]["size"], 4);
+
+        layout.name(&name, &artifact, Some(&bytes)).unwrap();
+        assert_eq!(layout.resolve(&name), Ok(artifact.clone()));
+        let entries = entries_named(&layout, "site-v1");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0]["digest"], artifact.as_str());
+        assert_eq!(entries[0]["mediaType"], oci::IMAGE_MANIFEST);
+        assert_eq!(
+            entries[0]["artifactType"],
+            "application/vnd.agentplot.tailrace.artifact.npm"
+        );
+    }
+
+    #[test]
+    fn a_name_moved_from_where_it_is_not_is_refused_naming_where_it_is() {
+        let (_dir, layout) = fresh();
+        let name = Name::new("site-v1");
+        let [at, to, elsewhere] =
+            [b"at" as &[u8], b"to", b"elsewhere"].map(|b| layout.put_bytes(b).unwrap().digest);
+        layout.name(&name, &at, None).unwrap();
+        let before = held(&layout);
+        assert_eq!(
+            refused_at(layout.name(&name, &to, Some(&elsewhere))),
+            Some(at.clone())
+        );
+        assert_eq!(refused_at(layout.name(&name, &to, None)), Some(at.clone()));
+        assert_eq!(
+            refused_at(layout.name(&Name::new("never-made"), &to, Some(&at))),
+            None
+        );
+        assert_eq!(held(&layout), before);
+        assert_eq!(layout.resolve(&name), Ok(at));
+    }
+
+    #[test]
+    fn a_name_moved_to_a_digest_not_held_is_absent_and_stays() {
+        let (_dir, layout) = fresh();
+        let name = Name::new("site-v1");
+        let at = layout.put_bytes(b"at").unwrap().digest;
+        layout.name(&name, &at, None).unwrap();
+        let missing = Digest::of(b"never put");
+        assert_eq!(
+            layout.name(&name, &missing, Some(&at)),
+            Err(Not::absent(layout.source(), missing.to_string()))
+        );
+        assert_eq!(layout.resolve(&name), Ok(at));
+    }
+
+    #[test]
+    fn a_name_never_made_is_absent_naming_it() {
+        let (_dir, layout) = fresh();
+        assert_eq!(
+            layout.resolve(&Name::new("never-made")),
+            Err(Not::absent(layout.source(), "name never-made"))
+        );
     }
 }
