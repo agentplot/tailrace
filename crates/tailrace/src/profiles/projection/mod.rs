@@ -3,6 +3,7 @@
 //! operating system's words.
 
 pub mod file;
+pub mod image;
 
 use std::fs;
 
