@@ -15,6 +15,7 @@
 //! | [`publish`](mod@publish) | a landed revision offered as a version per component: judged before the name is claimed, each artifact put and attested, the index last, a repeat ending where the first did, and the answer a program reads | 2, 5, 6, 8, 14 to 20, 57, 74, 75, 78, 84, 111, 124; core.5, core.6, core.10 to core.13, core.27 |
 //! | [`published`] | the host's record of the versions it published, a file per version a reader opens | 61, 62, 64; core.20, core.21 |
 //! | [`status`](mod@status) | which versions this host published, answered from the record alone | 23, 58, 60, 61; core.19, core.32 |
+//! | [`copy`](mod@copy) | a version copied from one store to another through the store seam, every attestation going with its digest, the index last and the name made from nothing, and no channel | 1 to 3, 6, 8, 103; core.4, core.6, core.12, core.27 |
 //! | [`verify`](mod@verify) | which signer the policy names made each attestation on a version, and whether each counts | 3, 9, 65, 80, 81, 116, 117; core.4, core.7 |
 //!
 //! Every read and the claim take a [`Landed`], which only the landing
@@ -27,6 +28,7 @@
 //! surface renders an answer through [`answer_json`]'s one form (57,
 //! rule core.31).
 
+pub mod copy;
 pub mod declared;
 pub mod history;
 pub mod landed;
@@ -37,6 +39,7 @@ pub mod status;
 pub mod verify;
 pub mod version;
 
+pub use copy::*;
 pub use declared::*;
 pub use history::*;
 pub use landed::*;
