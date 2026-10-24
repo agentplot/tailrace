@@ -3,10 +3,12 @@
 //! branch's history holds it, and no landing records verdicts (77, 78;
 //! design D8).
 //!
-//! Every operation begins by reading the repository's common git
-//! directory, so a repository that cannot be read answers every
-//! operation unreadable with git's words (58, 59).
+//! Every operation begins by reading the bound remote's branches, or the
+//! repository's common git directory where no remote is bound, so a
+//! repository or a remote that cannot be read answers every operation
+//! unreadable with git's words (58, 59).
 
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
@@ -58,10 +60,21 @@ impl PlainBranch {
         self.git.output(None, &all, GIT_REPOSITORY_ENV, allowed)
     }
 
-    /// The opening read of every operation.
-    fn open(&self) -> Answer<()> {
-        self.git(&["rev-parse", "--git-common-dir"], &[0])
-            .map(|_| ())
+    /// The opening read of every operation: where a remote is bound, the
+    /// remote's listing of its branches, each by the commit it names;
+    /// with none, the repository's common git directory read, and no
+    /// branches.
+    fn open(&self) -> Answer<BTreeMap<String, String>> {
+        let Some(remote) = &self.remote else {
+            self.git(&["rev-parse", "--git-common-dir"], &[0])?;
+            return Ok(BTreeMap::new());
+        };
+        let ran = self.git(&["ls-remote", remote, "refs/heads/*"], &[0])?;
+        Ok(String::from_utf8_lossy(&ran.stdout)
+            .lines()
+            .filter_map(|line| line.split_once('\t'))
+            .map(|(object, name)| (name.to_string(), object.to_string()))
+            .collect())
     }
 
     /// The commit `name` names in the repository, `None` when it names
@@ -79,23 +92,16 @@ impl PlainBranch {
         Ok((ran.code == Some(0)).then(|| String::from_utf8_lossy(&ran.stdout).trim().to_string()))
     }
 
-    /// The commit at the head of `branch`: the remote's, fetched, where a
-    /// remote is bound, and the repository's own otherwise; `None` for a
-    /// branch that does not exist.
-    fn head(&self, branch: &Branch) -> Answer<Option<String>> {
+    /// The commit at the head of `branch`: the remote's, as `listed`
+    /// names it and fetched, where a remote is bound, and the
+    /// repository's own otherwise; `None` for a branch that does not
+    /// exist.
+    fn head(&self, branch: &Branch, listed: &BTreeMap<String, String>) -> Answer<Option<String>> {
         let name = format!("refs/heads/{branch}");
         let Some(remote) = &self.remote else {
             return self.commit(&name);
         };
-        let listed = self.git(&["ls-remote", remote, &name], &[0])?;
-        let Some(head) = String::from_utf8_lossy(&listed.stdout)
-            .lines()
-            .find_map(|line| {
-                line.split_once('\t')
-                    .filter(|(_, listed)| *listed == name)
-                    .map(|(object, _)| object.to_string())
-            })
-        else {
+        let Some(head) = listed.get(&name).cloned() else {
             return Ok(None);
         };
         self.git(
@@ -119,8 +125,8 @@ impl Landing for PlainBranch {
     /// ancestors; a branch that does not exist, or a revision the
     /// repository does not hold, has landed nothing.
     fn landed(&self, branch: &Branch, revision: &Revision) -> Answer<bool> {
-        self.open()?;
-        let Some(head) = self.head(branch)? else {
+        let listed = self.open()?;
+        let Some(head) = self.head(branch, &listed)? else {
             return Ok(false);
         };
         let Some(commit) = self.commit(revision.as_str())? else {

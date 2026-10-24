@@ -162,11 +162,14 @@ crates/tailrace/src/profiles/mod.rs
 crates/tailrace/src/profiles/run.rs
 crates/tailrace/src/profiles/build/**
 crates/tailrace/src/profiles/landing/**
+crates/tailrace/src/profiles/store/layout/mod.rs
 crates/tailrace/tests/scratch/**
 crates/tailrace/tests/build_moon.rs
 crates/tailrace/tests/landing_sluice.rs
 crates/tailrace/tests/landing_branch.rs
 crates/tailrace/tests/landings_end_to_end.rs
+crates/tailrace/tests/layout_store.rs
 site/src/content/docs/guides/integrations/builds.mdx
+site/src/content/docs/guides/integrations/index.mdx
 site/src/content/docs/guides/integrations/landings.mdx
 ```

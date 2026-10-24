@@ -361,11 +361,22 @@ fn moon_not_there() {
         &[("site", "web:build")],
     );
     assert_eq!(rig.build.ensure(&revision, &[output("site")]), Ok(()));
+    let never_ensured = rig.commit(
+        &[Task::new("web", "build", "site.txt", true, 0)],
+        &[("site", "web:build")],
+    );
     let words = rig.unreachable();
     assert_eq!(words, "No such file or directory (os error 2)");
     for answer in [
         rig.build.ensure(&revision, &[output("site")]).map(|_| ()),
         rig.build.report(&revision, &output("site")).map(|_| ()),
+        rig.build
+            .report(&never_ensured, &output("site"))
+            .map(|_| ()),
+        rig.build
+            .ensure(&revision, &[output("no-task")])
+            .map(|_| ()),
+        rig.build.report(&revision, &output("no-task")).map(|_| ()),
     ] {
         match answer {
             Err(Not::Unreadable(u)) => {

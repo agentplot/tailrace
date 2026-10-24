@@ -163,3 +163,29 @@ fn the_repository_is_gone() {
         }
     }
 }
+
+#[test]
+fn the_bound_remote_is_gone() {
+    let scratch = Scratch::new();
+    let landing = PlainBranch::new(&scratch.repo.path, Some("origin".into()));
+    let landed = Revision::new(scratch.repo.head());
+    assert_eq!(landing.landed(&main_branch(), &landed), Ok(true));
+    fs::remove_dir_all(&scratch.remote).unwrap();
+    let words = git_fails(&scratch.repo.path, &["ls-remote", "origin", "refs/heads/*"]);
+    assert!(
+        words.contains("does not appear to be a git repository"),
+        "{words}"
+    );
+    for answer in [
+        landing.landed(&main_branch(), &landed).map(|_| ()),
+        landing.verdicts_of(&landed).map(|_| ()),
+    ] {
+        match answer {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source, *landing.source());
+                assert_eq!(u.said.as_deref(), Some(words.as_str()));
+            }
+            other => panic!("answered {other:?} with the remote gone"),
+        }
+    }
+}
