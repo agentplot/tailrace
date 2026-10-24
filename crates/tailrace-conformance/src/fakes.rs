@@ -15,16 +15,17 @@ use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
     Digest, Ecosystem, EcosystemName, Envelope, Environment, EnvironmentName, Keeper, Landing,
     NamedSigner, Outcome, Output, OutputName, Policy, Projection, Report, Required, Revision,
-    Signer, SignerId, Store, Target, Verdict, Verified, Version,
+    Seams, Signer, SignerId, Store, Target, Verdict, Verified, Version,
 };
 
+use crate::seams::binding::BindingRig;
 use crate::seams::build::{BuildRig, Made};
 use crate::seams::keeper::KeeperRig;
 use crate::seams::landing::LandingRig;
 use crate::seams::policy::PolicyRig;
 use crate::seams::projection::ProjectionRig;
 use crate::seams::signer::SignerRig;
-use crate::seams::store::StoreRig;
+use crate::seams::store::{StoreRig, BYTES};
 use crate::seams::target::TargetRig;
 use crate::Rig;
 
@@ -552,5 +553,104 @@ impl KeeperRig for FakeKeeperRig {
             |op, f, t| keeper.fault(op, f, t),
             &[KeeperOp::Append, KeeperOp::Chain],
         )
+    }
+}
+
+/// The fake store, scripted to hold other bytes under the digest of the
+/// bytes the store's group puts, so it breaks the store's contract (2,
+/// 73); it answers as the profile it is named.
+pub struct OtherBytesRig {
+    pub fakes: Fakes,
+    name: String,
+}
+
+impl OtherBytesRig {
+    /// The bytes it holds under the digest of [`BYTES`].
+    pub const OTHER: &'static [u8] = b"other bytes under that digest";
+
+    pub fn named(name: impl Into<String>) -> Self {
+        let fakes = Fakes::new();
+        fakes.store.corrupt(&Digest::of(BYTES), Self::OTHER);
+        OtherBytesRig {
+            fakes,
+            name: name.into(),
+        }
+    }
+}
+
+impl Rig for OtherBytesRig {
+    fn profile(&self) -> String {
+        self.name.clone()
+    }
+}
+
+impl StoreRig for OtherBytesRig {
+    fn store(&self) -> &dyn Store {
+        &self.fakes.store
+    }
+
+    fn unreachable(&self) -> String {
+        use StoreOp::*;
+        let store = &self.fakes.store;
+        unreachable(
+            |op, f, t| store.fault(op, f, t),
+            &[PutBytes, PutArtifact, Attach, ClaimsOf, Name, Resolve, Read],
+        )
+    }
+}
+
+/// The fakes bound as one binding, a fake signer holding each identity
+/// given.
+pub struct FakeBindingRig;
+
+impl FakeBindingRig {
+    /// The profile its broken store answers as.
+    pub const BROKEN: &'static str = "fake, holding other bytes under a digest";
+
+    pub fn new() -> Self {
+        FakeBindingRig
+    }
+}
+
+impl Default for FakeBindingRig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Rig for FakeBindingRig {
+    fn profile(&self) -> String {
+        PROFILE.into()
+    }
+}
+
+impl BindingRig for FakeBindingRig {
+    fn bind(
+        &self,
+        ecosystems: &[Ecosystem],
+        environments: &[EnvironmentName],
+        signers: &[SignerId],
+    ) -> Seams {
+        let mut fakes = Fakes::new();
+        for ecosystem in ecosystems {
+            fakes.projection(ecosystem);
+        }
+        for environment in environments {
+            fakes.target(environment);
+        }
+        let mut seams = fakes.seams();
+        seams.signers = signers
+            .iter()
+            .map(|id| {
+                let signer = FakeSigner::new();
+                signer.hold(id);
+                Box::new(signer) as Box<dyn Signer>
+            })
+            .collect();
+        seams
+    }
+
+    fn broken_store(&self) -> Box<dyn StoreRig> {
+        Box::new(OtherBytesRig::named(Self::BROKEN))
     }
 }

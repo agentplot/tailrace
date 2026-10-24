@@ -141,7 +141,11 @@ fn the_same_bytes_put_twice(rig: &dyn StoreRig) {
         "the second put answered {second:?}, not held already"
     );
     match ok(store.read(&digest), "read") {
-        Held::Bytes(bytes) => assert_eq!(bytes, BYTES, "the bytes held are not the bytes put"),
+        Held::Bytes(bytes) => assert!(
+            bytes == BYTES,
+            "read of the bytes put answered {:?}",
+            String::from_utf8_lossy(&bytes)
+        ),
         held => panic!("read of bytes put answered {held:?}"),
     }
 }
@@ -269,7 +273,11 @@ fn bytes_read_back(rig: &dyn StoreRig) {
                     "{read} answered bytes whose digest is {}, under {digest}",
                     Digest::of(&bytes)
                 );
-                assert_eq!(bytes, BYTES, "{read} answered other bytes");
+                assert!(
+                    bytes == BYTES,
+                    "{read} answered {:?}",
+                    String::from_utf8_lossy(&bytes)
+                );
             }
             held => panic!("{read} of bytes put answered {held:?}"),
         }

@@ -2,11 +2,13 @@
 //! with the runner and reported as any profile is (93; design D9).
 
 use tailrace_conformance::fakes::{
-    FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig, FakeSignerRig,
-    FakeStoreRig, FakeTargetRig,
+    FakeBindingRig, FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig,
+    FakeSignerRig, FakeStoreRig, FakeTargetRig,
 };
 use tailrace_conformance::seams::store::{self, StoreRig, BYTES};
-use tailrace_conformance::seams::{build, keeper, landing, policy, projection, signer, target};
+use tailrace_conformance::seams::{
+    binding, build, keeper, landing, policy, projection, signer, target,
+};
 use tailrace_conformance::{run, Scenario};
 use tailrace_seams::{Digest, Not};
 
@@ -70,6 +72,14 @@ fn the_fake_target_keeps_a_targets_contract() {
 fn the_fake_keeper_keeps_the_keepers_contract() {
     run(keeper::GROUP, &keeper::scenarios(), &|| {
         Box::new(FakeKeeperRig::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_fakes_bound_keep_the_bindings_contract() {
+    run(binding::GROUP, &binding::scenarios(), &|| {
+        Box::new(FakeBindingRig::new())
     })
     .assert();
 }
