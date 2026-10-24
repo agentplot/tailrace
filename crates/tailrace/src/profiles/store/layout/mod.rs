@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use tailrace_seams::{
-    Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store, Why,
+    canonical, Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store, Why,
 };
 
 mod blobs;
@@ -27,7 +27,7 @@ mod blobs;
 mod index;
 mod oci;
 
-use oci::Descriptor;
+use oci::{Descriptor, ENVELOPE, SUBJECT};
 
 /// The layout version this store reads and writes.
 const LAYOUT_VERSION: &str = "1.0.0";
@@ -186,12 +186,53 @@ impl Store for Layout {
         })
     }
 
-    fn attach(&self, _subject: &Digest, _attestation: &Envelope) -> Answer<Put> {
-        todo!("attach over the layout")
+    /// The envelope's canonical JSON held under its own digest, and one
+    /// entry in `index.json` naming it, annotated with `subject`; absent
+    /// when `subject` is not held, since an attestation is never kept
+    /// where its digest is not (8, 68, rule core.27).
+    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
+        let marker = self.opened()?;
+        self.blob_size(subject)?;
+        let bytes = canonical(attestation);
+        let digest = self.write_blob(&bytes)?.digest;
+        let held_already = self.change_index(&marker, |index| {
+            let held = index.attestations(subject).any(|d| d.digest == digest);
+            if !held {
+                index.add(Descriptor {
+                    media_type: ENVELOPE.into(),
+                    digest: digest.clone(),
+                    size: bytes.len() as u64,
+                    artifact_type: None,
+                    annotations: BTreeMap::from([(SUBJECT.into(), subject.to_string())]),
+                });
+            }
+            Ok(held)
+        })?;
+        Ok(Put {
+            digest,
+            held_already,
+        })
     }
 
-    fn claims_of(&self, _digest: &Digest) -> Answer<Vec<Envelope>> {
-        todo!("claims-of over the layout")
+    /// Every envelope whose entry names `digest` as its subject, in the
+    /// order of `index.json`, which is the order attached (69).
+    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
+        self.opened()?;
+        self.blob_size(digest)?;
+        let index = self.read_index()?;
+        index
+            .attestations(digest)
+            .map(|entry| {
+                let bytes = self.read_blob(&entry.digest)?;
+                serde_json::from_slice(&bytes).map_err(|e| {
+                    Not::unreadable(
+                        &self.source,
+                        path_text(&self.blob_path(&entry.digest)),
+                        Some(e.to_string()),
+                    )
+                })
+            })
+            .collect()
     }
 
     fn name(&self, _name: &Name, _to: &Digest, _expected: Option<&Digest>) -> Answer<()> {
@@ -440,5 +481,66 @@ pub(super) mod tests {
         layout.put_artifact(&manifest).unwrap();
         let config = tailrace_seams::canonical(&meta("site"));
         assert_eq!(layout.read(&Digest::of(&config)), Ok(Held::Bytes(config)));
+    }
+
+    fn envelope(says: &str) -> Envelope {
+        Envelope {
+            payload_type: tailrace_seams::IN_TOTO.into(),
+            payload: says.as_bytes().to_vec(),
+            signature: tailrace_seams::Signature {
+                signer: tailrace_seams::SignerId::new("a tester"),
+                sig: vec![7, 7],
+            },
+        }
+    }
+
+    #[test]
+    fn two_attestations_answer_in_the_order_attached_byte_for_byte() {
+        let (_dir, layout) = fresh();
+        let subject = layout.put_bytes(b"site").unwrap().digest;
+        let (first, second) = (envelope("it passed"), envelope("it passed again"));
+        for attestation in [&first, &second] {
+            let put = layout.attach(&subject, attestation).unwrap();
+            assert_eq!(put.digest, attestation.digest());
+            assert!(!put.held_already);
+        }
+        let claims = layout.claims_of(&subject).unwrap();
+        assert_eq!(claims, [first.clone(), second.clone()]);
+        assert_eq!(canonical(&claims[0]), canonical(&first));
+        let entries = held(&layout).1;
+        assert_eq!(entries.as_array().unwrap().len(), 2);
+        for (i, attestation) in [&first, &second].into_iter().enumerate() {
+            assert_eq!(entries[i]["digest"], attestation.digest().as_str());
+            assert_eq!(entries[i]["mediaType"], ENVELOPE);
+            assert_eq!(entries[i]["annotations"][SUBJECT], subject.as_str());
+        }
+    }
+
+    #[test]
+    fn the_same_attestation_attached_twice_is_held_once() {
+        let (_dir, layout) = fresh();
+        let subject = layout.put_bytes(b"site").unwrap().digest;
+        let attestation = envelope("it passed");
+        layout.attach(&subject, &attestation).unwrap();
+        let before = held(&layout);
+        let again = layout.attach(&subject, &attestation).unwrap();
+        assert_eq!(again.digest, attestation.digest());
+        assert!(again.held_already);
+        assert_eq!(layout.claims_of(&subject), Ok(vec![attestation]));
+        assert_eq!(held(&layout), before);
+    }
+
+    #[test]
+    fn a_digest_not_held_takes_no_attestation_and_has_no_claims() {
+        let (_dir, layout) = fresh();
+        let missing = Digest::of(b"never put");
+        let before = held(&layout);
+        let absent = Not::absent(layout.source(), missing.to_string());
+        assert_eq!(
+            layout.attach(&missing, &envelope("nothing")),
+            Err(absent.clone())
+        );
+        assert_eq!(layout.claims_of(&missing), Err(absent));
+        assert_eq!(held(&layout), before);
     }
 }
