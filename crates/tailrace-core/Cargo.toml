@@ -8,8 +8,18 @@ description = "What tailrace does with its seams: Part A of the statement, namin
 [dependencies]
 tailrace-seams = { path = "../tailrace-seams" }
 anyhow.workspace = true
+git-cliff-core.workspace = true
+git2.workspace = true
+glob.workspace = true
+regex.workspace = true
+semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tailrace-fakes = { path = "../tailrace-fakes" }
+tempfile.workspace = true
 
 [lib]
 doctest = false

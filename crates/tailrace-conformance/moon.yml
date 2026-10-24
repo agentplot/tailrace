@@ -9,3 +9,12 @@ tasks:
     inputs: ['/crates/tailrace-conformance/**/*', '/crates/tailrace-seams/**/*', '/crates/tailrace-core/**/*', '/crates/tailrace-fakes/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock']
     tags: [cargo-test, check-fast]
     options: {runFromWorkspaceRoot: true}
+  # Every clause of Parts A and B cited by a scenario or named in the
+  # register, each registered clause printed as pending on every run, pass
+  # or fail (core.33, ADR 0012). Its output is buffered and shown when the
+  # task ends, set here so a later default cannot hide the pending lines.
+  coverage:
+    command: 'cargo run -q -p tailrace-conformance --bin coverage'
+    inputs: ['/crates/tailrace-conformance/**/*', '/crates/tailrace-seams/**/*', '/crates/tailrace-core/**/*', '/crates/tailrace-fakes/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true, outputStyle: 'buffer'}

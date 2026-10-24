@@ -23,6 +23,8 @@ _: {
     "site/mock/**"
     # The licence, as the licence is written.
     "LICENSE"
+    # Empty markers that keep OpenSpec's directories in the tree.
+    "*.gitkeep"
     # Build outputs and caches.
     "target/**"
     ".devenv/**"

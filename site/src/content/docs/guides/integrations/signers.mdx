@@ -26,12 +26,45 @@ claim says of itself.
 | member | profile | how | status |
 |---|---|---|---|
 | a key in AWS KMS | C.7, a key in a key service | a key the host's cloud identity may use and never export, through the host's role; the signer's name is the key's, and verification uses its public half | designed |
-| a host key | C.8 | a key file on the host, as sluice's signers hold theirs; verification uses the public key the policy lists | designed |
+| a host key | C.8 | a key file on the host, as sluice's signers hold theirs, read at each signature and kept nowhere; verification uses the public key the policy lists | built |
 | keyless with Sigstore | C.9 | a short-lived certificate bound to an identity from the owner's identity provider, logged in a transparency log, as Sigstore issues and cosign uses, public or private | designed |
 
 The operator binds the signers for a host (92). A machine an agent runs
 on holds an offering signer; the gate holds the accepting one; and no
 host configuration holds both.
+
+### The host key
+
+The host key takes an Ed25519 private key in OpenSSH's format, with no
+passphrase, that only its owner may read (mode 0600): the same kind of
+key sluice signs its run records with. Make one with:
+
+```sh
+ssh-keygen -t ed25519 -N '' -f <path>
+```
+
+A key others may read, one with a passphrase or one of another
+algorithm is refused, saying which. A claim is signed as an SSH
+signature over the envelope's DSSE pre-authentication encoding, in the
+namespace `tailrace-claim`, so no signature made for git or for sluice
+verifies as a claim.
+
+To verify, the policy lists for the signer its public key, in
+ssh-keygen's allowed-signers form without the principal, since the
+signer's name is the principal: `ssh-ed25519 AAAA… host@laptop`. The
+listing may carry OpenSSH's `valid-before="YYYYMMDDZ"` (or
+`YYYYMMDDHHMM[SS]Z`), a time in UTC; after it, a signature by the key is
+reported as made by its signer and expired. A machine that verifies
+holds no key file: verify reads only what the policy lists, and the name
+an envelope gives its signer decides nothing.
+
+The host key is bound by the host's bindings file's `[signing]` table,
+sluice's own shape: `signer`, the identity it signs as, and `key`, the
+key file's path, absolute or beginning `~/` (see
+[self-hosting](/tailrace/guides/self-hosting/)). A host whose file names
+no `[signing]` binds the host key verify-only: it tells every claim by
+the keys the policy lists, and answers every sign absent, saying no
+identity is at hand, reading no file.
 
 ## Adding one
 
