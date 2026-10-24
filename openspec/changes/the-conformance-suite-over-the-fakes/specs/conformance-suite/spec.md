@@ -211,7 +211,9 @@ identity told as expired.
 The policy's group SHALL hold a policy to 82 and 83: for each audience,
 the claims required with the signers that may make each and the kinds
 and checks each may claim, binding no signer by output or ecosystem
-(116).
+(116); and, where the repository declares no policy for an audience,
+an absence naming the audience. The revision beside it is verify's to
+name, not the policy's (82).
 
 #### Scenario: The claims an audience requires
 
@@ -226,7 +228,7 @@ and checks each may claim, binding no signer by output or ecosystem
 #### Scenario: No policy for an audience
 
 - **WHEN** the policy for a layout is asked where none is declared
-- **THEN** the answer is absent naming the audience and revision
+- **THEN** the answer is absent naming the audience, never refused
 
 ### Requirement: A projection's contract
 

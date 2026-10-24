@@ -34,7 +34,10 @@ already depends on it.
 The rule is core.33 as record 0012 amends it, accepted by the user on
 2026-10-23: a clause no scenario cites is named in the register with the
 unit that will cite it and why, and leaves the register with the
-commit that cites it. Section 12 (blueprints 5b00e15) says the same.
+commit that cites it. Section 12 (blueprints b100cc8) says the same.
+Both now let an entry name the phase of the plan, with the reason,
+while that phase has no units carved; the planner names the unit when
+it carves the phase (core.33 as tailrace ba83d81 has it).
 The register's form is this unit's (record 0012, More information).
 The model is sluice's conformance crate (scenarios generic over a rig,
 run on the fakes in the crate and on the real profiles in the binary's
@@ -269,6 +272,15 @@ gate refuses or accepts, so S5's "nothing moves" is checked as no name
 moved but the version's own and no keeper append. S13's "refuses" is
 checked as verify finding no verdict claim that counts.
 
+The policy group's "no policy for an audience" asks for a layout's
+policy where only acceptance's is declared, and holds the answer to
+absent naming the audience, never refused. It does not ask for the
+revision: the policy seam's absence names the audience alone, and
+verify, which chose the revision from the version's tag, names it
+beside the seam's absence (82 as blueprints b100cc8 has it; the landed
+seam-contracts and attestation-verification specs divide it the same
+way).
+
 The target group's "converged and reported" hands the target a
 `Verified` (the seams' type, not the core's verify answer of the same
 name). The seams make it with the public `Verified::new(index,
@@ -333,6 +345,10 @@ not touch one hunk. The entries bolt 1 leaves:
 | bolt 5 · the first served projection | 46, 49, 114, 115 | an ecosystem's clients and a served layout |
 | phase 2 · the first target | 42, 44, 45, 119 | a reconciler; phase 1 leaves every target to phase 2 |
 | phase 2 · the verifier's rebuild | 55, 112 | the rebuild by a second signer; left to phase 2 |
+
+The last six name a phase, not a unit, since phase 2 has no units
+carved (core.33, section 12). The planner names their unit when it
+carves phase 2, in the commit that carves it.
 
 That is 47 clauses: the 43 record 0012 names, and 42, 53, 64 and 100,
 which bolt 1 has nothing to prove. Each `why` in the code is the row's
@@ -410,10 +426,9 @@ are named for what they hold.
 - [The register names units by the plan's words, and the plan moves] →
   the unit is a note (record 0012); an entry whose unit moved is
   corrected by hand in the commit that moves the plan.
-- [Four entries beyond record 0012's forty-three, and six under phase
-  2, which has no units yet] → named in the change's final message for
-  the design agent and the planner. The check accepts any non-empty
-  unit, so the suite passes either way.
+- [Four entries beyond record 0012's forty-three] → named for the
+  design agent and the planner. The check accepts any non-empty unit,
+  so the suite passes either way.
 - [The rigs' setup methods are this unit's guess at what a real profile
   can stage] → a profile unit that cannot stage one (expiring a real
   key, say) says so with `crew needs`, and the rig's method becomes a

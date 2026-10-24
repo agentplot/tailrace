@@ -34,9 +34,11 @@ no scenario cites and the register does not name.
 ### Requirement: The register names each clause that waits, with its unit and why
 
 The register SHALL name each clause no scenario cites yet, with the
-unit of the plan that will cite it and the reason it waits. An entry
-with no unit or no reason SHALL fail the check. The unit is a note for
-a reader, not a reference the check resolves.
+unit of the plan that will cite it, or the phase of the plan while that
+phase has no units carved, and the reason it waits. An entry naming
+neither a unit nor a phase, or no reason, SHALL fail the check. The
+unit or phase is a note for a reader, not a reference the check
+resolves (core.33, section 12).
 
 #### Scenario: An entry without its reason
 
@@ -46,7 +48,7 @@ a reader, not a reference the check resolves.
 #### Scenario: What the register holds in bolt 1
 
 - **WHEN** the register is read as bolt 1 leaves it
-- **THEN** it names 25 to 30, 32, 33, 36 to 39, 41, 42, 44 to 47, 49, 51 to 55, 63, 64, 94 to 101, 103, 104, 106 to 109, 112 to 115, 118, 119 and 125, each with its unit and reason, and no other clause
+- **THEN** it names 25 to 30, 32, 33, 36 to 39, 41, 42, 44 to 47, 49, 51 to 55, 63, 64, 94 to 101, 103, 104, 106 to 109, 112 to 115, 118, 119 and 125, each with its unit and reason, and no other clause; 42, 44, 45, 119, 55 and 112 name phase 2, whose units are not yet carved
 
 ### Requirement: A registered clause is reported as pending on every run
 

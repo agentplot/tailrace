@@ -35,7 +35,8 @@ them in a register instead of failing them.
   Part B clauses (66 to 91, 120 to 122) and the Part A clauses those
   operations keep: same bytes held once, a name moved only from where
   it is, attestations kept beside their digest, an expired signer told
-  as expired, acceptance naming no channel, a pack that cannot promise
+  as expired, acceptance naming no channel, an undeclared policy absent
+  naming its audience, a pack that cannot promise
   the same bytes saying so, an empty channel answered empty, a stale
   predecessor refused naming the head, a fork reported and never
   chosen. Each group also checks that a source that cannot be reached
@@ -69,7 +70,9 @@ them in a register instead of failing them.
   and 64 (no credential kept). Six of them, 42, 44, 45, 119 (the
   reconciler) and 55, 112 (the verifier's rebuild), have no unit in
   phase 1's plan, which leaves every target and the verifier's rebuild
-  to phase 2. They are registered under phase 2 by name.
+  to phase 2. They name phase 2, as core.33 and section 12 allow while a
+  phase has no units carved; the planner names the unit when it carves
+  phase 2.
 - **The command line as a surface.** The surfaces group asks publish,
   verify and status through a surface and holds its answer to the
   core's, value for value (56, 57). It runs over the command line in
