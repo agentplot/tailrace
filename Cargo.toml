@@ -18,6 +18,7 @@ license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1"
+base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 git-cliff-core = { version = "2.14", default-features = false, features = [
   "repo",
