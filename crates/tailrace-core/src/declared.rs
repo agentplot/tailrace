@@ -2,9 +2,11 @@
 //! the policy file at a landed revision, never from a checkout (65, 123,
 //! C.10, rule core.22; design D1, D4).
 
+use std::collections::BTreeMap;
+
 use semver::{Prerelease, Version};
 use serde::Deserialize;
-use tailrace_seams::{Answer, Component, ComponentName, Not, OutputName, Source, Why};
+use tailrace_seams::{Answer, Component, ComponentName, Ecosystem, Not, OutputName, Source, Why};
 
 use crate::{History, Landed, LOCAL};
 
@@ -52,17 +54,28 @@ impl Default for Rule {
 ///   `prerelease` (default `"pre"`), a prerelease identifier;
 ///   `features_always_bump_minor` and `breaking_always_bump_major`
 ///   (default `true` each), git-cliff's bump settings.
+/// - `[projections]`, a table from output name to ecosystem, written
+///   `site = "file"` or `site = { ecosystem = "file" }` with the table's
+///   other keys left to their readers: the ecosystem of the projection
+///   that packs each of the one component's outputs, when no component
+///   is declared (C.10); none when absent.
 /// - `[[component]]`, each with `name`, `outputs`, `paths` (glob
-///   patterns, at least one) and `prefix`, every key required. No two
-///   share a name or a prefix.
+///   patterns, at least one) and `prefix`, every key required, and
+///   `projections` as the top-level table is for the one component. No
+///   two share a name or a prefix.
 ///
 /// With no file, or no `[[component]]`, the repository is one component
-/// named `repository` over the paths `["**"]`, with the rule's prefix and
-/// the top-level `outputs`.
+/// named `repository` over the paths `["**"]`, with the rule's prefix,
+/// the top-level `outputs` and the top-level `projections`. A
+/// projections key naming an output its component does not declare is
+/// unreadable naming it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declared {
     pub rule: Rule,
     pub components: Vec<Component>,
+    /// C.10: per component, the ecosystem each of its outputs is packed
+    /// in.
+    pub projections: BTreeMap<ComponentName, BTreeMap<OutputName, Ecosystem>>,
 }
 
 #[derive(Deserialize)]
@@ -72,7 +85,25 @@ struct File {
     #[serde(default)]
     version: RawRule,
     #[serde(default)]
+    projections: BTreeMap<OutputName, RawProjection>,
+    #[serde(default)]
     component: Vec<RawComponent>,
+}
+
+/// An output's projection: its ecosystem, or a table naming it.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawProjection {
+    Ecosystem(Ecosystem),
+    Table { ecosystem: Ecosystem },
+}
+
+fn ecosystems(raw: BTreeMap<OutputName, RawProjection>) -> BTreeMap<OutputName, Ecosystem> {
+    raw.into_iter()
+        .map(|(output, p)| match p {
+            RawProjection::Ecosystem(e) | RawProjection::Table { ecosystem: e } => (output, e),
+        })
+        .collect()
 }
 
 #[derive(Default, Deserialize)]
@@ -90,6 +121,8 @@ struct RawComponent {
     outputs: Vec<OutputName>,
     paths: Vec<String>,
     prefix: String,
+    #[serde(default)]
+    projections: BTreeMap<OutputName, RawProjection>,
 }
 
 impl Declared {
@@ -109,6 +142,7 @@ impl Declared {
             Err(Not::Absent(_)) => File {
                 outputs: vec![],
                 version: RawRule::default(),
+                projections: BTreeMap::new(),
                 component: vec![],
             },
             Err(not) => return Err(not),
@@ -136,20 +170,38 @@ impl Declared {
                 .unwrap_or(default.breaking_always_bump_major),
         };
 
+        let undeclared = |name: &ComponentName,
+                          outputs: &[OutputName],
+                          projections: &BTreeMap<OutputName, Ecosystem>| {
+            match projections.keys().find(|o| !outputs.contains(o)) {
+                Some(output) => Err(unreadable(format!(
+                    "component {name}: projections names {output}, which it does not declare as an output"
+                ))),
+                None => Ok(()),
+            }
+        };
+
         if file.component.is_empty() {
+            let name = ComponentName::new(REPOSITORY);
+            let packed_by = ecosystems(file.projections);
+            undeclared(&name, &file.outputs, &packed_by)?;
             return Ok(Declared {
                 components: vec![Component {
-                    name: ComponentName::new(REPOSITORY),
+                    name: name.clone(),
                     outputs: file.outputs,
                     paths: vec!["**".into()],
                     prefix: rule.prefix.clone(),
                 }],
+                projections: BTreeMap::from([(name, packed_by)]),
                 rule,
             });
         }
 
         let mut components: Vec<Component> = Vec::new();
+        let mut projections = BTreeMap::new();
         for raw in file.component {
+            let packed_by = ecosystems(raw.projections);
+            undeclared(&raw.name, &raw.outputs, &packed_by)?;
             if raw.paths.is_empty() {
                 return Err(unreadable(format!(
                     "component {} declares no paths",
@@ -178,6 +230,7 @@ impl Declared {
                     None,
                 ));
             }
+            projections.insert(raw.name.clone(), packed_by);
             components.push(Component {
                 name: raw.name,
                 outputs: raw.outputs,
@@ -185,6 +238,20 @@ impl Declared {
                 prefix: raw.prefix,
             });
         }
-        Ok(Declared { rule, components })
+        Ok(Declared {
+            rule,
+            components,
+            projections,
+        })
+    }
+
+    /// C.10: the ecosystem of the projection that packs `output` of
+    /// `component`; `None` when the policy file names none.
+    pub fn projection_of(
+        &self,
+        component: &ComponentName,
+        output: &OutputName,
+    ) -> Option<&Ecosystem> {
+        self.projections.get(component)?.get(output)
     }
 }
