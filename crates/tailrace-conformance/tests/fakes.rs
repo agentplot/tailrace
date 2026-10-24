@@ -1,7 +1,7 @@
 //! Every group of the suite over the fakes: one test per group, each run
 //! with the runner and reported as any profile is (93; design D9).
 
-use tailrace_conformance::core::{copy, ledger, publish, status, verify, version};
+use tailrace_conformance::core::{cache, copy, ledger, publish, status, verify, version};
 use tailrace_conformance::fakes::{
     FakeBindingRig, FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig,
     FakeSignerRig, FakeStoreRig, FakeTargetRig,
@@ -199,6 +199,14 @@ fn the_core_copies_over_the_fakes() {
 #[test]
 fn the_core_follows_the_ledger_over_the_fakes() {
     run(ledger::GROUP, &ledger::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_core_keeps_the_cache_over_the_fakes() {
+    run(cache::GROUP, &cache::scenarios(), &|| {
         Box::new(FakeWorld::new())
     })
     .assert();
