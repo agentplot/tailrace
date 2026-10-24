@@ -36,7 +36,7 @@ the group that cannot pass without one is reported with `crew needs`.
 
 ## 5. The profile's own tests
 
-- [ ] 5.1 Write `crates/tailrace/tests/layout_store.rs`: `LayoutRig` and the test that runs the suite's store group over it (design D6). Verify `devenv shell -- cargo test -p tailrace --test layout_store` passes with the group's report naming the layout's profile and every scenario passed.
+- [x] 5.1 Write `crates/tailrace/tests/layout_store.rs`: `LayoutRig` and the test that runs the suite's store group over it (design D6). Verify `devenv shell -- cargo test -p tailrace --test layout_store` passes with the group's report naming the layout's profile and every scenario passed.
 - [x] 5.2 In the same file, one test per scenario of spec `layout-store` the group does not play (design D6): a layout made; never made by an operation; another tool's entries and blobs untouched; where bytes are held; a blob altered on disk, read and put again; an index read back; the same artifact in two layouts, byte for byte; an artifact's manifest as a registry reads it, with its `index.json` entry; a manifest naming bytes not held; an attestation attached twice; an attestation and claims-of for a digest not held; claims-of in a copy of the layout; a name made and moved with one entry; two handles in two threads moving one name, exactly one succeeding; a name moved to a digest not held; a malformed index. Verify `devenv shell -- cargo test -p tailrace --test layout_store` passes.
 - [x] 5.3 Verify `grep -rn 'tailrace_core' crates/tailrace/src/profiles` finds nothing (core.2), and `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace/src --exclude-dir=profiles` finds nothing (core.1).
 
@@ -46,4 +46,4 @@ the group that cannot pass without one is reported with `crew needs`.
 
 ## 7. The gate
 
-- [ ] 7.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage, every crate's tests and the site's build.
+- [x] 7.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage, every crate's tests and the site's build.
