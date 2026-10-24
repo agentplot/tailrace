@@ -3,7 +3,7 @@
 //! rule core.33; design D1, D3).
 
 use std::fmt;
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 
 /// One scenario: what it is called, the statement scenario it plays where
 /// it plays one, the clauses of Parts A and B it exercises, and what it
@@ -30,14 +30,44 @@ pub struct Failure {
     pub why: String,
 }
 
+/// One scenario not applicable to the rig's profile, by the rig's own
+/// word: the scenario, what it plays, the clauses it cites, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Inapplicable {
+    pub scenario: &'static str,
+    pub plays: Option<&'static str>,
+    pub cites: &'static [u16],
+    pub why: String,
+}
+
+/// What a scenario unwinds with when it does not apply to its rig.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NotApplicable(pub String);
+
+/// Ends the scenario as not applicable to its rig, for `why`. A scenario
+/// calls it only on what the rig says of its profile, such as a landing
+/// that records no verdicts (C.6), never on a setup that went wrong,
+/// which is a failure. It unwinds without a panic, so no panic hook
+/// prints it.
+pub fn not_applicable(why: impl Into<String>) -> ! {
+    resume_unwind(Box::new(NotApplicable(why.into())))
+}
+
 /// What a group's run came to: the profile, the group, how many scenarios
-/// ran, and every one that failed.
+/// ran, every one that failed, and every one not applicable.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Report {
     pub profile: String,
     pub group: String,
     pub ran: usize,
     pub failures: Vec<Failure>,
+    pub not_applicable: Vec<Inapplicable>,
+}
+
+/// How one scenario ended, when it did not pass.
+enum Ended {
+    Failed(String),
+    NotApplicable(String),
 }
 
 /// Runs every scenario of `group` on a rig of its own, made by `make`,
@@ -50,6 +80,7 @@ pub fn run<R: Rig + ?Sized>(
 ) -> Report {
     let mut profile = None;
     let mut failures = Vec::new();
+    let mut not_applicable = Vec::new();
     for scenario in scenarios {
         let outcome = catch_unwind(AssertUnwindSafe(|| {
             let rig = make();
@@ -57,23 +88,34 @@ pub fn run<R: Rig + ?Sized>(
             let ran = catch_unwind(AssertUnwindSafe(|| (scenario.run)(&*rig)));
             (name, ran)
         }));
-        let why = match outcome {
+        let ended = match outcome {
             Ok((name, ran)) => {
                 profile.get_or_insert(name);
-                ran.err().map(|panic| said(panic.as_ref()))
+                ran.err()
+                    .map(|panic| match panic.downcast::<NotApplicable>() {
+                        Ok(not) => Ended::NotApplicable(not.0),
+                        Err(panic) => Ended::Failed(said(panic.as_ref())),
+                    })
             }
-            Err(panic) => Some(format!(
+            Err(panic) => Some(Ended::Failed(format!(
                 "the rig could not be made: {}",
                 said(panic.as_ref())
-            )),
+            ))),
         };
-        if let Some(why) = why {
-            failures.push(Failure {
+        match ended {
+            None => {}
+            Some(Ended::Failed(why)) => failures.push(Failure {
                 scenario: scenario.name,
                 plays: scenario.plays,
                 cites: scenario.cites,
                 why,
-            });
+            }),
+            Some(Ended::NotApplicable(why)) => not_applicable.push(Inapplicable {
+                scenario: scenario.name,
+                plays: scenario.plays,
+                cites: scenario.cites,
+                why,
+            }),
         }
     }
     Report {
@@ -81,6 +123,7 @@ pub fn run<R: Rig + ?Sized>(
         group: group.to_string(),
         ran: scenarios.len(),
         failures,
+        not_applicable,
     }
 }
 
@@ -96,7 +139,7 @@ fn said(panic: &(dyn std::any::Any + Send)) -> String {
 }
 
 impl Report {
-    /// Whether every scenario passed.
+    /// Whether no scenario failed; one not applicable fails nothing.
     pub fn passed(&self) -> bool {
         self.failures.is_empty()
     }
@@ -126,6 +169,22 @@ fn clauses(cites: &[u16]) -> String {
     }
 }
 
+/// One line of a report: the scenario, what it plays, its clauses, and
+/// what came of it.
+fn line(
+    f: &mut fmt::Formatter<'_>,
+    scenario: &str,
+    plays: Option<&str>,
+    cites: &[u16],
+    came: &str,
+) -> fmt::Result {
+    write!(f, "\n- `{scenario}`")?;
+    if let Some(plays) = plays {
+        write!(f, ", playing {plays}")?;
+    }
+    write!(f, " ({}): {came}", clauses(cites))
+}
+
 impl fmt::Display for Report {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -133,21 +192,35 @@ impl fmt::Display for Report {
             "the {} group over the profile `{}`: ",
             self.group, self.profile
         )?;
-        if self.passed() {
-            return write!(f, "{} passed", scenarios(self.ran));
+        let not_applicable = self.not_applicable.len();
+        match (self.passed(), not_applicable) {
+            (true, 0) => write!(f, "{} passed", scenarios(self.ran))?,
+            (true, n) => write!(f, "{} passed, {n} not applicable", self.ran - n)?,
+            (false, 0) => write!(
+                f,
+                "{} of {} failed",
+                self.failures.len(),
+                scenarios(self.ran)
+            )?,
+            (false, n) => write!(
+                f,
+                "{} of {} failed, {n} not applicable",
+                self.failures.len(),
+                scenarios(self.ran)
+            )?,
         }
-        write!(
-            f,
-            "{} of {} failed",
-            self.failures.len(),
-            scenarios(self.ran)
-        )?;
         for failure in &self.failures {
-            write!(f, "\n- `{}`", failure.scenario)?;
-            if let Some(plays) = failure.plays {
-                write!(f, ", playing {plays}")?;
-            }
-            write!(f, " ({}): {}", clauses(failure.cites), failure.why)?;
+            line(
+                f,
+                failure.scenario,
+                failure.plays,
+                failure.cites,
+                &failure.why,
+            )?;
+        }
+        for not in &self.not_applicable {
+            let came = format!("not applicable: {}", not.why);
+            line(f, not.scenario, not.plays, not.cites, &came)?;
         }
         Ok(())
     }
@@ -283,6 +356,91 @@ mod tests {
         };
         run("probe", &group(), &make);
         assert_eq!(*made.borrow(), 3);
+    }
+
+    fn does_not_apply(rig: &Probe) {
+        rig.ran.borrow_mut().push("does not apply");
+        not_applicable("the probe records no verdicts");
+    }
+
+    fn fails_to_stage(rig: &Probe) {
+        rig.ran.borrow_mut().push("fails to stage");
+        panic!("the probe could not land a revision");
+    }
+
+    fn inapplicable() -> Scenario<Probe> {
+        Scenario {
+            name: "not for a probe",
+            plays: Some("S13"),
+            cites: &[78],
+            run: does_not_apply,
+        }
+    }
+
+    #[test]
+    fn a_scenario_not_applicable_is_named_and_fails_nothing() {
+        let ran = Rc::new(RefCell::new(Vec::new()));
+        let mut three: Vec<Scenario<Probe>> = group()
+            .into_iter()
+            .filter(|s| s.name == "the second")
+            .collect();
+        three.push(inapplicable());
+        three.push(Scenario {
+            name: "the second again",
+            plays: None,
+            cites: &[67],
+            run: second,
+        });
+        let report = run("probe", &three, &probe(&ran));
+        assert_eq!(*ran.borrow(), ["second", "does not apply", "second"]);
+        assert!(report.passed(), "{report}");
+        assert_eq!(report.failures, []);
+        assert_eq!(report.ran, 3);
+        assert_eq!(
+            report.not_applicable,
+            [Inapplicable {
+                scenario: "not for a probe",
+                plays: Some("S13"),
+                cites: &[78],
+                why: "the probe records no verdicts".into(),
+            }]
+        );
+        report.assert();
+        assert_eq!(
+            report.to_string(),
+            "the probe group over the profile `a probe`: 2 passed, 1 not applicable\n\
+             - `not for a probe`, playing S13 (clause 78): not applicable: \
+             the probe records no verdicts"
+        );
+    }
+
+    #[test]
+    fn a_rig_that_fails_to_stage_what_it_does_fails_the_scenario() {
+        let ran = Rc::new(RefCell::new(Vec::new()));
+        let two = vec![
+            Scenario {
+                name: "stages a landing",
+                plays: None,
+                cites: &[77],
+                run: fails_to_stage,
+            },
+            inapplicable(),
+        ];
+        let report = run("probe", &two, &probe(&ran));
+        assert_eq!(*ran.borrow(), ["fails to stage", "does not apply"]);
+        assert!(!report.passed());
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.failures[0].scenario, "stages a landing");
+        assert_eq!(report.not_applicable.len(), 1);
+        let text = report.to_string();
+        for words in [
+            "the probe group over the profile `a probe`: 1 of 2 scenarios failed, 1 not applicable",
+            "\n- `stages a landing` (clause 77): the probe could not land a revision",
+            "\n- `not for a probe`, playing S13 (clause 78): not applicable: the probe records no verdicts",
+        ] {
+            assert!(text.contains(words), "{text}\ndoes not say: {words}");
+        }
+        assert!(catch_unwind(AssertUnwindSafe(|| report.assert())).is_err());
     }
 
     #[test]
