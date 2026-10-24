@@ -7,8 +7,8 @@ use crate::{Answer, Branch, BuildId, Check, Envelope, Outcome, Revision, SignerI
 
 /// 78: a verdict as the landing recorded it: its check, the build
 /// identity it was reached on, its outcome and its signer, with the
-/// signed envelope as the landing made it, carried and never re-signed
-/// (12).
+/// signed envelope as the landing made it, carried and never re-signed,
+/// and where the landing found it, in the landing's own words (12).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Verdict {
     pub check: Check,
@@ -16,6 +16,7 @@ pub struct Verdict {
     pub outcome: Outcome,
     pub signer: SignerId,
     pub envelope: Envelope,
+    pub found: String,
 }
 
 pub trait Landing {
@@ -40,14 +41,16 @@ mod tests {
             build: BuildId::new("b7e1"),
             outcome: Outcome::Pass,
             signer: SignerId::new("landing"),
-            envelope: crate::Envelope {
-                payload_type: IN_TOTO.into(),
-                payload: b"{}".to_vec(),
-                signature: Signature {
+            envelope: crate::Envelope::signed(
+                IN_TOTO,
+                b"{}".to_vec(),
+                Signature {
                     signer: SignerId::new("landing"),
+                    keyid: "SHA256:l4nd".into(),
                     sig: vec![7],
                 },
-            },
+            ),
+            found: "the landing's record of run 12".into(),
         });
     }
 }

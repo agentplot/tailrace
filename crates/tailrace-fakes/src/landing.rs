@@ -90,14 +90,16 @@ mod tests {
             build: BuildId::new("b7e1"),
             outcome: Outcome::Pass,
             signer: SignerId::new("landing"),
-            envelope: Envelope {
-                payload_type: IN_TOTO.into(),
-                payload: check.as_bytes().to_vec(),
-                signature: Signature {
+            envelope: Envelope::signed(
+                IN_TOTO,
+                check.as_bytes().to_vec(),
+                Signature {
                     signer: SignerId::new("landing"),
+                    keyid: String::new(),
                     sig: vec![3],
                 },
-            },
+            ),
+            found: format!("the record of {check}"),
         }
     }
 

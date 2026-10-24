@@ -4,6 +4,8 @@
 # tag:
 #   check-fast    the cargo tests over the fakes, format, lint, the site's
 #                 build: under a minute
+#   check-tools   the profiles' tests against moon, sluice and OpenSSH in
+#                 scratch repositories, the tools the devenv shell pins
 # The cargo tests are also tagged `cargo-test`. A task whose inputs are
 # identical to a run that passed on this host, in any worktree, replays
 # from .moon/cache/outputs (a link into the git common dir, made by

@@ -109,14 +109,16 @@ fn attestation(subject: &Digest, says: &str) -> Envelope {
         body: json!({ "says": says }),
     };
     let payload = claim.payload();
-    Envelope {
-        payload_type: IN_TOTO.into(),
-        signature: Signature {
-            signer: SignerId::new("a tester"),
-            sig: Digest::of(&payload).as_str().as_bytes().to_vec(),
-        },
+    let sig = Digest::of(&payload).as_str().as_bytes().to_vec();
+    Envelope::signed(
+        IN_TOTO,
         payload,
-    }
+        Signature {
+            signer: SignerId::new("a tester"),
+            keyid: String::new(),
+            sig,
+        },
+    )
 }
 
 fn is_absent<T: std::fmt::Debug>(answer: &Answer<T>) -> bool {

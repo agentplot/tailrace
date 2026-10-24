@@ -15,7 +15,7 @@ key = ["Cargo.lock", ".prototools"]
 paths = ["target"]
 
 [branches."bolt/*"]
-required = ["#check-fast"]
+required = ["#check-fast", "#check-tools"]
 parallel = 2
 batch = false
 flaky = "fail"
@@ -23,7 +23,7 @@ timeout = "20m"
 remote = "origin"
 
 [branches.main]
-required = ["#check-fast"]
+required = ["#check-fast", "#check-tools"]
 parallel = 2
 batch = true
 flaky = "fail"

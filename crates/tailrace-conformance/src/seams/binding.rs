@@ -110,7 +110,7 @@ fn one_of_each_any_number_of_projections_and_targets(rig: &dyn BindingRig) {
             signer.sign(&claim, identity),
             &format!("the signer bound for {identity}"),
         );
-        assert_eq!(&envelope.signature.signer, identity);
+        assert_eq!(envelope.sole().map(|s| &s.signer), Some(identity));
     }
 }
 
