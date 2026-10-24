@@ -17,18 +17,21 @@
 //! operation unreadable with git's words (58, 59).
 
 mod checkout;
-// Ensure and report read through it from the task that writes them.
-#[allow(dead_code)]
 mod report;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::fs;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use tailrace_seams::{Answer, Not, OutputName, Revision, Seam, Source};
+use tailrace_seams::{
+    Answer, Build, BuildId, Not, OutputName, Report, Revision, Seam, Source, Why,
+};
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
+use report::{Declared, RunReport, RUN_REPORT};
 
 /// The policy file, read at the revision and never from a checkout (65,
 /// rule core.22).
@@ -94,8 +97,6 @@ impl Moon {
     }
 }
 
-// Ensure and report read through these from the tasks that write them.
-#[allow(dead_code)]
 impl Moon {
     /// git run in the repository with `args`, answering when it exits
     /// with one of `allowed`.
@@ -158,6 +159,143 @@ impl Moon {
             .into_iter()
             .filter_map(|(output, table)| table.task.map(|task| (output, task)))
             .collect())
+    }
+
+    /// moon run in `checkout` with `args`, with no variable of
+    /// tailrace's own environment that names moon's settings or points
+    /// git elsewhere, whatever it exits with.
+    fn moon<S: AsRef<OsStr>>(&self, checkout: &Path, args: &[S]) -> Answer<Ran> {
+        let mut env_drop = vec!["MOON_*"];
+        env_drop.extend(GIT_REPOSITORY_ENV);
+        self.moon.ran(Some(checkout), args, &env_drop)
+    }
+
+    /// Where `target` says its outputs are, from `moon task <target>
+    /// --json` in `checkout`.
+    fn declared(&self, checkout: &Path, target: &str) -> Answer<Declared> {
+        let args = ["task", target, "--json"];
+        let ran = self.moon(checkout, &args)?;
+        if ran.code != Some(0) {
+            return Err(self.moon.failed(&args, &ran));
+        }
+        Declared::read(&ran.stdout).map_err(|why| self.moon.unreadable(&args, why))
+    }
+
+    /// The run report moon left in `checkout`, `None` when it left none.
+    fn run_report(&self, checkout: &Path) -> Answer<Option<RunReport>> {
+        let at = checkout.join(RUN_REPORT);
+        let bytes = match fs::read(&at) {
+            Ok(bytes) => bytes,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(self.unreadable_file(&at, e.to_string())),
+        };
+        RunReport::read(&bytes)
+            .map(Some)
+            .map_err(|why| self.unreadable_file(&at, why))
+    }
+
+    fn unreadable_file(&self, path: &Path, said: String) -> Not {
+        Not::unreadable(self.source(), path.display().to_string(), Some(said))
+    }
+}
+
+impl Build for Moon {
+    /// 74: the tasks the outputs name, run in one `moon exec` in the
+    /// revision's checkout, continuing past a task that fails; moon's
+    /// exit is no answer, since a task that failed is an outcome (75).
+    /// An output is unmade when the policy file names it no task, when
+    /// its task has no action in the run report, or when the files its
+    /// task declares are not there.
+    fn ensure(&self, revision: &Revision, outputs: &[OutputName]) -> Answer<()> {
+        let common = self.common()?;
+        let commit = self.commit(revision)?;
+        let tasks = self.tasks(&commit)?;
+        let checkout = self.checkout(&common, &commit)?;
+        let left = checkout.join(RUN_REPORT);
+        match fs::remove_file(&left) {
+            Err(e) if e.kind() != ErrorKind::NotFound => {
+                return Err(self.unreadable_file(&left, e.to_string()))
+            }
+            _ => {}
+        }
+        let targets: BTreeSet<&str> = outputs
+            .iter()
+            .filter_map(|output| tasks.get(output).map(String::as_str))
+            .collect();
+        let mut made = BTreeSet::new();
+        if !targets.is_empty() {
+            let mut args = vec!["exec"];
+            args.extend(&targets);
+            args.extend(["--on-failure", "continue"]);
+            let ran = self.moon(&checkout, &args)?;
+            let Some(report) = self.run_report(&checkout)? else {
+                return Err(self.moon.failed(&args, &ran));
+            };
+            for target in targets {
+                if report.task(target).is_some()
+                    && !self
+                        .declared(&checkout, target)?
+                        .files_in(&checkout)
+                        .is_empty()
+                {
+                    made.insert(target);
+                }
+            }
+        }
+        let unmade: Vec<OutputName> = outputs
+            .iter()
+            .filter(|output| {
+                !tasks
+                    .get(*output)
+                    .is_some_and(|task| made.contains(task.as_str()))
+            })
+            .cloned()
+            .collect();
+        if unmade.is_empty() {
+            Ok(())
+        } else {
+            Err(Not::refused(
+                self.source(),
+                Why::Unmade { outputs: unmade },
+                None,
+            ))
+        }
+    }
+
+    /// 75: the task's hash as the build identity, its status as the
+    /// outcome, and the files its declared outputs name in the checkout,
+    /// from what moon recorded of the last ensure at the revision; absent
+    /// naming the output where moon recorded nothing of its task.
+    fn report(&self, revision: &Revision, output: &OutputName) -> Answer<Report> {
+        let common = self.common()?;
+        let commit = self.commit(revision)?;
+        let tasks = self.tasks(&commit)?;
+        let absent = || Not::absent(self.source(), format!("output {output} at {commit}"));
+        let Some(target) = tasks.get(output) else {
+            return Err(absent());
+        };
+        let Some(checkout) = self.made(&common, &commit) else {
+            return Err(absent());
+        };
+        let declared = self.declared(&checkout, target)?;
+        let Some(report) = self.run_report(&checkout)? else {
+            return Err(absent());
+        };
+        let Some(action) = report.task(target) else {
+            return Err(absent());
+        };
+        let (Some(hash), Some(outcome)) = (&action.hash, action.outcome()) else {
+            return Err(absent());
+        };
+        Ok(Report {
+            build: BuildId::new(hash.clone()),
+            outcome,
+            files: declared
+                .files_in(&checkout)
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect(),
+        })
     }
 }
 

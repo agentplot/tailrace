@@ -15,8 +15,6 @@ fn path(common: &Path, commit: &str) -> PathBuf {
     common.join("tailrace").join("builds").join(commit)
 }
 
-// Ensure and report read through these from the tasks that write them.
-#[allow(dead_code)]
 impl Moon {
     /// The checkout of `commit`, made by `git worktree add --detach` the
     /// first time and reused after.

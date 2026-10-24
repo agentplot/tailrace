@@ -128,17 +128,6 @@ impl Tool {
         )
     }
 
-    /// The tool run as [`output`](Tool::output) runs it, exit 0 alone
-    /// allowed, answering what it printed on stdout.
-    pub fn stdout<S: AsRef<OsStr>>(
-        &self,
-        dir: Option<&Path>,
-        args: &[S],
-        env_drop: &[&str],
-    ) -> Answer<Vec<u8>> {
-        Ok(self.output(dir, args, env_drop, &[0])?.stdout)
-    }
-
     /// Unreadable naming the command run and carrying `said`.
     pub fn unreadable<S: AsRef<OsStr>>(&self, args: &[S], said: String) -> Not {
         let mut what = self.program.display().to_string();
