@@ -40,7 +40,7 @@ tests.
 
 ## 5. A plain branch
 
-- [ ] 5.1 Write `profiles/landing/branch/mod.rs`: `PlainBranch` and `Landing` for it (design D8). Verify in `crates/tailrace/tests/landing_branch.rs` (task 7.3).
+- [x] 5.1 Write `profiles/landing/branch/mod.rs`: `PlainBranch` and `Landing` for it (design D8). Verify in `crates/tailrace/tests/landing_branch.rs` (task 7.3).
 
 ## 6. The tools layer
 
