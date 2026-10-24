@@ -71,6 +71,7 @@
 pub mod core;
 pub mod fakes;
 pub mod fixture;
+pub mod register;
 pub mod scenario;
 pub mod seams;
 pub mod statement;
