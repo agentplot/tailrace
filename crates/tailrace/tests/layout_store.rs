@@ -1,5 +1,7 @@
 //! Spec layout-store: the store seam over an OCI image layout on disk,
-//! each scenario on a new layout in a temporary directory (design D6).
+//! each scenario on a new layout in a temporary directory: the
+//! conformance suite's store group over a [`LayoutRig`], and the
+//! scenarios of the spec the group does not play (design D6).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,6 +9,8 @@ use std::sync::Barrier;
 
 use serde_json::{json, Value};
 use tailrace::profiles::store::layout::Layout;
+use tailrace_conformance::seams::store::{self, StoreRig};
+use tailrace_conformance::{run, Rig};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, ComponentName, Digest, Ecosystem, EcosystemName, Envelope,
     Held, IndexMeta, Manifest, Name, Not, Put, Seam, Signature, SignerId, Store, Version, Why,
@@ -108,6 +112,55 @@ fn refused(answer: Answer<impl std::fmt::Debug>) -> Why {
         }
         other => panic!("answered {other:?}, not refused"),
     }
+}
+
+/// The store group's rig: a new layout in a new temporary directory.
+struct LayoutRig {
+    _dir: TempDir,
+    layout: Layout,
+}
+
+impl LayoutRig {
+    fn new() -> Self {
+        let (dir, layout) = fresh();
+        LayoutRig { _dir: dir, layout }
+    }
+}
+
+impl Rig for LayoutRig {
+    fn profile(&self) -> String {
+        self.layout.source().profile.clone()
+    }
+}
+
+impl StoreRig for LayoutRig {
+    fn store(&self) -> &dyn Store {
+        &self.layout
+    }
+
+    /// The layout's directory removed: every operation answers with what
+    /// opening its `oci-layout` answers.
+    fn unreachable(&self) -> String {
+        fs::remove_dir_all(self.layout.root()).expect("the layout removed");
+        fs::File::open(self.layout.root().join("oci-layout"))
+            .expect_err("the layout is gone")
+            .to_string()
+    }
+}
+
+#[test]
+fn the_layout_keeps_the_stores_contract() {
+    let report = run(store::GROUP, &store::scenarios(), &|| {
+        Box::new(LayoutRig::new())
+    });
+    report.assert();
+    assert!(
+        report.profile.starts_with("OCI layout "),
+        "the report names {}",
+        report.profile
+    );
+    assert_eq!(report.ran, store::scenarios().len());
+    assert_eq!(report.not_applicable, [], "{report}");
 }
 
 #[test]
