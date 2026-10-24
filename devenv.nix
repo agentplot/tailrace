@@ -133,6 +133,13 @@ in
 
   env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
 
+  # The tools layer's tests run the pinned sluice and ssh-keygen by these
+  # paths: in a moon task, moon's Rust toolchain puts cargo's own bin
+  # first on PATH, where a sluice built from source may be. Empty where
+  # sluice releases nothing for the system, and the tests say so.
+  env.TAILRACE_TOOLS_SLUICE = lib.optionalString (sluice != null) "${sluice}/bin/sluice";
+  env.TAILRACE_TOOLS_SSH_KEYGEN = "${pkgs.openssh}/bin/ssh-keygen";
+
   # moon's task archives (.moon/cache/outputs) are a link into the git common
   # dir, so every worktree shares them; the rest of .moon/cache records the
   # checkout's absolute paths and stays its own. moon's home is the

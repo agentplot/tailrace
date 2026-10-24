@@ -105,6 +105,28 @@ pub fn on_path(name: &str) -> PathBuf {
         })
 }
 
+/// The pinned tool the devenv shell names in `variable`; panics naming it
+/// when the shell names none, as on a system sluice releases nothing for.
+pub fn pinned(variable: &str, tool: &str) -> PathBuf {
+    match std::env::var_os(variable) {
+        Some(path) if !path.is_empty() => PathBuf::from(path),
+        _ => panic!(
+            "{tool} is not in the shell ({variable} is unset): the tools layer runs in the \
+             devenv shell, which pins it where its release has a build for the system"
+        ),
+    }
+}
+
+/// The pinned sluice.
+pub fn sluice() -> PathBuf {
+    pinned("TAILRACE_TOOLS_SLUICE", "sluice")
+}
+
+/// The pinned ssh-keygen.
+pub fn ssh_keygen() -> PathBuf {
+    pinned("TAILRACE_TOOLS_SSH_KEYGEN", "ssh-keygen")
+}
+
 /// One repository with a working tree.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Repo {
@@ -279,12 +301,22 @@ pub fn policy_file(repo: &Repo, outputs: &[(&str, &str)], extra: &str) {
 }
 
 /// The hash moon gives `target` when it runs it in `dir` itself, read
-/// from its run report: what the profile's build identity must be.
+/// from its run report: what the profile's build identity must be. moon
+/// runs with none of the `MOON_*` variables of a moon task that may be
+/// running these tests, as the profile runs it.
 pub fn moon_hash(dir: &Path, target: &str) -> String {
-    let out = Command::new(on_path("moon"))
+    let mut command = Command::new(on_path("moon"));
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("MOON_") {
+            command.env_remove(&name);
+        }
+    }
+    for name in GIT_REPOSITORY_ENV {
+        command.env_remove(name);
+    }
+    let out = command
         .args(["exec", target, "--on-failure", "continue"])
         .current_dir(dir)
-        .env_remove("MOON_HOME")
         .stdin(std::process::Stdio::null())
         .output()
         .expect("moon runs");

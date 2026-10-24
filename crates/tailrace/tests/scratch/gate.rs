@@ -12,7 +12,7 @@ use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 use super::recorder::Recorder;
-use super::{git_command, on_path, Repo, Scratch, MAIN};
+use super::{git_command, sluice, Repo, Scratch, MAIN};
 
 /// The signer the gate signs as.
 pub const SIGNER: &str = "box";
@@ -76,7 +76,7 @@ impl Gate {
 
     /// sluice in `dir`, as the scratch host runs it.
     fn sluice(&self, dir: &Path, args: &[&str]) -> Output {
-        let mut command = Command::new(on_path("sluice"));
+        let mut command = Command::new(sluice());
         for (name, _) in std::env::vars_os() {
             let name = name.to_string_lossy().to_string();
             if name.starts_with("SLUICE_") || name.starts_with("MOON_") {

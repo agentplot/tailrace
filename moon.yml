@@ -12,7 +12,7 @@ tasks:
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
   lint:
-    command: 'cargo clippy --workspace --all-targets -- -D warnings'
+    command: 'cargo clippy --workspace --all-targets --all-features -- -D warnings'
     inputs: ['/crates/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '/rust-toolchain.toml']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}

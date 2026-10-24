@@ -17,7 +17,7 @@ use base64::Engine;
 use serde::Serialize;
 use tailrace_seams::{Digest, IN_TOTO};
 
-use super::{git, git_command, on_path, Repo, MAIN};
+use super::{git, git_command, ssh_keygen, Repo, MAIN};
 
 /// One result of a run, as the recorder records it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -246,14 +246,14 @@ impl Recorder {
     pub fn key(&self, signer: &str) -> (PathBuf, String) {
         let key = self.keys.join(signer);
         if !key.exists() {
-            let out = Command::new(on_path("ssh-keygen"))
+            let out = Command::new(ssh_keygen())
                 .args(["-q", "-t", "ed25519", "-N", "", "-C", signer, "-f"])
                 .arg(&key)
                 .output()
                 .unwrap();
             assert!(out.status.success(), "{out:?}");
         }
-        let out = Command::new(on_path("ssh-keygen"))
+        let out = Command::new(ssh_keygen())
             .args(["-l", "-E", "sha256", "-f"])
             .arg(key.with_extension("pub"))
             .output()
@@ -322,7 +322,7 @@ impl Recorder {
         let signed = self.keys.join(format!("{signer}.pae"));
         fs::write(&signed, &pae).unwrap();
         let _ = fs::remove_file(signed.with_extension("pae.sig"));
-        let out = Command::new(on_path("ssh-keygen"))
+        let out = Command::new(ssh_keygen())
             .args(["-q", "-Y", "sign", "-n", "sluice-run", "-f"])
             .arg(&key)
             .arg(&signed)
