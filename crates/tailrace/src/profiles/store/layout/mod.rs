@@ -21,6 +21,9 @@ use tailrace_seams::{
 };
 
 mod blobs;
+// put-artifact, attach, claims-of, name and resolve read and change it in the tasks after.
+#[allow(dead_code)]
+mod index;
 // put-artifact, read and index.json write and read these forms in the tasks after.
 #[allow(dead_code)]
 mod oci;
