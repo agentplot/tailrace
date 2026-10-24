@@ -46,4 +46,4 @@ the group that cannot pass without one is reported with `crew needs`.
 
 ## 7. The gate
 
-- [ ] 7.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage, every crate's tests and the site's build.
+- [x] 7.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage, every crate's tests and the site's build.
