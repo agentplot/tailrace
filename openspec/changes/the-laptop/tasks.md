@@ -62,4 +62,4 @@ words (design D2).
 
 ## 9. The gate
 
-- [ ] 9.1 Run `devenv shell -- moon run ':#check-fast' ':#check-tools'` and fix what fails. Verify both layers pass, and `grep -rn` over `crates/tailrace/src` outside `profiles/` finds none of the words core.1 rules out.
+- [x] 9.1 Run `devenv shell -- moon run ':#check-fast' ':#check-tools'` and fix what fails. Verify both layers pass, and `grep -rn` over `crates/tailrace/src` outside `profiles/` finds none of the words core.1 rules out.
