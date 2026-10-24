@@ -8,11 +8,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use tailrace_core::{answer_json, publish, Ask, Kept, Provenance, Published, BOUND};
-use tailrace_fakes::{BuildOp, FakeStore, Fault, LandingOp, SignerOp, StoreOp, Times};
+use tailrace_fakes::{
+    BuildOp, FakeProjection, FakeStore, Fault, LandingOp, SignerOp, StoreOp, Times,
+};
 use tailrace_seams::{
-    Answer, Branch, Claim, ClaimKind, ComponentName, Digest, EcosystemName, Envelope,
-    EnvironmentName, Held, Manifest, Name, Not, Outcome, Put, Seam, SignerId, Source, Store,
-    Version, Why,
+    Answer, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest, EcosystemName,
+    Envelope, EnvironmentName, Held, Layout, Manifest, Name, Not, Outcome, Output, Packed,
+    Projection, Put, Rendered, Seam, Serving, SignerId, Source, Store, Version, Why,
 };
 use world::{build_of, build_ops, by_host, eco, output, version_of, Watched, World, HOST, LANDING};
 
@@ -457,6 +459,51 @@ fn a_store_that_names_bytes_wrongly_is_refused_naming_both() {
     assert_eq!(r.source, world::store());
     assert!(indexes(&world).is_empty());
     assert!(world.fakes.store.contents().names.is_empty());
+}
+
+/// A projection that packs as its fake does and names no metadata,
+/// whatever it was given.
+struct Metaless(FakeProjection);
+
+impl Projection for Metaless {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+        let packed = self.0.pack(output, at, version)?;
+        Ok(Packed {
+            meta: None,
+            ..packed
+        })
+    }
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        self.0.render(contents, at)
+    }
+    fn serve(&self, layout: &Layout) -> Answer<Serving> {
+        self.0.serve(layout)
+    }
+}
+
+#[test]
+fn a_pack_given_a_version_that_names_no_metadata_is_refused_naming_the_output() {
+    let mut world = World::new();
+    let inner = world.fakes.projection(&eco("eco-a"));
+    let history = world.history();
+    let mut seams = world.fakes.seams();
+    seams
+        .projections
+        .insert(eco("eco-a"), Box::new(Metaless(inner)));
+    let answer = publish(&seams, &history, &Kept::at(&history), &world.ask_for("lib")).unwrap();
+    let r = refused(answer.components.into_iter().next().unwrap().1);
+    assert_eq!(r.source, Source::new(Seam::Projection, "eco-a"));
+    assert_eq!(r.why, Why::Said);
+    assert_eq!(
+        r.said.as_deref(),
+        Some("lib-pack was packed at 0.2.0 and the answer names no metadata")
+    );
+    assert!(
+        !store_ops(&world).contains(&StoreOp::PutArtifact),
+        "an artifact was put: {:?}",
+        store_ops(&world)
+    );
+    nothing_offered(&world);
 }
 
 // Requirement: Each artifact carries one provenance claim in the host's identity

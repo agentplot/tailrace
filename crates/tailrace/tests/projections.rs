@@ -2,8 +2,10 @@
 //! projection group over the file and image projections, each output a
 //! file in a temporary directory of its own (design D4, D5, D7).
 //!
-//! Only the group's pack scenarios run. Neither projection renders or
-//! serves yet, so the render and serve scenarios are not run over them:
+//! Only the group's pack scenarios run, and the scenario of a projection
+//! that packs no cache entries, which neither does. Neither projection
+//! renders or serves yet, so the render and serve scenarios are not run
+//! over them:
 //! a departure from core.33, which asks every profile to pass the one
 //! suite, stated in design D7. It ends with the unit that builds their
 //! render (bolt 5's render under a policy, phase 2's layouts).
@@ -23,10 +25,12 @@ use tailrace_seams::{
 };
 use tempfile::TempDir;
 
-/// The scenarios of pack, the only operation these projections build.
-const PACK: [&str; 2] = [
+/// The scenarios of pack, the only operation these projections build,
+/// and of a projection that packs no cache entries.
+const PACK: [&str; 3] = [
     "packed the same again",
     "a projection that cannot be reached",
+    "a projection that packs no cache entries",
 ];
 
 fn pack_scenarios() -> Vec<Scenario<dyn ProjectionRig>> {
@@ -106,6 +110,10 @@ impl ProjectionRig for FileRig {
         false
     }
 
+    fn caches(&self) -> bool {
+        false
+    }
+
     /// The output's file removed, and the operating system's words for
     /// reading it.
     fn unreachable(&self) -> String {
@@ -121,6 +129,7 @@ fn the_pack_scenarios_over_the_file_projection() {
     });
     assert_eq!((report.profile.as_str(), report.ran), ("file", PACK.len()));
     report.assert();
+    assert_eq!(report.not_applicable, [], "{report}");
 }
 
 #[test]
@@ -130,4 +139,5 @@ fn the_pack_scenarios_over_the_image_projection() {
     });
     assert_eq!((report.profile.as_str(), report.ran), ("image", PACK.len()));
     report.assert();
+    assert_eq!(report.not_applicable, [], "{report}");
 }
