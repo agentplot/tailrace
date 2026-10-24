@@ -19,10 +19,12 @@ use tailrace::profiles::store::layout::Layout;
 use tailrace::profiles::store::registry::Registry;
 use tailrace_conformance::run;
 use tailrace_conformance::seams::store::{self, BYTES};
+use tailrace_core::{copy, follow, End, Followed};
+use tailrace_fakes::FakeKeeper;
 use tailrace_seams::{
-    canonical, Answer, Artifact, ArtifactMeta, Claim, ClaimKind, ComponentName, Digest, Ecosystem,
-    EcosystemName, Envelope, Held, IndexMeta, Manifest, Name, Not, Revision, Signature, SignerId,
-    Store, Version, Why, IN_TOTO,
+    canonical, Answer, Artifact, ArtifactMeta, ChannelName, Claim, ClaimKind, ComponentName,
+    Digest, Ecosystem, EcosystemName, Envelope, Held, IndexMeta, Keeper, Manifest, Name, Not,
+    Revision, Signature, SignerId, Store, Version, Why, IN_TOTO,
 };
 use tempfile::TempDir;
 
@@ -185,6 +187,8 @@ on_both!(
     two_names_differing_only_in_escaped_characters_resolve_apart,
     a_name_moved_to_bytes_is_refused_naming_them,
     a_registry_behind_a_credential_helper,
+    a_version_in_a_layout_copied_into_a_registry,
+    a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger,
 );
 
 fn the_same_bytes_put_twice_are_uploaded_once(kind: Kind) {
@@ -639,4 +643,156 @@ fn a_registry_behind_a_credential_helper(kind: Kind) {
     for (_, bytes) in files(config.path()).iter().chain(&files(none.path())) {
         assert!(!String::from_utf8_lossy(bytes).contains(PASSWORD));
     }
+}
+
+/// A version of two artifacts published into `store` as `layout_store.rs`
+/// builds one, a provenance on each artifact and an acceptance on the
+/// index, and named `web-v1.3.0`; its name, its index and its artifacts.
+fn published(store: &dyn Store) -> (Name, Digest, Vec<Digest>) {
+    let mut artifacts = Vec::new();
+    for name in ["site", "server"] {
+        let digest = store
+            .put_artifact(&artifact(store, name, "1.3.0", name.as_bytes()))
+            .unwrap()
+            .digest;
+        store
+            .attach(&digest, &attestation(&digest, "it was built here"))
+            .unwrap();
+        artifacts.push(Artifact {
+            digest,
+            meta: meta(name, "1.3.0"),
+        });
+    }
+    let digests = artifacts.iter().map(|a| a.digest.clone()).collect();
+    let index = store
+        .put_artifact(&Manifest::Index(
+            IndexMeta::new(ComponentName::new("web"), Version::new("1.3.0"), artifacts).unwrap(),
+        ))
+        .unwrap()
+        .digest;
+    store
+        .attach(&index, &attestation(&index, "it was accepted"))
+        .unwrap();
+    let name = Name::new("web-v1.3.0");
+    store.name(&name, &index, None).unwrap();
+    (name, index, digests)
+}
+
+fn a_version_in_a_layout_copied_into_a_registry(kind: Kind) {
+    let dir = TempDir::new().unwrap();
+    let layout = Layout::create(dir.path().join("layout")).unwrap();
+    let (name, index, artifacts) = published(&layout);
+    let server = Server::start(kind);
+    let proxy = Proxy::before(&server);
+    let registry = proxy.store(&server.repository());
+    let ends = || {
+        (
+            End {
+                store: &layout,
+                source: layout.source(),
+            },
+            End {
+                store: &registry,
+                source: registry.source(),
+            },
+        )
+    };
+    let (from, to) = ends();
+    let first = copy(from, to, &name).unwrap();
+    assert_eq!(first.index, index);
+    assert_eq!(registry.resolve(&name), Ok(index.clone()));
+    for digest in std::iter::once(&index).chain(&artifacts) {
+        assert_eq!(registry.read(digest), layout.read(digest), "{digest}");
+        let held: Vec<Vec<u8>> = layout
+            .claims_of(digest)
+            .unwrap()
+            .iter()
+            .map(canonical)
+            .collect();
+        let carried: Vec<Vec<u8>> = registry
+            .claims_of(digest)
+            .unwrap()
+            .iter()
+            .map(canonical)
+            .collect();
+        assert_eq!(held.len(), 1);
+        assert_eq!(
+            carried, held,
+            "the claims on {digest} were not carried byte for byte"
+        );
+    }
+    proxy.passed();
+    let (from, to) = ends();
+    let again = copy(from, to, &name).unwrap();
+    assert!(again.name_held_already);
+    assert!(again.written.iter().all(|w| w.held_already), "{again:?}");
+    let wrote: Vec<_> = proxy
+        .passed()
+        .into_iter()
+        .filter(|p| p.method != "HEAD" && p.method != "GET")
+        .collect();
+    assert_eq!(wrote, [], "the second copy wrote");
+}
+
+fn a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger(kind: Kind) {
+    let server = Server::start(kind);
+    let repository = server.repository();
+    let direct = Registry::new(&repository).unwrap();
+    let [first, second] = ["1.3.0", "1.4.0"].map(|version| {
+        let digest = put(&direct, version);
+        direct
+            .put_artifact(&Manifest::Index(
+                IndexMeta::new(
+                    ComponentName::new("web"),
+                    Version::new(version),
+                    vec![Artifact {
+                        digest,
+                        meta: meta("site", version),
+                    }],
+                )
+                .unwrap(),
+            ))
+            .unwrap()
+            .digest
+    });
+    let stable = ChannelName::new("stable");
+    let keeper = FakeKeeper::new();
+    let promotion = Envelope::signed(
+        IN_TOTO,
+        Claim {
+            subject: first.clone(),
+            kind: ClaimKind::Promotion,
+            revision: Revision::new("4f2a9c1"),
+            build: None,
+            body: json!({ "channel": "stable" }),
+        }
+        .payload(),
+        Signature {
+            signer: SignerId::new("gate"),
+            keyid: String::new(),
+            sig: vec![9],
+        },
+    );
+    keeper.append(&stable, &promotion, None).unwrap();
+
+    let mut store = Registry::new(&repository).unwrap();
+    let writer = Registry::new(&repository).unwrap();
+    let (moved, raced) = (second.clone(), std::cell::Cell::new(false));
+    store.between_put_and_read_back(move |tag| {
+        if !raced.replace(true) {
+            let at = writer.resolve(&Name::new(tag)).ok();
+            writer
+                .name(&Name::new(tag), &moved, at.as_ref())
+                .expect("the other writer moves the tag");
+        }
+    });
+    let name = Name::new("stable");
+    assert_eq!(
+        follow(&store, &keeper, &stable, &name, None),
+        Ok(Followed::LostRace {
+            found: Some(second),
+            to: first.clone()
+        })
+    );
+    assert_eq!(direct.resolve(&name), Ok(first));
 }
