@@ -1,9 +1,12 @@
 //! Every group of the suite over the fakes: one test per group, each run
 //! with the runner and reported as any profile is (93; design D9).
 
-use tailrace_conformance::fakes::{FakeBuildRig, FakeLandingRig, FakeSignerRig, FakeStoreRig};
+use tailrace_conformance::fakes::{
+    FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig, FakeSignerRig,
+    FakeStoreRig, FakeTargetRig,
+};
 use tailrace_conformance::seams::store::{self, StoreRig, BYTES};
-use tailrace_conformance::seams::{build, landing, signer};
+use tailrace_conformance::seams::{build, keeper, landing, policy, projection, signer, target};
 use tailrace_conformance::{run, Scenario};
 use tailrace_seams::{Digest, Not};
 
@@ -35,6 +38,38 @@ fn the_fake_landing_keeps_the_landings_contract() {
 fn the_fake_signer_keeps_the_signers_contract() {
     run(signer::GROUP, &signer::scenarios(), &|| {
         Box::new(FakeSignerRig::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_fake_policy_keeps_the_policys_contract() {
+    run(policy::GROUP, &policy::scenarios(), &|| {
+        Box::new(FakePolicyRig::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_fake_projection_keeps_a_projections_contract() {
+    run(projection::GROUP, &projection::scenarios(), &|| {
+        Box::new(FakeProjectionRig::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_fake_target_keeps_a_targets_contract() {
+    run(target::GROUP, &target::scenarios(), &|| {
+        Box::new(FakeTargetRig::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_fake_keeper_keeps_the_keepers_contract() {
+    run(keeper::GROUP, &keeper::scenarios(), &|| {
+        Box::new(FakeKeeperRig::new())
     })
     .assert();
 }

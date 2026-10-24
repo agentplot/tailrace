@@ -6,16 +6,26 @@
 
 use std::cell::Cell;
 
-use tailrace_fakes::{BuildOp, Fakes, Fault, LandingOp, SignerOp, StoreOp, Times, PROFILE};
+use serde_json::json;
+use tailrace_fakes::{
+    BuildOp, FakeKeeper, FakePolicy, FakeProjection, FakeSigner, FakeTarget, Fakes, Fault,
+    KeeperOp, LandingOp, PolicyOp, ProjectionOp, SignerOp, StoreOp, Times, PROFILE,
+};
 use tailrace_seams::{
-    Branch, Build, BuildId, ClaimKind, Landing, NamedSigner, Outcome, OutputName, Report, Revision,
-    Signer, SignerId, Store, Verdict,
+    Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
+    Digest, Ecosystem, EcosystemName, Envelope, Environment, EnvironmentName, Keeper, Landing,
+    NamedSigner, Outcome, Output, OutputName, Policy, Projection, Report, Required, Revision,
+    Signer, SignerId, Store, Target, Verdict, Verified, Version,
 };
 
 use crate::seams::build::{BuildRig, Made};
+use crate::seams::keeper::KeeperRig;
 use crate::seams::landing::LandingRig;
+use crate::seams::policy::PolicyRig;
+use crate::seams::projection::ProjectionRig;
 use crate::seams::signer::SignerRig;
 use crate::seams::store::StoreRig;
+use crate::seams::target::TargetRig;
 use crate::Rig;
 
 /// What a fake made unreachable answers, as its source's own words.
@@ -287,6 +297,260 @@ impl SignerRig for FakeSignerRig {
         unreachable(
             |op, f, t| signer.fault(op, f, t),
             &[SignerOp::Sign, SignerOp::Verify],
+        )
+    }
+}
+
+/// The fake policy.
+pub struct FakePolicyRig {
+    pub policy: FakePolicy,
+    revisions: Cell<u32>,
+}
+
+impl FakePolicyRig {
+    pub fn new() -> Self {
+        FakePolicyRig {
+            policy: Fakes::new().policy,
+            revisions: Cell::new(0),
+        }
+    }
+}
+
+impl Default for FakePolicyRig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Rig for FakePolicyRig {
+    fn profile(&self) -> String {
+        PROFILE.into()
+    }
+}
+
+impl PolicyRig for FakePolicyRig {
+    fn policy(&self) -> &dyn Policy {
+        &self.policy
+    }
+
+    fn at(&self, policies: &[(Audience, Required)]) -> Revision {
+        let at = revision(&self.revisions);
+        for (audience, required) in policies {
+            self.policy
+                .require_at(&at, audience.clone(), required.clone());
+        }
+        at
+    }
+
+    fn unreachable(&self) -> String {
+        let policy = &self.policy;
+        unreachable(|op, f, t| policy.fault(op, f, t), &[PolicyOp::PolicyFor])
+    }
+}
+
+/// The fake projection of the ecosystem `file`, whose clients the group
+/// treats as reading no files, so it serves.
+pub struct FakeProjectionRig {
+    pub projection: FakeProjection,
+}
+
+impl FakeProjectionRig {
+    /// The ecosystem the rig's projection packs in.
+    pub const ECOSYSTEM: &'static str = "file";
+
+    pub fn new() -> Self {
+        FakeProjectionRig {
+            projection: FakeProjection::new(Ecosystem::new(Self::ECOSYSTEM)),
+        }
+    }
+}
+
+impl Default for FakeProjectionRig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Rig for FakeProjectionRig {
+    fn profile(&self) -> String {
+        PROFILE.into()
+    }
+}
+
+impl ProjectionRig for FakeProjectionRig {
+    fn projection(&self) -> &dyn Projection {
+        &self.projection
+    }
+
+    fn output(&self) -> Output {
+        Output {
+            name: OutputName::new("site"),
+            files: vec!["dist/site/index.html".into()],
+        }
+    }
+
+    fn artifacts(&self, n: usize) -> Vec<Artifact> {
+        (0..n)
+            .map(|i| {
+                let meta = ArtifactMeta::new(
+                    Ecosystem::new(Self::ECOSYSTEM),
+                    EcosystemName::new("site"),
+                    Version::new(format!("1.{i}.0")),
+                )
+                .expect("the metadata names all three");
+                Artifact {
+                    digest: Digest::of(format!("site 1.{i}.0").as_bytes()),
+                    meta,
+                }
+            })
+            .collect()
+    }
+
+    fn serves(&self) -> bool {
+        true
+    }
+
+    fn unreachable(&self) -> String {
+        let projection = &self.projection;
+        unreachable(
+            |op, f, t| projection.fault(op, f, t),
+            &[
+                ProjectionOp::Pack,
+                ProjectionOp::Render,
+                ProjectionOp::Serve,
+            ],
+        )
+    }
+}
+
+/// The fake target.
+pub struct FakeTargetRig {
+    pub target: FakeTarget,
+    environments: Cell<u32>,
+}
+
+impl FakeTargetRig {
+    /// What the fake target says of an environment whose state it cannot
+    /// read.
+    pub const REASON: &'static str = "the marker of what was applied is gone";
+
+    pub fn new() -> Self {
+        FakeTargetRig {
+            target: FakeTarget::new(),
+            environments: Cell::new(0),
+        }
+    }
+
+    fn next(&self) -> Environment {
+        self.environments.set(self.environments.get() + 1);
+        let n = self.environments.get();
+        Environment {
+            name: EnvironmentName::new(format!("environment-{n}")),
+            channel: ChannelName::new(format!("channel-{n}")),
+            waits: false,
+        }
+    }
+}
+
+impl Default for FakeTargetRig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Rig for FakeTargetRig {
+    fn profile(&self) -> String {
+        PROFILE.into()
+    }
+}
+
+impl TargetRig for FakeTargetRig {
+    fn target(&self) -> &dyn Target {
+        &self.target
+    }
+
+    fn verified(&self, digest: &Digest) -> Verified {
+        // The suite stands in the core's place here, which makes a
+        // `Verified` after its verify (42); no profile makes one.
+        Verified::new(digest.clone(), Version::new("1.0.0"))
+    }
+
+    fn environment(&self, head: Option<&Digest>) -> Environment {
+        let environment = self.next();
+        if let Some(head) = head {
+            self.target.head(&environment.name, head);
+        }
+        environment
+    }
+
+    fn unreadable_environment(&self) -> (Environment, String) {
+        let environment = self.next();
+        self.target.unreadable(&environment.name, Self::REASON);
+        (environment, Self::REASON.into())
+    }
+}
+
+/// The fake keeper, its promotions signed by a fake signer as the gate.
+pub struct FakeKeeperRig {
+    pub keeper: FakeKeeper,
+    gate: FakeSigner,
+}
+
+impl FakeKeeperRig {
+    /// The identity the rig's promotions are signed in.
+    pub const GATE: &'static str = "gate";
+
+    pub fn new() -> Self {
+        let gate = FakeSigner::new();
+        gate.hold(&SignerId::new(Self::GATE));
+        FakeKeeperRig {
+            keeper: FakeKeeper::new(),
+            gate,
+        }
+    }
+}
+
+impl Default for FakeKeeperRig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Rig for FakeKeeperRig {
+    fn profile(&self) -> String {
+        PROFILE.into()
+    }
+}
+
+impl KeeperRig for FakeKeeperRig {
+    fn keeper(&self) -> &dyn Keeper {
+        &self.keeper
+    }
+
+    fn promotion(&self, channel: &ChannelName, n: u32) -> Envelope {
+        let claim = Claim {
+            subject: Digest::of(format!("the index {channel} moves to, {n}").as_bytes()),
+            kind: ClaimKind::Promotion,
+            revision: Revision::new(format!("{n:040x}")),
+            build: None,
+            body: json!({ "channel": channel, "n": n }),
+        };
+        self.gate
+            .sign(&claim, &SignerId::new(Self::GATE))
+            .expect("the gate's identity is at hand")
+    }
+
+    fn fork(&self, channel: &ChannelName) -> [Envelope; 2] {
+        let (a, b) = (self.promotion(channel, 1), self.promotion(channel, 2));
+        self.keeper.fork(channel, &a, &b);
+        [a, b]
+    }
+
+    fn unreachable(&self) -> String {
+        let keeper = &self.keeper;
+        unreachable(
+            |op, f, t| keeper.fault(op, f, t),
+            &[KeeperOp::Append, KeeperOp::Chain],
         )
     }
 }
