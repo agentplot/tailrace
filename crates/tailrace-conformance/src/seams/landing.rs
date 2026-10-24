@@ -73,6 +73,12 @@ pub fn scenarios() -> Vec<Scenario<dyn LandingRig>> {
             run: a_landing_that_cannot_be_reached,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "two signers, each by its own name",
+            plays: None,
+            cites: &[104],
+            run: two_signers_each_by_its_own_name,
+        },
     ]
 }
 
@@ -189,4 +195,48 @@ fn a_landing_that_cannot_be_reached(rig: &dyn LandingRig) {
         &words,
         "landed",
     );
+}
+
+/// 104: a landing names each verdict's signer by the name it gives that
+/// signer, the one name the policy names it by, and never by a second.
+fn two_signers_each_by_its_own_name(rig: &dyn LandingRig) {
+    if !rig.records_verdicts() {
+        not_applicable("the landing records no verdicts");
+    }
+    let by = |signer: &str| Recorded {
+        check: Check::new("test"),
+        build: BuildId::new("site@4f2a9c1"),
+        outcome: Outcome::Pass,
+        signer: SignerId::new(signer),
+    };
+    let recorded = [by("box"), by("forge")];
+    let at = rig.landed(&recorded);
+    let read = ok(rig.landing().verdicts_of(&at), "verdicts-of");
+    assert_eq!(
+        read.len(),
+        recorded.len(),
+        "the landing recorded {recorded:?} and answered {read:?}"
+    );
+    for want in &recorded {
+        let named: Vec<&Verdict> = read.iter().filter(|v| v.signer == want.signer).collect();
+        assert_eq!(
+            named.len(),
+            1,
+            "{} recorded one verdict, and {} name it: {read:?}",
+            want.signer,
+            named.len()
+        );
+        let verdict = named[0];
+        assert!(
+            carries(verdict, want),
+            "the verdict named {} is not the one it recorded: {verdict:?}",
+            want.signer
+        );
+        let signatures = &verdict.envelope.signatures;
+        assert!(
+            !signatures.is_empty() && signatures.iter().all(|s| s.signer == want.signer),
+            "the envelope of the verdict {} recorded holds a signature by another: {verdict:?}",
+            want.signer
+        );
+    }
 }
