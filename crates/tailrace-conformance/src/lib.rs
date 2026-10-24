@@ -3,6 +3,8 @@
 //! cites the clauses it exercises (rule core.33). It runs over the fakes
 //! here and over each real profile in that profile's own tests.
 
+pub mod fixture;
 pub mod scenario;
+pub mod world;
 
 pub use scenario::*;

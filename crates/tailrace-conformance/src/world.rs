@@ -1,0 +1,519 @@
+//! The world the core's groups run over: every seam a fake, bound as one
+//! binding, and a real git history in a temporary directory, the same on
+//! every run (design D4). The core's groups take it as it is, not a rig,
+//! since many of their scenarios script what no real profile can be told
+//! to do.
+
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use serde_json::json;
+use tailrace_core::{publish, verify, Ask, History, Kept, Publish, Verified, VerifyAsk};
+use tailrace_fakes::{
+    BuildOp, Call, FakeProjection, FakeSigner, Fakes, KeeperOp, StoreOp, TargetOp,
+};
+use tailrace_seams::{
+    Answer, Artifact, Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, Digest,
+    Ecosystem, Envelope, Environment, EnvironmentName, Layout, Manifest, Name, Outcome, Output,
+    OutputName, Packed, Projection, Rendered, Report, Revision, Seams, Serving, Signer, SignerId,
+    Verdict, Version,
+};
+
+use crate::fixture::{Fixture, Repo, MAIN};
+use crate::Rig;
+
+/// The identity of the party running tailrace, which signs (11, 79).
+pub const HOST: &str = "host";
+
+/// The identity the landing signs its verdicts as (78).
+pub const LANDING: &str = "landing";
+
+/// The two ecosystems the world binds a projection for.
+pub const FILE: &str = "file";
+pub const IMAGE: &str = "image";
+
+/// The one environment the world binds a target for, and the channel it
+/// follows.
+pub const PRODUCTION: &str = "production";
+pub const STABLE: &str = "stable";
+
+/// One component, the repository, with two outputs: the site's files and
+/// the server's image.
+pub const POLICY: &str = r#"outputs = ["site", "server"]
+
+[projections]
+site = "file"
+server = "image"
+"#;
+
+/// Two components, each with its own paths, tag prefix and one output.
+pub const TWO_COMPONENTS: &str = r#"[[component]]
+name = "lib"
+outputs = ["library"]
+paths = ["lib/**"]
+prefix = "lib-v"
+projections = { library = "file" }
+
+[[component]]
+name = "app"
+outputs = ["server"]
+paths = ["app/**"]
+prefix = "app-v"
+projections = { server = "image" }
+"#;
+
+/// A write the store was asked, in the order asked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Write {
+    /// put-bytes, by the digest of the bytes given.
+    Bytes(Digest),
+    /// put-artifact, an artifact's manifest or an index's.
+    Manifest(Manifest),
+    /// attach, of `envelope` beside `subject`.
+    Attach { subject: Digest, envelope: Envelope },
+    /// name, moving `name` to `to` from `expected`.
+    Name {
+        name: Name,
+        to: Digest,
+        expected: Option<Digest>,
+    },
+}
+
+impl Write {
+    /// Whether this is the put of an index.
+    pub fn is_index(&self) -> bool {
+        matches!(self, Write::Manifest(Manifest::Index(_)))
+    }
+}
+
+/// A pack the core asked of a projection, and the tags the shared history
+/// held when it was asked.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Packing {
+    pub ecosystem: Ecosystem,
+    pub version: Version,
+    pub shared_tags: Vec<String>,
+}
+
+/// Every seam a fake, a shared history and a clone of it, the clone's
+/// record, and the revisions the world was made at.
+pub struct FakeWorld {
+    pub fixture: Fixture,
+    pub fakes: Fakes,
+    pub main: Branch,
+    pub host: SignerId,
+    pub environment: Environment,
+    /// The revision every component was first released at, tagged.
+    pub start: Revision,
+    /// One commit after `start`, a feature, neither landed nor built.
+    pub head: Revision,
+    packs: Rc<RefCell<Vec<Packing>>>,
+}
+
+impl Rig for FakeWorld {
+    fn profile(&self) -> String {
+        tailrace_fakes::PROFILE.into()
+    }
+}
+
+impl Default for FakeWorld {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The build identity the world's build reports `output` at `revision`
+/// from.
+pub fn build_of(output: &str, revision: &Revision) -> BuildId {
+    BuildId::new(format!("{output}@{}", &revision.as_str()[..12]))
+}
+
+fn changes<T>(calls: Vec<Call<T>>) -> Vec<T> {
+    calls.into_iter().map(|c| c.op).collect()
+}
+
+impl FakeWorld {
+    /// The repository declaring no component, so one component, the
+    /// repository, with outputs `site` and `server`: released as `v0.1.0`
+    /// at `start`, one feature since at `head`.
+    pub fn new() -> FakeWorld {
+        let fixture = Fixture::new();
+        let repo = &fixture.repo;
+        repo.policy_file(POLICY);
+        let start = repo.commit(
+            &[
+                ("site/index.html", "<p>the first site</p>"),
+                ("server/main.txt", "the first server"),
+            ],
+            "feat: the first site and server",
+        );
+        repo.tag("v0.1.0", &start);
+        let head = repo.commit(
+            &[("server/main.txt", "the server answers")],
+            "feat: the server answers",
+        );
+        repo.push();
+        FakeWorld::over(fixture, start, head)
+    }
+
+    /// The repository declaring two components, `lib` over `lib/**` with
+    /// prefix `lib-v` and `app` over `app/**` with prefix `app-v`, each
+    /// with one output and its projection, released at `start`; `head`
+    /// touches `lib` alone.
+    pub fn two_components() -> FakeWorld {
+        let fixture = Fixture::new();
+        let repo = &fixture.repo;
+        repo.policy_file(TWO_COMPONENTS);
+        let start = repo.commit(
+            &[
+                ("lib/lib.txt", "the first lib"),
+                ("app/app.txt", "the first app"),
+            ],
+            "feat: the first lib and app",
+        );
+        repo.tag("lib-v0.1.0", &start);
+        repo.tag("app-v0.1.0", &start);
+        let head = repo.commit(&[("lib/lib.txt", "the lib grows")], "feat: the lib grows");
+        repo.push();
+        FakeWorld::over(fixture, start, head)
+    }
+
+    fn over(fixture: Fixture, start: Revision, head: Revision) -> FakeWorld {
+        let mut fakes = Fakes::new();
+        let host = SignerId::new(HOST);
+        fakes.signer.hold(&host);
+        fakes.projection(&Ecosystem::new(FILE));
+        fakes.projection(&Ecosystem::new(IMAGE));
+        let environment = Environment {
+            name: EnvironmentName::new(PRODUCTION),
+            channel: ChannelName::new(STABLE),
+            waits: false,
+        };
+        fakes.target(&environment.name);
+        FakeWorld {
+            fixture,
+            fakes,
+            main: Branch::new(MAIN),
+            host,
+            environment,
+            start,
+            head,
+            packs: Rc::new(RefCell::new(Vec::new())),
+        }
+    }
+
+    /// The clone the host publishes from.
+    pub fn repo(&self) -> &Repo {
+        &self.fixture.repo
+    }
+
+    /// The history every publisher shares.
+    pub fn shared(&self) -> &Repo {
+        &self.fixture.shared
+    }
+
+    /// `revision` landed on `main`, the landing recording `verdicts` for
+    /// it.
+    pub fn land(&self, revision: &Revision, verdicts: &[Verdict]) {
+        self.fakes.landing.land(&self.main, revision);
+        for verdict in verdicts {
+            self.fakes.landing.verdict(revision, verdict.clone());
+        }
+    }
+
+    /// Each of `outputs` left at `revision` by its own build, ending in
+    /// its outcome.
+    pub fn outputs(&self, revision: &Revision, outputs: &[(&str, Outcome)]) {
+        for (output, outcome) in outputs {
+            self.fakes.build.made(
+                revision,
+                &OutputName::new(*output),
+                Report {
+                    build: build_of(output, revision),
+                    outcome: *outcome,
+                    files: vec![format!("dist/{output}")],
+                },
+            );
+        }
+    }
+
+    /// A verdict of `check` on `build` at `revision`, signed by `signer`
+    /// as another party's signer signs it, not yet recorded.
+    pub fn verdict(
+        &self,
+        revision: &Revision,
+        check: &str,
+        build: &BuildId,
+        outcome: Outcome,
+        signer: &str,
+    ) -> Verdict {
+        let id = SignerId::new(signer);
+        let theirs = FakeSigner::new();
+        theirs.hold(&id);
+        let claim = Claim {
+            subject: Digest::of(build.as_str().as_bytes()),
+            kind: ClaimKind::Verdict,
+            revision: revision.clone(),
+            build: Some(build.clone()),
+            body: json!({ "check": check, "outcome": outcome, "their own": [0, 255] }),
+        };
+        let envelope = theirs
+            .sign(&claim, &id)
+            .expect("their signer holds their identity");
+        Verdict {
+            check: Check::new(check),
+            build: build.clone(),
+            outcome,
+            signer: id,
+            envelope,
+        }
+    }
+
+    /// What publish is asked for `revision` on `main`, every component the
+    /// landing touched, signed as the host.
+    pub fn ask(&self, revision: &Revision) -> Ask {
+        Ask {
+            branch: self.main.clone(),
+            revision: revision.clone(),
+            component: None,
+            signer: self.host.clone(),
+        }
+    }
+
+    /// What verify is asked of `version` on `main` under `audience`.
+    pub fn verify_ask(&self, version: &str, audience: Audience) -> VerifyAsk {
+        VerifyAsk {
+            branch: self.main.clone(),
+            component: None,
+            version: Version::new(version),
+            audience,
+        }
+    }
+
+    /// The fakes as the one binding, each projection watched so the world
+    /// sees what the shared history held at each pack.
+    pub fn seams(&self) -> Seams {
+        let mut seams = self.fakes.seams();
+        for (ecosystem, projection) in &self.fakes.projections {
+            seams.projections.insert(
+                ecosystem.clone(),
+                Box::new(Watched {
+                    inner: projection.clone(),
+                    shared: self.shared().clone(),
+                    packs: self.packs.clone(),
+                }),
+            );
+        }
+        seams
+    }
+
+    pub fn history(&self) -> History {
+        History::open(&self.repo().path).expect("the clone is a repository")
+    }
+
+    /// The host's record of what it published from the clone.
+    pub fn kept(&self) -> Kept {
+        Kept::at(&self.history())
+    }
+
+    pub fn publish(&self, ask: &Ask) -> Answer<Publish> {
+        let history = self.history();
+        publish(&self.seams(), &history, &Kept::at(&history), ask)
+    }
+
+    pub fn verify(&self, ask: &VerifyAsk) -> Answer<Verified> {
+        verify(&self.seams(), &self.history(), ask)
+    }
+
+    /// Every write the store was asked, in order: puts, attaches and name
+    /// moves.
+    pub fn writes(&self) -> Vec<Write> {
+        self.fakes
+            .store
+            .calls()
+            .into_iter()
+            .filter_map(|call| {
+                let given = call.given;
+                let read = |key: &str| given[key].clone();
+                Some(match call.op {
+                    StoreOp::PutBytes => {
+                        let bytes: Vec<u8> = serde_json::from_value(read("bytes")).ok()?;
+                        Write::Bytes(Digest::of(&bytes))
+                    }
+                    StoreOp::PutArtifact => {
+                        Write::Manifest(serde_json::from_value(read("manifest")).ok()?)
+                    }
+                    StoreOp::Attach => Write::Attach {
+                        subject: serde_json::from_value(read("subject")).ok()?,
+                        envelope: serde_json::from_value(read("attestation")).ok()?,
+                    },
+                    StoreOp::Name => Write::Name {
+                        name: serde_json::from_value(read("name")).ok()?,
+                        to: serde_json::from_value(read("to")).ok()?,
+                        expected: serde_json::from_value(read("expected")).ok()?,
+                    },
+                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read => return None,
+                })
+            })
+            .collect()
+    }
+
+    /// Every operation asked of the store, in order.
+    pub fn store_calls(&self) -> Vec<StoreOp> {
+        changes(self.fakes.store.calls())
+    }
+
+    pub fn keeper_calls(&self) -> Vec<KeeperOp> {
+        changes(self.fakes.keeper.calls())
+    }
+
+    /// Every operation asked of every target bound.
+    pub fn target_calls(&self) -> Vec<TargetOp> {
+        self.fakes
+            .targets
+            .values()
+            .flat_map(|t| changes(t.calls()))
+            .collect()
+    }
+
+    pub fn build_calls(&self) -> Vec<Call<BuildOp>> {
+        self.fakes.build.calls()
+    }
+
+    /// Every pack asked, in order, with what the shared history held then.
+    pub fn packs(&self) -> Vec<Packing> {
+        self.packs.borrow().clone()
+    }
+
+    /// How many operations every fake has been asked, all told.
+    pub fn asked(&self) -> usize {
+        let fakes = &self.fakes;
+        fakes.store.calls().len()
+            + fakes.build.calls().len()
+            + fakes.landing.calls().len()
+            + fakes.signer.calls().len()
+            + fakes.policy.calls().len()
+            + fakes.keeper.calls().len()
+            + fakes
+                .projections
+                .values()
+                .map(|p| p.calls().len())
+                .sum::<usize>()
+            + fakes
+                .targets
+                .values()
+                .map(|t| t.calls().len())
+                .sum::<usize>()
+    }
+}
+
+/// A projection that hands every operation to its fake and, at each
+/// pack, keeps the tags the shared history holds.
+struct Watched {
+    inner: FakeProjection,
+    shared: Repo,
+    packs: Rc<RefCell<Vec<Packing>>>,
+}
+
+impl Projection for Watched {
+    fn pack(&self, output: &Output, version: &Version) -> Answer<Packed> {
+        let packed = self.inner.pack(output, version);
+        if let Ok(p) = &packed {
+            self.packs.borrow_mut().push(Packing {
+                ecosystem: p.meta.ecosystem().clone(),
+                version: version.clone(),
+                shared_tags: self.shared.tags(),
+            });
+        }
+        packed
+    }
+
+    fn render(&self, artifacts: &[Artifact], at: &str) -> Answer<Rendered> {
+        self.inner.render(artifacts, at)
+    }
+
+    fn serve(&self, layout: &Layout) -> Answer<Serving> {
+        self.inner.serve(layout)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tailrace_core::Landed;
+    use tailrace_seams::{Seam, Source, Store};
+
+    use super::*;
+
+    #[test]
+    fn two_worlds_built_alike_have_equal_revisions() {
+        let (a, b) = (FakeWorld::new(), FakeWorld::new());
+        assert_eq!((&a.start, &a.head), (&b.start, &b.head));
+        assert_ne!(a.start, a.head);
+        let (c, d) = (FakeWorld::two_components(), FakeWorld::two_components());
+        assert_eq!((&c.start, &c.head), (&d.start, &d.head));
+    }
+
+    #[test]
+    fn a_tag_made_in_one_clone_is_read_by_the_other_through_the_shared_history() {
+        let world = FakeWorld::new();
+        let second = world.fixture.clone_again();
+        world.repo().tag("v9.0.0", &world.head);
+        world.repo().push();
+        assert_eq!(second.tag_at("v9.0.0"), None, "the second clone fetched it");
+
+        world.land(&world.head, &[]);
+        let landed = Landed::check(&world.fakes.landing, &world.main, &world.head).unwrap();
+        let history = History::open(&second.path).unwrap();
+        let tags = history.tags(&landed, "v").unwrap();
+        let names: Vec<&str> = tags.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["v0.1.0", "v9.0.0"]);
+        assert_eq!(tags[1].revision, world.head);
+    }
+
+    #[test]
+    fn writes_are_listed_in_the_order_they_were_asked() {
+        let world = FakeWorld::new();
+        let store = &world.fakes.store;
+        let digest = store.put_bytes(b"the bytes").unwrap().digest;
+        let envelope = Envelope {
+            payload_type: tailrace_seams::IN_TOTO.into(),
+            payload: b"{}".to_vec(),
+            signature: tailrace_seams::Signature {
+                signer: world.host.clone(),
+                sig: vec![1],
+            },
+        };
+        store.attach(&digest, &envelope).unwrap();
+        store.resolve(&Name::new("v1")).unwrap_err();
+        store.name(&Name::new("v1"), &digest, None).unwrap();
+        assert_eq!(
+            world.writes(),
+            [
+                Write::Bytes(digest.clone()),
+                Write::Attach {
+                    subject: digest.clone(),
+                    envelope,
+                },
+                Write::Name {
+                    name: Name::new("v1"),
+                    to: digest,
+                    expected: None,
+                },
+            ]
+        );
+        assert_eq!(
+            world.store_calls(),
+            [
+                StoreOp::PutBytes,
+                StoreOp::Attach,
+                StoreOp::Resolve,
+                StoreOp::Name
+            ]
+        );
+        assert_eq!(world.profile(), "fake");
+        assert_eq!(
+            Source::new(Seam::Store, world.profile()),
+            Source::new(Seam::Store, tailrace_fakes::PROFILE)
+        );
+    }
+}
