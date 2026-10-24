@@ -75,6 +75,12 @@ pub fn scenarios() -> Vec<Scenario<dyn SignerRig>> {
             run: a_signer_that_cannot_be_reached,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "the credential taken away after a signature",
+            plays: None,
+            cites: &[64],
+            run: the_credential_taken_away_after_a_signature,
+        },
     ]
 }
 
@@ -224,5 +230,17 @@ fn a_signer_that_cannot_be_reached(rig: &dyn SignerRig) {
         Seam::Signer,
         &words,
         "sign",
+    );
+}
+
+fn the_credential_taken_away_after_a_signature(rig: &dyn SignerRig) {
+    let identity = rig.identity();
+    signed(rig);
+    rig.no_identity();
+    absent(
+        rig.signer().sign(&claim("published"), &identity),
+        Seam::Signer,
+        identity.as_str(),
+        "sign once the identity's credential was taken away after a signature",
     );
 }

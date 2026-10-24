@@ -7,4 +7,5 @@
 pub mod build;
 pub mod landing;
 mod run;
+pub mod signer;
 pub mod store;
