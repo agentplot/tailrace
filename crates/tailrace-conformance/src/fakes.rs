@@ -15,13 +15,13 @@ use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
     Digest, Ecosystem, EcosystemName, Envelope, Environment, EnvironmentName, Keeper, Landing,
     NamedSigner, Outcome, Output, OutputName, Policy, Projection, Report, Required, Revision,
-    Seams, Signer, SignerId, Store, Target, Verdict, Verified, Version,
+    Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
 use crate::seams::build::{BuildRig, Made};
 use crate::seams::keeper::KeeperRig;
-use crate::seams::landing::LandingRig;
+use crate::seams::landing::{LandingRig, Recorded};
 use crate::seams::policy::PolicyRig;
 use crate::seams::projection::ProjectionRig;
 use crate::seams::signer::SignerRig;
@@ -161,17 +161,31 @@ impl BuildRig for FakeBuildRig {
     }
 }
 
-/// The fake landing, landing on `main`.
+/// The fake landing, landing on `main`, recording each verdict as a
+/// landing does: it makes the signed claim, and the suite hands it only
+/// what it records (design D3a).
 pub struct FakeLandingRig {
     pub fakes: Fakes,
+    records: bool,
     revisions: Cell<u32>,
 }
 
 impl FakeLandingRig {
+    /// The fake landing, recording verdicts.
     pub fn new() -> Self {
         FakeLandingRig {
             fakes: Fakes::new(),
+            records: true,
             revisions: Cell::new(0),
+        }
+    }
+
+    /// The same fake, saying it records no verdicts, as a plain branch
+    /// records none (C.6).
+    pub fn recording_none() -> Self {
+        FakeLandingRig {
+            records: false,
+            ..Self::new()
         }
     }
 }
@@ -188,6 +202,35 @@ impl Rig for FakeLandingRig {
     }
 }
 
+/// `recorded` as the fake landing records it for `revision`: a verdict
+/// claim about the build, its payload, and a signature by the verdict's
+/// signer over the payload's digest, which tailrace only carries (12,
+/// 78).
+fn signed(revision: &Revision, recorded: &Recorded) -> Verdict {
+    let claim = Claim {
+        subject: Digest::of(recorded.build.as_str().as_bytes()),
+        kind: ClaimKind::Verdict,
+        revision: revision.clone(),
+        build: Some(recorded.build.clone()),
+        body: json!({ "check": recorded.check, "outcome": recorded.outcome }),
+    };
+    let payload = claim.payload();
+    Verdict {
+        check: recorded.check.clone(),
+        build: recorded.build.clone(),
+        outcome: recorded.outcome,
+        signer: recorded.signer.clone(),
+        envelope: Envelope {
+            payload_type: IN_TOTO.into(),
+            signature: Signature {
+                signer: recorded.signer.clone(),
+                sig: Digest::of(&payload).as_str().as_bytes().to_vec(),
+            },
+            payload,
+        },
+    }
+}
+
 impl LandingRig for FakeLandingRig {
     fn landing(&self) -> &dyn Landing {
         &self.fakes.landing
@@ -197,11 +240,20 @@ impl LandingRig for FakeLandingRig {
         Branch::new(MAIN)
     }
 
-    fn landed(&self, verdicts: &[Verdict]) -> Revision {
+    fn records_verdicts(&self) -> bool {
+        self.records
+    }
+
+    fn landed(&self, verdicts: &[Recorded]) -> Revision {
+        assert!(
+            self.records || verdicts.is_empty(),
+            "a landing that records no verdicts was handed {} to record",
+            verdicts.len()
+        );
         let at = revision(&self.revisions);
         self.fakes.landing.land(&self.branch(), &at);
-        for verdict in verdicts {
-            self.fakes.landing.verdict(&at, verdict.clone());
+        for recorded in verdicts {
+            self.fakes.landing.verdict(&at, signed(&at, recorded));
         }
         at
     }

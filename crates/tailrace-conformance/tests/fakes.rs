@@ -39,6 +39,36 @@ fn the_fake_landing_keeps_the_landings_contract() {
 }
 
 #[test]
+fn a_fake_landing_recording_no_verdicts_keeps_the_landings_contract() {
+    let report = run(landing::GROUP, &landing::scenarios(), &|| {
+        Box::new(FakeLandingRig::recording_none())
+    });
+    report.assert();
+    let not: Vec<(&str, &[u16], &str)> = report
+        .not_applicable
+        .iter()
+        .map(|n| (n.scenario, n.cites, n.why.as_str()))
+        .collect();
+    assert_eq!(
+        not,
+        [(
+            "verdicts as the landing recorded them",
+            [78].as_slice(),
+            "the landing records no verdicts"
+        )],
+        "{report}"
+    );
+    let text = report.to_string();
+    for words in [
+        "the landing group over the profile `fake`: 3 passed, 1 not applicable",
+        "\n- `verdicts as the landing recorded them` (clause 78): not applicable: \
+         the landing records no verdicts",
+    ] {
+        assert!(text.contains(words), "{text}\ndoes not say: {words}");
+    }
+}
+
+#[test]
 fn the_fake_signer_keeps_the_signers_contract() {
     run(signer::GROUP, &signer::scenarios(), &|| {
         Box::new(FakeSignerRig::new())
