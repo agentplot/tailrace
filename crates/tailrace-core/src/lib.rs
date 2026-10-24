@@ -19,6 +19,7 @@
 //! | [`repair`] | a channel's name moved in the store to the version the ledger's head promotion is about, and a race lost on it reported and repaired from the ledger | 39, 101, 106, 109; core.6 |
 //! | [`verify`](mod@verify) | which signer the policy names made each attestation on a version, and whether each counts | 3, 9, 65, 80, 81, 116, 117; core.4, core.7 |
 //! | [`cache`](mod@cache) | a cache entry under its build identity in the store, written by packing with no version and named from nothing, never an artifact; a checkout's cache filled from a landed revision's passing verdicts, an entry gone answered and refusing nothing | 52 to 54, 100, C.3; core.6, core.11, core.30 |
+//! | [`push`](mod@push) | the step after a landing: the cache entry of each build identity a landed revision's passing verdicts name, written from what its build left on the host, offering nothing and keeping nothing | 52 to 54, 61, 77, 78, 100, C.3; core.6 |
 //!
 //! Every read and the claim take a [`Landed`], which only the landing
 //! seam's yes makes, and answer an `Answer`: absent, refused and
@@ -38,6 +39,7 @@ pub mod landed;
 pub mod provenance;
 pub mod publish;
 pub mod published;
+pub mod push;
 pub mod repair;
 pub mod status;
 pub mod verify;
@@ -51,6 +53,7 @@ pub use landed::*;
 pub use provenance::*;
 pub use publish::*;
 pub use published::*;
+pub use push::*;
 pub use repair::*;
 pub use status::*;
 pub use verify::*;
