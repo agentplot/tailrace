@@ -144,6 +144,8 @@ crates/tailrace-conformance/src/register.rs
 crates/tailrace-conformance/src/lib.rs
 crates/tailrace-conformance/src/world.rs
 crates/tailrace-conformance/tests/fakes.rs
+crates/tailrace-fakes/src/lib.rs
+crates/tailrace-fakes/src/projection.rs
 site/src/content/docs/guides/integrations/builds.mdx
 site/src/content/docs/guides/integrations/surfaces.mdx
 site/src/content/docs/guides/self-hosting.mdx
