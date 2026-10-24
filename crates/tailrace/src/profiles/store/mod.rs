@@ -3,6 +3,7 @@
 
 pub mod layout;
 mod oci;
+pub mod registry;
 
 use std::fs;
 use std::path::Path;
