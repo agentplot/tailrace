@@ -16,12 +16,18 @@ which.
 
 sluice lands a commit on `main`. tailrace reads sluice's refs for the
 landed commit and moon's task hashes for what the build left, and gives the
-result a version. `tailrace push` packages the outputs as OCI artifacts,
-one manifest each with the payload as layer blobs and the metadata as
-annotations, signs each one, and pushes it by digest into the registry.
-Its answer is machine-readable: the digest, the version and each
-attestation's reference, so another system can take it as its input.
-Neither sluice nor moon knows tailrace exists.
+result a version. `tailrace publish` packages the outputs as OCI
+artifacts, one manifest each with the payload as layer blobs and the
+metadata as annotations, signs each one, and offers it by digest in the
+registry. Its answer is machine-readable: the digest, the version and
+each attestation's reference, so another system can take it as its
+input. Neither sluice nor moon knows tailrace exists.
+
+`tailrace push`, run by whoever drives the landing on the host that ran
+its checks, puts that landing's archives in the store's cache: each task
+the landing passed becomes a cache entry under its task hash, which any
+host whose build identity matches replays. sluice runs nothing after a
+landing, so the driver, or a person by hand, runs it.
 
 What takes a version is a component: the outputs the repository's
 authors declare to version together, the paths whose changes version
