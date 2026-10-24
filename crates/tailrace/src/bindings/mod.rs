@@ -36,8 +36,9 @@
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
 //! through a second binding of `[store]`, opened and never made (design
-//! D6). No ledger and no target are bound yet. Only a publish makes the
-//! layout it names (60, rule core.32).
+//! D6). No ledger and no target are bound yet. Only a publish and a push
+//! make the layout they name, and a push needs no `[signing]`, since it
+//! signs nothing (60, rule core.32).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -333,14 +334,16 @@ fn signing(file: &Path, home: Option<&Path>, table: &toml::Table) -> Answer<Sign
     })
 }
 
-/// The command a binding is made for: publish, which makes the layout
-/// the file names the first time, or verify or sync, which never make or
-/// write one.
+/// The command a binding is made for: publish or push, which make the
+/// layout the file names the first time, or verify, sync or rebuild,
+/// which never make or write one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
     Verify,
     Sync,
+    Push,
+    Rebuild,
 }
 
 /// The ledger, which the host's file names no profile of until bolt 4's
@@ -394,8 +397,9 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
     let store = bindings.store.as_ref().ok_or_else(|| missing("store"))?;
     let named = profiles::store::named(store)?;
     let landing = profiles::landing::bind(landing, repository)?;
-    let bound = profiles::store::bind(store, command == For::Publish)?;
-    // After the seams' own store, so a publish has made the layout.
+    let bound = profiles::store::bind(store, matches!(command, For::Publish | For::Push))?;
+    // After the seams' own store, so a publish or a push has made the
+    // layout.
     let cache = profiles::store::bind(store, false)?;
     Ok(Binding {
         seams: Seams {
