@@ -44,7 +44,7 @@ word core.1 rules out.
 
 ## 5. The site
 
-- [ ] 5.1 In `site/src/content/docs/guides/integrations/signers.mdx`, mark the host key `built` and say in its row, or a short section after the table, what it takes and what the policy lists: an Ed25519 key in OpenSSH's format with no passphrase and mode 0600, made with `ssh-keygen -t ed25519 -N '' -f <path>`; claims signed as SSH signatures in the `tailrace-claim` namespace over the envelope's DSSE encoding; verified by the public key the policy lists for the signer, with an optional `valid-before="YYYYMMDDZ"` after which a signature is reported expired. Verify the site's moon build task passes in the gate (6.1).
+- [x] 5.1 In `site/src/content/docs/guides/integrations/signers.mdx`, mark the host key `built` and say in its row, or a short section after the table, what it takes and what the policy lists: an Ed25519 key in OpenSSH's format with no passphrase and mode 0600, made with `ssh-keygen -t ed25519 -N '' -f <path>`; claims signed as SSH signatures in the `tailrace-claim` namespace over the envelope's DSSE encoding; verified by the public key the policy lists for the signer, with an optional `valid-before="YYYYMMDDZ"` after which a signature is reported expired. Verify the site's moon build task passes in the gate (6.1).
 
 ## 6. The gate
 
