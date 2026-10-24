@@ -73,6 +73,7 @@ part exists.
 
 - **[core.25]** Every file the tree tracks is owned by a formatter the gate runs, or is excluded by name with its reason; every language with a linter is linted; `site/`, and every crate and plugin directory, is a moon project of its own whose check-fast tasks validate, type-check and test it, one task per check.
 - **[core.26]** Every tool a gate task runs is the version the tree pins, on every host that runs the gate.
+- **[core.38]** No gate check needs a credential a person signs in for or a service only such a credential reaches; a check that does runs outside the gate, by hand with a live session or by a job that holds an identity of its own, under a tag of its own, refusing to run without its setting and naming it.
 
 ## Details
 
@@ -90,6 +91,7 @@ part exists.
 - **core.12** Rules out: offering an artifact while another output's build is still running or has failed; offering the index before every artifact it names is held. Source: clauses 16, 17; ADR 0004.
 - **core.13** Rules out: a version a publisher passes on the command line that the rule did not derive; packing before the name is claimed; a build task given the version in its environment. Not ruled out: a prerelease derived from a branch's name under the authors' rule. Source: clauses 21, 22, 24; ADR 0004.
 - **core.37** Rules out: a version computed from the whole tree in a repository that declares components; a tag pushed without the component's prefix; a channel that names versions of two components; a publish of one component that re-versions another. Not ruled out: two components naming one path. Source: clauses 22, 110, 123 to 125; ADR 0010.
+- **core.38** Rules out: a required gate task that reads an SSO profile, a key file or a token from the host; a gate task that passes or fails with the state of a person's sign-in; a tools-layer check against a hosted service in `#check-tools`. Not ruled out: the same check under its own tag, run by hand or by a job with an identity; the gate proving a profile against a service it runs itself, such as a registry in the tools layer. Source: clause 64; sluice clause 114; the gate's places formed from a cleared environment (sluice C.2).
 - **core.14** Rules out: a publish path that also accepts; a host configuration holding the accepting credential beside the offering one; acceptance by anything that is not the gate. Not ruled out: the one host a policy names as both offerer and gate for a repository with one publisher (108), whose acceptance claim says it accepted what it offered. Source: clauses 25, 27, 96, 108; ADRs 0007, 0009.
 - **core.15** Rules out: moving a tag and writing the ledger after; a ledger entry edited, compacted or pruned; a rollback that removes the entry it undoes. Source: clauses 33, 34; ADR 0007.
 - **core.16** Rules out: a promotion without the expected starting version; a reconciler given a version to apply rather than a channel to follow. Source: clauses 35, 40; ADR 0007.
