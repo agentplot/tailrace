@@ -22,7 +22,7 @@ tests.
 
 ## 2. The profiles' module path and the one way they run a tool
 
-- [ ] 2.1 Add `pub mod build;`, `pub mod landing;` and `mod run;` to `crates/tailrace/src/profiles/mod.rs` (beside the layout store's `pub mod store;`, making the file and `pub mod profiles;` in `crates/tailrace/src/lib.rs` if that unit has not landed), and write `profiles/build/mod.rs` and `profiles/landing/mod.rs` (design D2). Verify `devenv shell -- cargo build -p tailrace` passes.
+- [x] 2.1 Add `pub mod build;`, `pub mod landing;` and `mod run;` to `crates/tailrace/src/profiles/mod.rs` (beside the layout store's `pub mod store;`, making the file and `pub mod profiles;` in `crates/tailrace/src/lib.rs` if that unit has not landed), and write `profiles/build/mod.rs` and `profiles/landing/mod.rs` (design D2). Verify `devenv shell -- cargo build -p tailrace` passes.
 - [ ] 2.2 Write `profiles/run.rs`: `Tool` and its `output` answering unreadable with the spawn's or the command's own words verbatim (design D2). Verify with unit tests: a program that does not exist answers unreadable carrying `No such file or directory (os error 2)` as the operating system words it; `git -C <a missing directory> rev-parse --git-common-dir` answers unreadable carrying git's stderr trimmed and unchanged; an exit the caller allows answers its output.
 
 ## 3. moon
