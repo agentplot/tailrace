@@ -491,7 +491,42 @@ fn the_ledger_is_bound_to_nothing() {
         .keys()
         .map(|e| e.as_str())
         .collect();
-    assert_eq!(ecosystems, ["file", "image"]);
+    assert_eq!(ecosystems, ["file", "image", "moon-cache"]);
+}
+
+#[test]
+fn a_publishs_first_binding_makes_the_layout_and_the_moon_caches_store_reads_it() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layouts").join("laptop");
+    let binding = bound(&host, &layout, true, For::Publish).unwrap();
+    let digest = binding.seams.store.put_bytes(b"an archive").unwrap().digest;
+    let moon = binding
+        .seams
+        .projection(&tailrace_seams::Ecosystem::new("moon-cache"))
+        .expect("the moon cache is bound");
+    let entries = [tailrace_seams::CacheEntry {
+        build: tailrace_seams::BuildId::new("b7e1"),
+        digest,
+    }];
+    let checkout = host.dir.path().display().to_string();
+    moon.render(tailrace_seams::Contents::CacheEntries(&entries), &checkout)
+        .unwrap();
+    let archive = host.dir.path().join(".moon/cache/outputs/b7e1.tar.gz");
+    assert_eq!(fs::read(&archive).unwrap(), b"an archive");
+}
+
+#[test]
+fn sync_is_bound_as_verify_is_and_never_makes_the_layout() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    assert!(
+        matches!(bound(&host, &layout, false, For::Sync), Err(Not::Unreadable(u)) if u.source.seam == Seam::Store),
+        "sync bound a layout that is not there"
+    );
+    assert!(!layout.exists(), "sync made {}", layout.display());
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound(&host, &layout, false, For::Sync).unwrap();
+    assert_eq!(binding.signer, None);
 }
 
 #[test]
