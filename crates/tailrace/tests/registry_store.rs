@@ -394,6 +394,16 @@ fn another_tools_referrer_is_not_answered_and_is_left(kind: Kind) {
         IMAGE_MANIFEST,
     );
     assert_eq!(status, 200, "their referrer was removed");
+    if kind == Kind::Zot {
+        let (status, _) = get(
+            &format!("{}manifests/sha256-{}", store.base(), subject.hex()),
+            IMAGE_INDEX,
+        );
+        assert_eq!(
+            status, 404,
+            "zot answered a subject, yet a referrers tag was pushed"
+        );
+    }
 }
 
 #[test]
