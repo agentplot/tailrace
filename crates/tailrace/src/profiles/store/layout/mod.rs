@@ -11,6 +11,7 @@
 //! is read or written (58, 59, rule core.19), and nothing an operation
 //! does makes one.
 
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -24,9 +25,9 @@ mod blobs;
 // put-artifact, attach, claims-of, name and resolve read and change it in the tasks after.
 #[allow(dead_code)]
 mod index;
-// put-artifact, read and index.json write and read these forms in the tasks after.
-#[allow(dead_code)]
 mod oci;
+
+use oci::Descriptor;
 
 /// The layout version this store reads and writes.
 const LAYOUT_VERSION: &str = "1.0.0";
@@ -155,8 +156,34 @@ impl Store for Layout {
         self.write_blob(bytes)
     }
 
-    fn put_artifact(&self, _manifest: &Manifest) -> Answer<Put> {
-        todo!("put-artifact over the layout")
+    /// The manifest's blobs first, its config and then itself, and its
+    /// entry in `index.json` last; held already when that entry is there
+    /// (5, 67, design D4, D5).
+    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
+        let marker = self.opened()?;
+        let written = oci::write(manifest, &self.source, &|d| self.blob_size(d))?;
+        if let Some(config) = &written.config {
+            self.write_blob(config)?;
+        }
+        let digest = self.write_blob(&written.bytes)?.digest;
+        let entry = Descriptor {
+            media_type: written.media_type.into(),
+            digest: digest.clone(),
+            size: written.bytes.len() as u64,
+            artifact_type: Some(written.artifact_type),
+            annotations: BTreeMap::new(),
+        };
+        let held_already = self.change_index(&marker, |index| {
+            let held = index.manifest(&entry.digest).is_some();
+            if !held {
+                index.add(entry);
+            }
+            Ok(held)
+        })?;
+        Ok(Put {
+            digest,
+            held_already,
+        })
     }
 
     fn attach(&self, _subject: &Digest, _attestation: &Envelope) -> Answer<Put> {
@@ -175,9 +202,31 @@ impl Store for Layout {
         todo!("resolve over the layout")
     }
 
+    /// The manifest put-artifact held under `digest`, read by its entry's
+    /// media type, its metadata from its config and never from its
+    /// artifact type; any other blob's bytes (72, design D4, D5).
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.opened()?;
-        self.read_blob(digest).map(Held::Bytes)
+        let bytes = self.read_blob(digest)?;
+        let index = self.read_index()?;
+        let Some(entry) = index.manifest(digest) else {
+            return Ok(Held::Bytes(bytes));
+        };
+        let none = |digest: &Digest, words: String| {
+            Not::unreadable(
+                &self.source,
+                path_text(&self.blob_path(digest)),
+                Some(words),
+            )
+        };
+        let manifest = match oci::read(&entry.media_type, &bytes).map_err(|w| none(digest, w))? {
+            oci::Read::Index(index) => Manifest::Index(index),
+            oci::Read::Artifact { config, layers } => Manifest::Artifact {
+                meta: oci::meta(&self.read_blob(&config)?).map_err(|w| none(&config, w))?,
+                layers,
+            },
+        };
+        Ok(Held::Manifest(manifest))
     }
 }
 
@@ -187,6 +236,9 @@ fn path_text(path: &Path) -> String {
 
 #[cfg(test)]
 pub(super) mod tests {
+    use tailrace_seams::{
+        Artifact, ArtifactMeta, ComponentName, Ecosystem, EcosystemName, IndexMeta, Version,
+    };
     use tempfile::TempDir;
 
     use super::*;
@@ -280,5 +332,113 @@ pub(super) mod tests {
             .unwrap_err()
             .to_string();
         assert_eq!(u.said.as_deref(), Some(words.as_str()));
+    }
+
+    fn meta(name: &str) -> ArtifactMeta {
+        ArtifactMeta::new(
+            Ecosystem::new("npm"),
+            EcosystemName::new(name),
+            Version::new("1.3.0"),
+        )
+        .unwrap()
+    }
+
+    /// The blobs a layout holds, and its `index.json` entries.
+    fn held(layout: &Layout) -> (usize, serde_json::Value) {
+        let blobs = fs::read_dir(layout.root().join("blobs/sha256"))
+            .unwrap()
+            .count();
+        let index: serde_json::Value =
+            serde_json::from_slice(&fs::read(layout.root().join("index.json")).unwrap()).unwrap();
+        (blobs, index["manifests"].clone())
+    }
+
+    #[test]
+    fn an_artifact_reads_back_as_its_metadata_and_layers_in_order() {
+        let (_dir, layout) = fresh();
+        let layers = vec![
+            layout.put_bytes(b"two").unwrap().digest,
+            layout.put_bytes(b"one").unwrap().digest,
+        ];
+        let manifest = Manifest::Artifact {
+            meta: meta("@acme/site"),
+            layers,
+        };
+        let put = layout.put_artifact(&manifest).unwrap();
+        assert!(!put.held_already);
+        assert_eq!(
+            layout.read(&put.digest),
+            Ok(Held::Manifest(manifest.clone()))
+        );
+        let again = layout.put_artifact(&manifest).unwrap();
+        assert_eq!(again.digest, put.digest);
+        assert!(again.held_already);
+        assert_eq!(held(&layout).1.as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_index_reads_back_as_its_component_version_and_artifacts_in_order() {
+        let (_dir, layout) = fresh();
+        let artifacts: Vec<Artifact> = ["web", "cli"]
+            .into_iter()
+            .map(|name| {
+                let layer = layout.put_bytes(name.as_bytes()).unwrap().digest;
+                let manifest = Manifest::Artifact {
+                    meta: meta(name),
+                    layers: vec![layer],
+                };
+                Artifact {
+                    digest: layout.put_artifact(&manifest).unwrap().digest,
+                    meta: meta(name),
+                }
+            })
+            .collect();
+        let index = Manifest::Index(
+            IndexMeta::new(ComponentName::new("acme"), Version::new("1.3.0"), artifacts).unwrap(),
+        );
+        let put = layout.put_artifact(&index).unwrap();
+        assert_eq!(layout.read(&put.digest), Ok(Held::Manifest(index)));
+    }
+
+    #[test]
+    fn a_manifest_naming_a_digest_not_held_is_absent_and_writes_nothing() {
+        let (_dir, layout) = fresh();
+        let held_layer = layout.put_bytes(b"one").unwrap().digest;
+        let missing = Digest::of(b"never put");
+        let before = held(&layout);
+        let artifact = Manifest::Artifact {
+            meta: meta("site"),
+            layers: vec![held_layer, missing.clone()],
+        };
+        let index = Manifest::Index(
+            IndexMeta::new(
+                ComponentName::new("acme"),
+                Version::new("1.3.0"),
+                vec![Artifact {
+                    digest: missing.clone(),
+                    meta: meta("site"),
+                }],
+            )
+            .unwrap(),
+        );
+        for manifest in [artifact, index] {
+            assert_eq!(
+                layout.put_artifact(&manifest),
+                Err(Not::absent(layout.source(), missing.to_string()))
+            );
+            assert_eq!(held(&layout), before);
+        }
+    }
+
+    #[test]
+    fn an_artifacts_config_reads_back_as_bytes() {
+        let (_dir, layout) = fresh();
+        let manifest = Manifest::Artifact {
+            meta: meta("site"),
+            layers: vec![],
+        };
+        layout.put_artifact(&manifest).unwrap();
+        let config = tailrace_seams::canonical(&meta("site"));
+        assert_eq!(layout.read(&Digest::of(&config)), Ok(Held::Bytes(config)));
     }
 }
