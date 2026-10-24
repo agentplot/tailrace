@@ -40,7 +40,7 @@ word core.1 lists, in code, strings or comments.
 
 ## 4. The surfaces group over the command line
 
-- [ ] 4.1 Write `src/core/surfaces.rs` with the `Surface` trait, `Question`, and the one scenario (design D6). Write `crates/tailrace/tests/conformance.rs`, implementing `Surface` with `tailrace::run` over the world's seams and repository with `--json`, and running the group. Verify `cargo test -p tailrace --test conformance` passes, and that changing one field of the core's answer in a local trial makes it fail naming the question (spec: The surfaces answer from the one core).
+- [x] 4.1 Write `src/core/surfaces.rs` with the `Surface` trait, `Question`, and the one scenario (design D6). Write `crates/tailrace/tests/conformance.rs`, implementing `Surface` with `tailrace::run` over the world's seams and repository with `--json`, and running the group. Verify `cargo test -p tailrace --test conformance` passes, and that changing one field of the core's answer in a local trial makes it fail naming the question (spec: The surfaces answer from the one core).
 
 ## 5. Clause coverage
 
