@@ -1,0 +1,72 @@
+# Tasks
+
+Every cargo and moon command runs as `devenv shell -- <command>`. Read
+`crates/tailrace-seams/src/store.rs`, `answer.rs`, `claim.rs` and
+`keeper.rs`, the layout profile under
+`crates/tailrace/src/profiles/store/layout/`, its tests in
+`crates/tailrace/tests/layout_store.rs`, the store group in
+`crates/tailrace-conformance/src/seams/store.rs`, and `src/lib.rs`'s
+sections on adding to a group and running a seam's group, before
+starting. No seam trait, shared type or fake changes; a scenario that
+cannot pass without one is reported with `crew needs`. The change adds
+no crate, language or file type, so no moon project or formatter entry
+is added; the profile's unit tests run in the `cli` project's `test`
+task (check-fast), and everything that needs a registry runs in the
+tools layer (check-tools).
+
+## 1. Dependencies and pins
+
+- [ ] 1.1 Add `ureq` 3 (rustls, no other default feature the profile does not use) and `docker_credential` 1.4 to `[workspace.dependencies]` in `Cargo.toml`, one line each and no line changed, and to `crates/tailrace/Cargo.toml`'s `[dependencies]` (design D3, D4). Verify `devenv shell -- cargo build -p tailrace` passes and `Cargo.lock` gains only those crates and theirs.
+- [ ] 1.2 In `devenv.nix`, add `pkgs.zot`, `pkgs.distribution` and `pkgs.amazon-ecr-credential-helper` to `packages` under a comment naming the tools layer's registries, and `env.TAILRACE_TOOLS_ZOT` and `env.TAILRACE_TOOLS_DISTRIBUTION` naming each binary by its store path, as `TAILRACE_TOOLS_SSH_KEYGEN` is (design D12, core.26). If any attribute is missing at the nixpkgs `devenv.lock` pins, report it with `crew needs` rather than moving the pin. Verify `devenv shell -- bash -c '"$TAILRACE_TOOLS_ZOT" --version && "$TAILRACE_TOOLS_DISTRIBUTION" --version && docker-credential-ecr-login version'` prints three versions.
+
+## 2. One OCI form for both stores
+
+- [ ] 2.1 Move `crates/tailrace/src/profiles/store/layout/oci.rs` to `crates/tailrace/src/profiles/store/oci.rs` with its tests, widening its items' visibility to the store module, and change only the layout's `use` lines (design D1). Verify `devenv shell -- cargo test -p tailrace --test layout_store` and the layout's unit tests pass unchanged, and `git diff --stat` shows no other line of `layout/` changed.
+- [ ] 2.2 Add the referrer manifest's form to `oci.rs`: the empty config descriptor, the subject descriptor, the envelope layer, the envelope type as artifact type, and the `in-toto.io/predicate-type` annotation when the payload is an in-toto statement naming one (design D5); and the referrers index's form for the tag fallback (D6). Verify with unit tests: the same envelope and subject write the same bytes twice; the manifest's JSON names the subject, the empty config (`{}`, size 2) and one layer whose digest is `Envelope::digest()`; an envelope whose payload is not in-toto carries no annotation; a referrers index gains a descriptor once and keeps entries it did not write.
+
+## 3. The registry handle
+
+- [ ] 3.1 Write `crates/tailrace/src/profiles/store/registry/mod.rs` with `Registry`, made from a repository text (`<host>[:<port>]/<path>`) and naming itself in its `Source` as `OCI registry <repository>`; `https` but for a loopback host (design D3). Write `pub mod registry;` in `profiles/store/mod.rs`. Verify with unit tests: `localhost:5000/tailrace` is spoken to at `http://localhost:5000/v2/tailrace/`, an ECR repository at `https://…/v2/<path>/`, and a text with no `/` or an empty path is refused naming the text.
+- [ ] 3.2 Write the request path in `registry/`: requests with 4xx and 5xx answered as responses; a 401's challenge answered once with `Basic` from `docker_credential`, or a `Bearer` token fetched from the realm for the challenged scope; a token held in memory only; a connection failure unreadable with `ureq`'s words; an error body carried verbatim in every refusal (design D4, 59, core.21). Verify with unit tests of the challenge parser over `Basic realm=…`, `Bearer realm=…,service=…,scope=…` and a malformed header, and that no file is written (the tools-layer credential tests in 4.4 prove the rest).
+- [ ] 3.3 Write the name-to-tag escape (design D8). Verify with unit tests: `lib-v1.3.0` is its own tag; `a/b+c`, `a_2fb+c` and `_x` each map to valid, distinct tags; a leading `.` or `-` is escaped; a name escaping past 128 characters and `sha256-<64 hex>` are refused naming the name.
+
+## 4. The operations, against zot and the reference distribution
+
+- [ ] 4.1 Write `crates/tailrace/tests/registry/mod.rs`: start zot and the reference distribution on free loopback ports over a temporary directory and a config the test writes, wait for `GET /v2/` to answer, stop them on drop; and the `StoreRig` over a `Registry`, a fresh repository per scenario, `unreachable()` pointing the rig's store at a port nothing listens on and answering the words its operations then carry (design D12). Confirm the pinned distribution answers 404 to `GET /v2/<name>/referrers/<digest>`, and follow D12 if it does not. Write `crates/tailrace/tests/registry_store.rs` behind the `tools` feature with a test that starts both and resolves a name never made as absent, and add `--test registry_store` to the `tools` task in `crates/tailrace/moon.yml`. Verify `devenv shell -- moon run cli:tools` passes.
+- [ ] 4.2 Implement put-bytes, put-artifact and read (design D5). Verify in `registry_store.rs`: the group's "the same bytes put twice", "an artifact read back" and "bytes read back" pass against zot and the distribution; the second put of bytes uploads nothing (the registry's request log or a counting proxy shows no upload); one artifact put into a layout and into zot answers one digest and zot's manifest bytes equal the layout's blob; a manifest naming bytes not held is absent naming them and puts nothing; a blob answered with other bytes is refused naming both (a proxy that alters the body).
+- [ ] 4.3 Implement attach and claims-of with the referrers API and the referrers tag (design D5, D6). Verify in `registry_store.rs`: "two attestations on one digest" passes against zot and against the distribution; the same attestation attached twice is answered held already and read once; another tool's referrer of another artifact type is not answered and is left; on the distribution the subject's `sha256-<hex>` tag lists both attestations; a referrers tag rewritten without the entry between the push and the read back (the D7 hook's counterpart for attach) answers unreadable naming the tag and pushes nothing again.
+- [ ] 4.4 Implement resolve and name with the check, the put, the read back and the test hook (design D7). Verify in `registry_store.rs`: "a name moved from where it is not" and "a name that names nothing" pass against both registries; a race lost through the hook is refused naming the other writer's digest with one tag put in all; two names differing only in escaped characters resolve apart; a name moved to a digest held only as a blob is refused naming it; a registry behind a credential helper (a `DOCKER_CONFIG` the test writes whose `credHelpers` names a helper script the test writes, against a zot requiring basic auth) is answered after one challenge and no file the store writes holds the credential; the same zot with no credential refuses carrying its words.
+- [ ] 4.5 Verify the whole store group passes against zot and against the distribution in one test each, the report naming the registry's profile, with `devenv shell -- moon run cli:tools`.
+
+## 5. The host binds it
+
+- [ ] 5.1 Add the `registry` key to `bind` in `crates/tailrace/src/profiles/store/mod.rs`: its value a repository text, unreadable naming the file, `[store] registry` and the value when it is not one; `make` ignored, since a registry store never makes a repository; and add the registry line to the example in `crates/tailrace/src/bindings/mod.rs`'s module comment. Verify with tests in `crates/tailrace/src/bindings/tests.rs`: a file naming `[store] registry = "localhost:5000/tailrace"` binds a store whose source names that repository; one naming `registry = "tailrace"` is unreadable naming the key and the value; `unknown` still lists both keys.
+- [ ] 5.2 In `site/src/content/docs/guides/self-hosting.mdx`, show `[store] registry = "<host>/<repository>"` beside the layout in the bindings example and say the credential is the host's Docker configuration and its helpers, never the file's. Verify the site's moon build task passes in the gate (10.1).
+
+## 6. A version copied between stores
+
+- [ ] 6.1 Write `crates/tailrace-core/src/copy.rs` and its line in `src/lib.rs`'s module table and `pub mod`/`pub use` lists (design D10). Verify with unit tests over two fake stores: a version of two artifacts with claims on each and on the index is copied whole under the same digests; a target that answers another digest is refused naming both, with no index put; a source missing an artifact is absent naming it; a second copy answers every digest and the name held already.
+- [ ] 6.2 Add the `copy` group: `crates/tailrace-conformance/src/core/copy.rs`, its line in `core/mod.rs`, its line at the end of `groups()` and its row in the module table of `src/lib.rs`, with the scenarios of design D11 citing 1, 8 and 103; remove 103's entry from `src/register.rs` in the same commit (core.33). Verify `devenv shell -- cargo test -p tailrace-conformance` passes and the coverage check (`moon run conformance:coverage`, or the task check-fast names) reports 103 cited and not pending.
+- [ ] 6.3 Verify in `registry_store.rs`: a version published into a layout (through the layout store with claims attached, as `layout_store.rs` builds them) and copied into zot resolves there at the layout's index digest, every artifact under the layout's digest, every envelope byte for byte; a second copy writes nothing.
+
+## 7. A lost race repaired from the ledger
+
+- [ ] 7.1 Write `crates/tailrace-core/src/repair.rs` and its lines in `src/lib.rs` (design D9). Verify with unit tests over a fake store and a fake keeper: the name moved to the head's subject; an empty chain absent and a fork refused, neither writing the store; a refusal naming the head's subject answered as already there; another writer's move answered as a lost race naming its digest and repaired with two moves in all; a repair refused in turn passed through with nothing retried.
+- [ ] 7.2 Add the scenario of design D11 below the marker in `crates/tailrace-conformance/src/core/ledger.rs`, citing 109, and remove 109's entry from `src/register.rs` in the same commit. Verify `devenv shell -- cargo test -p tailrace-conformance` passes and the coverage check reports 109 cited and not pending.
+- [ ] 7.3 Verify in `registry_store.rs`: with a fake keeper whose head promotion is about one index and the hook moving the channel's tag in zot to a second, the repair reports the lost race naming the second and the tag ends at the first.
+
+## 8. ECR
+
+- [ ] 8.1 Write `crates/tailrace/tests/registry_ecr.rs` behind the `tools` feature: the store group over the repository `TAILRACE_TOOLS_ECR` names, every name prefixed per run (design D12), failing naming `env.TAILRACE_TOOLS_ECR` in `devenv.local.nix` when it is unset or empty; and a `tools-ecr` task in `crates/tailrace/moon.yml` tagged `check-tools`, its command `cargo test -p tailrace --features tools --test registry_ecr`, its inputs the `tools` task's and `$TAILRACE_TOOLS_ECR`. Verify `devenv shell -- moon run cli:tools-ecr` fails naming the variable on a host that names none, and passes on the host whose `devenv.local.nix` names the repository the team's ops set up, with `AWS_PROFILE` and the Docker `credHelpers` entry for `ecr-login`.
+- [ ] 8.2 If ECR refuses a form the profile writes, change it in `oci.rs` for both profiles and rerun 4.5, `layout_store.rs` and 8.1; record in 8.3 whether a layout's digests changed. Verify the three pass.
+- [ ] 8.3 Write `docs/adr/0014-…` in the form `adrs.toml` sets, with the next number: the decisions of design D2, D5, D7 and D4, and what ECR answered on each issue the registry-store spec lists, with the date and region; read by hand against the same account, since the store sends none of them, a manifest whose artifact type carries a parameter (2306), a tag put into a repository with immutable tags, a push into a repository that does not exist, and whether a lifecycle rule expiring untagged images would take an artifact only an index names. Verify the ADR numbers check in check-fast passes and the ADR names every issue the spec lists.
+- [ ] 8.4 In `site/src/content/docs/guides/integrations/stores.mdx`, mark Amazon ECR, zot and the reference distribution `built`, leave GitHub's registry and Harbor `designed`, and say how the registry store holds what it holds: one declared repository, attestations as referrers typed by the envelope with the predicate type annotated and the referrers tag where the API is absent, a tag checked before and read back after, the host's Docker credentials. Verify the site's moon build task passes in the gate (10.1).
+
+## 9. The rules
+
+- [ ] 9.1 Verify `grep -rn 'tailrace_core' crates/tailrace/src/profiles` finds nothing (core.2), `grep -rn 'profiles::' crates/tailrace/src/profiles/store/registry` finds only `profiles::store::oci`, and `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace-core/src/copy.rs crates/tailrace-core/src/repair.rs` finds nothing (core.1).
+
+## 10. The gate
+
+- [ ] 10.1 Verify `devenv shell -- moon run ':#check-fast'` passes: format, lint, toolchain, ADR numbers, the conformance suite's coverage with 103 and 109 cited, every crate's tests and the site's build.
+- [ ] 10.2 Verify `devenv shell -- moon run ':#check-tools'` passes on the host that names the ECR repository: the tools task with `registry_store`, and `tools-ecr`.

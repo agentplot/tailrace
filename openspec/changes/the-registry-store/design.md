@@ -1,0 +1,328 @@
+# Design
+
+## Context
+
+The store seam is `tailrace_seams::Store`
+(`crates/tailrace-seams/src/store.rs`): seven synchronous methods on
+`&self`, each answering `Answer<T>`, absent, refused or unreadable
+naming a `Source`. Every operation names a digest or a `Name`, never a
+repository. `attach` answers the envelope's own digest,
+`Envelope::digest()`, the digest of its canonical JSON.
+
+The layout profile (`crates/tailrace/src/profiles/store/layout/`) is the
+one store a host binds today. Its `oci.rs` writes an artifact as an OCI
+image manifest (artifact type
+`application/vnd.agentplot.tailrace.artifact.<ecosystem>`, config the
+metadata as canonical JSON, layers the bytes) and an index as an OCI
+image index with its component and version in annotations, each in one
+canonical byte form. It keeps an attestation as a blob with an
+`index.json` entry annotated with its subject (C.2). The host binds a
+store through `profiles/store/mod.rs`'s `bind`, which matches the key of
+the bindings file's `[store]` table.
+
+The conformance suite's store group (`tailrace_conformance::seams::store`)
+runs over a `StoreRig` (`store()`, `unreachable()`), seven scenarios
+citing 1, 4, 5, 8, 10, 58, 59, 66 to 73. The register
+(`crates/tailrace-conformance/src/register.rs`) names 103 and 109 with
+this unit. The core groups run over `FakeWorld`, which holds a fake
+store and a fake keeper. The ledger group (`core/ledger.rs`) is empty
+below its marker, waiting for bolt 4.
+
+Readings taken for this design:
+
+- **OCI distribution specification (main).** No conditional request is
+  defined for a tag put; the referrers section says only that clients
+  "MAY use a conditional HTTP push for registries that support ETag
+  conditions". The referrers API is `GET /v2/<name>/referrers/<digest>`,
+  optionally `?artifactType=`, which a registry that applies it says in
+  `OCI-Filters-Applied`, and a `Link` header pages it. A registry that
+  takes a manifest with a subject answers `OCI-Subject`. Without that
+  header, the client keeps the referrers tag
+  (`<alg>-<hex>`) itself: pull it, start empty on 404, add the
+  descriptor once (artifact type and annotations copied from the
+  manifest), push it back. A tag matches
+  `[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}`.
+- **aws/containers-roadmap 2306** (open, last touched 2025-03-20): ECR
+  rejects a manifest whose `artifactType` or layer media type carries a
+  parameter (`;version=0.2`) with 405 `UNSUPPORTED` "Invalid JSON
+  syntax"; AWS called it a bug in 2024. **2783** (open, 2026-03-06):
+  ECR rejects an OCI 1.1 referrer manifest pushed by `oras copy -r`
+  with the same 405, though ECR announced OCI 1.1 support in 2024.
+  Neither says what in the manifest ECR objects to, so only a push
+  answers it.
+- **ECR's API reference.** `ListImageReferrers` filters by artifact
+  types and lists only `ACTIVE` artifacts without one.
+- **`docker_credential` 1.4.0** reads `$DOCKER_CONFIG/config.json` or
+  `~/.docker/config.json`, honouring `auths`, `credsStore` and
+  `credHelpers`, and answers an identity token or a user and password.
+  **`ureq` 3.5** is blocking, rustls by default, and can be told not to
+  turn 4xx and 5xx into errors.
+
+## Goals / Non-Goals
+
+**Goals:**
+
+- The store group passing against zot, the reference distribution and a
+  real ECR repository with no change to the seam, the suite or the
+  fakes.
+- One artifact, one digest, in a layout and in a registry, so a copy
+  between them changes no digest and loses no claim.
+- What ECR does with tailrace's manifests known from a push, and
+  written down.
+
+**Non-Goals:**
+
+- A repository per ecosystem name (D2).
+- Deleting anything from a registry, or pagination of tag lists: the
+  store never lists tags.
+- Chunked or resumable blob uploads: a blob is uploaded in one request.
+- Choosing the store name a channel takes: bolt 4's. The repair takes
+  the name from its caller.
+
+## Decisions
+
+### D1. One OCI form for both store profiles
+
+`layout/oci.rs` moves to `profiles/store/oci.rs`, a module of the store
+family that both profiles use; the layout changes only its `use` lines.
+It gains the referrer manifest's form (D5). A module two profiles share
+is not one profile calling another (core.2), and nothing in it names a
+registry or a file.
+
+Alternative: a second copy in the registry's directory. Rejected: a
+byte of difference between the two is a digest of difference, and an
+artifact copied from a layout to a registry would no longer be the same
+artifact (1).
+
+### D2. One declared repository on every registry
+
+The binding names one repository; every blob, manifest, referrer and
+tag lives there. C.1 gives this mode to a registry that does not create
+repositories on push and a repository per ecosystem name to one that
+does. The second cannot be built on this seam: put-bytes, read,
+claims-of and resolve name only a digest or a name, so the profile
+cannot tell which repository holds what it is asked for without keeping
+a map, which the store may not need (61, core.20), or searching the
+registry's catalogue on every read. The design agent is asked to decide
+whether C.1 keeps the per-name mode, and how a digest finds its
+repository if it does.
+
+Alternative: put every blob and manifest in the declared repository and
+also mount each artifact into a repository named for its ecosystem
+name. Rejected here: it is a second layout of the store that the
+statement does not describe, and nothing in phase 1 reads it.
+
+### D3. HTTP by hand over `ureq`, never through an OCI client library
+
+The profile speaks the distribution protocol itself over `ureq`, with
+4xx and 5xx answered as responses so every error body reaches a
+refusal verbatim (59). It sends exactly the bytes `oci.rs` wrote and
+hashes exactly the bytes it reads.
+
+Alternatives: `oci-client`, which is async and re-serialises manifests
+from its own types, so a manifest round trip could change bytes and so
+digests; `oras` or `crane` as a subprocess, a further pinned tool whose
+exit codes lose the registry's status and words.
+
+The address is `https://<host>/v2/<repository>/…`; a loopback host
+(`localhost`, `127.0.0.1`, `[::1]`) is spoken to over plain HTTP, as
+Docker does, so the tests' zot needs no certificate and no flag exists
+to turn TLS off elsewhere. Redirects on blob reads are followed (ECR
+redirects to S3); the digest check is on what finally arrives.
+
+### D4. The host's Docker credentials, reached on the registry's challenge
+
+A request goes unauthenticated first. On a 401 the profile reads the
+`WWW-Authenticate` challenge: for `Basic` it sends the host's
+credential for the registry host, from `docker_credential` (ECR's
+`ecr-login` helper among those it runs); for `Bearer` it asks the realm
+for a token with that credential, for the scope the challenge names,
+and retries the request once with it. The token is held in memory by
+the one handle for the life of the process and written nowhere (64,
+core.21). No credential found, or one the registry refuses, is refused
+with the registry's words.
+
+### D5. The operations
+
+| operation | requests |
+|---|---|
+| put-bytes | `HEAD /blobs/<d>`: 200 is held already; else `POST /blobs/uploads/` and `PUT <location>&digest=<d>` with the bytes |
+| put-artifact | each layer's size by `HEAD` (blob, or manifest for an index's artifacts), absent when not held; `oci::write`; the config by put-bytes; `HEAD /manifests/<d>`: 200 is held already; else `PUT /manifests/<d>` with the manifest's media type |
+| read | `GET /manifests/<d>` accepting both manifest types, read by `oci::read` and the config blob; on 404 `GET /blobs/<d>`; 404 on both is absent; bytes whose digest is not `<d>` are refused `OtherBytes` (2) |
+| attach | the subject's media type and size by `HEAD /manifests/<subject>`, absent on 404; the envelope's canonical JSON and the empty config `{}` by put-bytes; the referrer manifest by `oci::referrer`; `HEAD` it, held already on 200; else `PUT /manifests/<r>`; no `OCI-Subject` in the answer means the referrers tag (D6) |
+| claims-of | the subject held, else absent; `GET /referrers/<d>?artifactType=<envelope type>`, following `Link`; 404 means the referrers tag; descriptors of other types dropped where `OCI-Filters-Applied` is missing; each referrer's manifest and its one layer read and parsed as an `Envelope` |
+| resolve | `HEAD /manifests/<tag>`: `Docker-Content-Digest`, or the digest of a `GET`'s body where a registry omits the header; 404 is absent |
+| name | resolve the tag, refused `NameAt` unless it is at the expected digest; `GET /manifests/<to>` for its bytes and media type (absent on 404, refused naming it when `<to>` is a blob, which no tag can name); `PUT /manifests/<tag>`; resolve again, refused `NameAt` naming what it found when that is not `<to>` (D7) |
+
+The referrer manifest is an OCI image manifest: artifact type and its
+one layer's media type the layout's envelope type
+(`application/vnd.agentplot.tailrace.envelope.v1+json`), config the OCI
+empty descriptor, subject the subject's descriptor, and, when the
+envelope's payload type is in-toto and its statement names a predicate
+type, the annotation `in-toto.io/predicate-type` holding it. C.1 says
+the predicate type is the referrer's artifact type, but a predicate
+type is a URI (`https://agentplot.github.io/tailrace/claim/verdict/v1`)
+and an artifact type must be an RFC 6838 media type, which ECR enforces
+(2306). Typing every attestation by the envelope keeps claims-of one
+filtered list, as C.1's table says, and the annotation keeps the
+predicate type readable to other tools. This is named for the design
+agent, to amend C.1's wording.
+
+attach answers `Envelope::digest()`, which is the digest of the layer
+it pushed, so the answer is the same as the layout's for the same
+envelope.
+
+### D6. The referrers tag
+
+Where the registry answered no `OCI-Subject`, attach pulls the tag
+`sha256-<hex>` for the subject (empty on 404, refused naming it if it
+is not an image index), adds the referrer's descriptor unless it is
+there, pushes the index back to the tag, and reads the tag again. An
+entry missing on the read back is a writer that pushed over it: attach
+answers unreadable naming the tag and the referrer, and pushes nothing
+again (core.6). The referrer manifest is held by digest either way, so
+a later attach of the same envelope adds the entry. claims-of falls
+back to the tag on a 404 from the referrers API, and a tag that is
+absent is no claims.
+
+### D7. A tag checked before and read back after, with no conditional put
+
+No registry this change binds honours a conditional tag put, and the
+specification defines none, so name is a check, a put and a read back.
+Two writers can each pass the check and each read back their own put
+if their puts and reads interleave; the store cannot exclude that. For
+a channel's name it does not matter: only the gate moves it, and only
+after the keeper took its promotion at the chain's head, which two
+promotions cannot both do (105, 120); the repair (D9) puts the name back
+where the ledger says. For a version's name, the version's tag in the
+shared history is claimed before anything is packed (22), so two
+publishers never both reach the store with one version.
+
+The profile exposes one hook for the tests, a closure run between the
+put and the read back (hidden from the docs), so the tools layer can
+lose a race on purpose.
+
+### D8. A name escaped into a tag
+
+A name's UTF-8 bytes in `[A-Za-z0-9.-]` stay; every other byte,
+`_` included, becomes `_` and two lower-case hex digits; a leading `.`
+or `-` is escaped the same way. The mapping is one-to-one, so two names
+never share a tag, and version names (`lib-v1.3.0`) read as themselves.
+An escaped name longer than 128 characters, or one in the referrers
+tag's shape (`<alg>-<hex>`), is refused naming the name.
+
+### D9. The repair from the ledger is the core's
+
+`crates/tailrace-core/src/repair.rs` holds one function: given the
+store, the keeper, a channel, the store name the channel takes and the
+digest the caller expects it at, it reads the chain (absent and a fork
+passed through), takes the head's claim (`Claim::from_envelope`; a head
+that is not a promotion claim is unreadable naming it) and moves the
+name to the head's subject. A `NameAt` refusal naming the head's
+subject is answered as already there; one naming any other digest is a
+lost race, answered with that digest after one move from it to the
+head's subject, whose own refusal is passed through. It writes nothing
+to the ledger. Bolt 4's gate calls it after its append; the ledger and
+promotion unit decides the store name of a channel.
+
+Alternative: the repair in the registry profile. Rejected: the profile
+reaches no ledger, and every store, not only a registry, can lose a
+race where a human or a second gate moves a tag (109, core.2).
+
+### D10. The copy is the core's, through the seam
+
+`crates/tailrace-core/src/copy.rs` copies one version, by its name, from
+one `&dyn Store` to another: resolve the name in the source; read the
+index; per artifact, read its manifest, put each layer's bytes, put the
+artifact and compare digests; attach every envelope `claims-of`
+answers on it; then the index, its envelopes, and the name made from
+nothing. Its answer names every digest with whether the target held it
+already, so a second copy is visibly a no-op. It names no profile, and
+a channel is never copied (103). A command to run it is not this
+change's (proposal); the tests call it.
+
+### D11. Conformance
+
+- A new core group, `copy` (`crates/tailrace-conformance/src/core/copy.rs`),
+  over `FakeWorld`, its target a second fake store the scenario makes:
+  a version published in the world copied whole with its claims, and
+  copied again writing nothing. It cites 1, 8, 103, and 103 leaves the
+  register.
+- One scenario below the ledger group's marker: the world's keeper
+  holding a promotion about one index, another writer moving the name
+  to a second, and the repair reporting the lost race and moving the
+  name back. It cites 109, which leaves the register.
+- The store group is unchanged; the registry passes it as it stands.
+
+### D12. The tools layer
+
+`crates/tailrace/tests/registry/mod.rs` starts a zot and a reference
+distribution on free loopback ports, each over a temporary directory
+and a config the test writes, by the binaries `devenv.nix` names
+(`TAILRACE_TOOLS_ZOT`, `TAILRACE_TOOLS_DISTRIBUTION`), and holds the
+rig. On zot and the distribution each scenario gets a fresh repository.
+On ECR the repository is the one the host names, so the rig gives each
+run a prefix for every name it passes through, and the bytes the group
+puts are held already from earlier runs, which the group allows.
+
+- `tests/registry_store.rs` (the `tools` task): the group over zot and
+  over the distribution; the spec's scenarios the group does not play
+  (another tool's referrer, the referrers tag, a race lost after the put,
+  escaped names, one digest in a layout and in zot, a credential
+  helper, a missing credential); the copy from a layout to zot; the
+  repair against zot with a fake keeper.
+- `tests/registry_ecr.rs` (a `tools-ecr` task tagged `check-tools`):
+  the group over ECR, failing naming `TAILRACE_TOOLS_ECR` when the host
+  names no repository. The host names it, and the `AWS_PROFILE` ECR's
+  helper reads, in `devenv.local.nix`, and maps the registry host to
+  `ecr-login` in its Docker configuration.
+
+Before the fallback test is written, the reference distribution at the
+pin is checked to answer 404 on the referrers API; if it has gained the
+API, the fallback is tested against a zot whose config disables it, or
+is reported with `crew needs` if neither can be made to lack it.
+
+### D13. One ADR
+
+`docs/adr/0014-…`: the registry store binds one declared repository,
+types attestations by the envelope with the predicate type annotated,
+checks tags after the move, and reaches the host's Docker credentials;
+and what a push against ECR answered on each issue the registry-store
+spec lists, with the date and region. The issues the store group cannot
+show (a parameterised media type, tag immutability, create on push, a
+lifecycle rule expiring untagged manifests) are read by hand against
+the same account and recorded, since they are ECR's behaviour outside
+anything the store sends.
+
+## Risks / Trade-offs
+
+- [ECR rejects tailrace's manifest or referrer form (2783)] → the ECR
+  run is done before the site and the ADR are written; a form ECR
+  refuses is changed in `oci.rs` for both profiles together, and the
+  layout's tests say whether its existing digests change, which the
+  ADR records.
+- [The gate host needs ECR credentials for every landing] → the
+  `tools-ecr` task fails naming what is missing rather than passing;
+  the team's ops sets up the repository and the host's Docker
+  configuration before this unit's verify.
+- [An ECR lifecycle rule expiring untagged images would remove
+  artifacts only an index names] → the ADR names the rule an operator
+  must not set on a store's repository.
+- [Each ECR run leaves tags behind] → names carry the run's prefix; a
+  lifecycle rule on the test repository alone may expire them by
+  prefix.
+- [Concurrent attaches on a registry with no referrers API can drop an
+  entry] → reported unreadable, never silently lost, and repaired by
+  attaching again (D6).
+
+## Migration Plan
+
+None: a new profile beside the layout, bound only by a host that names
+it. A host bound to a layout is unchanged; the layout's bytes are
+unchanged unless the ECR reading changes the shared form, which the ADR
+records.
+
+## Open Questions
+
+- Which ECR repository and AWS profile the gate host's tools layer uses:
+  the team's ops provides them (proposal, final message).
