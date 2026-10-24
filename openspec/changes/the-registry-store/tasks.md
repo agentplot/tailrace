@@ -17,7 +17,7 @@ tools layer (check-tools).
 ## 1. Dependencies and pins
 
 - [x] 1.1 Add `ureq` 3 (rustls, no other default feature the profile does not use) and `docker_credential` 1.4 to `[workspace.dependencies]` in `Cargo.toml`, one line each and no line changed, and to `crates/tailrace/Cargo.toml`'s `[dependencies]` (design D3, D4). Verify `devenv shell -- cargo build -p tailrace` passes and `Cargo.lock` gains only those crates and theirs.
-- [ ] 1.2 In `devenv.nix`, add `pkgs.zot`, `pkgs.distribution` and `pkgs.amazon-ecr-credential-helper` to `packages` under a comment naming the tools layer's registries, and `env.TAILRACE_TOOLS_ZOT` and `env.TAILRACE_TOOLS_DISTRIBUTION` naming each binary by its store path, as `TAILRACE_TOOLS_SSH_KEYGEN` is (design D12, core.26). If any attribute is missing at the nixpkgs `devenv.lock` pins, report it with `crew needs` rather than moving the pin. Verify `devenv shell -- bash -c '"$TAILRACE_TOOLS_ZOT" --version && "$TAILRACE_TOOLS_DISTRIBUTION" --version && docker-credential-ecr-login version'` prints three versions.
+- [x] 1.2 In `devenv.nix`, add `pkgs.zot`, `pkgs.distribution` and `pkgs.amazon-ecr-credential-helper` to `packages` under a comment naming the tools layer's registries, and `env.TAILRACE_TOOLS_ZOT` and `env.TAILRACE_TOOLS_DISTRIBUTION` naming each binary by its store path, as `TAILRACE_TOOLS_SSH_KEYGEN` is (design D12, core.26). If any attribute is missing at the nixpkgs `devenv.lock` pins, report it with `crew needs` rather than moving the pin. Verify `devenv shell -- bash -c '"$TAILRACE_TOOLS_ZOT" --version && "$TAILRACE_TOOLS_DISTRIBUTION" --version && docker-credential-ecr-login version'` prints three versions.
 
 ## 2. One OCI form for both stores
 
