@@ -1,15 +1,31 @@
 //! The projection seam's profiles (B.6), each by the ecosystem it packs
-//! in, and what they share: an output's one file, read with the
-//! operating system's words.
+//! in, the binding of every one built, and what they share: an output's
+//! one file, read with the operating system's words.
 
 pub mod file;
 pub mod image;
 
+use std::collections::BTreeMap;
 use std::fs;
 
 use tailrace_seams::{
-    Answer, ArtifactMeta, Ecosystem, EcosystemName, Not, Output, Source, Version, Why,
+    Answer, ArtifactMeta, Ecosystem, EcosystemName, Not, Output, Projection, Source, Version, Why,
 };
+
+use file::FileProjection;
+use image::ImageProjection;
+
+/// Every projection built, by the ecosystem the policy file's
+/// `[projections]` names for an output (92, C.10, C.11).
+pub fn bound() -> BTreeMap<Ecosystem, Box<dyn Projection>> {
+    BTreeMap::from([
+        (
+            Ecosystem::new(file::ECOSYSTEM),
+            Box::new(FileProjection) as Box<dyn Projection>,
+        ),
+        (Ecosystem::new(image::ECOSYSTEM), Box::new(ImageProjection)),
+    ])
+}
 
 /// The one file `output` left; refused naming the output and every file
 /// it left where it left none or several, since `projection` packs one.

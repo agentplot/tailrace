@@ -61,10 +61,11 @@ pub enum Command {
 }
 
 /// What a host binds (92): the seams, and the identity of the party
-/// running tailrace, which signs what it observed (11, 79).
+/// running tailrace, which signs what it observed (11, 79); `None` on a
+/// host that binds no key and only verifies.
 pub struct Binding {
     pub seams: Seams,
-    pub signer: SignerId,
+    pub signer: Option<SignerId>,
 }
 
 /// `cli` asked in the repository at `at`, over `binding` where the host
@@ -84,6 +85,15 @@ pub(crate) fn unbound() -> Not {
         &Source::new(Seam::Host, "unbound"),
         "binding of the store, the build, the landing, the signer, the policy, \
          the projections, the targets or the keeper",
+    )
+}
+
+/// 79: what publish answers where the host binds no signer, before
+/// anything is read: it signs what it offers, and no identity is at hand.
+pub(crate) fn unsigned() -> Not {
+    Not::absent(
+        &Source::new(Seam::Host, "bindings"),
+        "binding of the signer, [signing] in the bindings file",
     )
 }
 

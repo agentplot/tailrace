@@ -103,7 +103,7 @@ impl Host {
     fn binding(&self) -> Binding {
         Binding {
             seams: self.fakes.seams(),
-            signer: SignerId::new("host"),
+            signer: Some(SignerId::new("host")),
         }
     }
 

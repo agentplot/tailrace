@@ -9,7 +9,7 @@ use clap::Args;
 use tailrace_core::{publish, Ask, History, Kept, Publish, Published};
 use tailrace_seams::{Answer, Branch, ComponentName};
 
-use crate::{render, unbound, Binding};
+use crate::{render, unbound, unsigned, Binding};
 
 #[derive(Debug, Args)]
 pub struct PublishArgs {
@@ -42,12 +42,13 @@ pub fn run(args: &PublishArgs, binding: Option<&Binding>, at: &Path, out: &mut d
 
 fn ask(args: &PublishArgs, binding: Option<&Binding>, at: &Path) -> Answer<Publish> {
     let binding = binding.ok_or_else(unbound)?;
+    let signer = binding.signer.clone().ok_or_else(unsigned)?;
     let history = History::open(at)?;
     let ask = Ask {
         branch: Branch::new(&args.branch),
         revision: history.resolve(&args.revision)?,
         component: args.component.as_ref().map(ComponentName::new),
-        signer: binding.signer.clone(),
+        signer,
     };
     publish(&binding.seams, &history, &Kept::at(&history), &ask)
 }

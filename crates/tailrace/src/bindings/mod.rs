@@ -29,14 +29,25 @@
 //! A missing file is absent naming its path, and a broken one unreadable
 //! naming the file and the table or key, with the parser's words where
 //! it has them (58, 59, rule core.19).
+//!
+//! The binding made from the file binds the store, the landing and the
+//! signers it names, and from the repository the command runs in the
+//! build, the policy and every projection built, which the repository's
+//! policy file picks among (92, C.10); no ledger and no target are bound
+//! yet. Only a publish makes the layout it names (60, rule core.32).
 
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
-use tailrace_seams::{Answer, Not, SignerId, Source};
+use tailrace_seams::{
+    Answer, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, SignerId, Source,
+};
+
+use crate::{profiles, unsigned, Binding};
 
 #[cfg(test)]
 mod tests;
@@ -310,5 +321,77 @@ fn signing(file: &Path, home: Option<&Path>, table: &toml::Table) -> Answer<Sign
     Ok(Signing {
         signer: SignerId::new(signer),
         key,
+    })
+}
+
+/// The command a binding is made for: publish, which makes the layout
+/// the file names the first time, or verify, which never makes or writes
+/// one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum For {
+    Publish,
+    Verify,
+}
+
+/// The ledger, which the host's file names no profile of until bolt 4's
+/// ledger unit: every operation absent naming its binding.
+struct NoLedger;
+
+impl NoLedger {
+    fn absent() -> Not {
+        Not::absent(
+            &Source::new(Seam::Keeper, "unbound"),
+            "binding of the ledger",
+        )
+    }
+}
+
+impl Keeper for NoLedger {
+    fn append(&self, _: &ChannelName, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
+        Err(NoLedger::absent())
+    }
+
+    fn chain(&self, _: &ChannelName) -> Answer<Vec<Envelope>> {
+        Err(NoLedger::absent())
+    }
+}
+
+/// The binding the bindings file at `file` names for `command`, in the
+/// repository at `repository`, its `~/` paths expanded against `home`.
+/// A publish on a host whose file names no `[signing]` is absent naming
+/// it before anything is read; a file naming no `[store]` or no
+/// `[landing]` is absent naming the table. Every table is read before the
+/// layout is made, so a file that cannot bind leaves nothing behind.
+pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
+    let bindings = read(file, home)?;
+    let signing = bindings.signing.as_ref();
+    if command == For::Publish && signing.is_none() {
+        return Err(unsigned());
+    }
+    let missing = |table: &str| {
+        Not::absent(
+            &source(file),
+            format!("binding of the {table}, [{table}] in {}", file.display()),
+        )
+    };
+    let landing = bindings
+        .landing
+        .as_ref()
+        .ok_or_else(|| missing("landing"))?;
+    let store = bindings.store.as_ref().ok_or_else(|| missing("store"))?;
+    let landing = profiles::landing::bind(landing, repository)?;
+    let store = profiles::store::bind(store, command == For::Publish)?;
+    Ok(Binding {
+        seams: Seams {
+            store,
+            build: profiles::build::bind(repository),
+            landing,
+            policy: profiles::policy::bind(repository),
+            keeper: Box::new(NoLedger),
+            signers: profiles::signer::bind(signing),
+            projections: profiles::projection::bound(),
+            targets: BTreeMap::new(),
+        },
+        signer: signing.map(|s| s.signer.clone()),
     })
 }
