@@ -19,8 +19,8 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Answer, Artifact, Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, Digest,
     Ecosystem, Envelope, Environment, EnvironmentName, Layout, Manifest, Name, Outcome, Output,
-    OutputName, Packed, Projection, Rendered, Report, Revision, Seams, Serving, Signer, SignerId,
-    Verdict, Version,
+    OutputName, Packed, Projection, Rendered, Report, Revision, Seam, Seams, Serving, Signer,
+    SignerId, Source, Verdict, Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -297,14 +297,22 @@ impl FakeWorld {
     }
 
     /// What publish is asked for `revision` on `main`, every component the
-    /// landing touched, signed as the host.
+    /// landing touched, signed as the host and offered to the world's
+    /// store.
     pub fn ask(&self, revision: &Revision) -> Ask {
         Ask {
             branch: self.main.clone(),
             revision: revision.clone(),
             component: None,
             signer: self.host.clone(),
+            store: self.store(),
         }
+    }
+
+    /// The store as a host's bindings would name it, which the record
+    /// keeps of each version (61, 118): the fake store, by its profile.
+    pub fn store(&self) -> Source {
+        Source::new(Seam::Store, self.profile())
     }
 
     /// What verify is asked of `version` on `main` under `audience`.
@@ -493,7 +501,7 @@ impl Projection for Watched {
 #[cfg(test)]
 mod tests {
     use tailrace_core::Landed;
-    use tailrace_seams::{Seam, Source, Store};
+    use tailrace_seams::Store;
 
     use super::*;
 

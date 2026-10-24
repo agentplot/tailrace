@@ -19,14 +19,16 @@ use crate::{
 };
 
 /// What a publish is asked: the revision, the branch that landed it, the
-/// one component to publish or every one the landing touched (124), and
-/// the identity of the party running it, which signs (11, 79).
+/// one component to publish or every one the landing touched (124), the
+/// identity of the party running it, which signs (11, 79), and the store
+/// as the host's bindings name it, which the record keeps (61, 118).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ask {
     pub branch: Branch,
     pub revision: Revision,
     pub component: Option<ComponentName>,
     pub signer: SignerId,
+    pub store: Source,
 }
 
 /// A publish's answer: per component, in the order the policy file
@@ -312,7 +314,7 @@ impl<'a> Run<'a> {
     fn held(&self, index: &Digest) -> Answer<(Digest, Vec<(Artifact, Vec<Digest>)>)> {
         let not_a = |what: &str, digest: &Digest| {
             Not::unreadable(
-                &bound(Seam::Store),
+                &self.ask.store,
                 format!("{digest} as {what}"),
                 Some(format!("{digest} holds no {what}")),
             )
@@ -405,7 +407,7 @@ impl<'a> Run<'a> {
             let answered = store.put_bytes(&packed.bytes)?.digest;
             if answered != bytes {
                 return Err(Not::refused(
-                    &bound(Seam::Store),
+                    &self.ask.store,
                     Why::OtherBytes {
                         expected: bytes,
                         answered,
@@ -466,7 +468,8 @@ impl<'a> Run<'a> {
     }
 
     /// 12: the host's record of the version, its last write, then the
-    /// answer (61, design D9).
+    /// answer, each naming the store as the host's bindings name it (61,
+    /// 118, design D9).
     fn record(
         &self,
         versioned: &Versioned,
@@ -475,7 +478,7 @@ impl<'a> Run<'a> {
         index: Digest,
         artifacts: Vec<PublishedArtifact>,
     ) -> Answer<Published> {
-        let store = bound(Seam::Store);
+        let store = self.ask.store.clone();
         self.kept.write(&Entry {
             component: component.name.clone(),
             version: versioned.version.clone(),

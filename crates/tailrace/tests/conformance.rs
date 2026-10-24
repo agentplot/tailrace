@@ -37,6 +37,7 @@ impl Surface for CommandLine {
         .expect("the arguments parse");
         let binding = Binding {
             seams: self.world.seams(),
+            store: self.world.store(),
             signer: Some(self.world.host.clone()),
         };
         let mut out = Vec::new();

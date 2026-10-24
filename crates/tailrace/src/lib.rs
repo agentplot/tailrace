@@ -63,11 +63,14 @@ pub enum Command {
     Status(commands::status::StatusArgs),
 }
 
-/// What a host binds (92): the seams, and the identity of the party
-/// running tailrace, which signs what it observed (11, 79); `None` on a
-/// host that binds no key and only verifies.
+/// What a host binds (92): the seams; the store as the host's bindings
+/// name it, which the host's record keeps of each version (61, 118);
+/// and the identity of the party running tailrace, which signs what it
+/// observed (11, 79), `None` on a host that binds no key and only
+/// verifies.
 pub struct Binding {
     pub seams: Seams,
+    pub store: Source,
     pub signer: Option<SignerId>,
 }
 

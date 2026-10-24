@@ -21,7 +21,7 @@ use std::process::Command;
 use scratch::gate::{Gate, SIGNER};
 use scratch::recorder::Recorder;
 use scratch::{git_command, moon_workspace, policy_file, ssh_keygen, Repo, Scratch, Task};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tailrace::profiles::store::layout::Layout;
 use tailrace_core::{History, Kept, Provenance};
 use tailrace_seams::{Claim, Digest, Store};
@@ -214,11 +214,11 @@ impl Laptop {
         let gate = Gate::new(&scratch, &recorder, &OUTPUTS.map(|(_, task, _)| task));
         let landed = gate.land("x", &[("notes/x.txt", "x")]);
 
-        let layout = scratch.path().join("layouts/laptop");
+        let layout = host.home.join(".local/share/tailrace/layout");
         host.bind(&format!(
-            "[store]\nlayout = {:?}\n\n[landing]\nsluice = {{ remote = \"origin\" }}\n\n\
-             [signing]\nsigner = \"{LAPTOP}\"\nkey = \"~/.config/tailrace/signing\"\n",
-            layout.display().to_string()
+            "[store]\nlayout = \"~/.local/share/tailrace/layout\"\n\n\
+             [landing]\nsluice = {{ remote = \"origin\" }}\n\n\
+             [signing]\nsigner = \"{LAPTOP}\"\nkey = \"~/.config/tailrace/signing\"\n"
         ));
         Laptop {
             scratch,
@@ -317,6 +317,21 @@ fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() 
             .map(str::to_string)
             .collect();
     assert_eq!(named, ["v0.1.0"], "the layout names another ref, a channel");
+
+    // The host's record names the store as the bindings file names it,
+    // the layout's path with ~/ expanded (61, 118).
+    let store = json!({
+        "seam": "store",
+        "profile": format!("layout {}", laptop.layout.display()),
+    });
+    assert_eq!(version["store"], store, "{first}");
+    let (code, status) = laptop
+        .host
+        .tailrace(&laptop.scratch.repo, &["status", "--json"]);
+    assert_eq!(code, Some(0), "{status}");
+    let entry = &status["value"]["components"][0]["versions"][0];
+    assert_eq!(entry["version"], "0.1.0", "{status}");
+    assert_eq!(entry["store"], store, "{status}");
 
     // S2: the same revision again answers the same index, and no file of
     // the layout or the record changed.

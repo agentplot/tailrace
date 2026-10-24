@@ -49,6 +49,7 @@ fn ask(args: &PublishArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Publi
         revision: history.resolve(&args.revision)?,
         component: args.component.as_ref().map(ComponentName::new),
         signer,
+        store: binding.store.clone(),
     };
     publish(&binding.seams, &history, &Kept::at(&history), &ask)
 }

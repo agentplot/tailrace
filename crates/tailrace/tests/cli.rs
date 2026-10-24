@@ -16,6 +16,11 @@ use tailrace_seams::{
 };
 use tempfile::TempDir;
 
+/// The store as the host's bindings name it, which the record keeps.
+fn store() -> Source {
+    Source::new(Seam::Store, "layout /srv/tailrace/layout")
+}
+
 /// The one component of the repository, its one output packed in `eco`.
 const POLICY: &str = "outputs = [\"site\"]\n\n[projections]\nsite = \"eco\"\n";
 
@@ -103,6 +108,7 @@ impl Host {
     fn binding(&self) -> Binding {
         Binding {
             seams: self.fakes.seams(),
+            store: store(),
             signer: Some(SignerId::new("host")),
         }
     }
@@ -179,6 +185,7 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
             revision: host.head.clone(),
             component: None,
             signer: SignerId::new("host"),
+            store: store(),
         },
     );
     assert_eq!(printed, answer_json(&core));
@@ -267,7 +274,7 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
             revision: host.head.clone(),
             branch: Branch::new("main"),
             index: index.clone(),
-            store: Source::new(Seam::Store, "bound"),
+            store: store(),
         })
         .unwrap();
 

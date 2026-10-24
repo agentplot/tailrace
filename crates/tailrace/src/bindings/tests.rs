@@ -309,6 +309,29 @@ fn publish_makes_the_layout_it_names_and_verify_never_does() {
 }
 
 #[test]
+fn the_store_is_named_by_its_key_and_its_path_under_the_home() {
+    let host = Host::new();
+    host.write(
+        "[store]\nlayout = \"~/layout\"\n\n[landing]\nbranch = {}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n",
+    );
+    let binding = bind(
+        &host.file(),
+        Some(&host.home()),
+        host.dir.path(),
+        For::Publish,
+    )
+    .unwrap();
+    assert_eq!(
+        binding.store,
+        Source::new(
+            Seam::Store,
+            format!("layout {}", host.home().join("layout").display())
+        )
+    );
+}
+
+#[test]
 fn publish_with_no_signing_is_absent_naming_it_and_makes_nothing() {
     let host = Host::new();
     let layout = host.dir.path().join("layout");
