@@ -64,9 +64,12 @@
 //!
 //! [`Report::assert`] fails the test with one report naming the profile,
 //! the group, and per failed scenario what it plays, its clauses and why,
-//! the same for a fake as for any profile (93). The fakes run every group
-//! here, in `tests/fakes.rs`; the command line runs the surfaces' group in
-//! its own crate's tests.
+//! the same for a fake as for any profile (93). A scenario that stages what
+//! the rig says its profile does not do calls [`not_applicable`], and the
+//! report names it as not applicable with the rig's reason, counting it
+//! neither passed nor failed. The fakes run every group here, in
+//! `tests/fakes.rs`; the command line runs the surfaces' group in its own
+//! crate's tests.
 
 pub mod core;
 pub mod coverage;

@@ -1,15 +1,26 @@
-//! The landing's group: 77 and 78 (B.3).
+//! The landing's group: 77 and 78 (B.3). The rig stages what a landing
+//! records of each verdict, and the landing makes the rest: the signed
+//! claim is the landing's to make and tailrace's only to carry, so the
+//! suite makes none (12, rule core.8; design D3a).
 
-use serde_json::json;
 use tailrace_seams::{
-    Branch, BuildId, Check, Claim, ClaimKind, Digest, Envelope, Landing, Outcome, Revision, Seam,
-    Signature, SignerId, Verdict, IN_TOTO,
+    Branch, BuildId, Check, Landing, Outcome, Revision, Seam, SignerId, Verdict, IN_TOTO,
 };
 
 use crate::seams::unreadable;
-use crate::{ok, Rig, Scenario};
+use crate::{not_applicable, ok, Rig, Scenario};
 
 pub const GROUP: &str = "landing";
+
+/// What a landing records of one verdict: its check, the build identity
+/// it was reached on, its outcome and its signer (78).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Recorded {
+    pub check: Check,
+    pub build: BuildId,
+    pub outcome: Outcome,
+    pub signer: SignerId,
+}
 
 /// A landing, made new for each scenario.
 pub trait LandingRig: Rig {
@@ -18,9 +29,14 @@ pub trait LandingRig: Rig {
     /// The branch the landing lands on.
     fn branch(&self) -> Branch;
 
-    /// A new revision the branch has landed, with `verdicts` recorded for
-    /// it as given.
-    fn landed(&self, verdicts: &[Verdict]) -> Revision;
+    /// Whether the landing records verdicts; a plain branch records none
+    /// (C.6).
+    fn records_verdicts(&self) -> bool;
+
+    /// A new revision the branch has landed, the landing recording
+    /// `verdicts` for it as it records any verdict. The suite hands it
+    /// verdicts only where the rig records them.
+    fn landed(&self, verdicts: &[Recorded]) -> Revision;
 
     /// A revision the branch has not landed.
     fn not_landed(&self) -> Revision;
@@ -45,6 +61,12 @@ pub fn scenarios() -> Vec<Scenario<dyn LandingRig>> {
             run: verdicts_as_the_landing_recorded_them,
         },
         Scenario {
+            name: "a revision with no verdict",
+            plays: None,
+            cites: &[78],
+            run: a_revision_with_no_verdict,
+        },
+        Scenario {
             name: "a landing that cannot be reached",
             plays: None,
             cites: &[58, 59, 78],
@@ -54,31 +76,23 @@ pub fn scenarios() -> Vec<Scenario<dyn LandingRig>> {
     ]
 }
 
-/// A verdict of `check` on `build`, signed as its signer signs it.
-fn verdict(check: &str, build: &str, outcome: Outcome, signer: &str) -> Verdict {
-    let build = BuildId::new(build);
-    let claim = Claim {
-        subject: Digest::of(build.as_str().as_bytes()),
-        kind: ClaimKind::Verdict,
-        revision: Revision::new("4f2a9c1"),
-        build: Some(build.clone()),
-        body: json!({ "check": check, "outcome": outcome }),
-    };
-    let payload = claim.payload();
-    Verdict {
+/// A verdict of `check` on the build `site@4f2a9c1`, by the signer
+/// `landing`.
+fn recorded(check: &str, outcome: Outcome) -> Recorded {
+    Recorded {
         check: Check::new(check),
-        build,
+        build: BuildId::new("site@4f2a9c1"),
         outcome,
-        signer: SignerId::new(signer),
-        envelope: Envelope {
-            payload_type: IN_TOTO.into(),
-            signature: Signature {
-                signer: SignerId::new(signer),
-                sig: Digest::of(&payload).as_str().as_bytes().to_vec(),
-            },
-            payload,
-        },
+        signer: SignerId::new("landing"),
     }
+}
+
+/// Whether `verdict` carries the four `recorded` names.
+fn carries(verdict: &Verdict, recorded: &Recorded) -> bool {
+    verdict.check == recorded.check
+        && verdict.build == recorded.build
+        && verdict.outcome == recorded.outcome
+        && verdict.signer == recorded.signer
 }
 
 fn landed_and_not_landed(rig: &dyn LandingRig) {
@@ -102,26 +116,54 @@ fn landed_and_not_landed(rig: &dyn LandingRig) {
 }
 
 fn verdicts_as_the_landing_recorded_them(rig: &dyn LandingRig) {
-    let landing = rig.landing();
+    if !rig.records_verdicts() {
+        not_applicable("the landing records no verdicts");
+    }
     let recorded = [
-        verdict("test", "site@4f2a9c1", Outcome::Pass, "landing"),
-        verdict("lint", "site@4f2a9c1", Outcome::Fail, "landing"),
+        recorded("test", Outcome::Pass),
+        recorded("lint", Outcome::Fail),
     ];
-    let with = rig.landed(&recorded);
-    let without = rig.landed(&[]);
-    let read = ok(landing.verdicts_of(&with), "verdicts-of");
-    assert_eq!(read, recorded, "the verdicts read are not those recorded");
-    for verdict in &read {
-        assert!(
-            !verdict.check.as_str().is_empty()
-                && !verdict.build.as_str().is_empty()
-                && !verdict.signer.as_str().is_empty(),
-            "a verdict names no check, build or signer: {verdict:?}"
+    let at = rig.landed(&recorded);
+    let read = ok(rig.landing().verdicts_of(&at), "verdicts-of");
+    assert_eq!(
+        read.len(),
+        recorded.len(),
+        "the landing recorded {recorded:?} and answered {read:?}"
+    );
+    for want in &recorded {
+        let held = read.iter().filter(|v| carries(v, want)).count();
+        assert_eq!(
+            held, 1,
+            "the verdicts read hold {want:?} {held} times, not once: {read:?}"
         );
     }
+    // The body of the payload is the landing's, and the suite asks
+    // nothing of it.
+    for verdict in &read {
+        let signed = &verdict.envelope;
+        assert_eq!(
+            signed.payload_type, IN_TOTO,
+            "the verdict of {} is signed in another form: {verdict:?}",
+            verdict.check
+        );
+        assert!(
+            !signed.payload.is_empty(),
+            "the verdict of {} carries no payload: {verdict:?}",
+            verdict.check
+        );
+        assert_eq!(
+            signed.signature.signer, verdict.signer,
+            "the signature on the verdict of {} names another signer than the verdict's",
+            verdict.check
+        );
+    }
+}
+
+fn a_revision_with_no_verdict(rig: &dyn LandingRig) {
+    let at = rig.landed(&[]);
     assert_eq!(
         ok(
-            landing.verdicts_of(&without),
+            rig.landing().verdicts_of(&at),
             "verdicts-of a revision with none"
         ),
         [],
@@ -131,7 +173,7 @@ fn verdicts_as_the_landing_recorded_them(rig: &dyn LandingRig) {
 
 fn a_landing_that_cannot_be_reached(rig: &dyn LandingRig) {
     let branch = rig.branch();
-    let revision = rig.landed(&[verdict("test", "site@4f2a9c1", Outcome::Pass, "landing")]);
+    let revision = rig.landed(&[]);
     let words = rig.unreachable();
     let landing = rig.landing();
     unreadable(
