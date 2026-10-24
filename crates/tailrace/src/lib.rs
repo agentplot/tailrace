@@ -19,6 +19,7 @@ use clap::{Parser, Subcommand};
 use tailrace_seams::{Not, Seam, Seams, SignerId, Source};
 
 pub mod commands;
+pub mod profiles;
 pub mod render;
 
 /// The revision this binary was built from. A binary carries the revision
