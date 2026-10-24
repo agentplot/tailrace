@@ -1857,6 +1857,7 @@ dependencies = [
  "tailrace-core",
  "tailrace-fakes",
  "tailrace-seams",
+ "tempfile",
 ]
 
 [[package]]
