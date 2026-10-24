@@ -390,8 +390,6 @@ pub(super) fn referred(bytes: &[u8]) -> Result<Descriptor, String> {
 /// descriptor and its one layer the bytes, with no annotation and no
 /// subject, so the same bytes always write the same manifest (design
 /// D14).
-// The registry names bytes through it once its name and resolve read it.
-#[allow(dead_code)]
 pub(super) fn cache(digest: &Digest, size: u64) -> Vec<u8> {
     canonical(&ImageManifest {
         schema_version: 2,
@@ -412,8 +410,6 @@ pub(super) fn cache(digest: &Digest, size: u64) -> Vec<u8> {
 /// cache manifest: its one layer's; none for any other manifest; the
 /// parser's or tailrace's words when they hold no JSON, or a cache
 /// manifest of another form (design D14).
-// The registry names bytes through it once its name and resolve read it.
-#[allow(dead_code)]
 pub(super) fn cached(bytes: &[u8]) -> Result<Option<Digest>, String> {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
