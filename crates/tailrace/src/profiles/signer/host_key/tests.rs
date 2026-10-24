@@ -267,3 +267,84 @@ fn a_key_file_that_is_not_a_key_is_unreadable_in_the_parsers_words() {
     assert_eq!(what, format!("the key file {}", path.display()));
     assert_eq!(said, words);
 }
+
+#[test]
+fn the_key_replaced_between_two_signatures_signs_the_second() {
+    let dir = TempDir::new().unwrap();
+    let (old, new) = (new_key(), new_key());
+    let path = written(dir.path(), "host", &old);
+    let host = host(&path);
+    let first = sign(&host).unwrap();
+    written(dir.path(), "host", &new);
+    let second = sign(&host).unwrap();
+    let signed = pae(&second.payload_type, &second.payload);
+    assert_eq!(
+        new.public_key()
+            .verify(NAMESPACE, &signed, &ssh_sig(&second)),
+        Ok(())
+    );
+    assert!(old
+        .public_key()
+        .verify(NAMESPACE, &signed, &ssh_sig(&second))
+        .is_err());
+    assert_eq!(
+        old.public_key()
+            .verify(NAMESPACE, &signed, &ssh_sig(&first)),
+        Ok(())
+    );
+}
+
+#[test]
+fn the_key_file_removed_after_a_signature_is_no_identity_at_hand() {
+    let dir = TempDir::new().unwrap();
+    let path = written(dir.path(), "host", &new_key());
+    let host = host(&path);
+    sign(&host).unwrap();
+    fs::remove_file(&path).unwrap();
+    let what = absent(sign(&host));
+    assert_eq!(
+        what,
+        format!("identity host: no key file at {}", path.display())
+    );
+}
+
+/// Whether `bytes` holds `part` anywhere.
+fn holds(bytes: &[u8], part: &[u8]) -> bool {
+    bytes.windows(part.len()).any(|w| w == part)
+}
+
+#[test]
+fn nothing_of_the_key_leaves_it() {
+    let dir = TempDir::new().unwrap();
+    let key = new_key();
+    let path = written(dir.path(), "host", &key);
+    let file = fs::read_to_string(&path).unwrap();
+    let secret = key.key_data().ed25519().unwrap().private.to_bytes();
+    let envelope = sign(&host(&path)).unwrap();
+    let serialized = serde_json::to_vec(&envelope).unwrap();
+    for bytes in [&serialized, &envelope.payload, &envelope.signature.sig] {
+        assert!(!holds(bytes, file.as_bytes()));
+        assert!(!holds(bytes, &secret));
+        for line in file.lines().filter(|l| !l.starts_with("-----")) {
+            assert!(!holds(bytes, line.as_bytes()), "the envelope holds {line}");
+        }
+    }
+    let listed: Vec<PathBuf> = fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(listed, [path]);
+}
+
+#[test]
+fn the_profile_is_its_signer_and_its_path_alone() {
+    let dir = TempDir::new().unwrap();
+    let path = written(dir.path(), "host", &new_key());
+    let bound = host(&path);
+    sign(&bound).unwrap();
+    // Every field named, so a field added to hold anything of the key
+    // fails to compile here.
+    let HostKey { signer, key } = bound;
+    assert_eq!(signer, SignerId::new("host"));
+    assert_eq!(key, path);
+}
