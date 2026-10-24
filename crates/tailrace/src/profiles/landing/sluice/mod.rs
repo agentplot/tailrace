@@ -10,7 +10,11 @@
 mod dsse;
 #[allow(dead_code)]
 mod log;
+#[allow(dead_code)]
+mod records;
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
@@ -26,6 +30,9 @@ pub struct Sluice {
     repository: PathBuf,
     remote: Option<String>,
     git: Tool,
+    /// Each run record read, by the signer whose ref holds it and its
+    /// blob, kept for the life of the handle (design D6).
+    records: RefCell<BTreeMap<(String, String), records::Record>>,
 }
 
 fn source() -> Source {
@@ -41,6 +48,7 @@ impl Sluice {
             repository: repository.into(),
             remote,
             git: Tool::new("git", source()),
+            records: RefCell::default(),
         }
     }
 

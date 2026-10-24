@@ -84,10 +84,36 @@ impl Tool {
         args: &[S],
         env_drop: &[&str],
     ) -> Answer<Ran> {
+        self.spawn(dir, args, env_drop, None)
+    }
+
+    /// The tool run as [`ran`](Tool::ran) runs it, with `input` on its
+    /// stdin in place of `/dev/null`.
+    pub fn fed<S: AsRef<OsStr>>(
+        &self,
+        dir: Option<&Path>,
+        args: &[S],
+        env_drop: &[&str],
+        input: &[u8],
+    ) -> Answer<Ran> {
+        self.spawn(dir, args, env_drop, Some(input))
+    }
+
+    fn spawn<S: AsRef<OsStr>>(
+        &self,
+        dir: Option<&Path>,
+        args: &[S],
+        env_drop: &[&str],
+        input: Option<&[u8]>,
+    ) -> Answer<Ran> {
         let mut command = Command::new(&self.program);
         command
             .args(args)
-            .stdin(Stdio::null())
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if let Some(dir) = dir {
@@ -103,9 +129,19 @@ impl Tool {
                 command.env_remove(&name);
             }
         }
-        let out = command
-            .output()
+        let mut child = command
+            .spawn()
             .map_err(|e| self.unreadable(args, e.to_string()))?;
+        let stdin = child.stdin.take();
+        let out = std::thread::scope(|scope| {
+            if let (Some(mut stdin), Some(input)) = (stdin, input) {
+                // A tool that exits before reading it all says why on
+                // its stderr, which is the answer.
+                scope.spawn(move || std::io::Write::write_all(&mut stdin, input));
+            }
+            child.wait_with_output()
+        })
+        .map_err(|e| self.unreadable(args, e.to_string()))?;
         Ok(Ran {
             code: out.status.code(),
             status: out.status.to_string(),
@@ -201,6 +237,16 @@ mod tests {
             said(tool("sh").output(None, &["-c", "exit 4"], &[], &[0])),
             "exit status: 4"
         );
+    }
+
+    #[test]
+    fn what_it_is_fed_is_its_stdin() {
+        let ran = tool("sh")
+            .fed(None, &["-c", "tr a-z A-Z"], &[], b"fed\n")
+            .unwrap();
+        assert_eq!(ran.stdout, b"FED\n");
+        let empty = tool("sh").ran(None, &["-c", "cat"], &[]).unwrap();
+        assert_eq!(empty.stdout, b"");
     }
 
     #[test]
