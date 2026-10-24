@@ -89,9 +89,11 @@ in
     # Chromium its screenshots are taken in (site/scripts/shots.mjs).
     pkgs.bun
     pkgs.playwright-test
+    pkgs.sccache
   ];
 
   env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
+  env.RUSTC_WRAPPER = lib.getExe pkgs.sccache;
 
   # moon's task archives (.moon/cache/outputs) are a link into the git common
   # dir, so every worktree shares them; the rest of .moon/cache records the
@@ -100,6 +102,17 @@ in
   # run, which sources this before every command, cargo builds and the tests
   # run on the cores sluice handed the run (SLUICE_JOBS, sluice 0.37.0); a
   # session's own shell has no SLUICE_JOBS, and cargo takes every core.
+  #
+  # rustc runs under sccache (RUSTC_WRAPPER), its cache in the git common dir,
+  # so every worktree, sluice's places among them, reuses the crates another
+  # compiled: the dependencies, which compile where cargo unpacked them, while
+  # a workspace crate's key holds its checkout's path. Its server listens on a
+  # port the common dir derives, below the hosts' ephemeral ranges (32768 on
+  # Linux, 49152 on macOS), so the server a compile reaches is this
+  # repository's, the sccache devenv.lock pins (core.26), never one another
+  # repository started on sccache's default port. A port, not a socket: two
+  # servers starting at once on one socket would share the cache, which sccache
+  # does not survive.
   enterShell = ''
     if [ -n "''${SLUICE_JOBS:-}" ]; then
       CARGO_BUILD_JOBS="$SLUICE_JOBS"
@@ -119,6 +132,12 @@ in
       export MOON_HOME
     fi
     unset _moon_root _moon_common _moon_cache
+    if _sccache_common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+      SCCACHE_DIR="$_sccache_common/sccache"
+      SCCACHE_SERVER_PORT=$((20000 + $(printf %s "$_sccache_common" | cksum | cut -d' ' -f1) % 10000))
+      export SCCACHE_DIR SCCACHE_SERVER_PORT
+    fi
+    unset _sccache_common
     ${activate}
   '';
 
