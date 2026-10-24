@@ -35,12 +35,14 @@ pub struct Carried {
     pub envelope: Envelope,
 }
 
-/// Where a carried verdict was found: the seam that answered it and the
-/// revision it was asked for.
+/// Where a carried verdict was found: the seam that answered it, the
+/// revision it was asked for, and where the landing says it found it, in
+/// the landing's own words.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Found {
     pub seam: Seam,
     pub revision: Revision,
+    pub at: String,
 }
 
 impl Carried {
@@ -50,6 +52,7 @@ impl Carried {
             found: Found {
                 seam: Seam::Landing,
                 revision: revision.clone(),
+                at: verdict.found.clone(),
             },
             check: verdict.check.clone(),
             build: verdict.build.clone(),
@@ -120,15 +123,23 @@ mod tests {
             build: BuildId::new("b7e1"),
             outcome: Outcome::Pass,
             signer: SignerId::new("landing"),
-            envelope: Envelope::signed(
-                "application/vnd.their-own+json",
-                vec![0xff, 0x00, b'{', 0x80, b'"', b'\n'],
-                Signature {
-                    signer: SignerId::new("landing"),
-                    keyid: String::new(),
-                    sig: vec![9, 8, 7, 0],
-                },
-            ),
+            envelope: Envelope {
+                payload_type: "application/vnd.their-own+json".into(),
+                payload: vec![0xff, 0x00, b'{', 0x80, b'"', b'\n'],
+                signatures: vec![
+                    Signature {
+                        signer: SignerId::new("landing"),
+                        keyid: "SHA256:l4nd".into(),
+                        sig: vec![9, 8, 7, 0],
+                    },
+                    Signature {
+                        signer: SignerId::new("landing"),
+                        keyid: "SHA256:s3cond".into(),
+                        sig: vec![6, 5, 0],
+                    },
+                ],
+            },
+            found: "origin refs/runs/landing:4f2a9c1/linux/0a1b.json".into(),
         }
     }
 
@@ -160,7 +171,8 @@ mod tests {
             carried.found,
             Found {
                 seam: Seam::Landing,
-                revision: revision.clone()
+                revision: revision.clone(),
+                at: verdict.found.clone(),
             }
         );
         let claim = provenance(vec![carried]).claim(
@@ -173,7 +185,20 @@ mod tests {
         assert_eq!(found.envelope, verdict.envelope);
         assert_eq!(found.envelope.payload, verdict.envelope.payload);
         assert_eq!(found.envelope.signatures, verdict.envelope.signatures);
+        assert_eq!(
+            found
+                .envelope
+                .signatures
+                .iter()
+                .map(|s| (s.keyid.as_str(), s.sig.as_slice()))
+                .collect::<Vec<_>>(),
+            [
+                ("SHA256:l4nd", [9, 8, 7, 0].as_slice()),
+                ("SHA256:s3cond", [6, 5, 0].as_slice())
+            ]
+        );
         assert_eq!(found.envelope.digest(), verdict.envelope.digest());
+        assert_eq!(found.found.at, verdict.found);
         assert_eq!(
             (&found.check, &found.build, found.outcome, &found.signer),
             (

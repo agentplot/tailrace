@@ -176,6 +176,7 @@ impl World {
             outcome,
             signer: id,
             envelope,
+            found: format!("the fake landing's record of {check} on {build}"),
         };
         self.fakes.landing.verdict(&self.head, verdict.clone());
         verdict

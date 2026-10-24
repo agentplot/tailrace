@@ -99,6 +99,7 @@ mod tests {
                     sig: vec![3],
                 },
             ),
+            found: format!("the record of {check}"),
         }
     }
 

@@ -230,6 +230,10 @@ fn signed(revision: &Revision, recorded: &Recorded) -> Verdict {
                 sig,
             },
         ),
+        found: format!(
+            "the fake landing's record of {} by {}",
+            recorded.check, recorded.signer
+        ),
     }
 }
 

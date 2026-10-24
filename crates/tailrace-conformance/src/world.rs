@@ -292,6 +292,7 @@ impl FakeWorld {
             outcome,
             signer: id,
             envelope,
+            found: format!("the fake landing's record of {check} on {build}"),
         }
     }
 
