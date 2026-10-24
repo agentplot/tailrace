@@ -13,15 +13,20 @@ at once, by the repository's authors (92).
 
 ## The contract
 
-The seam is three operations (84 to 86). **pack** takes an output and the
-version and answers the ecosystem's own bytes for it and the metadata the
-ecosystem gives them. **render** takes a set of artifacts and their
-metadata and answers a consumer layout in the ecosystem's own form, and
-which versions it holds. **serve** takes a consumer layout and answers the
-ecosystem's own clients over the protocol they read, for an ecosystem
-whose clients read no files. The same outputs and the same version pack
-to the same bytes, or the projection says it cannot promise so (87). A
-layout holds only versions whose verdict under its policy is satisfied.
+The seam is three operations (84 to 86). **pack** takes an output at a
+build identity and, where the bytes are an artifact's, the version, and
+answers the ecosystem's own bytes for it and the metadata the ecosystem
+gives them. A cache entry packs with no version, and its bytes carry no
+metadata that makes an offer (100). **render** takes a set of artifacts
+and their metadata, or of cache entries by build identity, and answers a
+consumer layout in the ecosystem's own form, and which versions, or which
+build identities, it holds. **serve** takes a consumer layout and answers
+the ecosystem's own clients over the protocol they read, for an ecosystem
+whose clients read no files. The same outputs and the same version, or
+the same build identity, pack to the same bytes, or the projection says
+it cannot promise so (87). A projection that packs no cache entries
+answers absent for one, as the file and image projections do. A layout
+holds only versions whose verdict under its policy is satisfied.
 
 pack is the ecosystem's own packager run against outputs the build left,
 with the version handed over the way that packager takes it, and never
