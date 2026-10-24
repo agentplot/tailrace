@@ -6,5 +6,7 @@
 
 pub mod build;
 pub mod landing;
+// Only its own tests run a tool until the moon build does.
+#[allow(dead_code)]
 mod run;
 pub mod store;
