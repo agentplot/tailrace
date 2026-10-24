@@ -8,7 +8,8 @@
 //!
 //! The profile is a signer's name and a path, and nothing else (design
 //! D1): the key is read at the moment it signs and dropped before sign
-//! answers, so no credential is kept (64, rule core.21).
+//! answers, so no credential is kept (64, rule core.21). A host that
+//! only verifies binds it with neither, and signs nothing (79, 80).
 
 use std::fs;
 use std::io;
@@ -31,9 +32,16 @@ mod tests;
 /// verifies as a claim (design D3).
 pub const NAMESPACE: &str = "tailrace-claim";
 
-/// A signer bound to the key file at a path, signing as one identity.
+/// A signer bound to the key file at a path, signing as one identity, or
+/// bound to no key on a host that only verifies.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostKey {
+    signing: Option<Signing>,
+}
+
+/// The identity a host key signs as, and the path of its key file.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Signing {
     signer: SignerId,
     key: PathBuf,
 }
@@ -43,26 +51,38 @@ impl HostKey {
     /// Nothing is read until a claim is signed.
     pub fn new(signer: SignerId, key: impl Into<PathBuf>) -> HostKey {
         HostKey {
-            signer,
-            key: key.into(),
+            signing: Some(Signing {
+                signer,
+                key: key.into(),
+            }),
         }
     }
 
-    /// The identity this profile signs as.
-    pub fn signer(&self) -> &SignerId {
-        &self.signer
+    /// The profile on a host that binds no key (design D6): it verifies
+    /// as a profile with a key does, by the keys the policy lists, and
+    /// answers every sign absent, reading no file.
+    pub fn verifying() -> HostKey {
+        HostKey { signing: None }
     }
 
-    /// The path of the key file it signs with.
-    pub fn key(&self) -> &Path {
-        &self.key
+    /// The identity this profile signs as, `None` where it only verifies.
+    pub fn signer(&self) -> Option<&SignerId> {
+        self.signing.as_ref().map(|s| &s.signer)
+    }
+
+    /// The path of the key file it signs with, `None` where it only
+    /// verifies.
+    pub fn key(&self) -> Option<&Path> {
+        self.signing.as_ref().map(|s| s.key.as_path())
     }
 
     /// The signer seam and this profile, which every answer names.
     pub fn source() -> Source {
         Source::new(Seam::Signer, "host key")
     }
+}
 
+impl Signing {
     /// The key from its file, read now and checked in sluice's order
     /// (design D2): there, a regular file, only its owner may read it, an
     /// OpenSSH private key, no passphrase, Ed25519.
@@ -152,23 +172,32 @@ fn wipe(text: &mut [u8]) {
 impl Signer for HostKey {
     /// 79: `claim` signed as the bound signer, with the key read now and
     /// dropped before the envelope is answered (64); absent for any other
-    /// identity, with no file touched (11, rule core.8).
+    /// identity, and for every identity where no key is bound, with no
+    /// file touched (11, rule core.8).
     fn sign(&self, claim: &Claim, identity: &SignerId) -> Answer<Envelope> {
         let source = HostKey::source();
-        if identity != &self.signer {
+        let Some(signing) = &self.signing else {
+            return Err(Not::absent(
+                &source,
+                format!(
+                    "identity {identity}: no identity is at hand, since this host binds no key"
+                ),
+            ));
+        };
+        if identity != &signing.signer {
             return Err(Not::absent(&source, format!("identity {identity}")));
         }
-        let key = self.read_key(&source)?;
+        let key = signing.read_key(&source)?;
         let payload = claim.payload();
         let sig = key
             .sign(NAMESPACE, HashAlg::Sha512, &pae(IN_TOTO, &payload))
             .and_then(|sig| sig.to_pem(LineEnding::LF))
-            .map_err(|e| self.unreadable(&source, e.to_string()))?;
+            .map_err(|e| signing.unreadable(&source, e.to_string()))?;
         Ok(Envelope::signed(
             IN_TOTO,
             payload,
             Signature {
-                signer: self.signer.clone(),
+                signer: signing.signer.clone(),
                 keyid: String::new(),
                 sig: sig.into_bytes(),
             },

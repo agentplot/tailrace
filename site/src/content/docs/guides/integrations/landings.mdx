@@ -28,6 +28,12 @@ names.
 | sluice | C.5 | a revision is landed when sluice's log for the branch holds its landing; verdicts are the signed results under `refs/sluice/runs/<signer>` for the combination that landed it, each an in-toto statement in a DSSE envelope with the test's key and system as its subject and moon's hash as its digest; a result sluice replayed is carried as the signed pass that ran on the same key and system, and every envelope is carried whole, each signature with its key id, as sluice wrote it | built |
 | a plain git branch | C.6 | where sluice does not run a branch, a revision is landed when the branch's history contains it, and there are no verdicts | built |
 
+The landing is bound for a host by its bindings file (see
+[self-hosting](/tailrace/guides/self-hosting/)): `[landing] sluice = {
+remote = "origin" }` or `branch = { remote = "origin" }`, the remote
+optional. With a remote, sluice's records or the branches are read from
+it; without one, from the repository's own refs and files.
+
 ## Adding one
 
 A landing profile implements the one landing interface and nothing of

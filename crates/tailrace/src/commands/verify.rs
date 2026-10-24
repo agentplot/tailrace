@@ -6,9 +6,9 @@ use std::path::Path;
 
 use clap::Args;
 use tailrace_core::{verify, History, Verified, VerifyAsk};
-use tailrace_seams::{Answer, Audience, Branch, ChannelName, ComponentName, Version};
+use tailrace_seams::{Answer, Audience, Branch, ChannelName, ComponentName, Not, Version};
 
-use crate::{render, unbound, Binding};
+use crate::{render, Binding};
 
 #[derive(Debug, Args)]
 pub struct VerifyArgs {
@@ -46,7 +46,7 @@ fn audience(text: &str) -> Result<Audience, String> {
     }
 }
 
-pub fn run(args: &VerifyArgs, binding: Option<&Binding>, at: &Path, out: &mut dyn Write) -> i32 {
+pub fn run(args: &VerifyArgs, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write) -> i32 {
     let answer = ask(args, binding, at);
     let _ = if args.json {
         render::json(out, &answer)
@@ -56,8 +56,8 @@ pub fn run(args: &VerifyArgs, binding: Option<&Binding>, at: &Path, out: &mut dy
     render::exit(&answer)
 }
 
-fn ask(args: &VerifyArgs, binding: Option<&Binding>, at: &Path) -> Answer<Verified> {
-    let binding = binding.ok_or_else(unbound)?;
+fn ask(args: &VerifyArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Verified> {
+    let binding = binding.as_ref().map_err(Not::clone)?;
     let history = History::open(at)?;
     let ask = VerifyAsk {
         branch: Branch::new(&args.branch),

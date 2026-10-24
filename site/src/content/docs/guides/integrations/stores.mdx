@@ -45,6 +45,12 @@ registry that does not create repositories on push takes one declared
 repository with the name escaped into the tag. The digest is the address
 either way.
 
+The layout is bound for a host by its bindings file, `[store] layout =
+"<path>"` (see [self-hosting](/tailrace/guides/self-hosting/)): a
+publish makes the layout there the first time, where the path is missing
+or an empty directory, and writes into it thereafter; verify and status
+never make or write one.
+
 ## Adding one
 
 A store profile implements the one store interface and nothing of the

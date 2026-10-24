@@ -20,6 +20,7 @@
 //! | a target | [`seams::target`] | a [`TargetRig`](seams::target::TargetRig) |
 //! | the keeper | [`seams::keeper`] | a [`KeeperRig`](seams::keeper::KeeperRig) |
 //! | the binding | [`seams::binding`] | a [`BindingRig`](seams::binding::BindingRig) |
+//! | the host | [`seams::host`] | a [`HostRig`](seams::host::HostRig) |
 //! | version | [`core::version`] | the [`FakeWorld`](world::FakeWorld) |
 //! | publish | [`core::publish`] | the `FakeWorld` |
 //! | verify | [`core::verify`] | the `FakeWorld` |
@@ -68,8 +69,8 @@
 //! the rig says its profile does not do calls [`not_applicable`], and the
 //! report names it as not applicable with the rig's reason, counting it
 //! neither passed nor failed. The fakes run every group here, in
-//! `tests/fakes.rs`; the command line runs the surfaces' group in its own
-//! crate's tests.
+//! `tests/fakes.rs`; the command line runs the surfaces' group and the
+//! host's in its own crate's tests.
 
 pub mod core;
 pub mod coverage;
@@ -129,7 +130,7 @@ pub fn groups() -> Vec<Group> {
         cache, gate, layouts, ledger, publish, record, status, surfaces, verify, version,
     };
     use crate::seams::{
-        binding, build, keeper, landing, policy, projection, signer, store, target,
+        binding, build, host, keeper, landing, policy, projection, signer, store, target,
     };
     vec![
         group(store::GROUP, store::scenarios()),
@@ -141,6 +142,7 @@ pub fn groups() -> Vec<Group> {
         group(target::GROUP, target::scenarios()),
         group(keeper::GROUP, keeper::scenarios()),
         group(binding::GROUP, binding::scenarios()),
+        group(host::GROUP, host::scenarios()),
         group(version::GROUP, version::scenarios()),
         group(publish::GROUP, publish::scenarios()),
         group(verify::GROUP, verify::scenarios()),
@@ -163,9 +165,9 @@ pub fn citations() -> Vec<Cited> {
 mod tests {
     use super::*;
 
-    /// The groups of design D2: one per seam, the binding, and one per
-    /// part of the core.
-    const DESIGNED: [&str; 19] = [
+    /// The groups of design D2: one per seam, the binding, the host's
+    /// bindings file, and one per part of the core.
+    const DESIGNED: [&str; 20] = [
         "store",
         "build",
         "landing",
@@ -175,6 +177,7 @@ mod tests {
         "target",
         "keeper",
         "binding",
+        "host",
         "version",
         "publish",
         "verify",

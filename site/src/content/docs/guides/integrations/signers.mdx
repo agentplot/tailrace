@@ -58,6 +58,14 @@ reported as made by its signer and expired. A machine that verifies
 holds no key file: verify reads only what the policy lists, and the name
 an envelope gives its signer decides nothing.
 
+The host key is bound by the host's bindings file's `[signing]` table,
+sluice's own shape: `signer`, the identity it signs as, and `key`, the
+key file's path, absolute or beginning `~/` (see
+[self-hosting](/tailrace/guides/self-hosting/)). A host whose file names
+no `[signing]` binds the host key verify-only: it tells every claim by
+the keys the policy lists, and answers every sign absent, saying no
+identity is at hand, reading no file.
+
 ## Adding one
 
 A signer profile implements the one signer interface and nothing of the

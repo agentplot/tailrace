@@ -37,10 +37,11 @@ impl Surface for CommandLine {
         .expect("the arguments parse");
         let binding = Binding {
             seams: self.world.seams(),
-            signer: self.world.host.clone(),
+            store: self.world.store(),
+            signer: Some(self.world.host.clone()),
         };
         let mut out = Vec::new();
-        run(&cli, Some(&binding), &self.world.repo().path, &mut out);
+        run(&cli, &Ok(binding), &self.world.repo().path, &mut out);
         serde_json::from_slice(&out).unwrap_or_else(|e| {
             panic!(
                 "{question:?} printed no JSON document ({e}): {}",

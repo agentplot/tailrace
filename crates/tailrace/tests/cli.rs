@@ -16,6 +16,11 @@ use tailrace_seams::{
 };
 use tempfile::TempDir;
 
+/// The store as the host's bindings name it, which the record keeps.
+fn store() -> Source {
+    Source::new(Seam::Store, "layout /srv/tailrace/layout")
+}
+
 /// The one component of the repository, its one output packed in `eco`.
 const POLICY: &str = "outputs = [\"site\"]\n\n[projections]\nsite = \"eco\"\n";
 
@@ -103,7 +108,8 @@ impl Host {
     fn binding(&self) -> Binding {
         Binding {
             seams: self.fakes.seams(),
-            signer: SignerId::new("host"),
+            store: store(),
+            signer: Some(SignerId::new("host")),
         }
     }
 
@@ -113,15 +119,40 @@ impl Host {
         let cli = Cli::try_parse_from(std::iter::once("tailrace").chain(args.iter().copied()))
             .expect("the arguments parse");
         let mut out = Vec::new();
-        let code = run(&cli, Some(&self.binding()), &self.repo, &mut out);
+        let code = run(&cli, &Ok(self.binding()), &self.repo, &mut out);
         (code, String::from_utf8(out).unwrap())
     }
 
+    /// The scratch directory the repository is in.
+    fn root(&self) -> PathBuf {
+        self.repo.parent().unwrap().to_path_buf()
+    }
+
+    /// Where the built binary looks for the host's bindings file: under
+    /// a configuration directory of the scratch directory's own.
+    fn bindings_file(&self) -> PathBuf {
+        self.root().join("config/tailrace/config.toml")
+    }
+
+    /// `text` as the host's bindings file.
+    fn bind(&self, text: &str) {
+        let file = self.bindings_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, text).unwrap();
+    }
+
+    /// The built binary run in the repository, its home and its
+    /// configuration directory in the scratch directory, so it reads no
+    /// bindings file of the host running the tests.
     fn binary(&self, args: &[&str]) -> std::process::Output {
+        let home = self.root().join("home");
+        fs::create_dir_all(&home).unwrap();
         Command::new(env!("CARGO_BIN_EXE_tailrace"))
             .args(args)
             .current_dir(&self.repo)
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", self.root().join("config"))
             .output()
             .expect("the binary runs")
     }
@@ -154,6 +185,7 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
             revision: host.head.clone(),
             component: None,
             signer: SignerId::new("host"),
+            store: store(),
         },
     );
     assert_eq!(printed, answer_json(&core));
@@ -242,10 +274,11 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
             revision: host.head.clone(),
             branch: Branch::new("main"),
             index: index.clone(),
-            store: Source::new(Seam::Store, "bound"),
+            store: store(),
         })
         .unwrap();
 
+    assert!(!host.bindings_file().exists());
     let out = host.binary(&["status", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let json: Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -260,21 +293,102 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
 // Requirement: An unbound host answers absent
 
 #[test]
-fn the_built_binary_on_an_unbound_host_publishes_nothing() {
+fn the_built_binary_on_a_host_with_no_bindings_file_publishes_nothing() {
     let host = Host::new();
+    let file = host.bindings_file();
     let out = host.binary(&["publish", "HEAD"]);
     assert_eq!(out.status.code(), Some(4), "{out:?}");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("binding of the store"), "{stdout}");
-    assert!(stdout.contains("unbound"), "{stdout}");
+    assert!(stdout.contains(&file.display().to_string()), "{stdout}");
     assert_eq!(git(&host.repo, &["tag", "-l"]), "");
     assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
     let history = History::open(&host.repo).unwrap();
     assert!(!Kept::at(&history).dir().exists());
+    assert!(!file.parent().unwrap().exists(), "the publish wrote a file");
 
     let verify = host.binary(&["verify", "0.1.0", "--json"]);
     assert_eq!(verify.status.code(), Some(4));
     let json: Value = serde_json::from_slice(&verify.stdout).unwrap();
     assert_eq!(json["answer"], "absent");
     assert_eq!(json["absent"]["source"]["seam"], "host");
+    assert_eq!(
+        json["absent"]["what"],
+        format!("bindings file at {}", file.display())
+    );
+}
+
+#[test]
+fn a_bindings_file_that_is_not_toml_is_one_json_document_in_the_parsers_words() {
+    let host = Host::new();
+    let text = "[store\nlayout = \"/layout\"\n";
+    host.bind(text);
+    let words = toml::from_str::<toml::Table>(text).unwrap_err().to_string();
+    let out = host.binary(&["verify", "0.1.0", "--json"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).expect("one JSON document");
+    assert_eq!(json["answer"], "unreadable");
+    let unreadable = &json["unreadable"];
+    assert_eq!(unreadable["source"]["seam"], "host");
+    assert_eq!(
+        unreadable["what"],
+        host.bindings_file().display().to_string()
+    );
+    assert_eq!(unreadable["said"], words);
+}
+
+#[test]
+fn a_bindings_file_naming_two_landings_is_unreadable_naming_the_table() {
+    let host = Host::new();
+    host.bind(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nsluice = {{}}\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"host\"\nkey = \"~/.config/tailrace/signing\"\n",
+        host.root().join("layout").display()
+    ));
+    let out = host.binary(&["publish", "HEAD"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("{}, [landing]", host.bindings_file().display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[landing] names branch and sluice"),
+        "{stdout}"
+    );
+    assert!(!host.root().join("layout").exists(), "the layout was made");
+    assert_eq!(git(&host.repo, &["tag", "-l"]), "");
+}
+
+// Requirement: The host's bindings are one file beside the landing's own
+
+#[test]
+fn with_no_configuration_directory_set_the_file_under_the_home_binds_verify() {
+    let host = Host::new();
+    let home = host.root().join("home");
+    let layout = host.root().join("no-layout");
+    let file = home.join(".config/tailrace/config.toml");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(
+        &file,
+        format!(
+            "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n",
+            layout.display()
+        ),
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_tailrace"))
+        .args(["verify", "0.1.0", "--json"])
+        .current_dir(&host.repo)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("the binary runs");
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["answer"], "unreadable", "{json}");
+    assert_eq!(json["unreadable"]["source"]["seam"], "store", "{json}");
+    let what = json["unreadable"]["what"].as_str().unwrap();
+    assert!(what.starts_with(&layout.display().to_string()), "{json}");
+    assert!(!layout.exists(), "verify made the layout");
 }

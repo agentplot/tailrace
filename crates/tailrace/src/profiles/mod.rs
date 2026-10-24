@@ -6,6 +6,8 @@
 
 pub mod build;
 pub mod landing;
+pub mod policy;
+pub mod projection;
 mod run;
 pub mod signer;
 pub mod store;

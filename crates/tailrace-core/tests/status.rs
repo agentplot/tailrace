@@ -7,10 +7,8 @@ mod world;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tailrace_core::{status, Entry, Filter, History, Kept, Published, StatusAsk, Written, BOUND};
-use tailrace_seams::{
-    Branch, ComponentName, Digest, Not, Outcome, Revision, Seam, Source, Version,
-};
+use tailrace_core::{status, Entry, Filter, History, Kept, Published, StatusAsk, Written};
+use tailrace_seams::{Branch, ComponentName, Digest, Not, Outcome, Revision, Source, Version};
 use world::{World, HOST};
 
 fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
@@ -43,7 +41,7 @@ fn entry(component: &str, version: &str, revision: &str) -> Entry {
         revision: Revision::new(revision),
         branch: Branch::new("main"),
         index: Digest::of(version.as_bytes()),
-        store: Source::new(Seam::Store, BOUND),
+        store: world::store(),
     }
 }
 
@@ -72,7 +70,7 @@ fn an_entry_after_a_publish_names_the_version_and_nothing_the_store_holds() {
             revision: world.head.clone(),
             branch: Branch::new("main"),
             index: index.clone(),
-            store: Source::new(Seam::Store, BOUND),
+            store: world::store(),
         }]
     );
     let held = files(kept.dir());

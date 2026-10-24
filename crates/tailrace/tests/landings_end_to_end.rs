@@ -22,7 +22,8 @@ use tailrace_core::{
 use tailrace_fakes::{Fakes, StoreOp};
 use tailrace_seams::{
     Audience, Branch, Build, Check, Claim, ClaimKind, Ecosystem, Landing, NamedSigner, Not,
-    OutputName, Required, RequiredClaim, Revision, Seams, SignerId, Store, Version, Why,
+    OutputName, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version,
+    Why,
 };
 
 /// The identity of the party running tailrace, which signs (11, 79).
@@ -87,6 +88,7 @@ impl World {
             revision: revision.clone(),
             component: None,
             signer: SignerId::new(HOST),
+            store: Source::new(Seam::Store, tailrace_fakes::PROFILE),
         };
         let mut published = publish(&self.seams(landing), &history, &Kept::at(&history), &ask)
             .expect("the publish answered")

@@ -1,8 +1,9 @@
-//! One group per seam of Part B, each over a rig a caller supplies, and
-//! the binding's (design D2, D3).
+//! One group per seam of Part B, each over a rig a caller supplies, the
+//! binding's, and the host's bindings file's (design D2, D3).
 
 pub mod binding;
 pub mod build;
+pub mod host;
 pub mod keeper;
 pub mod landing;
 pub mod policy;

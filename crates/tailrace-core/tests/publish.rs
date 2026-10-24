@@ -454,7 +454,7 @@ fn a_store_that_names_bytes_wrongly_is_refused_naming_both() {
             answered: Digest::of(b"not these bytes"),
         }
     );
-    assert_eq!(r.source.seam, Seam::Store);
+    assert_eq!(r.source, world::store());
     assert!(indexes(&world).is_empty());
     assert!(world.fakes.store.contents().names.is_empty());
 }
@@ -812,6 +812,29 @@ fn the_answer_names_every_digest_the_store_holds() {
         let attached = &contents.attached[&held.digest];
         assert_eq!(claims[0]["envelope"], attached[0].digest().as_str());
     }
+}
+
+#[test]
+fn the_entry_and_the_answer_name_the_store_as_the_ask_names_it() {
+    let world = World::new();
+    let store = Source::new(Seam::Store, "layout /srv/elsewhere/layout");
+    let ask = Ask {
+        store: store.clone(),
+        ..world.ask_for("lib")
+    };
+    let Ok(Published::Version {
+        store: answered, ..
+    }) = world.publish_one(&ask)
+    else {
+        panic!("lib was not published")
+    };
+    assert_eq!(answered, store);
+    let entries = world
+        .kept()
+        .read(&tailrace_core::Filter::default())
+        .unwrap();
+    let kept: Vec<&Source> = entries.iter().map(|e| &e.store).collect();
+    assert_eq!(kept, [&store]);
 }
 
 // Requirement: A publish offers and does nothing more

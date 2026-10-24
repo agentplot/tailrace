@@ -12,7 +12,7 @@ use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, Fakes};
 use tailrace_seams::{
     Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem,
     Envelope, Layout, Outcome, Output, OutputName, Packed, Projection, Rendered, Report, Revision,
-    Serving, SignerId, Verdict, Version,
+    Seam, Serving, SignerId, Source, Verdict, Version,
 };
 
 use crate::common::{Fixture, Repo};
@@ -37,6 +37,12 @@ projections = { site = "eco-a" }
 
 pub const HOST: &str = "host";
 pub const LANDING: &str = "landing";
+
+/// The store as the host's bindings name it, which the record keeps of
+/// each version (61, 118).
+pub fn store() -> Source {
+    Source::new(Seam::Store, "layout /srv/tailrace/layout")
+}
 
 pub struct World {
     pub fixture: Fixture,
@@ -126,6 +132,7 @@ impl World {
             revision: self.head.clone(),
             component: None,
             signer: SignerId::new(HOST),
+            store: store(),
         }
     }
 
