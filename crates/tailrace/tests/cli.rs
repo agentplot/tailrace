@@ -351,3 +351,37 @@ fn a_bindings_file_naming_two_landings_is_unreadable_naming_the_table() {
     assert!(!host.root().join("layout").exists(), "the layout was made");
     assert_eq!(git(&host.repo, &["tag", "-l"]), "");
 }
+
+// Requirement: The host's bindings are one file beside the landing's own
+
+#[test]
+fn with_no_configuration_directory_set_the_file_under_the_home_binds_verify() {
+    let host = Host::new();
+    let home = host.root().join("home");
+    let layout = host.root().join("no-layout");
+    let file = home.join(".config/tailrace/config.toml");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(
+        &file,
+        format!(
+            "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n",
+            layout.display()
+        ),
+    )
+    .unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_tailrace"))
+        .args(["verify", "0.1.0", "--json"])
+        .current_dir(&host.repo)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("HOME", &home)
+        .env_remove("XDG_CONFIG_HOME")
+        .output()
+        .expect("the binary runs");
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["answer"], "unreadable", "{json}");
+    assert_eq!(json["unreadable"]["source"]["seam"], "store", "{json}");
+    let what = json["unreadable"]["what"].as_str().unwrap();
+    assert!(what.starts_with(&layout.display().to_string()), "{json}");
+    assert!(!layout.exists(), "verify made the layout");
+}
