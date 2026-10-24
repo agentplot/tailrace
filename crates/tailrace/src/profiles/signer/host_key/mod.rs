@@ -21,6 +21,9 @@ use tailrace_seams::{
     Why, IN_TOTO,
 };
 
+// Read by verify, which design D7 writes next.
+#[allow(dead_code)]
+mod listed;
 #[cfg(test)]
 mod tests;
 
