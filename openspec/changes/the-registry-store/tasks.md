@@ -64,7 +64,7 @@ tools layer (check-tools).
 
 ## 9. The rules
 
-- [ ] 9.1 Verify `grep -rn 'tailrace_core' crates/tailrace/src/profiles` finds nothing (core.2), `grep -rn 'profiles::' crates/tailrace/src/profiles/store/registry` finds only `profiles::store::oci`, and `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace-core/src/copy.rs crates/tailrace-core/src/repair.rs` finds nothing (core.1).
+- [x] 9.1 Verify `grep -rn 'tailrace_core' crates/tailrace/src/profiles` finds nothing (core.2), `grep -rn 'profiles::' crates/tailrace/src/profiles/store/registry` finds only `profiles::store::oci`, and `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace-core/src/copy.rs crates/tailrace-core/src/repair.rs` finds nothing (core.1).
 
 ## 10. The gate
 
