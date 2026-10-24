@@ -205,9 +205,6 @@ pub(super) fn verdicts(
     Ok(verdicts)
 }
 
-// The landing's verdicts-of reads through it from the task that writes
-// it.
-#[allow(dead_code)]
 impl Sluice {
     /// Every record in the tree of each signer's ref `runs` names, by the
     /// commit the remote's listing gave it, under `prefix` where one is

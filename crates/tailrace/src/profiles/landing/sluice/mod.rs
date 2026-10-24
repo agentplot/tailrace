@@ -5,12 +5,8 @@
 //! keeps and asks sluice to do nothing: it verifies no signature and
 //! signs nothing (rules core.7, core.8).
 
-// Their readers are the landing's from the task that writes it.
-#[allow(dead_code)]
 mod dsse;
-#[allow(dead_code)]
 mod log;
-#[allow(dead_code)]
 mod records;
 
 use std::cell::RefCell;
@@ -18,7 +14,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-use tailrace_seams::{Answer, Seam, Source};
+use tailrace_seams::{Answer, Branch, Envelope, Landing, Not, Revision, Seam, Source, Verdict};
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
 
@@ -37,6 +33,12 @@ pub struct Sluice {
 
 fn source() -> Source {
     Source::new(Seam::Landing, "sluice")
+}
+
+/// `envelope` in DSSE's own form, as sluice writes a run record: for a
+/// verdict's envelope, the bytes of the record it was found in (12).
+pub fn as_written(envelope: &Envelope) -> Vec<u8> {
+    dsse::write(envelope)
 }
 
 impl Sluice {
@@ -64,9 +66,6 @@ impl Sluice {
     }
 }
 
-// The log's reader reads through these until the landing's operations
-// do.
-#[allow(dead_code)]
 impl Sluice {
     /// git run in the repository with `args`, answering when it exits
     /// with one of `allowed`.
@@ -74,6 +73,38 @@ impl Sluice {
         let mut all = vec![OsStr::new("-C"), self.repository.as_os_str()];
         all.extend(args.iter().map(AsRef::as_ref));
         self.git.output(None, &all, GIT_REPOSITORY_ENV, allowed)
+    }
+
+    /// The opening read of every operation: with a remote bound, the
+    /// remote's listing of sluice's refs, each by the object it names;
+    /// with none, the repository's common directory read, and no refs
+    /// (design D2).
+    fn open(&self) -> Answer<BTreeMap<String, String>> {
+        let Some(remote) = &self.remote else {
+            self.common()?;
+            return Ok(BTreeMap::new());
+        };
+        let ran = self.git(&["ls-remote", remote, "refs/sluice/*"], &[0])?;
+        Ok(String::from_utf8_lossy(&ran.stdout)
+            .lines()
+            .filter_map(|line| line.split_once('\t'))
+            .map(|(object, name)| (name.to_string(), object.to_string()))
+            .collect())
+    }
+
+    /// The commit `revision` names in the repository, `None` when it
+    /// holds none.
+    fn commit(&self, revision: &Revision) -> Answer<Option<String>> {
+        let ran = self.git(
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                &format!("{revision}^{{commit}}"),
+            ],
+            &[0, 1],
+        )?;
+        Ok((ran.code == Some(0)).then(|| String::from_utf8_lossy(&ran.stdout).trim().to_string()))
     }
 
     /// The repository's common git directory, where sluice keeps a
@@ -114,5 +145,89 @@ impl Sluice {
             return Ok(None);
         };
         Ok(Some(self.git(&["cat-file", "blob", &blob], &[0])?.stdout))
+    }
+}
+
+impl Landing for Sluice {
+    /// 77: landed only when the branch's log records a landing done whose
+    /// commits, the first-parent line from the revision it moved the
+    /// branch to back to the one it moved it from, include the revision
+    /// (design D5).
+    fn landed(&self, branch: &Branch, revision: &Revision) -> Answer<bool> {
+        let listed = self.open()?;
+        let log = self.log(&listed, branch)?;
+        let done = log::landings(&log.bytes)
+            .map_err(|why| Not::unreadable(self.source(), &log.at, Some(why)))?;
+        if done.is_empty() {
+            return Ok(false);
+        }
+        let state = format!("refs/sluice/state/{branch}");
+        if let (Some(remote), true) = (&self.remote, listed.contains_key(&state)) {
+            self.fetch(remote, &[&format!("refs/heads/{branch}")])?;
+        }
+        let Some(commit) = self.commit(revision)? else {
+            return Ok(false);
+        };
+        for landing in done {
+            let range = format!("{}..{}", landing.from, landing.to);
+            let ran = self.git(&["rev-list", "--first-parent", &range], &[0])?;
+            if String::from_utf8_lossy(&ran.stdout)
+                .lines()
+                .any(|line| line == commit)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// 78: the verdicts of the signed run records, under every signer's
+    /// ref on the remote, of the combination the revision's
+    /// `Sluice-Tested` trailer names (design D6). With no remote bound,
+    /// sluice signed nothing, and a revision no trailer names was landed
+    /// on no verdict: both answer an empty set (sluice ADR 0032).
+    fn verdicts_of(&self, revision: &Revision) -> Answer<Vec<Verdict>> {
+        let listed = self.open()?;
+        let Some(remote) = &self.remote else {
+            return Ok(vec![]);
+        };
+        let Some(commit) = self.commit(revision)? else {
+            return Err(Not::absent(self.source(), format!("revision {revision}")));
+        };
+        let ran = self.git(
+            &[
+                "log",
+                "-1",
+                "--format=%(trailers:key=Sluice-Tested,valueonly)",
+                &commit,
+            ],
+            &[0],
+        )?;
+        let trailer = String::from_utf8_lossy(&ran.stdout);
+        let Some(combination) = trailer.lines().map(str::trim).find(|l| !l.is_empty()) else {
+            return Ok(vec![]);
+        };
+        let runs: Vec<(String, String)> = listed
+            .iter()
+            .filter_map(|(name, object)| {
+                name.strip_prefix(records::RUNS)
+                    .map(|signer| (signer.to_string(), object.clone()))
+            })
+            .collect();
+        if runs.is_empty() {
+            return Ok(vec![]);
+        }
+        let names: Vec<String> = runs
+            .iter()
+            .map(|(signer, _)| format!("{}{signer}", records::RUNS))
+            .collect();
+        self.fetch(
+            remote,
+            &names.iter().map(String::as_str).collect::<Vec<_>>(),
+        )?;
+        let under = self.held(remote, &runs, Some(&format!("{combination}/")))?;
+        records::verdicts(remote, combination, &under, || {
+            self.held(remote, &runs, None)
+        })
     }
 }
