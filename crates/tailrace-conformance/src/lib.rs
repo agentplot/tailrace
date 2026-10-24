@@ -184,6 +184,19 @@ mod tests {
     }
 
     #[test]
+    fn s1_says_it_plays_s1_and_cites_the_order_the_answer_and_no_move() {
+        let s1: Vec<Cited> = citations()
+            .into_iter()
+            .filter(|c| c.plays == Some("S1"))
+            .collect();
+        assert_eq!(s1.len(), 1, "{s1:?}");
+        assert_eq!(s1[0].group, "publish");
+        for clause in [17, 19, 20] {
+            assert!(s1[0].cites.contains(&clause), "S1 does not cite {clause}");
+        }
+    }
+
+    #[test]
     fn every_scenario_has_a_name_and_a_clause() {
         for cited in citations() {
             assert!(

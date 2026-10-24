@@ -5,7 +5,10 @@
 //! to do.
 
 use std::cell::RefCell;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::SystemTime;
 
 use serde_json::json;
 use tailrace_core::{publish, verify, Ask, History, Kept, Publish, Verified, VerifyAsk};
@@ -383,6 +386,32 @@ impl FakeWorld {
     /// Every pack asked, in order, with what the shared history held then.
     pub fn packs(&self) -> Vec<Packing> {
         self.packs.borrow().clone()
+    }
+
+    /// Every file of the host's record, by path, with its bytes and when
+    /// it was last written; none when the record holds nothing.
+    pub fn record(&self) -> Vec<(PathBuf, Vec<u8>, SystemTime)> {
+        fn walk(dir: &Path, found: &mut Vec<(PathBuf, Vec<u8>, SystemTime)>) {
+            let Ok(entries) = fs::read_dir(dir) else {
+                return;
+            };
+            for entry in entries {
+                let path = entry.expect("the record is readable").path();
+                if path.is_dir() {
+                    walk(&path, found);
+                } else {
+                    let modified = fs::metadata(&path)
+                        .and_then(|m| m.modified())
+                        .expect("the record is readable");
+                    let bytes = fs::read(&path).expect("the record is readable");
+                    found.push((path, bytes, modified));
+                }
+            }
+        }
+        let mut found = Vec::new();
+        walk(self.kept().dir(), &mut found);
+        found.sort();
+        found
     }
 
     /// How many operations every fake has been asked, all told.
