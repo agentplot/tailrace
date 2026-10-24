@@ -128,6 +128,13 @@ impl Host {
         self.root().join("config/tailrace/config.toml")
     }
 
+    /// `text` as the host's bindings file.
+    fn bind(&self, text: &str) {
+        let file = self.bindings_file();
+        fs::create_dir_all(file.parent().unwrap()).unwrap();
+        fs::write(file, text).unwrap();
+    }
+
     /// The built binary run in the repository, its home and its
     /// configuration directory in the scratch directory, so it reads no
     /// bindings file of the host running the tests.
@@ -264,6 +271,7 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
         })
         .unwrap();
 
+    assert!(!host.bindings_file().exists());
     let out = host.binary(&["status", "--json"]);
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let json: Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -300,4 +308,46 @@ fn the_built_binary_on_a_host_with_no_bindings_file_publishes_nothing() {
         json["absent"]["what"],
         format!("bindings file at {}", file.display())
     );
+}
+
+#[test]
+fn a_bindings_file_that_is_not_toml_is_one_json_document_in_the_parsers_words() {
+    let host = Host::new();
+    let text = "[store\nlayout = \"/layout\"\n";
+    host.bind(text);
+    let words = toml::from_str::<toml::Table>(text).unwrap_err().to_string();
+    let out = host.binary(&["verify", "0.1.0", "--json"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).expect("one JSON document");
+    assert_eq!(json["answer"], "unreadable");
+    let unreadable = &json["unreadable"];
+    assert_eq!(unreadable["source"]["seam"], "host");
+    assert_eq!(
+        unreadable["what"],
+        host.bindings_file().display().to_string()
+    );
+    assert_eq!(unreadable["said"], words);
+}
+
+#[test]
+fn a_bindings_file_naming_two_landings_is_unreadable_naming_the_table() {
+    let host = Host::new();
+    host.bind(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nsluice = {{}}\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"host\"\nkey = \"~/.config/tailrace/signing\"\n",
+        host.root().join("layout").display()
+    ));
+    let out = host.binary(&["publish", "HEAD"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("{}, [landing]", host.bindings_file().display())),
+        "{stdout}"
+    );
+    assert!(
+        stdout.contains("[landing] names branch and sluice"),
+        "{stdout}"
+    );
+    assert!(!host.root().join("layout").exists(), "the layout was made");
+    assert_eq!(git(&host.repo, &["tag", "-l"]), "");
 }
