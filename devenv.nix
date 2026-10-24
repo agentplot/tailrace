@@ -78,6 +78,46 @@ let
     else
       null;
 
+  # zot's own release build, for the tools layer's tests of the registry
+  # store (crates/tailrace/tests/registry_store.rs): nixpkgs holds no zot at
+  # devenv.lock's pin. The minimal build is the distribution specification
+  # with the referrers API and none of zot's extensions. Linux takes the
+  # build's dynamic loader from nixpkgs.
+  zot =
+    let
+      version = "2.1.22";
+      target =
+        {
+          aarch64-darwin = "darwin-arm64";
+          x86_64-darwin = "darwin-amd64";
+          aarch64-linux = "linux-arm64";
+          x86_64-linux = "linux-amd64";
+        }
+        .${pkgs.stdenv.hostPlatform.system}
+          or (throw "zot ${version}: no release build for ${pkgs.stdenv.hostPlatform.system}");
+      hashes = {
+        darwin-arm64 = "c81a26040ae79c7e8a90c306a2377c69982a86ff35c259427bd9accea0eca14c";
+        darwin-amd64 = "3b18f445a8229372b0b521c07945dfd18a0a8ec1745601a22974f554f7614fb9";
+        linux-arm64 = "4224c23122c43638f92875d6fb4f23564472d2584a348cb057440bcf4b43bf08";
+        linux-amd64 = "a053169f97b4ceaa051e054d53971799188a398cb36acbaf5e08622ec8664c44";
+      };
+    in
+    pkgs.stdenv.mkDerivation {
+      pname = "zot";
+      inherit version;
+      src = pkgs.fetchurl {
+        url = "https://github.com/project-zot/zot/releases/download/v${version}/zot-${target}-minimal";
+        sha256 = hashes.${target};
+      };
+      dontUnpack = true;
+      nativeBuildInputs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.autoPatchelfHook ];
+      installPhase = ''
+        runHook preInstall
+        install -Dm755 $src $out/bin/zot
+        runHook postInstall
+      '';
+    };
+
   # The application toolchain .prototools pins, on PATH. proto's home is
   # this repository's, in the git common dir so every worktree shares it,
   # and only this repository's pins are read (no global .prototools).
@@ -129,17 +169,25 @@ in
     # The tools layer: ssh-keygen signs the run records its tests stage as
     # sluice's signers sign them.
     pkgs.openssh
+    # The tools layer's registries: the registry store's tests start zot
+    # and the reference distribution, a registry with no referrers API, and
+    # reach ECR through its credential helper.
+    zot
+    pkgs.distribution
+    pkgs.amazon-ecr-credential-helper
   ]
   ++ lib.optional (sluice != null) sluice;
 
   env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
 
-  # The tools layer's tests run the pinned sluice and ssh-keygen by these
-  # paths: in a moon task, moon's Rust toolchain puts cargo's own bin
+  # The tools layer's tests run the pinned sluice, ssh-keygen and registries
+  # by these paths: in a moon task, moon's Rust toolchain puts cargo's own bin
   # first on PATH, where a sluice built from source may be. Empty where
   # sluice releases nothing for the system, and the tests say so.
   env.TAILRACE_TOOLS_SLUICE = lib.optionalString (sluice != null) "${sluice}/bin/sluice";
   env.TAILRACE_TOOLS_SSH_KEYGEN = "${pkgs.openssh}/bin/ssh-keygen";
+  env.TAILRACE_TOOLS_ZOT = "${zot}/bin/zot";
+  env.TAILRACE_TOOLS_DISTRIBUTION = "${pkgs.distribution}/bin/registry";
 
   # moon's task archives (.moon/cache/outputs) are a link into the git common
   # dir, so every worktree shares them; the rest of .moon/cache records the

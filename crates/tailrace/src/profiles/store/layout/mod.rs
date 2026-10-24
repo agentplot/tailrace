@@ -23,9 +23,8 @@ use tailrace_seams::{
 
 mod blobs;
 mod index;
-mod oci;
 
-use oci::{Descriptor, ENVELOPE, OCTETS, REF_NAME, SUBJECT};
+use super::oci::{self, Descriptor, ENVELOPE, OCTETS, REF_NAME, SUBJECT};
 
 /// The layout version this store reads and writes.
 const LAYOUT_VERSION: &str = "1.0.0";
