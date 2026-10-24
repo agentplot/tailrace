@@ -62,7 +62,7 @@ part exists.
 - **[core.30]** No code path turns a cache entry into an artifact, names one from a channel, an index or a policy, or refuses to build because one is gone.
 - **[core.31]** Every surface calls the one core and renders its answer; no surface computes a verdict, a version or a channel of its own.
 - **[core.32]** A read of what tailrace holds opens no connection to a store, a signer or a target and writes nothing.
-- **[core.33]** Every profile passes the one conformance suite, and every scenario of the suite cites the clauses it exercises.
+- **[core.33]** Every profile passes the one conformance suite, and every scenario of the suite cites the clauses it exercises; a clause no scenario cites is named in the suite's register with the unit of the plan that will cite it and why, and leaves the register with the commit that cites it.
 
 ### Design and records
 
@@ -76,7 +76,7 @@ part exists.
 
 ## Details
 
-- **core.1** Rules out: the strings `oci`, `ecr`, `ghcr`, `oras`, `cosign`, `moon`, `sluice`, `kms`, `npm`, `maven`, `cargo`, `flux`, `gh` in any source module outside a profile directory or a plugin directory; an import of a profile from the core. Not ruled out: `git`, which section 9 of the statement fixes, except in the ledger's code, which reaches its keeper through the keeper seam (B.8) and names no git; the in-toto and DSSE forms, the givens' default for every attestation; `.moon/` and the other configuration of this repository's own checks, which are no module; a plugin, which is a surface outside the core and names the ecosystem command it refuses. Source: statement preamble, clause 92; ADRs 0002, 0003, 0005.
+- **core.1** Rules out: the strings `oci`, `ecr`, `ghcr`, `oras`, `cosign`, `moon`, `sluice`, `kms`, `npm`, `maven`, `cargo`, `flux`, `gh` in any source module outside a profile directory or a plugin directory; an import of a profile from the core. Not ruled out: `git`, which section 9 of the statement fixes, except in the ledger's code, which reaches where the chain is held through the ledger seam (B.8) and names no git; the in-toto and DSSE forms, the givens' default for every attestation; `.moon/` and the other configuration of this repository's own checks, which are no module; a plugin, which is a surface outside the core and names the ecosystem command it refuses. Source: statement preamble, clause 92; ADRs 0002, 0003, 0005.
 - **core.2** Rules out: a profile calling another profile; a core function with a profile-specific branch; a projection that reaches the store other than through the store seam. Source: clauses 92, 93; ADR 0002.
 - **core.3** Rules out: a seam whose only profile is undocumented as such. Source: ADR 0008.
 - **core.4** Rules out: reading a tag, a version or a channel and acting on what it names without resolving it; a record of an act that names a tag and no digest; a channel head read to decide what to deploy without the digest beside it. Source: clauses 3, 40; ADR 0003.
@@ -93,7 +93,7 @@ part exists.
 - **core.14** Rules out: a publish path that also accepts; a host configuration holding the accepting credential beside the offering one; acceptance by anything that is not the gate. Not ruled out: the one host a policy names as both offerer and gate for a repository with one publisher (108), whose acceptance claim says it accepted what it offered. Source: clauses 25, 27, 96, 108; ADRs 0007, 0009.
 - **core.15** Rules out: moving a tag and writing the ledger after; a ledger entry edited, compacted or pruned; a rollback that removes the entry it undoes. Source: clauses 33, 34; ADR 0007.
 - **core.16** Rules out: a promotion without the expected starting version; a reconciler given a version to apply rather than a channel to follow. Source: clauses 35, 40; ADR 0007.
-- **core.34** Rules out: an append that does not read the chain's head first; a keeper that resolves a fork by timestamp or by order of arrival; a promotion claim with no predecessor digest but the first of its channel. Source: clauses 105, 106, 120 to 122; ADR 0009.
+- **core.34** Rules out: an append that does not read the chain's head first; a ledger that resolves a fork by timestamp or by order of arrival; a promotion claim with no predecessor digest but the first of its channel. Source: clauses 105, 106, 120 to 122; ADR 0009.
 - **core.35** Rules out: an approval claim a reconciler checks for apart from its channel's head; an environment configured to wait that follows a channel it does not own. Source: clauses 41, 97; ADR 0009.
 - **core.17** Rules out: a layout rendered with no policy; a version left in a layout after its policy refuses it; a refusal swallowed into an absent version. Source: clauses 47, 51; ADR 0006.
 - **core.18** Rules out: a served registry whose name differs per host; a layout path that embeds a registry host or an account; a lockfile written with a class's or an owner's host in it. Source: clause 49; ADR 0006.
@@ -112,4 +112,4 @@ part exists.
 - **core.30** Rules out: a channel tag on a cache entry; an index naming a cache entry's digest without a publish; a publish that fails because the cache is empty. Source: clauses 53, 54, 100.
 - **core.31** Rules out: a plugin that reads the store itself; a pane that derives a channel's head from a tag listing. Source: clause 56.
 - **core.32** Rules out: `status` that lists referrers from the registry; a read that refreshes a layout. Source: clause 60.
-- **core.33** Rules out: a profile merged with no suite run; a scenario citing no clause; a clause no scenario cites once the suite exists. Source: clause 93.
+- **core.33** Rules out: a profile merged with no suite run; a scenario citing no clause; a scenario citing a clause it does not exercise; a clause neither cited by a scenario nor named in the register; a clause both cited and still in the register; a register entry naming no unit or no reason. Not ruled out: a clause named in the register with the unit that will cite it, reported as pending on every run. Source: clause 93, section 12; ADR 0012.
