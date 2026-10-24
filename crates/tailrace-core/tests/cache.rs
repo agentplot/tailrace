@@ -268,6 +268,19 @@ fn a_checkout_ahead_of_the_branch_answers_the_revision_it_branched_from() {
 }
 
 #[test]
+fn sync_renders_into_the_working_trees_root_and_a_bare_repository_has_none() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a", "a")]);
+    assert_eq!(
+        repo.history().workdir(),
+        Some(repo.path.canonicalize().unwrap())
+    );
+    let bare = fixture.bare("shared.git");
+    assert_eq!(bare.history().workdir(), None);
+}
+
+#[test]
 fn a_branch_the_repository_lacks_is_absent_naming_it() {
     let fixture = Fixture::new();
     let repo = fixture.repo("repo");
