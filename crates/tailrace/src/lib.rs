@@ -18,6 +18,7 @@ use std::path::Path;
 use clap::{Parser, Subcommand};
 use tailrace_seams::{Not, Seam, Seams, SignerId, Source};
 
+pub mod bindings;
 pub mod commands;
 pub mod profiles;
 pub mod render;
