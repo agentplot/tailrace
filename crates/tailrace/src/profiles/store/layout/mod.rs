@@ -21,6 +21,9 @@ use tailrace_seams::{
 };
 
 mod blobs;
+// put-artifact, read and index.json write and read these forms in the tasks after.
+#[allow(dead_code)]
+mod oci;
 
 /// The layout version this store reads and writes.
 const LAYOUT_VERSION: &str = "1.0.0";

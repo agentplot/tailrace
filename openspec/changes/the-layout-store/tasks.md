@@ -25,7 +25,7 @@ the group that cannot pass without one is reported with `crew needs`.
 
 ## 3. Artifacts and indexes
 
-- [ ] 3.1 Write `profiles/store/layout/oci.rs`: the image manifest, the image index, the descriptor and the media types and annotation keys of design D4, each to and from the seam's `Manifest`. Verify with unit tests: an artifact's and an index's JSON round-trip to the `Manifest` they came from; the same `Manifest` writes the same bytes twice; an ecosystem with a space in its name is refused naming it.
+- [x] 3.1 Write `profiles/store/layout/oci.rs`: the image manifest, the image index, the descriptor and the media types and annotation keys of design D4, each to and from the seam's `Manifest`. Verify with unit tests: an artifact's and an index's JSON round-trip to the `Manifest` they came from; the same `Manifest` writes the same bytes twice; an ecosystem with a space in its name is refused naming it.
 - [ ] 3.2 Implement `put_artifact` and the manifest half of `read` over `blobs.rs`, `oci.rs` and the manifest entry of design D5. Verify with unit tests: an artifact read back answers its metadata and layers in order; an index read back answers its component, version and artifacts in order; a manifest naming a digest not held is absent naming it and writes no blob or entry; the config blob of an artifact reads back as bytes.
 
 ## 4. `index.json`: attestations and names
