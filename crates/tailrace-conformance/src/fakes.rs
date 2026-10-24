@@ -215,19 +215,21 @@ fn signed(revision: &Revision, recorded: &Recorded) -> Verdict {
         body: json!({ "check": recorded.check, "outcome": recorded.outcome }),
     };
     let payload = claim.payload();
+    let sig = Digest::of(&payload).as_str().as_bytes().to_vec();
     Verdict {
         check: recorded.check.clone(),
         build: recorded.build.clone(),
         outcome: recorded.outcome,
         signer: recorded.signer.clone(),
-        envelope: Envelope {
-            payload_type: IN_TOTO.into(),
-            signature: Signature {
-                signer: recorded.signer.clone(),
-                sig: Digest::of(&payload).as_str().as_bytes().to_vec(),
-            },
+        envelope: Envelope::signed(
+            IN_TOTO,
             payload,
-        },
+            Signature {
+                signer: recorded.signer.clone(),
+                keyid: String::new(),
+                sig,
+            },
+        ),
     }
 }
 

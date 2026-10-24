@@ -40,14 +40,15 @@ mod tests {
             build: BuildId::new("b7e1"),
             outcome: Outcome::Pass,
             signer: SignerId::new("landing"),
-            envelope: crate::Envelope {
-                payload_type: IN_TOTO.into(),
-                payload: b"{}".to_vec(),
-                signature: Signature {
+            envelope: crate::Envelope::signed(
+                IN_TOTO,
+                b"{}".to_vec(),
+                Signature {
                     signer: SignerId::new("landing"),
+                    keyid: "SHA256:l4nd".into(),
                     sig: vec![7],
                 },
-            },
+            ),
         });
     }
 }

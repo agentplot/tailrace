@@ -103,14 +103,15 @@ mod tests {
     }
 
     fn sealed(claim: &Claim) -> Envelope {
-        Envelope {
-            payload_type: IN_TOTO.into(),
-            payload: claim.payload(),
-            signature: Signature {
+        Envelope::signed(
+            IN_TOTO,
+            claim.payload(),
+            Signature {
                 signer: SignerId::new("host"),
+                keyid: String::new(),
                 sig: vec![1, 2, 3],
             },
-        }
+        )
     }
 
     fn theirs() -> Verdict {
@@ -119,14 +120,15 @@ mod tests {
             build: BuildId::new("b7e1"),
             outcome: Outcome::Pass,
             signer: SignerId::new("landing"),
-            envelope: Envelope {
-                payload_type: "application/vnd.their-own+json".into(),
-                payload: vec![0xff, 0x00, b'{', 0x80, b'"', b'\n'],
-                signature: Signature {
+            envelope: Envelope::signed(
+                "application/vnd.their-own+json",
+                vec![0xff, 0x00, b'{', 0x80, b'"', b'\n'],
+                Signature {
                     signer: SignerId::new("landing"),
+                    keyid: String::new(),
                     sig: vec![9, 8, 7, 0],
                 },
-            },
+            ),
         }
     }
 
@@ -170,7 +172,7 @@ mod tests {
         let [found] = <[Carried; 1]>::try_from(back.carried).unwrap();
         assert_eq!(found.envelope, verdict.envelope);
         assert_eq!(found.envelope.payload, verdict.envelope.payload);
-        assert_eq!(found.envelope.signature.sig, verdict.envelope.signature.sig);
+        assert_eq!(found.envelope.signatures, verdict.envelope.signatures);
         assert_eq!(found.envelope.digest(), verdict.envelope.digest());
         assert_eq!(
             (&found.check, &found.build, found.outcome, &found.signer),

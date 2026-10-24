@@ -131,14 +131,15 @@ mod tests {
     use crate::{Fault, Times};
 
     fn promotion(to: &str) -> Envelope {
-        Envelope {
-            payload_type: IN_TOTO.into(),
-            payload: to.as_bytes().to_vec(),
-            signature: Signature {
+        Envelope::signed(
+            IN_TOTO,
+            to.as_bytes().to_vec(),
+            Signature {
                 signer: SignerId::new("gate"),
+                keyid: String::new(),
                 sig: vec![5],
             },
-        }
+        )
     }
 
     fn source() -> Source {

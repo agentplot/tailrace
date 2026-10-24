@@ -113,7 +113,8 @@ fn signed_and_verified(rig: &dyn SignerRig) {
     let identity = rig.identity();
     let envelope = signed(rig);
     assert_eq!(
-        envelope.signature.signer, identity,
+        envelope.sole().map(|s| &s.signer),
+        Some(&identity),
         "the envelope is signed by another"
     );
     let held = Claim::from_envelope(&envelope)

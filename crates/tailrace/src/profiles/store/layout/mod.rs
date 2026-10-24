@@ -510,14 +510,15 @@ pub(super) mod tests {
     }
 
     fn envelope(says: &str) -> Envelope {
-        Envelope {
-            payload_type: tailrace_seams::IN_TOTO.into(),
-            payload: says.as_bytes().to_vec(),
-            signature: tailrace_seams::Signature {
+        Envelope::signed(
+            tailrace_seams::IN_TOTO,
+            says.as_bytes().to_vec(),
+            tailrace_seams::Signature {
                 signer: tailrace_seams::SignerId::new("a tester"),
+                keyid: String::new(),
                 sig: vec![7, 7],
             },
-        }
+        )
     }
 
     #[test]

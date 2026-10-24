@@ -151,8 +151,9 @@ fn verdicts_as_the_landing_recorded_them(rig: &dyn LandingRig) {
             "the verdict of {} carries no payload: {verdict:?}",
             verdict.check
         );
-        assert_eq!(
-            signed.signature.signer, verdict.signer,
+        assert!(
+            !signed.signatures.is_empty()
+                && signed.signatures.iter().all(|s| s.signer == verdict.signer),
             "the signature on the verdict of {} names another signer than the verdict's",
             verdict.check
         );

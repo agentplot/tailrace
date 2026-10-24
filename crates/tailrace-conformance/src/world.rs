@@ -549,14 +549,15 @@ mod tests {
         let world = FakeWorld::new();
         let store = &world.fakes.store;
         let digest = store.put_bytes(b"the bytes").unwrap().digest;
-        let envelope = Envelope {
-            payload_type: tailrace_seams::IN_TOTO.into(),
-            payload: b"{}".to_vec(),
-            signature: tailrace_seams::Signature {
+        let envelope = Envelope::signed(
+            tailrace_seams::IN_TOTO,
+            b"{}".to_vec(),
+            tailrace_seams::Signature {
                 signer: world.host.clone(),
+                keyid: String::new(),
                 sig: vec![1],
             },
-        };
+        );
         store.attach(&digest, &envelope).unwrap();
         store.resolve(&Name::new("v1")).unwrap_err();
         store.name(&Name::new("v1"), &digest, None).unwrap();

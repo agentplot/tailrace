@@ -210,14 +210,15 @@ mod tests {
     fn each_seam_is_one_trait_boxed_as_the_binding_holds_it() {
         let d = Digest::of(b"x");
         let rev = Revision::new("4f2a9c1");
-        let envelope = Envelope {
-            payload_type: IN_TOTO.into(),
-            payload: vec![],
-            signature: Signature {
+        let envelope = Envelope::signed(
+            IN_TOTO,
+            vec![],
+            Signature {
                 signer: SignerId::new("host"),
+                keyid: String::new(),
                 sig: vec![],
             },
-        };
+        );
         let meta = ArtifactMeta::new(
             Ecosystem::new("eco"),
             EcosystemName::new("pkg"),

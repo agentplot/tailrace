@@ -200,14 +200,15 @@ mod tests {
     }
 
     fn envelope(payload: &[u8]) -> Envelope {
-        Envelope {
-            payload_type: IN_TOTO.into(),
-            payload: payload.to_vec(),
-            signature: Signature {
+        Envelope::signed(
+            IN_TOTO,
+            payload.to_vec(),
+            Signature {
                 signer: SignerId::new("host"),
+                keyid: String::new(),
                 sig: vec![1],
             },
-        }
+        )
     }
 
     fn source() -> Source {

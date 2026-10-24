@@ -371,13 +371,13 @@ impl<'a> Run<'a> {
         for (output, packed, digest, bytes) in same {
             let mut claims = Vec::new();
             for envelope in self.seams.store.claims_of(&digest)? {
-                let ours = envelope.signature.signer == self.ask.signer
+                let ours = envelope.sole().is_some_and(|s| s.signer == self.ask.signer)
                     && tailrace_seams::Claim::from_envelope(&envelope)
                         .is_some_and(|c| c.kind == ClaimKind::Provenance && c.subject == digest);
                 if ours {
                     claims.push(Attached {
                         kind: ClaimKind::Provenance,
-                        signer: envelope.signature.signer.clone(),
+                        signer: self.ask.signer.clone(),
                         envelope: envelope.digest(),
                         on: digest.clone(),
                     });
@@ -450,7 +450,7 @@ impl<'a> Run<'a> {
             let attached = store.attach(&digest, &envelope)?;
             let claims = vec![Attached {
                 kind: ClaimKind::Provenance,
-                signer: envelope.signature.signer.clone(),
+                signer: self.ask.signer.clone(),
                 envelope: attached.digest,
                 on: digest.clone(),
             }];
