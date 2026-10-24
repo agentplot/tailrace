@@ -164,21 +164,23 @@ impl Signer for HostKey {
             .sign(NAMESPACE, HashAlg::Sha512, &pae(IN_TOTO, &payload))
             .and_then(|sig| sig.to_pem(LineEnding::LF))
             .map_err(|e| self.unreadable(&source, e.to_string()))?;
-        Ok(Envelope {
-            payload_type: IN_TOTO.into(),
+        Ok(Envelope::signed(
+            IN_TOTO,
             payload,
-            signature: Signature {
+            Signature {
                 signer: self.signer.clone(),
+                keyid: String::new(),
                 sig: sig.into_bytes(),
             },
-        })
+        ))
     }
 
     /// 80: the first of `signers`, in order, whose listed key made a
     /// valid signature in tailrace's namespace over exactly this envelope,
-    /// expired once its listing's `valid-before` has passed (81). No key
-    /// file is read and nothing is reached, and the name the envelope gives
-    /// its signer decides nothing (rule core.7). A signature this profile
+    /// whichever of the envelope's signatures that is (12, C.5), expired
+    /// once its listing's `valid-before` has passed (81). No key file is
+    /// read and nothing is reached, and the name the envelope gives a
+    /// signer decides nothing (rule core.7). A signature this profile
     /// cannot read is refused, never unreadable, so the core asks the next
     /// signer bound (design D7).
     fn verify(&self, attestation: &Envelope, signers: &[NamedSigner]) -> Answer<Made> {
@@ -198,34 +200,56 @@ impl Signer for HostKey {
                 Some(said),
             )
         };
-        let sig = std::str::from_utf8(&attestation.signature.sig)
-            .ok()
-            .and_then(|pem| SshSig::from_pem(pem).ok())
-            .ok_or_else(|| refused("the signature is not an SSH signature".into()))?;
-        if sig.namespace() != NAMESPACE {
-            return Err(refused(format!(
-                "the signature was made in the namespace {}, not {NAMESPACE}",
-                sig.namespace()
-            )));
-        }
         let signed = pae(&attestation.payload_type, &attestation.payload);
+        let sigs: Vec<_> = attestation.signatures.iter().map(read_sig).collect();
         let made = keys.iter().find(|(_, listed)| {
-            listed.key.key_data() == sig.public_key()
-                && listed.key.verify(NAMESPACE, &signed, &sig).is_ok()
+            sigs.iter().flatten().any(|sig| {
+                listed.key.key_data() == sig.public_key()
+                    && listed.key.verify(NAMESPACE, &signed, sig).is_ok()
+            })
         });
-        match made {
-            Some((named, listed)) => Ok(Made {
+        if let Some((named, listed)) = made {
+            return Ok(Made {
                 signer: named.id.clone(),
                 expired: listed.valid_before.is_some_and(|before| now() >= before),
-            }),
-            None => Err(refused(format!(
-                "signed by the key {}, which the envelope names {}; no signer checked \
-                 lists that key with a signature over this envelope",
-                sig.public_key().fingerprint(HashAlg::Sha256),
-                attestation.signature.signer
-            ))),
+            });
         }
+        let said: Vec<_> = attestation
+            .signatures
+            .iter()
+            .zip(sigs)
+            .map(|(held, sig)| match sig {
+                Ok(sig) => format!(
+                    "signed by the key {}, which the envelope names {}; no signer checked \
+                     lists that key with a signature over this envelope",
+                    sig.public_key().fingerprint(HashAlg::Sha256),
+                    held.signer
+                ),
+                Err(said) => said,
+            })
+            .collect();
+        Err(refused(if said.is_empty() {
+            "the envelope holds no signature".into()
+        } else {
+            said.join("; ")
+        }))
     }
+}
+
+/// One of an envelope's signatures, read as an SSH signature in
+/// tailrace's namespace, or the words saying why it is none.
+fn read_sig(held: &Signature) -> Result<SshSig, String> {
+    let sig = std::str::from_utf8(&held.sig)
+        .ok()
+        .and_then(|pem| SshSig::from_pem(pem).ok())
+        .ok_or_else(|| "the signature is not an SSH signature".to_string())?;
+    if sig.namespace() != NAMESPACE {
+        return Err(format!(
+            "the signature was made in the namespace {}, not {NAMESPACE}",
+            sig.namespace()
+        ));
+    }
+    Ok(sig)
 }
 
 /// Seconds since the epoch, now.

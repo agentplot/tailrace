@@ -157,9 +157,10 @@ impl Claim {
 
     /// The claim an envelope holds, or `None` for an envelope in any other
     /// form, such as another party's, which is carried as made (12) and
-    /// never read as a claim of tailrace's form.
+    /// never read as a claim of tailrace's form, and for one holding any
+    /// number of signatures but one (7).
     pub fn from_envelope(envelope: &Envelope) -> Option<Claim> {
-        if envelope.payload_type != IN_TOTO {
+        if envelope.payload_type != IN_TOTO || envelope.sole().is_none() {
             return None;
         }
         let statement: Statement = serde_json::from_slice(&envelope.payload).ok()?;
@@ -180,23 +181,52 @@ impl Claim {
     }
 }
 
-/// 7, 8: a claim signed, in DSSE's shape with exactly one signature: the
-/// payload's type, the payload, and the one signer's signature over them.
+/// 7, 8, 12: a payload signed, in DSSE's shape: the payload's type, the
+/// payload, and the signatures over them. A claim of tailrace's form holds
+/// exactly one signature, its one signer's (7); an envelope carried from
+/// another party holds every signature it was made with, in the order
+/// made, each with its key id as written (12, C.5).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Envelope {
     pub payload_type: String,
     pub payload: Vec<u8>,
-    pub signature: Signature,
+    pub signatures: Vec<Signature>,
 }
 
-/// One signer's signature, as its signer profile makes and reads it.
+/// One signer's signature, as its signer profile makes and reads it: the
+/// identity it was found under, the key id as its maker wrote it, empty
+/// when the maker named none, and the signature's bytes.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Signature {
     pub signer: SignerId,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub keyid: String,
     pub sig: Vec<u8>,
 }
 
 impl Envelope {
+    /// `payload` of `payload_type` under `signature` alone: the form of
+    /// every claim tailrace signs (7).
+    pub fn signed(
+        payload_type: impl Into<String>,
+        payload: Vec<u8>,
+        signature: Signature,
+    ) -> Envelope {
+        Envelope {
+            payload_type: payload_type.into(),
+            payload,
+            signatures: vec![signature],
+        }
+    }
+
+    /// The one signature of an envelope that holds exactly one.
+    pub fn sole(&self) -> Option<&Signature> {
+        match self.signatures.as_slice() {
+            [one] => Some(one),
+            _ => None,
+        }
+    }
+
     /// The envelope's own digest, by which a promotion names the one it
     /// follows (105, 120): the digest of its canonical JSON.
     pub fn digest(&self) -> Digest {
@@ -232,15 +262,16 @@ mod tests {
         }
     }
 
-    fn sealed(claim: &Claim, signer: &str) -> Envelope {
-        Envelope {
-            payload_type: IN_TOTO.into(),
-            payload: claim.payload(),
-            signature: Signature {
-                signer: SignerId::new(signer),
-                sig: vec![1, 2, 3],
-            },
+    fn signature(signer: &str, keyid: &str, sig: &[u8]) -> Signature {
+        Signature {
+            signer: SignerId::new(signer),
+            keyid: keyid.into(),
+            sig: sig.to_vec(),
         }
+    }
+
+    fn sealed(claim: &Claim, signer: &str) -> Envelope {
+        Envelope::signed(IN_TOTO, claim.payload(), signature(signer, "", &[1, 2, 3]))
     }
 
     #[test]
@@ -309,14 +340,11 @@ mod tests {
 
     #[test]
     fn a_claim_holding_another_partys_envelope_reads_it_back_byte_for_byte() {
-        let theirs = Envelope {
-            payload_type: "application/vnd.their-own+json".into(),
-            payload: vec![0xff, 0x00, b'{', 0x80, b'"'],
-            signature: Signature {
-                signer: SignerId::new("landing"),
-                sig: vec![9, 8, 7, 0],
-            },
-        };
+        let theirs = Envelope::signed(
+            "application/vnd.their-own+json",
+            vec![0xff, 0x00, b'{', 0x80, b'"'],
+            signature("landing", "", &[9, 8, 7, 0]),
+        );
         let carrier = Claim {
             kind: ClaimKind::Carried,
             body: json!({"found": "the landing's record", "envelope": theirs}),
@@ -326,7 +354,7 @@ mod tests {
         let found: Envelope = serde_json::from_value(back.body["envelope"].clone()).unwrap();
         assert_eq!(found, theirs);
         assert_eq!(found.payload, theirs.payload);
-        assert_eq!(found.signature.sig, theirs.signature.sig);
+        assert_eq!(found.signatures, theirs.signatures);
         assert_eq!(found.digest(), theirs.digest());
     }
 
@@ -372,15 +400,74 @@ mod tests {
         round_trip(claim(None));
         round_trip(claim(Some("b7e1")));
         round_trip(sealed(&claim(None), "host"));
-        round_trip(Signature {
-            signer: SignerId::new("host"),
-            sig: vec![0, 255],
-        });
+        round_trip(signature("host", "", &[0, 255]));
+        round_trip(signature("host", "SHA256:4kq0", &[0, 255]));
         round_trip(NamedSigner {
             id: SignerId::new("landing"),
             verified_by: "a key's name".into(),
             kinds: vec![ClaimKind::Verdict],
             checks: vec![Check::new("test"), Check::new("lint")],
         });
+    }
+
+    #[test]
+    fn an_envelope_of_two_signatures_round_trips_in_order_with_its_key_ids() {
+        let theirs = Envelope {
+            payload_type: IN_TOTO.into(),
+            payload: b"{\"_type\":\"theirs\"}".to_vec(),
+            signatures: vec![
+                signature("forge", "SHA256:f0rge", &[9, 8]),
+                signature("box", "SHA256:b0x", &[7, 6, 0]),
+            ],
+        };
+        let json = serde_json::to_value(&theirs).unwrap();
+        assert_eq!(json["signatures"][0]["keyid"], "SHA256:f0rge", "{json}");
+        assert_eq!(json["signatures"][1]["keyid"], "SHA256:b0x", "{json}");
+        let back: Envelope = serde_json::from_value(json).unwrap();
+        assert_eq!(back, theirs);
+        assert_eq!(
+            back.signatures
+                .iter()
+                .map(|s| (s.signer.as_str(), s.keyid.as_str()))
+                .collect::<Vec<_>>(),
+            [("forge", "SHA256:f0rge"), ("box", "SHA256:b0x")]
+        );
+        assert_eq!(back.sole(), None);
+        round_trip(theirs);
+    }
+
+    #[test]
+    fn a_key_id_left_empty_is_not_written() {
+        let json = serde_json::to_value(sealed(&claim(None), "host")).unwrap();
+        let [written] =
+            <[Value; 1]>::try_from(json["signatures"].as_array().unwrap().clone()).unwrap();
+        assert!(written.get("keyid").is_none(), "{written}");
+        let back: Signature = serde_json::from_value(written).unwrap();
+        assert_eq!(back.keyid, "");
+    }
+
+    #[test]
+    fn tailraces_form_with_two_signatures_or_none_is_no_claim() {
+        let c = claim(Some("b7e1"));
+        let one = sealed(&c, "host");
+        assert_eq!(one.sole(), Some(&signature("host", "", &[1, 2, 3])));
+        assert_eq!(Claim::from_envelope(&one), Some(c.clone()));
+
+        let two = Envelope {
+            signatures: vec![
+                signature("host", "", &[1, 2, 3]),
+                signature("gate", "", &[4]),
+            ],
+            ..one.clone()
+        };
+        assert_eq!(two.sole(), None);
+        assert_eq!(Claim::from_envelope(&two), None);
+
+        let none = Envelope {
+            signatures: vec![],
+            ..one
+        };
+        assert_eq!(none.sole(), None);
+        assert_eq!(Claim::from_envelope(&none), None);
     }
 }

@@ -247,7 +247,11 @@ fn a_landed_revision_published(world: &FakeWorld) {
         let held = ok(store.claims_of(&artifact.digest), "claims-of");
         assert_eq!(held.len(), 1, "{} carries {held:?}", artifact.digest);
         let envelope = &held[0];
-        assert_eq!(envelope.signature.signer, world.host, "signed by another");
+        assert_eq!(
+            envelope.sole().map(|s| &s.signer),
+            Some(&world.host),
+            "signed by another"
+        );
         let claim = Claim::from_envelope(envelope).expect("a claim of tailrace's form");
         assert_eq!(claim.kind, ClaimKind::Provenance);
         assert_eq!(claim.subject, artifact.digest, "about another digest");
@@ -262,8 +266,8 @@ fn a_landed_revision_published(world: &FakeWorld) {
         assert_eq!(provenance.carried.len(), 1, "{provenance:?}");
         let carried = &provenance.carried[0];
         assert_eq!(
-            (&carried.envelope.payload, &carried.envelope.signature),
-            (&made.envelope.payload, &made.envelope.signature),
+            (&carried.envelope.payload, &carried.envelope.signatures),
+            (&made.envelope.payload, &made.envelope.signatures),
             "the landing's verdict was not carried byte for byte"
         );
         assert_eq!(carried.found.seam, Seam::Landing);

@@ -176,6 +176,7 @@ impl World {
             outcome,
             signer: id,
             envelope,
+            found: format!("the fake landing's record of {check} on {build}"),
         };
         self.fakes.landing.verdict(&self.head, verdict.clone());
         verdict
@@ -232,6 +233,6 @@ pub fn build_ops(build: &FakeBuild) -> Vec<tailrace_fakes::BuildOp> {
 pub fn by_host(envelopes: &[Envelope]) -> Vec<&Envelope> {
     envelopes
         .iter()
-        .filter(|e| e.signature.signer.as_str() == HOST)
+        .filter(|e| e.signatures.iter().any(|s| s.signer.as_str() == HOST))
         .collect()
 }

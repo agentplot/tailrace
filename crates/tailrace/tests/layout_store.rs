@@ -48,14 +48,15 @@ fn artifact(store: &dyn Store, name: &str, bytes: &[u8]) -> Manifest {
 }
 
 fn envelope(says: &str) -> Envelope {
-    Envelope {
-        payload_type: IN_TOTO.into(),
-        payload: says.as_bytes().to_vec(),
-        signature: Signature {
+    Envelope::signed(
+        IN_TOTO,
+        says.as_bytes().to_vec(),
+        Signature {
             signer: SignerId::new("a tester"),
+            keyid: String::new(),
             sig: vec![7, 7],
         },
-    }
+    )
 }
 
 fn blob(layout: &Layout, digest: &Digest) -> PathBuf {

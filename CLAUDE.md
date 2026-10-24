@@ -31,6 +31,7 @@ Run a repository tool through the shell per command,
 | layer | what | about |
 |---|---|---|
 | `check-fast` | format, lint, the toolchain pins, the records' numbers, each crate's tests, the site's build: `moon run ':#check-fast'` | under a minute |
+| `check-tools` | the profiles' tests against moon, sluice and OpenSSH in scratch repositories: `moon run ':#check-tools'` | under a minute |
 
 ## The site
 

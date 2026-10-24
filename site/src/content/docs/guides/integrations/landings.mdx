@@ -1,6 +1,6 @@
 ---
 title: Landings
-description: The landing seam, and the merge queue and the plain branch designed to fill it.
+description: The landing seam, and the merge queue and the plain branch built to fill it.
 sidebar:
   order: 3
 ---
@@ -25,8 +25,8 @@ names.
 
 | member | profile | how | status |
 |---|---|---|---|
-| sluice | C.5 | a revision is landed when sluice's log for the branch holds its landing; verdicts are the signed results under `refs/sluice/runs/<signer>` for the combination that landed it, each an in-toto statement in a DSSE envelope with the test's key and system as its subject and moon's hash as its digest | designed |
-| a plain git branch | C.6 | where sluice does not run a branch, a revision is landed when the branch's history contains it, and there are no verdicts | designed |
+| sluice | C.5 | a revision is landed when sluice's log for the branch holds its landing; verdicts are the signed results under `refs/sluice/runs/<signer>` for the combination that landed it, each an in-toto statement in a DSSE envelope with the test's key and system as its subject and moon's hash as its digest; a result sluice replayed is carried as the signed pass that ran on the same key and system, and every envelope is carried whole, each signature with its key id, as sluice wrote it | built |
+| a plain git branch | C.6 | where sluice does not run a branch, a revision is landed when the branch's history contains it, and there are no verdicts | built |
 
 ## Adding one
 

@@ -51,17 +51,26 @@ fn a_fake_landing_recording_no_verdicts_keeps_the_landings_contract() {
         .collect();
     assert_eq!(
         not,
-        [(
-            "verdicts as the landing recorded them",
-            [78].as_slice(),
-            "the landing records no verdicts"
-        )],
+        [
+            (
+                "verdicts as the landing recorded them",
+                [78].as_slice(),
+                "the landing records no verdicts"
+            ),
+            (
+                "two signers, each by its own name",
+                [104].as_slice(),
+                "the landing records no verdicts"
+            )
+        ],
         "{report}"
     );
     let text = report.to_string();
     for words in [
-        "the landing group over the profile `fake`: 3 passed, 1 not applicable",
+        "the landing group over the profile `fake`: 3 passed, 2 not applicable",
         "\n- `verdicts as the landing recorded them` (clause 78): not applicable: \
+         the landing records no verdicts",
+        "\n- `two signers, each by its own name` (clause 104): not applicable: \
          the landing records no verdicts",
     ] {
         assert!(text.contains(words), "{text}\ndoes not say: {words}");

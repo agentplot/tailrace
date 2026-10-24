@@ -93,7 +93,8 @@ fn sign(host: &HostKey) -> Answer<Envelope> {
 
 /// The envelope's signature, parsed as the armored SSH signature it is.
 fn ssh_sig(envelope: &Envelope) -> SshSig {
-    let pem = std::str::from_utf8(&envelope.signature.sig).expect("the signature is text");
+    let held = envelope.sole().expect("the envelope holds one signature");
+    let pem = std::str::from_utf8(&held.sig).expect("the signature is text");
     SshSig::from_pem(pem).expect("the signature is an SSH signature")
 }
 
@@ -165,8 +166,9 @@ fn signed_as_the_host() {
     assert_eq!(Claim::from_envelope(&envelope), Some(claim()));
     assert_eq!(envelope.payload_type, IN_TOTO);
     assert_eq!(envelope.payload, claim().payload());
-    assert_eq!(envelope.signature.signer, SignerId::new("host"));
-    let pem = std::str::from_utf8(&envelope.signature.sig).unwrap();
+    let held = envelope.sole().expect("the envelope holds one signature");
+    assert_eq!(held.signer, SignerId::new("host"));
+    let pem = std::str::from_utf8(&held.sig).unwrap();
     assert!(pem.starts_with("-----BEGIN SSH SIGNATURE-----\n"), "{pem}");
     let sig = ssh_sig(&envelope);
     let signed = pae(&envelope.payload_type, &envelope.payload);
@@ -324,7 +326,11 @@ fn nothing_of_the_key_leaves_it() {
     let secret = key.key_data().ed25519().unwrap().private.to_bytes();
     let envelope = sign(&host(&path)).unwrap();
     let serialized = serde_json::to_vec(&envelope).unwrap();
-    for bytes in [&serialized, &envelope.payload, &envelope.signature.sig] {
+    for bytes in [
+        &serialized,
+        &envelope.payload,
+        &envelope.sole().unwrap().sig,
+    ] {
         assert!(!holds(bytes, file.as_bytes()));
         assert!(!holds(bytes, &secret));
         for line in file.lines().filter(|l| !l.starts_with("-----")) {
@@ -417,7 +423,7 @@ fn verified_with_no_key_file_names_the_host() {
 fn the_name_the_envelope_gives_itself_decides_nothing() {
     let (key, other) = (new_key(), new_key());
     let mut envelope = signed_by(&key);
-    envelope.signature.signer = SignerId::new("gate");
+    envelope.signatures[0].signer = SignerId::new("gate");
     let signers = [listing("gate", &other, None), listing("host", &key, None)];
     assert_eq!(verifier().verify(&envelope, &signers), made("host", false));
 }
@@ -456,10 +462,11 @@ fn another_profiles_envelope_is_refused_never_unreadable() {
     let said = none_of(verifier().verify(&envelope, &signers), &["host"]);
     assert_eq!(said, "the signature is not an SSH signature");
     let binary = Envelope {
-        signature: Signature {
+        signatures: vec![Signature {
             signer: SignerId::new("host"),
+            keyid: String::new(),
             sig: vec![0xff, 0xfe, 0x00],
-        },
+        }],
         ..envelope
     };
     let said = none_of(verifier().verify(&binary, &signers), &["host"]);
@@ -475,14 +482,15 @@ fn a_signature_in_another_namespace_is_refused_naming_it() {
         .unwrap()
         .to_pem(LineEnding::LF)
         .unwrap();
-    let envelope = Envelope {
-        payload_type: IN_TOTO.into(),
+    let envelope = Envelope::signed(
+        IN_TOTO,
         payload,
-        signature: Signature {
+        Signature {
             signer: SignerId::new("host"),
+            keyid: String::new(),
             sig: sig.into_bytes(),
         },
-    };
+    );
     let said = none_of(
         verifier().verify(&envelope, &[listing("host", &key, None)]),
         &["host"],
@@ -491,6 +499,44 @@ fn a_signature_in_another_namespace_is_refused_naming_it() {
         said,
         "the signature was made in the namespace git, not tailrace-claim"
     );
+}
+
+#[test]
+fn whichever_of_an_envelopes_signatures_the_listed_key_made_verifies() {
+    let (key, other) = (new_key(), new_key());
+    let host = signed_by(&key);
+    let fake = FakeSigner::new();
+    fake.hold(&SignerId::new("gate"));
+    let theirs = fake.sign(&claim(), &SignerId::new("gate")).unwrap();
+    let both = Envelope {
+        signatures: [theirs.signatures, host.signatures.clone()].concat(),
+        ..host.clone()
+    };
+    let signers = [listing("host", &key, None)];
+    assert_eq!(verifier().verify(&both, &signers), made("host", false));
+
+    let elsewhere = Envelope {
+        signatures: [both.signatures.clone(), signed_by(&other).signatures].concat(),
+        ..host.clone()
+    };
+    let said = none_of(
+        verifier().verify(&elsewhere, &[listing("gate", &new_key(), None)]),
+        &["gate"],
+    );
+    let fingerprint = |k: &PrivateKey| k.public_key().fingerprint(HashAlg::Sha256).to_string();
+    assert!(
+        said.starts_with("the signature is not an SSH signature; signed by the key "),
+        "{said}"
+    );
+    assert!(said.contains(&fingerprint(&key)), "{said}");
+    assert!(said.contains(&fingerprint(&other)), "{said}");
+
+    let none = Envelope {
+        signatures: vec![],
+        ..host
+    };
+    let said = none_of(verifier().verify(&none, &signers), &["host"]);
+    assert_eq!(said, "the envelope holds no signature");
 }
 
 #[test]

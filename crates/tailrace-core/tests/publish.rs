@@ -471,7 +471,7 @@ fn each_artifact_carries_one_provenance_signed_by_the_host() {
     for artifact in &artifacts {
         let envelopes = world.fakes.store.claims_of(&artifact.digest).unwrap();
         assert_eq!(envelopes.len(), 1);
-        assert_eq!(envelopes[0].signature.signer.as_str(), HOST);
+        assert_eq!(envelopes[0].sole().unwrap().signer.as_str(), HOST);
         let claim = Claim::from_envelope(&envelopes[0]).unwrap();
         assert_eq!(claim.kind, ClaimKind::Provenance);
         assert_eq!(claim.subject, artifact.digest);
@@ -535,7 +535,7 @@ fn the_verdicts_naming_a_build_are_carried_byte_for_byte() {
     for (carried, verdict) in provenance.carried.iter().zip([&test, &lint]) {
         assert_eq!(carried.envelope, verdict.envelope);
         assert_eq!(carried.envelope.payload, verdict.envelope.payload);
-        assert_eq!(carried.envelope.signature, verdict.envelope.signature);
+        assert_eq!(carried.envelope.signatures, verdict.envelope.signatures);
         assert_eq!(carried.found.seam, Seam::Landing);
         assert_eq!(carried.found.revision, world.head);
         assert_eq!(carried.check, verdict.check);

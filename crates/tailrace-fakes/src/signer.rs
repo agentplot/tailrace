@@ -72,14 +72,16 @@ impl Signer for FakeSigner {
                     return Err(Not::absent(source, format!("identity {identity}")));
                 }
                 let payload = claim.payload();
-                Ok(Envelope {
-                    payload_type: IN_TOTO.into(),
-                    signature: Signature {
-                        signer: identity.clone(),
-                        sig: signature(identity, IN_TOTO, &payload),
-                    },
+                let sig = signature(identity, IN_TOTO, &payload);
+                Ok(Envelope::signed(
+                    IN_TOTO,
                     payload,
-                })
+                    Signature {
+                        signer: identity.clone(),
+                        keyid: String::new(),
+                        sig,
+                    },
+                ))
             },
         )
     }
@@ -89,9 +91,11 @@ impl Signer for FakeSigner {
         let what = format!("the signature of {}", attestation.digest());
         self.ask(SignerOp::Verify, given, what, |s, source| {
             let made = signers.iter().find(|named| {
-                named.id == attestation.signature.signer
-                    && attestation.signature.sig
-                        == signature(&named.id, &attestation.payload_type, &attestation.payload)
+                attestation.signatures.iter().any(|held| {
+                    named.id == held.signer
+                        && held.sig
+                            == signature(&named.id, &attestation.payload_type, &attestation.payload)
+                })
             });
             match made {
                 Some(named) => Ok(Made {
@@ -148,7 +152,7 @@ mod tests {
         signer.hold(&gate);
         let envelope = signer.sign(&claim(), &gate).unwrap();
         assert_eq!(Claim::from_envelope(&envelope), Some(claim()));
-        assert_eq!(envelope.signature.signer, gate);
+        assert_eq!(envelope.sole().unwrap().signer, gate);
         assert_eq!(
             signer.verify(&envelope, &[named("host"), named("gate")]),
             Ok(Made {
