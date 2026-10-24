@@ -192,6 +192,31 @@ mod tests {
     }
 
     #[test]
+    fn the_groups_whose_units_come_later_hold_no_scenario() {
+        let empty: Vec<&str> = groups()
+            .iter()
+            .filter(|g| g.scenarios.is_empty())
+            .map(|g| g.name)
+            .collect();
+        assert_eq!(empty, ["gate", "ledger", "cache", "record", "layouts"]);
+        for seam in [
+            "store",
+            "build",
+            "landing",
+            "signer",
+            "policy",
+            "projection",
+            "target",
+            "keeper",
+        ] {
+            assert!(
+                citations().iter().any(|c| c.group == seam),
+                "the {seam}'s group holds no scenario"
+            );
+        }
+    }
+
+    #[test]
     fn s1_says_it_plays_s1_and_cites_the_order_the_answer_and_no_move() {
         let s1: Vec<Cited> = citations()
             .into_iter()
