@@ -42,7 +42,7 @@ the group that cannot pass without one is reported with `crew needs`.
 
 ## 6. The site
 
-- [ ] 6.1 In `site/src/content/docs/guides/integrations/stores.mdx`, mark the OCI layout on disk `built` and say in its row that an artifact is an OCI manifest, an attestation an entry of `index.json` annotated with its subject, and a name an entry with a ref name moved only from where it is; in `guides/integrations/index.mdx`, replace "Nothing is built yet; every member below is designed" with a sentence saying the OCI layout on disk is built and every other member is designed. Verify the site's moon build task passes in the gate (7.1) and `grep -n 'Nothing is built yet' site/src/content/docs/guides/integrations/index.mdx` finds nothing.
+- [x] 6.1 In `site/src/content/docs/guides/integrations/stores.mdx`, mark the OCI layout on disk `built` and say in its row that an artifact is an OCI manifest, an attestation an entry of `index.json` annotated with its subject, and a name an entry with a ref name moved only from where it is; in `guides/integrations/index.mdx`, replace "Nothing is built yet; every member below is designed" with a sentence saying the OCI layout on disk is built and every other member is designed. Verify the site's moon build task passes in the gate (7.1) and `grep -n 'Nothing is built yet' site/src/content/docs/guides/integrations/index.mdx` finds nothing.
 
 ## 7. The gate
 
