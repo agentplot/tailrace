@@ -96,8 +96,16 @@ in
   # moon's task archives (.moon/cache/outputs) are a link into the git common
   # dir, so every worktree shares them; the rest of .moon/cache records the
   # checkout's absolute paths and stays its own. moon's home is the
-  # repository's too, so no moon of the user's runs in a task.
+  # repository's too, so no moon of the user's runs in a task. In a sluice
+  # run, which sources this before every command, cargo builds and the tests
+  # run on the cores sluice handed the run (SLUICE_JOBS, sluice 0.37.0); a
+  # session's own shell has no SLUICE_JOBS, and cargo takes every core.
   enterShell = ''
+    if [ -n "''${SLUICE_JOBS:-}" ]; then
+      CARGO_BUILD_JOBS="$SLUICE_JOBS"
+      RUST_TEST_THREADS="$SLUICE_JOBS"
+      export CARGO_BUILD_JOBS RUST_TEST_THREADS
+    fi
     if _moon_root="$(git rev-parse --show-toplevel 2>/dev/null)" &&
       _moon_common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
       _moon_cache="$_moon_root/.moon/cache"
