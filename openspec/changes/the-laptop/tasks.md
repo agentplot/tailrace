@@ -55,7 +55,7 @@ words (design D2).
 
 ## 8. The record and the site
 
-- [ ] 8.1 Write `docs/adr/0013-the-host-binds-its-seams-in-one-file-beside-sluice-s.md` (MADR, as 0011): the bindings file's place and form (design D1), what the host binds and what the repository binds (D2), and the policy file profile as the policy seam's one profile and why one is enough (D3, core.3). Verify `devenv shell -- moon run root:adrs` passes.
+- [x] 8.1 Write `docs/adr/0013-the-host-binds-its-seams-in-one-file-beside-sluice-s.md` (MADR, as 0011): the bindings file's place and form (design D1), what the host binds and what the repository binds (D2), and the policy file profile as the policy seam's one profile and why one is enough (D3, core.3). Verify `devenv shell -- moon run root:adrs` passes.
 - [ ] 8.2 Update the site: `guides/self-hosting.mdx` gains the bindings file, with D1's example, and the policy file's signers and audiences, with D3's; `guides/integrations/stores.mdx` says the layout is bound by the host's file; `landings.mdx` says sluice and a branch are bound by it; `signers.mdx` says the host key is bound by `[signing]` and verify-only where none is named; `projections.mdx` marks the file and image projections' pack built and their render and serve not; the roadmap marks the laptop unit landed. Verify `devenv shell -- moon run site:build` passes with every internal link checked.
 
 ## 9. The gate
