@@ -22,7 +22,7 @@ word core.1 rules out.
 
 ## 1. The module and the dependency
 
-- [ ] 1.1 Add `ssh-key = { version = "0.6", features = ["ed25519", "getrandom"] }` to `[workspace.dependencies]` in `Cargo.toml` and `ssh-key.workspace = true` to `[dependencies]` in `crates/tailrace/Cargo.toml`, changing no other line (design D8). Add `pub mod profiles;` to `crates/tailrace/src/lib.rs` if it is not there, `pub mod signer;` to `crates/tailrace/src/profiles/mod.rs` (writing the file with the layout store's doc comment if it does not exist), and `crates/tailrace/src/profiles/signer/mod.rs` with its doc comment and `pub mod host_key;`. Verify `devenv shell -- cargo build -p tailrace` passes and `Cargo.lock` gains `ssh-key` and only what it brings.
+- [x] 1.1 Add `ssh-key = { version = "0.6", features = ["ed25519", "getrandom"] }` to `[workspace.dependencies]` in `Cargo.toml` and `ssh-key.workspace = true` to `[dependencies]` in `crates/tailrace/Cargo.toml`, changing no other line (design D8). Add `pub mod profiles;` to `crates/tailrace/src/lib.rs` if it is not there, `pub mod signer;` to `crates/tailrace/src/profiles/mod.rs` (writing the file with the layout store's doc comment if it does not exist), and `crates/tailrace/src/profiles/signer/mod.rs` with its doc comment and `pub mod host_key;`. Verify `devenv shell -- cargo build -p tailrace` passes and `Cargo.lock` gains `ssh-key` and only what it brings.
 
 ## 2. sign
 

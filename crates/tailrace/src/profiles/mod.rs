@@ -4,4 +4,5 @@
 //! a registry, a key service or a package manager lives here and in no
 //! module outside (rule core.1).
 
+pub mod signer;
 pub mod store;
