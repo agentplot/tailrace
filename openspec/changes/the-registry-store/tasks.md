@@ -40,7 +40,7 @@ tools layer (check-tools).
 
 ## 5. The host binds it
 
-- [ ] 5.1 Add the `registry` key to `bind` in `crates/tailrace/src/profiles/store/mod.rs`: its value a repository text, unreadable naming the file, `[store] registry` and the value when it is not one; `make` ignored, since a registry store never makes a repository; and add the registry line to the example in `crates/tailrace/src/bindings/mod.rs`'s module comment. Verify with tests in `crates/tailrace/src/bindings/tests.rs`: a file naming `[store] registry = "localhost:5000/tailrace"` binds a store whose source names that repository; one naming `registry = "tailrace"` is unreadable naming the key and the value; `unknown` still lists both keys.
+- [x] 5.1 Add the `registry` key to `bind` in `crates/tailrace/src/profiles/store/mod.rs`: its value a repository text, unreadable naming the file, `[store] registry` and the value when it is not one; `make` ignored, since a registry store never makes a repository; and add the registry line to the example in `crates/tailrace/src/bindings/mod.rs`'s module comment. Verify with tests in `crates/tailrace/src/bindings/tests.rs`: a file naming `[store] registry = "localhost:5000/tailrace"` binds a store whose source names that repository; one naming `registry = "tailrace"` is unreadable naming the key and the value; `unknown` still lists both keys.
 - [ ] 5.2 In `site/src/content/docs/guides/self-hosting.mdx`, show `[store] registry = "<host>/<repository>"` beside the layout in the bindings example and say the credential is the host's Docker configuration and its helpers, never the file's. Verify the site's moon build task passes in the gate (10.1).
 
 ## 6. A version copied between stores
