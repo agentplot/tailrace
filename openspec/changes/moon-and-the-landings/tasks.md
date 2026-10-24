@@ -58,5 +58,5 @@ tests.
 
 ## 8. The gate
 
-- [ ] 8.1 Verify `devenv shell -- moon run ':#check-fast'` and `devenv shell -- moon run ':#check-tools'` pass: format, lint with every feature, toolchain, ADR numbers, the suite's coverage, every crate's tests, the site's build, and the tools layer.
-- [ ] 8.2 Verify `grep -rn 'tailrace_core' crates/tailrace/src/profiles` finds nothing (core.2), and `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace/src crates/tailrace-seams crates/tailrace-core/src crates/tailrace-fakes crates/tailrace-conformance/src --exclude-dir=profiles` finds nothing new (core.1).
+- [x] 8.1 Verify `devenv shell -- moon run ':#check-fast'` and `devenv shell -- moon run ':#check-tools'` pass: format, lint with every feature, toolchain, ADR numbers, the suite's coverage, every crate's tests, the site's build, and the tools layer.
+- [x] 8.2 Verify `grep -rn 'tailrace_core' crates/tailrace/src/profiles` finds nothing (core.2), and `grep -rniwE 'oci|ecr|ghcr|oras|cosign|moon|sluice|kms|npm|maven|cargo|flux|gh' crates/tailrace/src crates/tailrace-seams crates/tailrace-core/src crates/tailrace-fakes crates/tailrace-conformance/src --exclude-dir=profiles` finds nothing new (core.1).
