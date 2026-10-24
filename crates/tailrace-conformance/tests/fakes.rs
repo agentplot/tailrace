@@ -1,7 +1,7 @@
 //! Every group of the suite over the fakes: one test per group, each run
 //! with the runner and reported as any profile is (93; design D9).
 
-use tailrace_conformance::core::publish;
+use tailrace_conformance::core::{publish, verify};
 use tailrace_conformance::fakes::{
     FakeBindingRig, FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig,
     FakeSignerRig, FakeStoreRig, FakeTargetRig,
@@ -89,6 +89,14 @@ fn the_fakes_bound_keep_the_bindings_contract() {
 #[test]
 fn the_core_publishes_over_the_fakes() {
     run(publish::GROUP, &publish::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_core_verifies_over_the_fakes() {
+    run(verify::GROUP, &verify::scenarios(), &|| {
         Box::new(FakeWorld::new())
     })
     .assert();

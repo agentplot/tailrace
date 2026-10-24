@@ -84,8 +84,8 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
 const OUTPUTS: [&str; 2] = ["site", "server"];
 
 /// The version `head` takes: a feature since `v0.1.0`.
-const VERSION: &str = "0.2.0";
-const TAG: &str = "v0.2.0";
+pub(crate) const VERSION: &str = "0.2.0";
+pub(crate) const TAG: &str = "v0.2.0";
 
 /// `revision` landed with a passing verdict of `test` naming each
 /// output's build, and each output built and passing; the verdicts.
