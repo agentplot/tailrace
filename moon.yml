@@ -12,7 +12,7 @@ tasks:
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
   lint:
-    command: 'cargo clippy --workspace --all-targets -- -D warnings'
+    command: 'cargo clippy --workspace --all-targets --all-features -- -D warnings'
     inputs: ['/crates/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '/rust-toolchain.toml']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
@@ -21,6 +21,13 @@ tasks:
   # from outside the tree, so it never replays.
   toolchain:
     command: 'sh check-toolchain.sh'
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true, cache: false}
+  # rustc runs under sccache in a session's shell and unwrapped in a run
+  # sluice starts (check-sccache.sh). It reads the shell it runs in, so it
+  # never replays.
+  sccache:
+    command: 'sh check-sccache.sh'
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true, cache: false}
   # No two decision records share a number (check-adrs.sh).

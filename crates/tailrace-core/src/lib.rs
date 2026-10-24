@@ -2,5 +2,47 @@
 //! agentplot/blueprints `design/tailrace/requirements.md`. Code here names
 //! no registry, task runner, merge queue, key service, package manager,
 //! deploy target or forge (rule core.1); it reaches each through the one
-//! trait of `tailrace_seams`. Empty until bolt 1's units bring the policy,
-//! the version rule and publish.
+//! trait of `tailrace_seams`, and the repository's history through git,
+//! which section 9 fixes.
+//!
+//! | module | what it keeps | statement, rules |
+//! |---|---|---|
+//! | [`landed`] | a revision is read only once the landing seam says its branch landed it, and the policy for an audience only at such a revision | 14, 65, 77, 82, 83; core.11, core.22 |
+//! | [`history`] | the files, commits and tags of a landed revision, from the local history and the shared one; a branch's head, a revision resolved to its commit, and the common directory every worktree shares | 21, 22, 62, 65, 123; core.4 |
+//! | [`declared`] | the components, the version rule and the projection each output is packed by, read from the policy file at the landed revision | 65, 123, C.10; core.22 |
+//! | [`version`] | a version per component from the history alone, the components a landing touched, and the claim of the version's name | 21 to 24, 124; core.6, core.13, core.37 |
+//! | [`provenance`] | the claim each artifact carries: what the host observed of its build, and the landing's verdicts carried as made | 11 to 13; core.8, core.9 |
+//! | [`publish`](mod@publish) | a landed revision offered as a version per component: judged before the name is claimed, each artifact put and attested, the index last, a repeat ending where the first did, and the answer a program reads | 2, 5, 6, 8, 14 to 20, 57, 74, 75, 78, 84, 111, 124; core.5, core.6, core.10 to core.13, core.27 |
+//! | [`published`] | the host's record of the versions it published, a file per version a reader opens | 61, 62, 64; core.20, core.21 |
+//! | [`status`](mod@status) | which versions this host published, answered from the record alone | 23, 58, 60, 61; core.19, core.32 |
+//! | [`verify`](mod@verify) | which signer the policy names made each attestation on a version, and whether each counts | 3, 9, 65, 80, 81, 116, 117; core.4, core.7 |
+//!
+//! Every read and the claim take a [`Landed`], which only the landing
+//! seam's yes makes, and answer an `Answer`: absent, refused and
+//! unreadable kept apart, with the source's own words (58, 59, rule
+//! core.19). Deriving and claiming ask nothing of the build seam, so no
+//! build learns its version (24). Publish never accepts, promotes, moves
+//! a channel or reaches a target (20, rule core.10); status is handed no
+//! binding, and status and verify write nothing (60, rule core.32). Every
+//! surface renders an answer through [`answer_json`]'s one form (57,
+//! rule core.31).
+
+pub mod declared;
+pub mod history;
+pub mod landed;
+pub mod provenance;
+pub mod publish;
+pub mod published;
+pub mod status;
+pub mod verify;
+pub mod version;
+
+pub use declared::*;
+pub use history::*;
+pub use landed::*;
+pub use provenance::*;
+pub use publish::*;
+pub use published::*;
+pub use status::*;
+pub use verify::*;
+pub use version::*;

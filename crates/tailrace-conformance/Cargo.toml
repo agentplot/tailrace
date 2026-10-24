@@ -12,6 +12,7 @@ tailrace-core = { path = "../tailrace-core" }
 tailrace-fakes = { path = "../tailrace-fakes" }
 anyhow.workspace = true
 serde_json.workspace = true
+tempfile.workspace = true
 
 [lib]
 doctest = false
