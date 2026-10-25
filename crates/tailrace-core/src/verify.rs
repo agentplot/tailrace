@@ -6,8 +6,9 @@
 
 use serde::Serialize;
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, ComponentName, Digest, Envelope,
-    Held, Manifest, Name, NamedSigner, Not, Revision, Seam, Seams, SignerId, Source, Version, Why,
+    Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, Component, ComponentName, Digest,
+    Envelope, Held, Manifest, Name, NamedSigner, Not, Revision, Seam, Seams, SignerId, Source,
+    Version, Why,
 };
 
 use crate::{policy_at, Declared, History, Landed, Provenance, BOUND, LOCAL, POLICY_FILE};
@@ -67,30 +68,7 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
     let head = history.head(&ask.branch)?;
     let at_head = Landed::check(seams.landing.as_ref(), &ask.branch, &head)?;
     let declared = Declared::read(history, &at_head)?;
-    let component = match &ask.component {
-        Some(name) => declared
-            .components
-            .iter()
-            .find(|c| c.name == *name)
-            .ok_or_else(|| {
-                Not::absent(
-                    &local(),
-                    format!("component {name} in {POLICY_FILE} at {head}"),
-                )
-            })?,
-        None => match declared.components.as_slice() {
-            [one] => one,
-            several => {
-                return Err(Not::refused(
-                    &local(),
-                    Why::WhichComponent {
-                        declared: several.iter().map(|c| c.name.clone()).collect(),
-                    },
-                    None,
-                ))
-            }
-        },
-    };
+    let component = chosen(&declared, ask.component.as_ref(), &head)?;
     let tag = format!("{}{}", component.prefix, ask.version);
 
     // 2: the name resolved in the store (rule core.4).
@@ -182,6 +160,38 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
         audience: ask.audience.clone(),
         claims,
     })
+}
+
+/// 123: the component `named`, or the only one `declared` holds at
+/// `head`; absent naming it where none is so named, and refused
+/// [`Why::WhichComponent`] where several are declared and none named.
+pub(crate) fn chosen<'d>(
+    declared: &'d Declared,
+    named: Option<&ComponentName>,
+    head: &Revision,
+) -> Answer<&'d Component> {
+    match named {
+        Some(name) => declared
+            .components
+            .iter()
+            .find(|c| c.name == *name)
+            .ok_or_else(|| {
+                Not::absent(
+                    &local(),
+                    format!("component {name} in {POLICY_FILE} at {head}"),
+                )
+            }),
+        None => match declared.components.as_slice() {
+            [one] => Ok(one),
+            several => Err(Not::refused(
+                &local(),
+                Why::WhichComponent {
+                    declared: several.iter().map(|c| c.name.clone()).collect(),
+                },
+                None,
+            )),
+        },
+    }
 }
 
 /// 80: which of `signers` made `envelope`, asked of each bound signer in

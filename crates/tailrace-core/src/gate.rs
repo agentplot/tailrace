@@ -8,10 +8,13 @@
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Branch, ChannelName, ComponentName, Digest, RequiredClaim, Revision, SignerId, Version,
+    Answer, Audience, Branch, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Held,
+    Manifest, Name, Not, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Version,
 };
 
-use crate::{answer_json, Followed};
+use crate::{
+    answer_json, chosen, policy_at, tell, Declared, Followed, History, Landed, BOUND, LOCAL,
+};
 
 /// What told the gate of a version (95): a publish's answer, or an asker
 /// or a rule the policy names.
@@ -133,4 +136,219 @@ fn each_channel<S: Serializer>(
         })
         .collect();
     answers.serialize(serializer)
+}
+
+/// 25 to 29, 107: the version `ask` names, resolved to its index, judged
+/// under the policy for acceptance at the branch's landed head, in the
+/// order of design D2: nothing of the version is read before its name
+/// resolves, and nothing is written before the verdict.
+pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judged> {
+    // 1: the branch's head, landed (107, 77), and the component it
+    // declares.
+    let head = history.head(&ask.branch)?;
+    let at_head = Landed::check(seams.landing.as_ref(), &ask.branch, &head)?;
+    let declared = Declared::read(history, &at_head)?;
+    let component = chosen(&declared, ask.component.as_ref(), &head)?;
+    let tag = format!("{}{}", component.prefix, ask.version);
+
+    // 2: the name resolved in the store (rule core.4).
+    let index = seams.store.resolve(&Name::new(&tag))?;
+
+    // 3: the tag's revision, landed (29, 14).
+    let revision = history
+        .tags(&at_head, &component.prefix)?
+        .into_iter()
+        .find(|t| t.name == tag)
+        .map(|t| t.revision)
+        .ok_or_else(|| {
+            Not::absent(
+                &Source::history(LOCAL),
+                format!("tag {tag} reached from {head}"),
+            )
+        })?;
+    Landed::check(seams.landing.as_ref(), &ask.branch, &revision)?;
+
+    // 4: the policy for acceptance at the head, never at the version's
+    // revision (107).
+    let required = required_at(seams, &at_head, &Audience::Acceptance)?;
+
+    // 5: the index, and the claims of it and of each artifact (29).
+    let Held::Manifest(Manifest::Index(meta)) = seams.store.read(&index)? else {
+        return Err(Not::unreadable(
+            &Source::new(Seam::Store, BOUND),
+            format!("{index} as an index"),
+            Some(format!("{index} holds no index")),
+        ));
+    };
+    let on_index = seams.store.claims_of(&index)?;
+    let mut artifacts = Vec::new();
+    for artifact in meta.artifacts() {
+        let claims = seams.store.claims_of(&artifact.digest)?;
+        artifacts.push((artifact.digest.clone(), claims));
+    }
+    let judging = Judging {
+        seams,
+        revision: &revision,
+        index: &index,
+        on_index,
+        artifacts,
+    };
+
+    // 7: every artifact against every required claim (28).
+    let refused = |artifact, wanting, why| Judged::Refused {
+        component: component.name.clone(),
+        version: ask.version.clone(),
+        index: index.clone(),
+        revision: revision.clone(),
+        policy_at: head.clone(),
+        artifact,
+        wanting,
+        why,
+    };
+    let claims = match judging.count(&required)? {
+        Count::Satisfied { claims } => claims,
+        Count::Wanting {
+            artifact,
+            wanting,
+            why,
+        } => return Ok(refused(artifact, wanting, why)),
+    };
+
+    // 8: the acceptance signed before the one write, then attached to
+    // the index alone (26, 7).
+    let acceptance = Claim {
+        subject: index.clone(),
+        kind: ClaimKind::Acceptance,
+        revision: revision.clone(),
+        build: None,
+        body: json!({
+            "component": component.name,
+            "version": ask.version,
+            "policy": { "audience": Audience::Acceptance, "revision": head },
+            "claims": claims,
+        }),
+    };
+    let envelope = sign(seams, &acceptance, &ask.gate)?;
+    seams.store.attach(&index, &envelope)?;
+
+    Ok(Judged::Accepted {
+        component: component.name.clone(),
+        version: ask.version.clone(),
+        index: index.clone(),
+        revision: revision.clone(),
+        policy_at: head.clone(),
+        acceptance: envelope.digest(),
+        already: false,
+        one_host: false,
+        channels: Vec::new(),
+    })
+}
+
+/// 82, 107: what `audience` requires at the landed head; absent naming
+/// the head where no policy is declared for it.
+fn required_at(seams: &Seams, at_head: &Landed, audience: &Audience) -> Answer<Required> {
+    policy_at(seams.policy.as_ref(), at_head, audience).map_err(|not| match not {
+        Not::Absent(a) => Not::absent(&a.source, format!("{} at {}", a.what, at_head.revision())),
+        other => other,
+    })
+}
+
+/// 79, 95: `claim` signed as `gate` by the first bound signer that holds
+/// it at hand; absent naming the identity where none does.
+fn sign(seams: &Seams, claim: &Claim, gate: &SignerId) -> Answer<Envelope> {
+    for signer in &seams.signers {
+        match signer.sign(claim, gate) {
+            Ok(envelope) => return Ok(envelope),
+            Err(Not::Absent(_)) => continue,
+            Err(not) => return Err(not),
+        }
+    }
+    Err(Not::absent(
+        &Source::new(Seam::Signer, BOUND),
+        format!("identity {gate}"),
+    ))
+}
+
+/// One version being judged: its revision, its index, the claims
+/// attached to the index, and each artifact in the index's order with
+/// the claims attached to it.
+struct Judging<'a> {
+    seams: &'a Seams,
+    revision: &'a Revision,
+    index: &'a Digest,
+    on_index: Vec<Envelope>,
+    artifacts: Vec<(Digest, Vec<Envelope>)>,
+}
+
+/// What one policy's judgment of every artifact came to.
+enum Count {
+    /// Every required claim found, for every artifact: the envelopes that
+    /// satisfied each, in order.
+    Satisfied { claims: Vec<Digest> },
+    /// The first artifact and the first required claim found wanting.
+    Wanting {
+        artifact: Digest,
+        wanting: RequiredClaim,
+        why: WhyWanting,
+    },
+}
+
+impl Judging<'_> {
+    /// 28: each artifact, in the index's order, against each required
+    /// claim, in the policy's order; the first wanting refuses the whole.
+    fn count(&self, required: &Required) -> Answer<Count> {
+        let mut claims = Vec::new();
+        for (artifact, own) in &self.artifacts {
+            for wanted in required.claims() {
+                match self.found(wanted, artifact, own)? {
+                    Ok(envelope) => claims.push(envelope),
+                    Err(why) => {
+                        return Ok(Count::Wanting {
+                            artifact: artifact.clone(),
+                            wanting: wanted.clone(),
+                            why,
+                        })
+                    }
+                }
+            }
+        }
+        Ok(Count::Satisfied { claims })
+    }
+
+    /// The envelope of the first claim that counts for `wanted`, among
+    /// those attached to `artifact` and then to the index, which a claim
+    /// about the version is (7), or why none does (9, 116, rule core.7).
+    fn found(
+        &self,
+        wanted: &RequiredClaim,
+        artifact: &Digest,
+        own: &[Envelope],
+    ) -> Answer<Result<Digest, WhyWanting>> {
+        let attached = own
+            .iter()
+            .map(|e| (artifact, e))
+            .chain(self.on_index.iter().map(|e| (self.index, e)));
+        for (on, envelope) in attached {
+            // 13: a claim counts only for the revision it names.
+            let Some(claim) = Claim::from_envelope(envelope) else {
+                continue;
+            };
+            if claim.kind != wanted.kind || claim.revision != *self.revision {
+                continue;
+            }
+            let told = tell(
+                self.seams,
+                &wanted.signers,
+                on,
+                envelope,
+                Some(claim.kind),
+                None,
+                None,
+            )?;
+            if told.counts {
+                return Ok(Ok(told.envelope));
+            }
+        }
+        Ok(Err(WhyWanting::Missing))
+    }
 }
