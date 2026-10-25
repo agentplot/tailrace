@@ -372,7 +372,7 @@ impl Store for LedgerWatched {
             let head = self.keeper.chain(&beta()).ok();
             self.heads
                 .borrow_mut()
-                .push(head.and_then(|c| c.last().map(Envelope::digest)));
+                .push(head.and_then(|c| c.claims.last().map(Envelope::digest)));
         }
         self.inner.name(name, to, expected)
     }

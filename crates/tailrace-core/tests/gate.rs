@@ -15,7 +15,7 @@ use tailrace_core::{
 };
 use tailrace_fakes::{FakeKeeper, FakeSigner, KeeperOp, PolicyOp, SignerOp, StoreOp};
 use tailrace_seams::{
-    Answer, Audience, Branch, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
+    Answer, Audience, Branch, Chain, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
     Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required,
     RequiredClaim, Revision, Seam, Seams, Signer, SignerId, Source, Store, Version, Why,
 };
@@ -1227,7 +1227,7 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
         on_name: Box::new(move |name| {
             if name.as_str() == "beta" {
                 held.borrow_mut()
-                    .push(keeper.chain(&beta()).map(|c| c.len()).unwrap_or(0));
+                    .push(keeper.chain(&beta()).map(|c| c.claims.len()).unwrap_or(0));
             }
         }),
         ..Hooked::over(&world.fakes.store)
@@ -1256,7 +1256,7 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
     );
     assert_eq!(named_at(&world, "beta").as_ref(), Some(index));
 
-    let chain = world.fakes.keeper.chain(&beta()).unwrap();
+    let chain = world.fakes.keeper.chain(&beta()).unwrap().claims;
     assert_eq!(chain.len(), 1);
     assert_eq!(chain[0].digest(), promotion);
     assert!(world
@@ -1308,7 +1308,7 @@ fn a_promotion_names_the_chains_head_and_moves_the_name_from_where_it_left_it() 
     };
     assert_eq!(from, Some(before));
     assert_eq!(name, Followed::Moved { to: index.clone() });
-    let chain = world.fakes.keeper.chain(&beta()).unwrap();
+    let chain = world.fakes.keeper.chain(&beta()).unwrap().claims;
     assert_eq!(chain.len(), 2);
     let claim = Claim::from_envelope(&chain[1]).unwrap();
     assert_eq!(claim.body["predecessor"], first.digest().as_str());
@@ -1334,13 +1334,13 @@ impl Keeper for Racing {
         self.appended.set(self.appended.get() + 1);
         self.inner.append(channel, promotion, predecessor)
     }
-    fn chain(&self, channel: &ChannelName) -> Answer<Vec<Envelope>> {
+    fn chain(&self, channel: &ChannelName) -> Answer<Chain> {
         let answer = self.inner.chain(channel);
         if !self.raced.replace(true) {
             let head = answer
                 .as_ref()
                 .ok()
-                .and_then(|c| c.last())
+                .and_then(|c| c.claims.last())
                 .map(|e| e.digest());
             self.inner
                 .append(channel, &self.then, head.as_ref())

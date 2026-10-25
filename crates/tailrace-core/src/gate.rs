@@ -10,9 +10,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Audience, Branch, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Held,
-    Manifest, Name, NamedSigner, Not, Outcome, Required, RequiredClaim, Revision, Seam, Seams,
-    SignerId, Source, Version,
+    Answer, Audience, Branch, Chain, ChannelName, Claim, ClaimKind, ComponentName, Digest,
+    Envelope, Held, Manifest, Name, NamedSigner, Not, Outcome, Read, Required, RequiredClaim,
+    Revision, Seam, Seams, SignerId, Source, Version,
 };
 
 use crate::{
@@ -709,7 +709,19 @@ impl Judging<'_> {
         // promotion the next one follows (105).
         let keeper = Source::new(Seam::Keeper, BOUND);
         let (from, predecessor) = match self.seams.keeper.chain(channel) {
-            Ok(chain) => match chain.last() {
+            // 60: a chain the ledger answered as last read is never moved
+            // from.
+            Ok(Chain {
+                read: Read::Kept { said, .. },
+                ..
+            }) => {
+                return Err(Not::unreadable(
+                    &keeper,
+                    format!("the chain of {channel}"),
+                    Some(said),
+                ))
+            }
+            Ok(chain) => match chain.claims.last() {
                 None => (None, None),
                 Some(head) => match Claim::from_envelope(head) {
                     Some(claim) if claim.kind == ClaimKind::Promotion => {
