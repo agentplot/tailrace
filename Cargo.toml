@@ -18,6 +18,17 @@ license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1"
+aws-config = { version = "1.13", default-features = false, features = [
+  "rt-tokio",
+  "behavior-version-latest",
+  "sso",
+  "credentials-process",
+] }
+aws-sdk-kms = { version = "1.126", default-features = false, features = [
+  "rt-tokio",
+  "behavior-version-latest",
+] }
+aws-smithy-http-client = { version = "1.5", features = ["rustls-ring"] }
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }
 docker_credential = "1.4"
@@ -26,6 +37,7 @@ git-cliff-core = { version = "2.14", default-features = false, features = [
 ] }
 git2 = { version = "0.21", default-features = false }
 glob = "0.3"
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 regex = "1"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
@@ -33,6 +45,7 @@ serde_json = "1"
 sha2 = "0.10"
 ssh-key = { version = "0.6", features = ["ed25519", "getrandom"] }
 tempfile = "3"
+tokio = { version = "1", features = ["rt", "net", "time"] }
 toml = "0.9"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 
