@@ -32,7 +32,7 @@ pub enum Followed {
 /// answers them (105, 121); unreadable naming the head when it holds no
 /// promotion claim of tailrace's form.
 fn head(keeper: &dyn Keeper, channel: &ChannelName) -> Answer<Digest> {
-    let chain = keeper.chain(channel)?;
+    let chain = keeper.chain(channel)?.claims;
     let Some(head) = chain.last() else {
         return Err(Not::absent(
             &Source::new(Seam::Keeper, BOUND),
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(names(&store) - asked, 2);
         assert_eq!(store.resolve(&channel_name()), Ok(head));
         assert_eq!(
-            keeper.chain(&stable()).unwrap().len(),
+            keeper.chain(&stable()).unwrap().claims.len(),
             2,
             "the chain changed"
         );

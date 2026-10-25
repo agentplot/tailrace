@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tailrace_seams::{
-    Answer, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, SignerId, Source,
+    Answer, Chain, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, SignerId, Source,
 };
 
 use crate::{profiles, unsigned, Binding};
@@ -364,7 +364,7 @@ impl Keeper for NoLedger {
         Err(NoLedger::absent())
     }
 
-    fn chain(&self, _: &ChannelName) -> Answer<Vec<Envelope>> {
+    fn chain(&self, _: &ChannelName) -> Answer<Chain> {
         Err(NoLedger::absent())
     }
 }

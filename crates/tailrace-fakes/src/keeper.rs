@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use serde_json::json;
-use tailrace_seams::{Answer, ChannelName, Digest, Envelope, Keeper, Not, Seam, Why};
+use tailrace_seams::{Answer, Chain, ChannelName, Digest, Envelope, Keeper, Not, Read, Seam, Why};
 
 use crate::Fake;
 
@@ -103,7 +103,7 @@ impl Keeper for FakeKeeper {
         )
     }
 
-    fn chain(&self, channel: &ChannelName) -> Answer<Vec<Envelope>> {
+    fn chain(&self, channel: &ChannelName) -> Answer<Chain> {
         let given = json!({ "channel": channel });
         self.ask(
             KeeperOp::Chain,
@@ -117,7 +117,10 @@ impl Keeper for FakeKeeper {
                 if let Some(why) = fork(chain) {
                     return Err(Not::refused(source, why, None));
                 }
-                Ok(chain.iter().map(|l| l.promotion.clone()).collect())
+                Ok(Chain {
+                    claims: chain.iter().map(|l| l.promotion.clone()).collect(),
+                    read: Read::Source,
+                })
             },
         )
     }
@@ -160,7 +163,7 @@ mod tests {
             keeper.append(&stable, &two, Some(&one.digest())),
             Ok(two.digest())
         );
-        assert_eq!(keeper.chain(&stable), Ok(vec![one, two]));
+        assert_eq!(keeper.chain(&stable).map(|c| c.claims), Ok(vec![one, two]));
     }
 
     #[test]
@@ -184,7 +187,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            keeper.chain(&stable),
+            keeper.chain(&stable).map(|c| c.claims),
             Ok(vec![root.clone(), a.clone()]),
             "the chain is unchanged"
         );
@@ -222,7 +225,7 @@ mod tests {
         assert_eq!(keeper.chain(&stable), forked);
         assert_eq!(
             keeper.append(&stable, &promotion("1.3.0"), Some(&b.digest())),
-            forked.map(|_: Vec<Envelope>| unreachable!())
+            forked.map(|_: Chain| unreachable!())
         );
     }
 

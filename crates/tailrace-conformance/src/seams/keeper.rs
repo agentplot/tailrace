@@ -91,8 +91,8 @@ fn a_chain_appended_in_order(rig: &dyn KeeperRig) {
     let channel = stable();
     let appended = two(rig, &channel);
     let keeper = rig.keeper();
-    let first = ok(keeper.chain(&channel), "the first reader's chain");
-    let second = ok(keeper.chain(&channel), "the second reader's chain");
+    let first = ok(keeper.chain(&channel), "the first reader's chain").claims;
+    let second = ok(keeper.chain(&channel), "the second reader's chain").claims;
     assert_eq!(first, appended, "the chain is not the promotions in order");
     assert_eq!(first, second, "two readers were answered two chains");
 }
@@ -126,7 +126,7 @@ fn a_stale_predecessor(rig: &dyn KeeperRig) {
         "an append naming no predecessor on a chain that has one",
     );
     assert_eq!(
-        ok(keeper.chain(&channel), "chain"),
+        ok(keeper.chain(&channel), "chain").claims,
         [first, second],
         "a refused append changed the chain"
     );
