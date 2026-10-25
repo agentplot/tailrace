@@ -47,7 +47,7 @@ needing git alone.
 ## 6. The record and the site
 
 - [x] 6.1 Write `docs/adr/0016-the-ledger-s-git-ref-holds-one-claim-per-commit-and-a-channel-is-named-in-the-store.md` (MADR, as 0013), proposed, as design D14 has it, saying it fills the `[ledger]` table 0013 holds and lifts 0013's refusal of it. Verify `devenv shell -- moon run root:adrs` passes.
-- [ ] 6.2 Update the site: `guides/integrations/ledgers.mdx` marks both members built and says how each is read as last read, saying when; `guides/self-hosting.mdx` gains `[ledger]` in the bindings file's example in place of the sentence that it is refused, and `[signers.gate]` and `[channels.stable]` in the policy file's; `guides/integrations/surfaces.mdx` moves `promote` from the commands to come to the built ones; `how-it-works.mdx` says how a person promotes and moves back; `roadmap.mdx` marks this unit landed. Verify `devenv shell -- moon run site:build` passes with every internal link checked.
+- [x] 6.2 Update the site: `guides/integrations/ledgers.mdx` marks both members built and says how each is read as last read, saying when; `guides/self-hosting.mdx` gains `[ledger]` in the bindings file's example in place of the sentence that it is refused, and `[signers.gate]` and `[channels.stable]` in the policy file's; `guides/integrations/surfaces.mdx` moves `promote` from the commands to come to the built ones; `how-it-works.mdx` says how a person promotes and moves back; `roadmap.mdx` marks this unit landed. Verify `devenv shell -- moon run site:build` passes with every internal link checked.
 
 ## 7. The gate
 
