@@ -399,10 +399,11 @@ fn required_at(seams: &Seams, at_head: &Landed, audience: &Audience) -> Answer<R
     })
 }
 
-/// 94: the signer the policy at the head names by the gate's identity,
-/// looked for in what acceptance requires and then in what each channel
-/// the policy file declares requires, since a channel is what asks for
-/// the gate's acceptance; none where no policy names it.
+/// 94: the signer the policy at the head names by the gate's identity
+/// and lets claim acceptance, looked for in what acceptance requires and
+/// then in what each channel the policy file declares requires, since a
+/// channel is what asks for the gate's acceptance; none where no policy
+/// names one (rule core.7).
 fn gate_named(
     seams: &Seams,
     history: &History,
@@ -415,7 +416,7 @@ fn gate_named(
             .claims()
             .iter()
             .flat_map(|c| &c.signers)
-            .find(|s| s.id == *gate)
+            .find(|s| s.id == *gate && s.kinds.contains(&ClaimKind::Acceptance))
             .cloned()
     };
     if let Some(found) = named(acceptance) {
@@ -513,8 +514,9 @@ impl Judging<'_> {
     }
 
     /// 94: the envelope of an acceptance of the index that `named`, the
-    /// gate's identity, made, and whether it said one host; none where
-    /// the gate made none, a forged one by another signer among them.
+    /// gate's identity, made and may make, and whether it said one host;
+    /// none where the gate made none, a forged one by another signer
+    /// among them.
     fn already(&self, named: &NamedSigner) -> Answer<Option<(Digest, bool)>> {
         for envelope in &self.on_index {
             let Some(claim) = Claim::from_envelope(envelope) else {
@@ -532,7 +534,7 @@ impl Judging<'_> {
                 None,
                 None,
             )?;
-            if told.made_by.as_ref() == Some(self.gate) {
+            if told.counts && told.made_by.as_ref() == Some(self.gate) {
                 let one_host = claim.body["offered"]["one_host"].as_bool();
                 return Ok(Some((told.envelope, one_host.unwrap_or(false))));
             }

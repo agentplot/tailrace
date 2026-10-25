@@ -1087,6 +1087,37 @@ fn an_acceptance_another_signer_made_is_not_the_gates() {
     assert_eq!(wanting.kind, ClaimKind::Review);
 }
 
+#[test]
+fn a_build_host_running_the_gate_over_its_own_acceptance_is_refused_not_accepted_already() {
+    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    beta_requires(&world, vec![from_gate()]);
+    let (_, index) = version_of(&published);
+    let forged = Claim {
+        subject: index.clone(),
+        kind: ClaimKind::Acceptance,
+        revision: world.head.clone(),
+        build: None,
+        body: json!({ "offered": { "by": [HOST], "one_host": true } }),
+    };
+    let forged = world
+        .fakes
+        .signer
+        .sign(&forged, &SignerId::new(HOST))
+        .unwrap();
+    world.fakes.store.attach(index, &forged).unwrap();
+    let as_host = AcceptAsk {
+        gate: SignerId::new(HOST),
+        ..ask("0.2.0", ToldBy::Publish)
+    };
+    let (_, _, why) = refusal(accept(&world.fakes.seams(), &world.history(), &as_host));
+    assert_eq!(
+        why,
+        WhyWanting::OfferedByGate {
+            signer: SignerId::new(HOST)
+        }
+    );
+}
+
 // Requirement: The gate moves each following channel after accepting what a publish told it of
 
 /// What `channel` names in the store, if anything.
