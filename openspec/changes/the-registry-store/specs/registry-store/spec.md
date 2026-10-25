@@ -114,8 +114,9 @@ lost the entry to another writer SHALL be reported, never retried.
 
 name SHALL read the tag first and refuse a move from anywhere but the
 expected digest, naming where it is; after the put it SHALL read the
-tag back, and a tag found at another digest SHALL be refused naming
-that digest, as a lost race, with nothing retried (70, 71, 109,
+tag back, again while it answers the former place up to the profile's
+bound, and refuse naming a third digest as a lost race, or the former
+place once the bound passes, never putting it again (70, 71, 109, C.1,
 core.6). A name SHALL be escaped into a valid tag, one name to one tag.
 
 #### Scenario: A name made, moved and resolved
@@ -132,6 +133,11 @@ core.6). A name SHALL be escaped into a valid tag, one name to one tag.
 
 - **WHEN** another writer moves the tag between the store's put and its read back
 - **THEN** the move is refused naming the other writer's digest, and the store puts the tag no second time
+
+#### Scenario: A read back at the former place within the bound
+
+- **WHEN** the tag's read back after the put answers the digest it was moved from, as a registry not yet showing the put answers it, and a read again within the profile's bound answers the digest it was moved to
+- **THEN** the move is made and is no lost race, and the store puts the tag no second time
 
 #### Scenario: A name no tag can carry as written
 
