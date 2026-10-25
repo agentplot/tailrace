@@ -3,4 +3,5 @@
 
 pub mod publish;
 pub mod status;
+pub mod sync;
 pub mod verify;
