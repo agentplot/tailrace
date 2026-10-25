@@ -58,6 +58,7 @@ signer the host binds, and nothing the repository binds (92):
 ```toml
 [store]
 layout = "~/.local/share/tailrace/layout"   # C.2
+                                 # or: registry = "<host>/<repository>", C.1
 
 [landing]
 sluice = { remote = "origin" }   # C.5; or: branch = { remote = "origin" }, C.6
@@ -76,6 +77,13 @@ key = "~/.config/tailrace/signing"
   bindings file and answers from the host's record.
 - Only publish makes the layout, the first time, where the path is
   missing or an empty directory; verify never makes or writes one.
+- `[store] registry` names one repository of a registry, such as
+  `123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace` or
+  `localhost:5000/tailrace`, which holds everything the store holds. No
+  binding makes the repository. The credential is never the file's: it
+  is the host's Docker configuration and the credential helper it names
+  for the registry, ECR's `ecr-login` among them, reached when the
+  registry asks for one and kept nowhere (64).
 - A machine that only verifies names no `[signing]`: it verifies by the
   keys the policy lists and signs nothing, so a copy of the layout and a
   clone of the repository are all it needs.

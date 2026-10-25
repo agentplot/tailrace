@@ -3,6 +3,7 @@
 //! (design D2, D4); the surfaces' group over a surface (design D6).
 
 pub mod cache;
+pub mod copy;
 pub mod gate;
 pub mod layouts;
 pub mod ledger;
