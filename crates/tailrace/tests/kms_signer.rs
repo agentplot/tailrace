@@ -541,6 +541,7 @@ fn a_host_keys_envelope_is_refused_reaching_nothing() {
         &["fleet", "laptop"],
     );
     assert!(said.contains("not a DER-encoded ECDSA signature"), "{said}");
+    assert_eq!(world.stand_in.requests(), 0);
     let said = no_named_signer(
         world
             .verifying()
@@ -554,7 +555,7 @@ fn a_host_keys_envelope_is_refused_reaching_nothing() {
     assert_eq!(
         world.stand_in.requests(),
         2,
-        "only the second key's sign reached KMS"
+        "a verify against signers no KMS key lists reached KMS; only the sign did"
     );
 }
 
@@ -689,4 +690,28 @@ fn no_service_at_the_endpoint_is_unreadable_within_ten_seconds() {
         started.elapsed()
     );
     assert_eq!(said, words);
+}
+
+#[test]
+fn bound_by_an_alias_the_binding_is_unreadable_naming_the_value() {
+    let alias = "arn:aws:kms:us-west-2:111122223333:alias/fleet";
+    let file = std::path::Path::new("/config/tailrace/config.toml");
+    let table: toml::Table = toml::from_str(&format!("kms = \"{alias}\"")).unwrap();
+    match tailrace::profiles::signer::read(file, None, &table) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.what, format!("{}, [signing] kms", file.display()));
+            let said = u.said.unwrap();
+            assert!(said.starts_with(alias), "{said}");
+            assert!(said.contains("a key is named by its key ARN"), "{said}");
+        }
+        other => panic!("{alias} bound as {other:?}, not unreadable"),
+    }
+}
+
+#[test]
+fn bound_by_its_key_arn_it_signs_as_the_arn_in_its_region() {
+    let arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
+    let kms = Kms::new(KeyArn::parse(arn).unwrap());
+    assert_eq!(kms.key().map(KeyArn::as_str), Some(arn));
+    assert_eq!(kms.key().map(KeyArn::region), Some("us-west-2"));
 }
