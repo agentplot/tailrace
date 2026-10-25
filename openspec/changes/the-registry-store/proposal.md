@@ -186,6 +186,7 @@ crates/tailrace/moon.yml
 crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
 crates/tailrace/src/profiles/store/**
+crates/tailrace/tests/layout_store.rs
 crates/tailrace/tests/registry_store.rs
 crates/tailrace/tests/registry_ecr.rs
 crates/tailrace/tests/registry/**
@@ -197,6 +198,10 @@ crates/tailrace-conformance/src/register.rs
 crates/tailrace-conformance/src/core/mod.rs
 crates/tailrace-conformance/src/core/copy.rs
 crates/tailrace-conformance/src/core/ledger.rs
+crates/tailrace-conformance/src/seams/store.rs
+crates/tailrace-conformance/tests/fakes.rs
+crates/tailrace-conformance/tests/lagging.rs
+crates/tailrace-conformance/tests/unconditional.rs
 site/src/content/docs/guides/integrations/stores.mdx
 site/src/content/docs/guides/self-hosting.mdx
 ```
