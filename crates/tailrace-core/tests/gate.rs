@@ -537,3 +537,77 @@ fn the_second_of_two_artifacts_wanting_refuses_the_version_whole_and_attaches_no
         .collect();
     assert_eq!(now, held);
 }
+
+// Requirement: An independent rebuild is counted, never made
+
+/// Acceptance requires the host's provenance and a rebuild, which the
+/// host and a verifier may each claim.
+fn rebuilt() -> (RequiredClaim, Required) {
+    let rebuild = RequiredClaim {
+        kind: ClaimKind::Rebuild,
+        check: None,
+        signers: vec![
+            named(HOST, &[ClaimKind::Provenance, ClaimKind::Rebuild], &[]),
+            named("verifier", &[ClaimKind::Rebuild], &[]),
+        ],
+    };
+    let required = Required::Acceptance {
+        claims: vec![
+            provenance_from(named(HOST, &[ClaimKind::Provenance], &[])),
+            rebuild.clone(),
+        ],
+    };
+    (rebuild, required)
+}
+
+/// A rebuild of each artifact by `signer`, saying the digests `matched`
+/// or did not, attached beside it.
+fn rebuild_by(world: &World, published: &Published, signer: &str, matched: bool) {
+    let theirs = FakeSigner::new();
+    theirs.hold(&SignerId::new(signer));
+    for artifact in artifacts(published) {
+        let claim = Claim {
+            subject: artifact.clone(),
+            kind: ClaimKind::Rebuild,
+            revision: world.head.clone(),
+            build: None,
+            body: json!({ "matched": matched }),
+        };
+        let envelope = theirs.sign(&claim, &SignerId::new(signer)).unwrap();
+        world.fakes.store.attach(&artifact, &envelope).unwrap();
+    }
+}
+
+#[test]
+fn a_rebuild_by_the_offering_host_does_not_count() {
+    let (rebuild, required) = rebuilt();
+    let (world, published) = published_under(required);
+    rebuild_by(&world, &published, HOST, true);
+    let (_, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(wanting, rebuild);
+    assert_eq!(
+        why,
+        WhyWanting::Unmatched {
+            signer: SignerId::new(HOST)
+        }
+    );
+}
+
+#[test]
+fn a_rebuild_that_did_not_match_does_not_count_and_one_that_did_does() {
+    let (rebuild, required) = rebuilt();
+    let (world, published) = published_under(required);
+    rebuild_by(&world, &published, "verifier", false);
+    let (_, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(wanting, rebuild);
+    assert_eq!(
+        why,
+        WhyWanting::Unmatched {
+            signer: SignerId::new("verifier")
+        }
+    );
+
+    rebuild_by(&world, &published, "verifier", true);
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Asked));
+    assert!(matches!(answer, Ok(Judged::Accepted { .. })), "{answer:?}");
+}

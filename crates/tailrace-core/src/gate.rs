@@ -9,8 +9,8 @@ use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
     Answer, Audience, Branch, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Held,
-    Manifest, Name, Not, Outcome, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source,
-    Version,
+    Manifest, Name, NamedSigner, Not, Outcome, Required, RequiredClaim, Revision, Seam, Seams,
+    SignerId, Source, Version,
 };
 
 use crate::{
@@ -271,6 +271,17 @@ fn sign(seams: &Seams, claim: &Claim, gate: &SignerId) -> Answer<Envelope> {
     ))
 }
 
+/// Every signer `required` names, once each, as it first names it.
+fn named_in(required: &Required) -> Vec<NamedSigner> {
+    let mut named: Vec<NamedSigner> = Vec::new();
+    for signer in required.claims().iter().flat_map(|c| &c.signers) {
+        if !named.iter().any(|n| n.id == signer.id) {
+            named.push(signer.clone());
+        }
+    }
+    named
+}
+
 /// One version being judged: its revision, its index, the claims
 /// attached to the index, and each artifact in the index's order with
 /// the claims attached to it.
@@ -299,10 +310,11 @@ impl Judging<'_> {
     /// 28: each artifact, in the index's order, against each required
     /// claim, in the policy's order; the first wanting refuses the whole.
     fn count(&self, required: &Required) -> Answer<Count> {
+        let named = named_in(required);
         let mut claims = Vec::new();
         for (artifact, own) in &self.artifacts {
             for wanted in required.claims() {
-                match self.found(wanted, artifact, own)? {
+                match self.found(wanted, artifact, own, &named)? {
                     Ok(envelope) => claims.push(envelope),
                     Err(why) => {
                         return Ok(Count::Wanting {
@@ -322,12 +334,14 @@ impl Judging<'_> {
     /// about the version is (7), or why none does: a claim counts only
     /// for the revision it names (13), through a signer `wanted` names
     /// within its reach (9, 116, rule core.7), and never from an identity
-    /// that has expired (81).
+    /// that has expired (81). A rebuild counts only from a signer other
+    /// than the provenance's maker, saying the digests matched (30).
     fn found(
         &self,
         wanted: &RequiredClaim,
         artifact: &Digest,
         own: &[Envelope],
+        named: &[NamedSigner],
     ) -> Answer<Result<Digest, WhyWanting>> {
         let attached = own
             .iter()
@@ -387,9 +401,46 @@ impl Judging<'_> {
                     near.get_or_insert(WhyWanting::Expired { signer: maker });
                     continue;
                 }
+                if wanted.kind == ClaimKind::Rebuild
+                    && (self.offerers(artifact, own, named)?.contains(&maker)
+                        || claim.body.get("matched") != Some(&Value::Bool(true)))
+                {
+                    near.get_or_insert(WhyWanting::Unmatched { signer: maker });
+                    continue;
+                }
                 return Ok(Ok(told.envelope));
             }
         }
         Ok(Err(near.unwrap_or(WhyWanting::Missing)))
+    }
+
+    /// Which of `named` made each provenance of the version's revision
+    /// attached to `artifact`.
+    fn offerers(
+        &self,
+        artifact: &Digest,
+        own: &[Envelope],
+        named: &[NamedSigner],
+    ) -> Answer<Vec<SignerId>> {
+        let mut makers = Vec::new();
+        for envelope in own {
+            let Some(claim) = Claim::from_envelope(envelope) else {
+                continue;
+            };
+            if claim.kind != ClaimKind::Provenance || claim.revision != *self.revision {
+                continue;
+            }
+            let told = tell(
+                self.seams,
+                named,
+                artifact,
+                envelope,
+                Some(claim.kind),
+                None,
+                None,
+            )?;
+            makers.extend(told.made_by);
+        }
+        Ok(makers)
     }
 }
