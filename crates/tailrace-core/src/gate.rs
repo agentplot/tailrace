@@ -9,11 +9,13 @@ use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
     Answer, Audience, Branch, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Held,
-    Manifest, Name, Not, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Version,
+    Manifest, Name, Not, Outcome, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source,
+    Version,
 };
 
 use crate::{
-    answer_json, chosen, policy_at, tell, Declared, Followed, History, Landed, BOUND, LOCAL,
+    answer_json, chosen, policy_at, tell, Declared, Followed, History, Landed, Provenance, BOUND,
+    LOCAL,
 };
 
 /// What told the gate of a version (95): a publish's answer, or an asker
@@ -317,7 +319,10 @@ impl Judging<'_> {
 
     /// The envelope of the first claim that counts for `wanted`, among
     /// those attached to `artifact` and then to the index, which a claim
-    /// about the version is (7), or why none does (9, 116, rule core.7).
+    /// about the version is (7), or why none does: a claim counts only
+    /// for the revision it names (13), through a signer `wanted` names
+    /// within its reach (9, 116, rule core.7), and never from an identity
+    /// that has expired (81).
     fn found(
         &self,
         wanted: &RequiredClaim,
@@ -328,27 +333,63 @@ impl Judging<'_> {
             .iter()
             .map(|e| (artifact, e))
             .chain(self.on_index.iter().map(|e| (self.index, e)));
+        let mut near = None;
         for (on, envelope) in attached {
-            // 13: a claim counts only for the revision it names.
             let Some(claim) = Claim::from_envelope(envelope) else {
                 continue;
             };
-            if claim.kind != wanted.kind || claim.revision != *self.revision {
+            if claim.revision != *self.revision {
                 continue;
             }
-            let told = tell(
-                self.seams,
-                &wanted.signers,
-                on,
-                envelope,
-                Some(claim.kind),
-                None,
-                None,
-            )?;
-            if told.counts {
+            let told = match wanted.kind {
+                // 13, 111: a verdict counts carried in the provenance, for
+                // the check required and the provenance's build, passing.
+                ClaimKind::Verdict => {
+                    let Some(provenance) = Provenance::of(&claim) else {
+                        continue;
+                    };
+                    let mut told = Vec::new();
+                    for carried in &provenance.carried {
+                        if wanted.check.as_ref() != Some(&carried.check)
+                            || claim.build.as_ref() != Some(&carried.build)
+                            || carried.outcome != Outcome::Pass
+                        {
+                            continue;
+                        }
+                        told.push(tell(
+                            self.seams,
+                            &wanted.signers,
+                            on,
+                            &carried.envelope,
+                            Some(ClaimKind::Verdict),
+                            Some(carried.check.clone()),
+                            Some(envelope.digest()),
+                        )?);
+                    }
+                    told
+                }
+                kind if kind == claim.kind => vec![tell(
+                    self.seams,
+                    &wanted.signers,
+                    on,
+                    envelope,
+                    Some(kind),
+                    None,
+                    None,
+                )?],
+                _ => continue,
+            };
+            for told in told {
+                let (true, Some(maker)) = (told.counts, told.made_by) else {
+                    continue;
+                };
+                if told.expired {
+                    near.get_or_insert(WhyWanting::Expired { signer: maker });
+                    continue;
+                }
                 return Ok(Ok(told.envelope));
             }
         }
-        Ok(Err(WhyWanting::Missing))
+        Ok(Err(near.unwrap_or(WhyWanting::Missing)))
     }
 }
