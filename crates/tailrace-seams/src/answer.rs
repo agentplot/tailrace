@@ -8,7 +8,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArtifactMeta, Branch, BuildId, ComponentName, Digest, Outcome, OutputName, Revision, SignerId,
+    ArtifactMeta, Branch, BuildId, ChannelName, Check, ClaimKind, ComponentName, Digest, Moved,
+    Outcome, OutputName, Revision, SignerId,
 };
 
 /// What every seam operation answers: what was asked, or [`Not`].
@@ -217,6 +218,25 @@ pub enum Why {
     /// 123: the repository declares several components, `declared`, and
     /// the question named none of them.
     WhichComponent { declared: Vec<ComponentName> },
+    /// 58: no attestation of `kind`, and for a verdict of `check`, counts
+    /// under the policy, which lets `signers` make it.
+    Wanting {
+        kind: ClaimKind,
+        check: Option<Check>,
+        signers: Vec<SignerId>,
+    },
+    /// 35: `channel` is at `at`, its head's version and index, `None`
+    /// when it is empty, and not where the promotion expected it.
+    ChannelAt {
+        channel: ChannelName,
+        at: Option<Moved>,
+    },
+    /// 37, 83: `channel` is bound to `bound_to`, whose chain never held
+    /// the version as the subject of a promotion.
+    NeverHeld {
+        channel: ChannelName,
+        bound_to: ChannelName,
+    },
     /// A refusal that names nothing beyond the source's own words.
     Said,
 }
@@ -346,6 +366,30 @@ impl fmt::Display for Why {
                 f,
                 "several components are declared, {}, and none was named",
                 list(declared)
+            ),
+            Why::Wanting {
+                kind,
+                check,
+                signers,
+            } => {
+                write!(f, "no {kind}")?;
+                if let Some(check) = check {
+                    write!(f, " of {check}")?;
+                }
+                write!(
+                    f,
+                    " counts under the policy, which lets {} make it",
+                    list(signers)
+                )
+            }
+            Why::ChannelAt { channel, at: None } => write!(f, "{channel} is empty"),
+            Why::ChannelAt {
+                channel,
+                at: Some(at),
+            } => write!(f, "{channel} is at {} ({})", at.version, at.index),
+            Why::NeverHeld { channel, bound_to } => write!(
+                f,
+                "{channel} is bound to {bound_to}, whose chain never held the version"
             ),
             Why::Said => write!(f, "it refused"),
         }
@@ -686,6 +730,64 @@ mod tests {
             let back = round_trip(&not);
             assert_eq!(back, not);
             assert_eq!(back.source(), &source);
+            let Not::Refused(r) = back else {
+                panic!("refused read back as another answer")
+            };
+            assert_eq!(r.said.unwrap().as_bytes(), WORDS.as_bytes());
+        }
+    }
+
+    #[test]
+    fn the_refusals_of_a_promotion_name_what_their_clauses_say_through_json() {
+        let index = Digest::of(b"0.2.0's index");
+        let cases = [
+            (
+                Why::Wanting {
+                    kind: ClaimKind::Acceptance,
+                    check: None,
+                    signers: vec![SignerId::new("gate")],
+                },
+                "no acceptance counts under the policy, which lets gate make it".to_string(),
+            ),
+            (
+                Why::Wanting {
+                    kind: ClaimKind::Verdict,
+                    check: Some(Check::new("test")),
+                    signers: vec![SignerId::new("landing"), SignerId::new("ci")],
+                },
+                "no verdict of test counts under the policy, which lets landing, ci make it".into(),
+            ),
+            (
+                Why::ChannelAt {
+                    channel: ChannelName::new("stable"),
+                    at: Some(Moved {
+                        version: crate::Version::new("0.2.0"),
+                        index: index.clone(),
+                    }),
+                },
+                format!("stable is at 0.2.0 ({index})"),
+            ),
+            (
+                Why::ChannelAt {
+                    channel: ChannelName::new("stable"),
+                    at: None,
+                },
+                "stable is empty".into(),
+            ),
+            (
+                Why::NeverHeld {
+                    channel: ChannelName::new("stable"),
+                    bound_to: ChannelName::new("beta"),
+                },
+                "stable is bound to beta, whose chain never held the version".into(),
+            ),
+        ];
+        for (why, names) in cases {
+            let text = why.to_string();
+            assert!(text.contains(&names), "{text} does not name {names}");
+            let not = Not::refused(&Source::new(Seam::Keeper, "fake"), why, Some(WORDS.into()));
+            let back = round_trip(&not);
+            assert_eq!(back, not);
             let Not::Refused(r) = back else {
                 panic!("refused read back as another answer")
             };
