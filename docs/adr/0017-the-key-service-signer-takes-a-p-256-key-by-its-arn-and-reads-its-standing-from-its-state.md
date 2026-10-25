@@ -1,5 +1,5 @@
 ---
-number: 16
+number: 17
 title: The key service signer takes a P-256 key by its ARN and reads its standing from its state
 status: proposed
 date: 2026-10-25
