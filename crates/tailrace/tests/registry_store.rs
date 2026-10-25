@@ -130,7 +130,8 @@ fn group(kind: Kind) {
         report.profile
     );
     assert_eq!(report.ran, store::scenarios().len());
-    assert_eq!(report.not_applicable, [], "{report}");
+    let not: Vec<&str> = report.not_applicable.iter().map(|n| n.scenario).collect();
+    assert_eq!(not, ["a name moved from where it is not"], "{report}");
 }
 
 #[test]
@@ -194,6 +195,7 @@ on_both!(
     a_registry_behind_a_credential_helper,
     a_version_in_a_layout_copied_into_a_registry,
     a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger,
+    the_check_before_the_put_refuses_a_move_from_where_the_name_is_not,
 );
 
 fn the_same_bytes_put_twice_are_uploaded_once(kind: Kind) {
@@ -974,4 +976,47 @@ fn a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger(kind: Kind) {
         })
     );
     assert_eq!(direct.resolve(&name), Ok(first));
+}
+
+/// name's check before the put, which is best effort on a registry, its
+/// names taking no condition (C.1, ADR 0015): where every read shows a
+/// move at once, as zot's and the reference distribution's do, a move
+/// from where the name is not, or from nothing of a name made, is refused
+/// naming where the name is, an artifact's digest or a cache entry's
+/// bytes' and never their cache manifest's (design D14), and nothing is
+/// put.
+fn the_check_before_the_put_refuses_a_move_from_where_the_name_is_not(kind: Kind) {
+    let server = Server::start(kind);
+    let proxy = Proxy::before(&server);
+    let store = proxy.store(&server.repository());
+    assert!(!store.names_conditional());
+    let [at, other, elsewhere] = ["1.0.0", "1.1.0", "1.2.0"].map(|v| put(&store, v));
+    let [bytes, moved] = [b"a cache entry".as_slice(), b"another cache entry"]
+        .map(|entry| store.put_bytes(entry).unwrap().digest);
+    let (name, entry) = (Name::new("site-v1"), Name::new("cache/two"));
+    store.name(&name, &at, None).unwrap();
+    store.name(&entry, &bytes, None).unwrap();
+    store.name(&entry, &moved, Some(&bytes)).unwrap();
+    proxy.passed();
+    for (name, to, expected, is) in [
+        (&name, &other, Some(&elsewhere), &at),
+        (&name, &other, None, &at),
+        (&entry, &bytes, Some(&bytes), &moved),
+    ] {
+        assert_eq!(
+            refused(store.name(name, to, expected)).why,
+            Why::NameAt {
+                at: Some(is.clone())
+            },
+            "{name} moved from {expected:?}"
+        );
+    }
+    let wrote: Vec<_> = proxy
+        .passed()
+        .into_iter()
+        .filter(|p| p.method != "HEAD" && p.method != "GET")
+        .collect();
+    assert_eq!(wrote, [], "a refused move wrote");
+    assert_eq!(store.resolve(&name), Ok(at));
+    assert_eq!(store.resolve(&entry), Ok(moved));
 }

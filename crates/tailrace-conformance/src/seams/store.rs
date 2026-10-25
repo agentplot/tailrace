@@ -5,13 +5,16 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
+use tailrace_core::{follow, Followed};
+use tailrace_fakes::FakeKeeper;
 use tailrace_seams::{
-    Answer, ArtifactMeta, Claim, ClaimKind, Digest, Ecosystem, EcosystemName, Envelope, Held,
-    Manifest, Name, Not, Revision, Seam, Signature, SignerId, Store, Version, Why, IN_TOTO,
+    Answer, ArtifactMeta, ChannelName, Claim, ClaimKind, Digest, Ecosystem, EcosystemName,
+    Envelope, Held, Keeper, Manifest, Name, Not, Revision, Seam, Signature, SignerId, Store,
+    Version, Why, IN_TOTO,
 };
 
 use crate::seams::unreadable;
-use crate::{ok, Rig, Scenario};
+use crate::{not_applicable, ok, Rig, Scenario};
 
 pub const GROUP: &str = "store";
 
@@ -35,6 +38,16 @@ pub trait StoreRig: Rig {
     /// a store whose every read shows a move at once (C.1, 36).
     fn settles_within(&self) -> Duration {
         Duration::ZERO
+    }
+
+    /// Whether the profile's names are conditional, as the profile
+    /// declares: a move refused by the store itself unless the name is at
+    /// the expected digest; yes by default. A profile whose names take no
+    /// condition, a registry's, refuses a move from a place the name has
+    /// left only by best effort, and the group runs the repair from the
+    /// ledger in place of that refusal (C.1, 109).
+    fn names_conditional(&self) -> bool {
+        true
     }
 }
 
@@ -83,6 +96,12 @@ pub fn scenarios() -> Vec<Scenario<dyn StoreRig>> {
             run: a_store_that_cannot_be_reached,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "a name moved from a stale place, repaired from the ledger",
+            plays: None,
+            cites: &[70, 109],
+            run: a_name_moved_from_a_stale_place_repaired_from_the_ledger,
+        },
     ]
 }
 
@@ -254,6 +273,13 @@ fn two_attestations_on_one_digest(rig: &dyn StoreRig) {
 }
 
 fn a_name_moved_from_where_it_is_not(rig: &dyn StoreRig) {
+    if !rig.names_conditional() {
+        not_applicable(
+            "the profile's names take no condition, so it refuses a move from a place the name \
+             has left only by best effort, and the group repairs the name from the ledger in its \
+             stead (C.1)",
+        );
+    }
     let store = rig.store();
     let (at, other, elsewhere) = (
         artifact(store, "1.0.0"),
@@ -357,4 +383,117 @@ fn a_store_that_cannot_be_reached(rig: &dyn StoreRig) {
         "resolve",
     );
     unreadable(store.put_bytes(BYTES), Seam::Store, &words, "put-bytes");
+}
+
+/// A promotion of `subject` to the channel `stable`, as the gate signs
+/// one.
+fn promotion(subject: &Digest) -> Envelope {
+    let claim = Claim {
+        subject: subject.clone(),
+        kind: ClaimKind::Promotion,
+        revision: Revision::new("4f2a9c1"),
+        build: None,
+        body: json!({ "channel": "stable" }),
+    };
+    let payload = claim.payload();
+    let sig = Digest::of(&payload).as_str().as_bytes().to_vec();
+    Envelope::signed(
+        IN_TOTO,
+        payload,
+        Signature {
+            signer: SignerId::new("a gate"),
+            keyid: String::new(),
+            sig,
+        },
+    )
+}
+
+/// On a profile whose names take no condition, a move from a place the
+/// name has left is refused only when the check before the put reads
+/// where the name is, so the scenario takes either answer and asks the
+/// name's safety of the ledger: written before the name moves (33), and
+/// the name repaired from it, wherever the stale move left it (109, C.1).
+fn a_name_moved_from_a_stale_place_repaired_from_the_ledger(rig: &dyn StoreRig) {
+    if rig.names_conditional() {
+        not_applicable(
+            "the profile's names are conditional, so it refuses a move from a place the name has \
+             left, which `a name moved from where it is not` proves in place of the repair (C.1)",
+        );
+    }
+    let (store, within) = (rig.store(), rig.settles_within());
+    let (left, head, stale) = (
+        artifact(store, "1.0.0"),
+        artifact(store, "1.1.0"),
+        artifact(store, "1.2.0"),
+    );
+    let (channel, name) = (ChannelName::new("stable"), Name::new("stable"));
+    ok(store.name(&name, &left, None), "a name made from nothing");
+    assert_eq!(
+        ok(settled(store, within, &name, &left, &[None]), "resolve"),
+        left,
+        "the name was not made"
+    );
+    let keeper = FakeKeeper::new();
+    ok(
+        keeper.append(&channel, &promotion(&head), None),
+        "the promotion's append",
+    );
+    ok(
+        store.name(&name, &head, Some(&left)),
+        "a move from where the name is",
+    );
+    assert_eq!(
+        ok(
+            settled(store, within, &name, &head, &[None, Some(&left)]),
+            "resolve"
+        ),
+        head,
+        "the name did not move"
+    );
+
+    let was = [None, Some(&left), Some(&head)];
+    let now = match store.name(&name, &stale, Some(&left)) {
+        Ok(()) => &stale,
+        Err(Not::Refused(r)) => match &r.why {
+            Why::NameAt { at } if was.contains(&at.as_ref()) => &head,
+            _ => panic!("a move from a place the name has left was refused naming {r:?}"),
+        },
+        answer => panic!("a move from a place the name has left answered {answer:?}"),
+    };
+    // What the registry shows of the stale move, read until it settles
+    // before the repair reads it; where it settles is the repair's to find.
+    let _ = settled(
+        store,
+        within,
+        &name,
+        now,
+        &[None, Some(&left), Some(&head), Some(&stale)],
+    );
+
+    let followed = ok(
+        follow(store, &keeper, &channel, &name, Some(&head)),
+        "the repair from the ledger",
+    );
+    let to = match &followed {
+        Followed::Moved { to } | Followed::LostRace { to, .. } => to,
+        Followed::There { at } => at,
+    };
+    assert_eq!(
+        to, &head,
+        "the repair answered {followed:?}, not the digest the ledger's head is about"
+    );
+    assert_eq!(
+        ok(
+            settled(
+                store,
+                within,
+                &name,
+                &head,
+                &[None, Some(&left), Some(&stale)]
+            ),
+            "resolve"
+        ),
+        head,
+        "the repair did not put the name where the ledger's head says"
+    );
 }

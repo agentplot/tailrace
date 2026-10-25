@@ -292,6 +292,11 @@ impl StoreRig for RegistryRig {
     fn settles_within(&self) -> Duration {
         self.live.bound()
     }
+
+    /// The registry's word: its names take no condition (C.1, ADR 0015).
+    fn names_conditional(&self) -> bool {
+        self.live.names_conditional()
+    }
 }
 
 /// One request a [`Proxy`] passed: its method, its path, and the status
@@ -443,12 +448,14 @@ pub fn cache_manifest(bytes: &[u8]) -> Vec<u8> {
 /// The cache manifest's scenarios a registry plays through the store
 /// alone (spec registry-store, design D14): bytes named from nothing
 /// resolve to their digest, and so do two names at the same bytes; a
-/// name at bytes moved with their digest as expected to other bytes, and
-/// a move from the first bytes then refused naming the others; the cache
-/// manifest's own digest read as bytes, never named, and the bytes'
+/// name at bytes moved with their digest as expected to other bytes; the
+/// cache manifest's own digest read as bytes, never named, and the bytes'
 /// digest with no claims; a digest held neither way absent. A moved
 /// name is read until it settles within `within`, the registry's bound,
-/// as the store group reads one (C.1, 36).
+/// as the store group reads one (C.1, 36). A move from bytes the name has
+/// left is refused only by the check's best effort, so it is proven
+/// where every read shows a move at once, in `registry_store.rs`, and
+/// never against ECR (C.1, ADR 0015).
 pub fn cache_entries(store: &dyn Store, within: Duration) {
     let (entry, other): (&[u8], &[u8]) = (b"a cache entry", b"another cache entry");
     let bytes = store.put_bytes(entry).unwrap().digest;
@@ -469,16 +476,6 @@ pub fn cache_entries(store: &dyn Store, within: Duration) {
 
     store.name(&two, &moved, Some(&bytes)).unwrap();
     let was = [None, Some(&bytes)];
-    assert_eq!(resolved(&two, &moved, &was).as_ref(), Ok(&moved));
-    match store.name(&two, &bytes, Some(&bytes)) {
-        Err(Not::Refused(r)) => assert_eq!(
-            r.why,
-            Why::NameAt {
-                at: Some(moved.clone())
-            }
-        ),
-        answer => panic!("a move from bytes the name has left answered {answer:?}"),
-    }
     assert_eq!(resolved(&two, &moved, &was).as_ref(), Ok(&moved));
 
     let manifest = cache_manifest(entry);

@@ -128,6 +128,12 @@ impl StoreRig for EcrRig {
     fn settles_within(&self) -> Duration {
         self.live.registry.bound()
     }
+
+    /// The registry's word: its names take no condition, ECR's tag put
+    /// among them (C.1, ADR 0015).
+    fn names_conditional(&self) -> bool {
+        self.live.registry.names_conditional()
+    }
 }
 
 /// A prefix no earlier run's names carry.
@@ -156,7 +162,8 @@ fn ecr_keeps_the_stores_contract() {
         report.profile
     );
     assert_eq!(report.ran, store::scenarios().len());
-    assert_eq!(report.not_applicable, [], "{report}");
+    let not: Vec<&str> = report.not_applicable.iter().map(|n| n.scenario).collect();
+    assert_eq!(not, ["a name moved from where it is not"], "{report}");
 }
 
 #[test]
