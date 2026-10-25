@@ -23,9 +23,9 @@ workspace builds only once every `Policy` implementor answers
 ## 3. The suite
 
 - [x] 3.1 Add `declaring` to `PolicyRig` in `crates/tailrace-conformance/src/seams/policy.rs`, implement it on `FakePolicyRig` (`src/fakes.rs`, which also faults `Channels` in `unreachable`) and on `PolicyFileRig` (`crates/tailrace/tests/policy_file.rs`) as design D5 says; verify with `conformance:test` and `cli:test`, every scenario above the marker passing unchanged
-- [ ] 3.2 Below the policy group's marker, add the four scenarios of design D5 with the citations its table gives, changing no scenario above the marker (spec `conformance-suite`, the policy's contract); verify with `conformance:test` over the fakes and `cli:test` over the policy file, each group's report naming no scenario not applicable
-- [ ] 3.3 Bring `crates/tailrace-conformance/src/statement.rs` to agentplot/blueprints 673d334 as design D6 says: `READ_AT`, the six clauses where the statement places them, B.8 named the ledger, 124 once, and its test asserting 1 to 131 once each in 20 sections (spec `clause-coverage`); verify with `conformance:test`
-- [ ] 3.4 In `crates/tailrace-conformance/src/register.rs`, remove 125 and add 126 to 130 with the units and reasons of design D6's table, a `PHASE_2` constant naming phase 2; verify with `conformance:coverage` passing, naming 126 to 130 pending, 125 and 131 cited, and no clause both cited and registered
+- [x] 3.2 Below the policy group's marker, add the four scenarios of design D5 with the citations its table gives, changing no scenario above the marker (spec `conformance-suite`, the policy's contract); verify with `conformance:test` over the fakes and `cli:test` over the policy file, each group's report naming no scenario not applicable
+- [x] 3.3 Bring `crates/tailrace-conformance/src/statement.rs` to agentplot/blueprints 673d334 as design D6 says: `READ_AT`, the six clauses where the statement places them, B.8 named the ledger, 124 once, and its test asserting 1 to 131 once each in 20 sections (spec `clause-coverage`); verify with `conformance:test`
+- [x] 3.4 In `crates/tailrace-conformance/src/register.rs`, remove 125 and add 126 to 130 with the units and reasons of design D6's table, a `PHASE_2` constant naming phase 2; verify with `conformance:coverage` passing, naming 126 to 130 pending, 125 and 131 cited, and no clause both cited and registered
 
 ## 4. The guide and the gate
 
