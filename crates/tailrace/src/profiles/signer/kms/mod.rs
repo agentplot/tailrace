@@ -10,3 +10,7 @@
 //! else: the host's credentials are found as the AWS tools find them at
 //! each call and dropped before it answers, so no credential is kept
 //! (64, rule core.21).
+
+mod arn;
+
+pub use arn::{KeyArn, NotKeyArn};
