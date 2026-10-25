@@ -75,9 +75,12 @@ Bolt 4).
   store rewritten from the ledger, and a chain read on another machine
   from the ledger alone; the keeper's group gains a chain read as last
   read. Both ledger profiles run the keeper's group. 32, 33, 37, 38, 39,
-  101 and 106 leave the register.
+  101 and 106 leave the register; 41 and 97 move to the first target,
+  and 125 to `the-policy-seam-lists-the-channels`.
 - **ADR 0016** records the ref's commit form, the channel's name in the
-  store, `[ledger]`'s keys, and what promote judges and records; the
+  store, `[ledger]`'s keys in the table ADR 0013 holds for the ledger
+  (it lifts 0013's refusal of `[ledger]`), and what promote judges and
+  records; the
   ledgers, self-hosting and surfaces pages say what is built.
 
 Out of scope, and what each waits on:
@@ -89,14 +92,18 @@ Out of scope, and what each waits on:
 - Keeping the offering and accepting credentials apart, and S9: the
   gate's unit. Promote signs with the host's `[signing]` signer, which a
   solo host's policy names as the gate (108).
-- `tailrace status` showing channels and their chains on any machine,
-  and the policy seam's list of a repository's channels with their
-  components (131): bolt 4's `status-on-any-machine`, which comes after
-  this unit and reads the promotion body and the chain's read time.
-- A channel belonging to one component (125): with 131 the channels'
-  components come from the policy, which the status unit adds; this
-  unit names the component in every promotion and leaves 125 in the
-  register.
+- `tailrace status` showing channels and their chains on any machine:
+  bolt 4's `status-on-any-machine`, which comes after this unit and
+  reads the promotion body and the chain's read time.
+- The policy seam's list of a repository's channels with their
+  components and bindings (131): bolt 4's
+  `the-policy-seam-lists-the-channels`, a trait change landed before
+  the status unit. This unit reads a channel's binding from its policy
+  as it is read today (83).
+- A channel belonging to one component (125): with 131 a channel's
+  component comes from the policy, so 125 waits on
+  `the-policy-seam-lists-the-channels`. This unit names the component
+  in every promotion and moves 125's register entry to that unit.
 - An environment converging on a channel's move, and an approval as an
   environment's own channel (41, 97, the environment half of S6): the
   first target, phase 2.

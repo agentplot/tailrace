@@ -71,4 +71,4 @@ commit that cites them.
 #### Scenario: The register after this unit
 
 - **WHEN** the coverage check runs
-- **THEN** 32, 33, 37, 38, 39, 101 and 106 are cited and in no register entry, and 41, 97 and 125 are still pending
+- **THEN** 32, 33, 37, 38, 39, 101 and 106 are cited and in no register entry, 41 and 97 are pending with the first target, and 125 is pending with `the-policy-seam-lists-the-channels`

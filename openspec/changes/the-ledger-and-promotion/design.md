@@ -33,13 +33,16 @@ with its time; `git update-ref <ref> <new> <old>` refuses when the ref
 is not at `<old>`.
 
 The design rulings this change takes (`agentplot/blueprints` 673d334,
-relayed by the conductor): the ledger's binding is this unit's to add;
+carried to this unit by the plan's proposal 84): the ledger's binding
+is this unit's to add, in the `[ledger]` table ADR 0013 holds for it;
 a git ref ledger is read from the refs as fetched, and as last fetched
 where the remote does not answer, saying when (C.13); a store ledger is
 read from the store, and from the chain the host last read where the
 store does not answer, which 61 now lets the host keep (C.14).
 `status-on-any-machine` comes after this unit and reads the promotion
-body and the chain's read time this unit fixes.
+body and the chain's read time this unit fixes; the policy seam's
+`channels` (131) is `the-policy-seam-lists-the-channels`, a trait
+change landed before the status unit.
 
 ## Goals / Non-Goals
 
@@ -58,8 +61,10 @@ body and the chain's read time this unit fixes.
 
 - Acceptance, the acceptance claim's body, and `beta` following each
   publish: the gate's unit.
-- Status showing channels, and the policy seam's list of channels
-  (131): `status-on-any-machine`.
+- Status showing channels: `status-on-any-machine`.
+- The policy seam's list of channels with their components (131), and
+  so a channel's one component (125):
+  `the-policy-seam-lists-the-channels`.
 - Environments, approvals as environments' channels, targets: phase 2.
 - Several promotions in one act (128), pattern channels (127), the
   asker's identity from an identity provider (129).
@@ -317,15 +322,19 @@ wanting" (9, 31, 32, 58), "a forked chain refuses a promotion" (105),
 the ledger alone" (60, 101). Below the keeper group's marker: "a chain
 read as last read" (60, 61, 121). The register loses 32, 33, 37, 38,
 39, 101 and 106. 41 and 97 move from this unit's block to the first
-target's, with S6's environment half; 125 stays where it is, for the
-planner (the status unit's 131 gives a channel its component).
+target's, with S6's environment half. 125 moves from this unit's block
+to one for `the-policy-seam-lists-the-channels`, since 131 gives a
+channel its component; where that unit has merged into the bolt first
+with a block of its own, 125 joins it.
 
 ### D14. ADR 0016
 
 "The ledger's git ref holds one claim per commit, and a channel is
 named `channel/<channel>` in the store": D2, D3, D5, D7, D9 to D11,
-with ADR 0009 and 0013 as its context and the rulings of 673d334.
-Proposed, for the user to accept with the change.
+with ADR 0009 and 0013 as its context and the rulings of 673d334. It
+fills the `[ledger]` table 0013 holds for the ledger and lifts 0013's
+refusal of it, saying so; 0013 itself is not edited. Proposed, for the
+user to accept with the change.
 
 ## Risks / Trade-offs
 
