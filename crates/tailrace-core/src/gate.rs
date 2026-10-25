@@ -16,8 +16,8 @@ use tailrace_seams::{
 };
 
 use crate::{
-    answer_json, chosen, policy_at, tell, Declared, Followed, History, Landed, Provenance, BOUND,
-    LOCAL, POLICY_FILE,
+    answer_json, chosen, follow, policy_at, tell, Declared, Followed, History, Landed, Provenance,
+    BOUND, LOCAL, POLICY_FILE,
 };
 
 /// What told the gate of a version (95): a publish's answer, or an asker
@@ -175,6 +175,12 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     // 4: the policy for acceptance at the head, never at the version's
     // revision (107).
     let required = required_at(seams, &at_head, &Audience::Acceptance)?;
+    // The channels that follow each publish, read before anything is
+    // written and followed only when a publish told the gate (95).
+    let followed = match ask.told {
+        ToldBy::Publish => following(history, &at_head, &declared, &component.name)?,
+        ToldBy::Asked => Vec::new(),
+    };
 
     // 5: the index, and the claims of it and of each artifact (29).
     let Held::Manifest(Manifest::Index(meta)) = seams.store.read(&index)? else {
@@ -190,7 +196,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         let claims = seams.store.claims_of(&artifact.digest)?;
         artifacts.push((artifact.digest.clone(), claims));
     }
-    let judging = Judging {
+    let mut judging = Judging {
         seams,
         gate: &ask.gate,
         revision: &revision,
@@ -254,9 +260,21 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
             };
             let envelope = sign(seams, &acceptance, &ask.gate)?;
             seams.store.attach(&index, &envelope)?;
-            (envelope.digest(), false, one_host)
+            let digest = envelope.digest();
+            judging.on_index.push(envelope);
+            (digest, false, one_host)
         }
     };
+
+    // 9: each following channel judged under its own policy and moved by
+    // the gate, each answered on its own (95, design D7).
+    let channels = followed
+        .into_iter()
+        .map(|(channel, readable)| {
+            let moved = readable.and_then(|()| judging.promote(&at_head, &channel, ask.when));
+            (channel, moved)
+        })
+        .collect();
 
     Ok(Judged::Accepted {
         component: component.name.clone(),
@@ -267,7 +285,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         acceptance,
         already,
         one_host,
-        channels: Vec::new(),
+        channels,
     })
 }
 
@@ -648,6 +666,111 @@ impl Judging<'_> {
             }
         }
         Ok(first.ok_or_else(|| near.unwrap_or(WhyWanting::Missing)))
+    }
+
+    /// 33, 35, 39, 105: `channel` judged under its own policy at the head
+    /// and, where satisfied, moved to the index: a promotion signed as the
+    /// gate naming the chain's head as its predecessor, appended to the
+    /// chain, attached to the index, and only then the channel's name
+    /// moved in the store from where the old head left it (rules core.6,
+    /// core.15, core.34). A refused append, a fork or any other answer is
+    /// the channel's, and nothing after it is done or retried.
+    fn promote(&self, at_head: &Landed, channel: &ChannelName, when: u64) -> Answer<Moved> {
+        // 1: the channel's own policy at the head (107).
+        let audience = Audience::Channel(channel.clone());
+        let required = required_at(self.seams, at_head, &audience)?;
+        if let Some(bound) = required.bound_to() {
+            return Err(Not::unreadable(
+                &Source::new(Seam::Policy, BOUND),
+                format!("the policy for channel {channel} at {}", at_head.revision()),
+                Some(format!(
+                    "{channel} is bound to {bound}, and a bound channel takes no version from a publish (37)"
+                )),
+            ));
+        }
+        let claims = match self.count(&required)? {
+            Count::Satisfied { claims, .. } => claims,
+            Count::Wanting {
+                artifact,
+                wanting,
+                why,
+            } => {
+                return Ok(Moved::Held {
+                    artifact,
+                    wanting,
+                    why,
+                })
+            }
+        };
+
+        // 2: the chain's head: what the channel moves from, and the
+        // promotion the next one follows (105).
+        let keeper = Source::new(Seam::Keeper, BOUND);
+        let (from, predecessor) = match self.seams.keeper.chain(channel) {
+            Ok(chain) => match chain.last() {
+                None => (None, None),
+                Some(head) => match Claim::from_envelope(head) {
+                    Some(claim) if claim.kind == ClaimKind::Promotion => {
+                        (Some(claim.subject), Some(head.digest()))
+                    }
+                    _ => {
+                        return Err(Not::unreadable(
+                            &keeper,
+                            format!("the head of the chain of {channel}, {}", head.digest()),
+                            Some(format!(
+                                "{} holds no promotion claim of tailrace's form",
+                                head.digest()
+                            )),
+                        ))
+                    }
+                },
+            },
+            Err(Not::Absent(_)) => (None, None),
+            Err(not) => return Err(not),
+        };
+        if from.as_ref() == Some(self.index) {
+            return Ok(Moved::There {
+                at: self.index.clone(),
+            });
+        }
+
+        // 3: the promotion, signed as the gate (33, 39).
+        let promotion = Claim {
+            subject: self.index.clone(),
+            kind: ClaimKind::Promotion,
+            revision: self.revision.clone(),
+            build: None,
+            body: json!({
+                "channel": channel,
+                "from": from,
+                "to": self.index,
+                "asked_by": "each publish",
+                "policy": { "audience": audience, "revision": at_head.revision() },
+                "claims": claims,
+                "when": when,
+                "predecessor": predecessor,
+            }),
+        };
+        let envelope = sign(self.seams, &promotion, self.gate)?;
+
+        // 4 to 6: the ledger first, then the index, then the name.
+        self.seams
+            .keeper
+            .append(channel, &envelope, predecessor.as_ref())?;
+        self.seams.store.attach(self.index, &envelope)?;
+        let name = follow(
+            self.seams.store.as_ref(),
+            self.seams.keeper.as_ref(),
+            channel,
+            &Name::new(channel.as_str()),
+            from.as_ref(),
+        )?;
+        Ok(Moved::Promoted {
+            from,
+            to: self.index.clone(),
+            promotion: envelope.digest(),
+            name,
+        })
     }
 
     /// Which of `named` made each provenance of the version's revision

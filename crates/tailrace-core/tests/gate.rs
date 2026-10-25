@@ -1065,3 +1065,66 @@ fn an_acceptance_another_signer_made_is_not_the_gates() {
     let (_, wanting, _) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
     assert_eq!(wanting.kind, ClaimKind::Review);
 }
+
+// Requirement: The gate moves each following channel after accepting what a publish told it of
+
+/// What `channel` names in the store, if anything.
+fn named_at(world: &World, channel: &str) -> Option<Digest> {
+    world.fakes.store.resolve(&Name::new(channel)).ok()
+}
+
+/// The appends the keeper was asked.
+fn appends(world: &World) -> usize {
+    world
+        .fakes
+        .keeper
+        .calls()
+        .iter()
+        .filter(|c| c.op == KeeperOp::Append)
+        .count()
+}
+
+#[test]
+fn a_version_asked_of_rather_than_told_by_a_publish_moves_no_channel() {
+    let (world, _) = published_in(World::with_policy(&with_beta()), acceptance());
+    beta_requires(&world, vec![from_gate()]);
+    let Ok(Judged::Accepted { channels, .. }) = judged(&world, &ask("0.2.0", ToldBy::Asked)) else {
+        panic!("the gate did not accept")
+    };
+    assert!(channels.is_empty(), "{channels:?}");
+    assert!(world.fakes.keeper.calls().is_empty());
+    assert_eq!(named_at(&world, "beta"), None);
+}
+
+#[test]
+fn a_channel_requiring_a_review_the_version_lacks_stays_while_the_version_is_accepted() {
+    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    let review = RequiredClaim {
+        kind: ClaimKind::Review,
+        check: None,
+        signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
+    };
+    beta_requires(&world, vec![from_gate(), review.clone()]);
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Publish));
+    let Ok(Judged::Accepted {
+        already: false,
+        channels,
+        ..
+    }) = answer
+    else {
+        panic!("the version was not accepted: {answer:?}")
+    };
+    assert_eq!(
+        channels,
+        [(
+            beta(),
+            Ok(Moved::Held {
+                artifact: artifacts(&published)[0].clone(),
+                wanting: review,
+                why: WhyWanting::Missing,
+            })
+        )]
+    );
+    assert_eq!(appends(&world), 0);
+    assert_eq!(named_at(&world, "beta"), None);
+}
