@@ -67,6 +67,8 @@ sluice = { remote = "origin" }   # C.5; or: branch = { remote = "origin" }, C.6
 [signing]                         # sluice's own table, C.8
 signer = "laptop"
 key = "~/.config/tailrace/signing"
+                                 # or a key in AWS KMS, C.7, alone:
+                                 # kms = "arn:aws:kms:<region>:<account>:key/<key id>"
 ```
 
 - Each seam's table names its profile by its one key; a table naming
@@ -91,9 +93,17 @@ key = "~/.config/tailrace/signing"
   is the host's Docker configuration and the credential helper it names
   for the registry, ECR's `ecr-login` among them, reached when the
   registry asks for one and kept nowhere (64).
+- `[signing] kms` names a key in AWS KMS by its key ARN, and nothing
+  beside it: the signer's name is the ARN. The credential is never the
+  file's: it is the host's AWS chain, the environment, the AWS profile
+  and its SSO session, or the container's or the instance's role, found
+  at each signature and kept nowhere (64). A table naming `kms` with
+  `signer` or `key` is refused, naming `[signing]`.
 - A machine that only verifies names no `[signing]`: it verifies by the
   keys the policy lists and signs nothing, so a copy of the layout and a
-  clone of the repository are all it needs.
+  clone of the repository are all it needs. Every host binds both
+  signers, the one its `[signing]` names signing and the other
+  verify-only, so it tells a host key's claims and a KMS key's alike.
 - The build and the projections are the repository's to bind, not the
   host's: moon is the build, and the policy file names each output's task
   and the projection that packs it. A `[build]`, `[projections]` or
@@ -140,7 +150,7 @@ require = [{ kind = "acceptance", signers = ["gate"] }]
 
 A signer's one key besides `kinds` and `checks` is what its signer
 profile verifies it by: for a host key, its public key as ssh-keygen
-lists one. `require` names its signers by their `[signers]` names, and a
+lists one; for a key in AWS KMS, `kms = "<key ARN>"`. `require` names its signers by their `[signers]` names, and a
 name `[signers]` does not hold is refused, naming it; only a channel
 names `bound_to`. The policy is read at the landed revision, never from
 a checkout (65).

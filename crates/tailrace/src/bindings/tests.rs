@@ -7,6 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use tailrace_seams::SignerId;
 use tempfile::TempDir;
 
 use super::*;
@@ -115,7 +116,7 @@ fn each_table_is_read() {
     );
     assert_eq!(
         bindings.signing,
-        Some(Signing {
+        Some(Signing::HostKey {
             signer: SignerId::new("laptop"),
             key: PathBuf::from("/keys/laptop"),
         })
@@ -130,8 +131,11 @@ fn a_key_under_the_home_is_expanded_and_tables_left_out_are_none() {
     assert_eq!(bindings.store, None);
     assert_eq!(bindings.landing, None);
     assert_eq!(
-        bindings.signing.unwrap().key,
-        host.home().join(".config/tailrace/signing")
+        bindings.signing,
+        Some(Signing::HostKey {
+            signer: SignerId::new("laptop"),
+            key: host.home().join(".config/tailrace/signing"),
+        })
     );
     host.write("[landing]\nbranch = {}\n");
     let landing = host.read().unwrap().landing.unwrap();
@@ -448,15 +452,15 @@ fn with_no_signing_the_host_only_verifies() {
     profiles::store::layout::Layout::create(&layout).unwrap();
     let binding = bound(&host, &layout, false, For::Verify).unwrap();
     assert_eq!(binding.signer, None);
-    let [signer] = binding.seams.signers.as_slice() else {
-        panic!("{} signers are bound", binding.seams.signers.len())
-    };
-    match signer.sign(&claim(), &SignerId::new("laptop")) {
-        Err(Not::Absent(a)) => {
-            assert_eq!(a.source.seam, Seam::Signer);
-            assert!(a.what.contains("no identity is at hand"), "{a:?}");
+    assert_eq!(binding.seams.signers.len(), 2);
+    for signer in &binding.seams.signers {
+        match signer.sign(&claim(), &SignerId::new("laptop")) {
+            Err(Not::Absent(a)) => {
+                assert_eq!(a.source.seam, Seam::Signer);
+                assert!(a.what.contains("no identity is at hand"), "{a:?}");
+            }
+            other => panic!("a verify-only signer answered {other:?}"),
         }
-        other => panic!("the verify-only host key answered {other:?}"),
     }
 }
 
