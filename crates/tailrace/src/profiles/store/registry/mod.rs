@@ -146,6 +146,16 @@ impl Registry {
         self.bound
     }
 
+    /// Whether a name moves only from the digest it is expected at by the
+    /// registry's own condition on the put: never, since the distribution
+    /// specification defines no conditional tag put and no registry this
+    /// profile binds honours one. name's check before the put is a read a
+    /// lagging replica defeats, so its refusal of a move from a place the
+    /// name has left is best effort (C.1, ADR 0015).
+    pub fn names_conditional(&self) -> bool {
+        false
+    }
+
     /// A tag read again for at most `bound` while it answers the place
     /// it was moved from, in place of the profile's, so a test sees the
     /// bound pass (ADR 0015).
@@ -681,13 +691,13 @@ impl Store for Registry {
         listed.iter().map(|r| self.envelope(r)).collect()
     }
 
-    /// The name's tag read first and moved only from `expected`, the
-    /// manifest `to` names put under it, or the cache manifest of the
-    /// bytes it names, and the tag read back until the registry shows the
-    /// put: refused naming where it is otherwise, before the put or after
-    /// it, the place it was moved from once the bound has passed, and
-    /// nothing is retried (70, 109, C.1, design D7, D14, ADR 0015, rule
-    /// core.6).
+    /// The name's tag read first and moved only from `expected`, by that
+    /// read's best effort, the manifest `to` names put under it, or the
+    /// cache manifest of the bytes it names, and the tag read back until
+    /// the registry shows the put: refused naming where it is otherwise,
+    /// before the put or after it, the place it was moved from once the
+    /// bound has passed, and nothing is retried (70, 109, C.1, design D7,
+    /// D14, ADR 0015, rule core.6).
     fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
         let tag = self.tag(name)?;
         let at = self.tag_at(&tag)?;
