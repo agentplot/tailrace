@@ -1,6 +1,7 @@
 //! The signer seam's profiles (B.4), and the binding of the host's.
 
 pub mod host_key;
+pub mod kms;
 
 use tailrace_seams::Signer;
 
