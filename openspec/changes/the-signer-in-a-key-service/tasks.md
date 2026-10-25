@@ -52,4 +52,4 @@ files, no file this change writes holds a word core.1 rules out.
 
 ## 8. The gate
 
-- [ ] 8.1 Verify `devenv shell -- moon run ':#check-fast'` passes (format, lint with every feature, the toolchain, the records' numbers, the conformance coverage, every crate's tests and the site's build) and `devenv shell -- moon run ':#check-tools'` passes with nothing reaching AWS.
+- [x] 8.1 Verify `devenv shell -- moon run ':#check-fast'` passes (format, lint with every feature, the toolchain, the records' numbers, the conformance coverage, every crate's tests and the site's build) and `devenv shell -- moon run ':#check-tools'` passes with nothing reaching AWS.
