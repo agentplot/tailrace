@@ -18,7 +18,6 @@ pub struct Pending {
     pub why: &'static str,
 }
 
-const GATE: &str = "bolt 4 · the gate";
 const PROMOTION: &str = "bolt 4 · the keeper and promotion";
 const ACROSS: &str = "bolt 4 · status across machines";
 const RENDER: &str = "bolt 5 · render under a policy";
@@ -30,17 +29,6 @@ const REBUILD: &str = "phase 2 · the verifier's rebuild";
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 25, unit: GATE, why: "Acceptance is the gate's; bolt 4's gate unit adds the gate's half of S5 and S13 and takes 25 to 30 out." },
-    Pending { clause: 26, unit: GATE, why: "Acceptance changes no bytes and is a claim, and bolt 1 builds no gate." },
-    Pending { clause: 27, unit: GATE, why: "The offering and accepting credentials are kept apart by the gate, which bolt 1 does not build." },
-    Pending { clause: 28, unit: GATE, why: "Acceptance of a version is acceptance of every digest it names, and bolt 1 accepts nothing." },
-    Pending { clause: 29, unit: GATE, why: "The gate judges by the claims, the landing and the policy alone, and bolt 1 builds no gate." },
-    Pending { clause: 30, unit: GATE, why: "The gate counts an independent rebuild's claim, and bolt 1 builds no gate." },
-    Pending { clause: 94, unit: GATE, why: "Nothing accepted is un-accepted, and bolt 1 accepts nothing." },
-    Pending { clause: 95, unit: GATE, why: "The gate judges an offered version on being told of it, and bolt 1 builds no gate." },
-    Pending { clause: 96, unit: GATE, why: "No host that builds holds the accepting credential, and bolt 1 has none." },
-    Pending { clause: 107, unit: GATE, why: "The gate reads the policy at the governed branch's landed head, and bolt 1 builds no gate." },
-    Pending { clause: 108, unit: GATE, why: "One host as both offerer and gate is the gate's to say, and bolt 1 builds no gate." },
     Pending { clause: 32, unit: PROMOTION, why: "A channel moves only by a promotion, and bolt 1 promotes nothing." },
     Pending { clause: 33, unit: PROMOTION, why: "A promotion is recorded in the ledger before the channel moves, and bolt 1 keeps no ledger." },
     Pending { clause: 37, unit: PROMOTION, why: "A bound channel takes only versions its bound channel held, and bolt 1 binds no channel." },
