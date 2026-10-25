@@ -330,7 +330,8 @@ fn error(code: &str, message: &str) -> (u16, Value) {
 /// not promise low-S, and a verifier that takes only low-S signatures
 /// must normalize first.
 fn high_s(sig: &Signature) -> Signature {
-    let (r, s) = sig.split_scalars();
+    let low = sig.normalize_s().unwrap_or(*sig);
+    let (r, s) = low.split_scalars();
     Signature::from_scalars(r.to_bytes(), (-*s).to_bytes()).unwrap()
 }
 
