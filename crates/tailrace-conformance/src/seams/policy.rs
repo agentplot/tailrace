@@ -15,7 +15,9 @@ pub trait PolicyRig: Rig {
     fn policy(&self) -> &dyn Policy;
 
     /// A landed revision at which the policy declares what each audience
-    /// of `policies` requires, and nothing for any other audience.
+    /// of `policies` requires, and nothing for any other audience but a
+    /// channel one of them is bound to, which a profile that binds a
+    /// channel only to one it declares (37) declares requiring no claim.
     fn at(&self, policies: &[(Audience, Required)]) -> Revision;
 
     /// The policy made unreachable, every operation answering unreadable,

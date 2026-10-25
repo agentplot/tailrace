@@ -12,7 +12,7 @@ use scratch::{git_fails, Scratch, POLICY_FILE};
 use tailrace::profiles::policy::file::PolicyFile;
 use tailrace_conformance::seams::policy::{self, PolicyRig};
 use tailrace_conformance::{run, Rig};
-use tailrace_seams::{Audience, NamedSigner, Policy, Required, Revision};
+use tailrace_seams::{Audience, ChannelName, NamedSigner, Policy, Required, Revision};
 
 /// A scratch repository and the policy file over it.
 struct PolicyFileRig {
@@ -40,7 +40,9 @@ fn list<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
 
 /// The policy file declaring what each of `policies` requires: every
 /// signer they name under `[signers]`, verified by the text each is
-/// named with, and each audience's table.
+/// named with, each audience's table, and a channel one of them is bound
+/// to and `policies` names no policy for, requiring nothing, since the
+/// file binds a channel only to one it declares (37).
 fn policy_file(policies: &[(Audience, Required)]) -> String {
     let mut signers: BTreeMap<String, &NamedSigner> = BTreeMap::new();
     for named in policies
@@ -86,6 +88,17 @@ fn policy_file(policies: &[(Audience, Required)]) -> String {
             ));
         }
         text.push_str("]\n\n");
+    }
+    let declared: Vec<&Audience> = policies.iter().map(|(audience, _)| audience).collect();
+    let mut bound: Vec<&ChannelName> = policies
+        .iter()
+        .filter_map(|(_, required)| required.bound_to())
+        .filter(|channel| !declared.contains(&&Audience::Channel((*channel).clone())))
+        .collect();
+    bound.sort_unstable();
+    bound.dedup();
+    for channel in bound {
+        text.push_str(&format!("[channels.{channel}]\nrequire = []\n\n"));
     }
     text
 }

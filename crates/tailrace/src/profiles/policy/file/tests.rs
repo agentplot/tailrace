@@ -102,7 +102,7 @@ fn signers() -> String {
 
 /// The words of an unreadable answer, once it names the file and the
 /// revision.
-fn unreadable(answer: Answer<Required>, revision: &Revision) -> String {
+fn unreadable<T: std::fmt::Debug>(answer: Answer<T>, revision: &Revision) -> String {
     match answer {
         Err(Not::Unreadable(u)) => {
             assert_eq!(u.source, source());
@@ -199,7 +199,8 @@ fn acceptance_requires_its_claims_in_the_order_written() {
 fn a_bound_channel_names_the_channel_it_is_bound_to() {
     let repo = Repo::new();
     let at = repo.at(&format!(
-        "{}[channels.stable]\nbound_to = \"beta\"\nfollows = \"left to its reader\"\n\
+        "{}[channels.beta]\nrequire = []\n\n\
+         [channels.stable]\nbound_to = \"beta\"\nfollows = \"left to its reader\"\n\
          require = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
         signers()
     ));
@@ -220,8 +221,8 @@ fn a_bound_channel_names_the_channel_it_is_bound_to() {
     );
     absent(
         repo.policy()
-            .policy_for(&at, &Audience::Channel(ChannelName::new("beta"))),
-        "the channel beta",
+            .policy_for(&at, &Audience::Channel(ChannelName::new("edge"))),
+        "the channel edge",
     );
 }
 
@@ -313,6 +314,216 @@ fn a_revision_the_repository_does_not_hold_is_absent() {
     let missing = Revision::new("0000000000000000000000000000000000000001");
     assert_eq!(
         repo.policy().policy_for(&missing, &Audience::Acceptance),
+        Err(Not::absent(&source(), format!("revision {missing}")))
+    );
+}
+
+// Requirement: A channel's table names its component
+
+/// A `[[component]]` table with every key the core requires.
+fn component(name: &str) -> String {
+    format!(
+        "[[component]]\nname = \"{name}\"\noutputs = []\npaths = [\"{name}/**\"]\nprefix = \"{name}-v\"\n\n"
+    )
+}
+
+/// `[channels.<name>]` requiring nothing, in `component` and bound to
+/// `bound_to` where each is named.
+fn channel(name: &str, component: Option<&str>, bound_to: Option<&str>) -> String {
+    let mut table = format!("[channels.{name}]\nrequire = []\n");
+    if let Some(component) = component {
+        table.push_str(&format!("component = \"{component}\"\n"));
+    }
+    if let Some(bound_to) = bound_to {
+        table.push_str(&format!("bound_to = \"{bound_to}\"\n"));
+    }
+    table + "\n"
+}
+
+fn declared(name: &str, component: &str, bound_to: Option<&str>) -> DeclaredChannel {
+    DeclaredChannel {
+        name: ChannelName::new(name),
+        component: ComponentName::new(component),
+        bound_to: bound_to.map(ChannelName::new),
+    }
+}
+
+fn channel_policy(repo: &Repo, at: &Revision, name: &str) -> Answer<Required> {
+    repo.policy()
+        .policy_for(at, &Audience::Channel(ChannelName::new(name)))
+}
+
+#[test]
+fn with_no_component_declared_every_channel_is_the_repositorys() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}",
+        channel("beta", None, None),
+        channel("stable", None, Some("beta"))
+    ));
+    assert_eq!(
+        repo.policy().channels(&at),
+        Ok(vec![
+            declared("beta", "repository", None),
+            declared("stable", "repository", Some("beta")),
+        ])
+    );
+}
+
+#[test]
+fn with_one_component_declared_a_channel_naming_none_is_its() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}",
+        component("lib"),
+        channel("beta", None, None)
+    ));
+    assert_eq!(
+        repo.policy().channels(&at),
+        Ok(vec![declared("beta", "lib", None)])
+    );
+}
+
+#[test]
+fn a_channel_naming_no_component_among_several_is_unreadable_naming_them() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}{}",
+        component("lib"),
+        component("web"),
+        channel("beta", None, None)
+    ));
+    let said = unreadable(repo.policy().channels(&at), &at);
+    assert_eq!(
+        said,
+        "[channels.beta] names no component, and several are declared: lib, web"
+    );
+    assert_eq!(unreadable(channel_policy(&repo, &at, "beta"), &at), said);
+}
+
+#[test]
+fn a_channel_naming_a_component_not_declared_is_unreadable_naming_it() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}",
+        component("lib"),
+        channel("beta", Some("app"), None)
+    ));
+    let said = unreadable(repo.policy().channels(&at), &at);
+    assert_eq!(
+        said,
+        format!(
+            "[channels.beta] names the component app, which {POLICY_FILE} does not declare; it declares lib"
+        )
+    );
+    assert_eq!(unreadable(channel_policy(&repo, &at, "beta"), &at), said);
+}
+
+// Requirement: A channel is bound within its component
+
+#[test]
+fn a_binding_across_components_is_unreadable_naming_the_channel_bound_to() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}{}{}",
+        component("lib"),
+        component("web"),
+        channel("stable", Some("lib"), Some("edge")),
+        channel("edge", Some("web"), None)
+    ));
+    let said = unreadable(repo.policy().channels(&at), &at);
+    assert_eq!(
+        said,
+        "[channels.stable] is bound to edge, a channel of web, and a channel is bound only within its component, lib (125)"
+    );
+    assert_eq!(unreadable(channel_policy(&repo, &at, "stable"), &at), said);
+    assert_eq!(
+        channel_policy(&repo, &at, "edge").map(|r| r.bound_to().cloned()),
+        Ok(None),
+        "a channel bound to none is read whatever another's binding"
+    );
+}
+
+#[test]
+fn a_binding_to_a_channel_not_declared_is_unreadable_naming_it() {
+    let repo = Repo::new();
+    let at = repo.at(&channel("stable", None, Some("beta")));
+    let said = unreadable(repo.policy().channels(&at), &at);
+    assert_eq!(
+        said,
+        "[channels.stable] is bound to beta, which [channels] does not declare"
+    );
+    assert_eq!(unreadable(channel_policy(&repo, &at, "stable"), &at), said);
+}
+
+// Requirement: The profile lists the channels the file declares
+
+#[test]
+fn two_components_channels_are_listed_by_name_and_agree_with_policy_for() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}{}{}{}",
+        component("lib"),
+        component("web"),
+        channel("stable", Some("lib"), Some("beta")),
+        channel("edge", Some("web"), None),
+        channel("beta", Some("lib"), None)
+    ));
+    assert_eq!(
+        repo.policy().channels(&at),
+        Ok(vec![
+            declared("beta", "lib", None),
+            declared("edge", "web", None),
+            declared("stable", "lib", Some("beta")),
+        ])
+    );
+    assert_eq!(
+        channel_policy(&repo, &at, "stable").map(|r| r.bound_to().cloned()),
+        Ok(Some(ChannelName::new("beta")))
+    );
+}
+
+#[test]
+fn no_channel_and_no_file_answer_an_empty_list() {
+    let repo = Repo::new();
+    fs::write(repo.path().join("README"), "no policy").unwrap();
+    let none = repo.commit();
+    assert_eq!(repo.policy().channels(&none), Ok(vec![]));
+    let at = repo.at(&format!(
+        "{}[acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
+        signers()
+    ));
+    assert_eq!(repo.policy().channels(&at), Ok(vec![]));
+}
+
+#[test]
+fn a_working_trees_channel_is_not_listed() {
+    let repo = Repo::new();
+    let at = repo.at(&channel("beta", None, None));
+    repo.write(&format!(
+        "{}{}",
+        channel("beta", None, None),
+        channel("edge", None, None)
+    ));
+    assert_eq!(
+        repo.policy().channels(&at),
+        Ok(vec![declared("beta", "repository", None)])
+    );
+}
+
+#[test]
+fn the_channels_of_a_revision_not_held_or_a_file_not_read_answer_as_policy_for() {
+    let repo = Repo::new();
+    let text = "[channels.beta\nrequire = []\n";
+    let at = repo.at(text);
+    let said = unreadable(repo.policy().channels(&at), &at);
+    assert_eq!(
+        said,
+        toml::from_str::<toml::Table>(text).unwrap_err().to_string()
+    );
+    let missing = Revision::new("0000000000000000000000000000000000000001");
+    assert_eq!(
+        repo.policy().channels(&missing),
         Err(Not::absent(&source(), format!("revision {missing}")))
     );
 }

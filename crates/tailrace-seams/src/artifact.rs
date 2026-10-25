@@ -25,6 +25,10 @@ text! {
     ComponentName
 }
 
+/// What the one component of a repository that declares none is named
+/// (123), so every profile and the core name it alike.
+pub const REPOSITORY_COMPONENT: &str = "repository";
+
 /// The outputs the authors declare to take one version together, the
 /// paths whose changes version it, and the prefix its tags carry (123).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
