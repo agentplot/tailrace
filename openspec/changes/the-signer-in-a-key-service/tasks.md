@@ -38,7 +38,7 @@ files, no file this change writes holds a word core.1 rules out.
 ## 5. The bindings
 
 - [x] 5.1 Move the reading of `[signing]` into `profiles::signer::read` and add `plan` and `Signing` as design D8 has them; `bindings/mod.rs` hands the `[signing]` table to `read`, makes `path_of` `pub(crate)`, takes the binding's signer from the family's `Signing`, and names no key service. Keep `bindings/tests.rs`'s host key tests passing, changed only where they build the old `Signing`. Verify `devenv shell -- cargo test -p tailrace bindings` passes, and `grep -niw kms crates/tailrace/src/bindings` finds nothing.
-- [ ] 5.2 In `crates/tailrace/src/profiles/signer/tests.rs`, test spec `host-bindings`' new scenarios: `[signing] kms` alone reads as the key service signer with the ARN as signer; `kms` with `signer` or with `key` unreadable naming `[signing]` and saying the table names `kms` alone; `kms` naming an alias unreadable naming the value; and `plan` for a host key, a KMS key and no `[signing]` in design D8's order, binding nothing that reads a file or reaches a service. Verify `devenv shell -- cargo test -p tailrace profiles::signer` passes.
+- [x] 5.2 In `crates/tailrace/src/profiles/signer/tests.rs`, test spec `host-bindings`' new scenarios: `[signing] kms` alone reads as the key service signer with the ARN as signer; `kms` with `signer` or with `key` unreadable naming `[signing]` and saying the table names `kms` alone; `kms` naming an alias unreadable naming the value; and `plan` for a host key, a KMS key and no `[signing]` in design D8's order, binding nothing that reads a file or reaches a service. Verify `devenv shell -- cargo test -p tailrace profiles::signer` passes.
 
 ## 6. The run against a test account
 

@@ -3,6 +3,8 @@
 
 pub mod host_key;
 pub mod kms;
+#[cfg(test)]
+mod tests;
 
 use std::path::{Path, PathBuf};
 
