@@ -2,6 +2,8 @@
 //! the core, and its answer as text (rule core.31).
 
 pub mod publish;
+pub mod push;
+pub mod rebuild;
 pub mod status;
 pub mod sync;
 pub mod verify;

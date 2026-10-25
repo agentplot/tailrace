@@ -1,9 +1,10 @@
 //! The fake projection (B.6): its ecosystem, the name each output takes,
-//! and whether it packs cache entries. A pack is the canonical JSON of
+//! whether it packs cache entries, and the build identities it holds no
+//! archive for. A pack is the canonical JSON of
 //! what it was given, read from no disk; a render writes nothing (design
 //! D7).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::json;
 use tailrace_seams::{
@@ -23,13 +24,15 @@ pub enum ProjectionOp {
 }
 
 /// The projection's ecosystem, the names outputs take in it, whether its
-/// packing is the same twice, and whether it packs cache entries.
+/// packing is the same twice, whether it packs cache entries, and the
+/// build identities it holds no archive for.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectionState {
     ecosystem: Ecosystem,
     names: BTreeMap<OutputName, EcosystemName>,
     unsteady: bool,
     caches: bool,
+    no_archive: BTreeSet<BuildId>,
     packs: u64,
 }
 
@@ -48,6 +51,7 @@ impl FakeProjection {
                 names: BTreeMap::new(),
                 unsteady: false,
                 caches: true,
+                no_archive: BTreeSet::new(),
                 packs: 0,
             },
         )
@@ -74,6 +78,13 @@ impl FakeProjection {
     pub fn caches(&self) -> bool {
         self.state().caches
     }
+
+    /// 54: from now a pack with no version at `build` answers absent
+    /// naming the archive it looked for, as a projection does on a host
+    /// the build left no archive on.
+    pub fn no_archive(&self, build: &BuildId) {
+        self.state().no_archive.insert(build.clone());
+    }
 }
 
 impl Projection for FakeProjection {
@@ -87,6 +98,9 @@ impl Projection for FakeProjection {
                 let Some(version) = version else {
                     if !s.caches {
                         return Err(no_cache_entries(source));
+                    }
+                    if s.no_archive.contains(at) {
+                        return Err(Not::absent(source, format!("the archive of {at}")));
                     }
                     s.packs += 1;
                     let pack = s.unsteady.then_some(s.packs);
@@ -315,6 +329,22 @@ mod tests {
             meta.map(|m| m.version().clone()),
             Some(Version::new("1.0.0"))
         );
+    }
+
+    #[test]
+    fn scripted_to_hold_no_archive_for_a_build_it_answers_absent_for_that_one() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        projection.no_archive(&b7e1());
+        match projection.pack(&output(), &b7e1(), None) {
+            Err(Not::Absent(a)) => {
+                assert_eq!(a.source.seam, Seam::Projection);
+                assert_eq!(a.what, "the archive of b7e1");
+            }
+            other => panic!("answered {other:?}"),
+        }
+        let other = projection.pack(&output(), &BuildId::new("c3d4"), None);
+        assert!(other.unwrap().meta.is_none());
+        assert!(artifact_pack(&projection, "1.0.0").meta.is_some());
     }
 
     #[test]

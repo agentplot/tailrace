@@ -14,7 +14,7 @@ tasks:
   # reference distribution each started for the test, behind the `tools`
   # feature: the tools layer.
   tools:
-    command: 'cargo test -p tailrace --features tools --test build_moon --test landing_sluice --test landings_end_to_end --test laptop --test moon_cache --test registry_store'
+    command: 'cargo test -p tailrace --features tools --test build_moon --test landing_sluice --test landings_end_to_end --test laptop --test moon_cache --test registry_store --test push_after_landing'
     inputs: ['/crates/tailrace/**/*', '/crates/tailrace-seams/**/*', '/crates/tailrace-core/**/*', '/crates/tailrace-fakes/**/*', '/crates/tailrace-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools']
     tags: [check-tools]
     options: {runFromWorkspaceRoot: true}

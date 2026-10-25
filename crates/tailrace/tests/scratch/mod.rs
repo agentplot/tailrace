@@ -3,7 +3,7 @@
 //! fixed author, committer and date and none of the host's
 //! configuration, as the suite's fixture is made; a bare remote and a
 //! second clone of it; and a moon workspace in it whose shell tasks write
-//! their declared outputs and exit as they are told.
+//! their declared outputs, or declare none, and exit as they are told.
 
 #![allow(dead_code)]
 
@@ -220,7 +220,7 @@ impl Scratch {
 }
 
 /// A shell task of the scratch moon workspace, `<project>:<task>`,
-/// declaring `dist/<file>` as its output.
+/// declaring `dist/<file>` as its output, or declaring none.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Task {
     pub project: String,
@@ -230,6 +230,8 @@ pub struct Task {
     pub writes: bool,
     /// What it exits with.
     pub exit: i32,
+    /// Whether it declares `dist/<file>` as its output.
+    pub declares: bool,
 }
 
 impl Task {
@@ -240,6 +242,20 @@ impl Task {
             file: file.into(),
             writes,
             exit,
+            declares: true,
+        }
+    }
+
+    /// A task declaring no output, which prints its target and exits with
+    /// `exit`.
+    pub fn without_output(project: &str, task: &str, exit: i32) -> Task {
+        Task {
+            project: project.into(),
+            task: task.into(),
+            file: String::new(),
+            writes: false,
+            exit,
+            declares: false,
         }
     }
 
@@ -266,6 +282,15 @@ pub fn moon_workspace(repo: &Repo, tasks: &[Task]) {
     for project in &projects {
         let mut config = String::from("tasks:\n");
         for t in tasks.iter().filter(|t| t.project == *project) {
+            if !t.declares {
+                config.push_str(&format!(
+                    "  {}:\n    command: 'sh -c \"echo {}; exit {}\"'\n    inputs: ['moon.yml']\n    options: {{shell: false}}\n",
+                    t.task,
+                    t.target(),
+                    t.exit
+                ));
+                continue;
+            }
             let write = if t.writes {
                 format!(
                     "mkdir -p dist && printf {} > dist/{} && ",

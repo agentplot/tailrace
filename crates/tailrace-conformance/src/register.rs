@@ -18,7 +18,6 @@ pub struct Pending {
     pub why: &'static str,
 }
 
-const PUSH: &str = "bolt 3 · the push after a landing";
 const GATE: &str = "bolt 4 · the gate";
 const PROMOTION: &str = "bolt 4 · the keeper and promotion";
 const ACROSS: &str = "bolt 4 · status across machines";
@@ -31,7 +30,6 @@ const REBUILD: &str = "phase 2 · the verifier's rebuild";
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 63, unit: PUSH, why: "The record is rebuilt from the store and git by the push after a landing." },
     Pending { clause: 25, unit: GATE, why: "Acceptance is the gate's; bolt 4's gate unit adds the gate's half of S5 and S13 and takes 25 to 30 out." },
     Pending { clause: 26, unit: GATE, why: "Acceptance changes no bytes and is a claim, and bolt 1 builds no gate." },
     Pending { clause: 27, unit: GATE, why: "The offering and accepting credentials are kept apart by the gate, which bolt 1 does not build." },

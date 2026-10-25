@@ -71,12 +71,19 @@ key = "~/.config/tailrace/signing"
 
 - Each seam's table names its profile by its one key; a table naming
   none or two is refused, naming it. A path is absolute or begins `~/`.
-- `tailrace publish` and `tailrace verify` read it. With no file they
-  answer absent, naming the file's path; a file that is not well formed
-  is unreadable in the parser's own words. `tailrace status` reads no
-  bindings file and answers from the host's record.
-- Only publish makes the layout, the first time, where the path is
-  missing or an empty directory; verify never makes or writes one.
+- `tailrace publish`, `verify`, `sync`, `push` and `rebuild` read it.
+  With no file they answer absent, naming the file's path; a file that
+  is not well formed is unreadable in the parser's own words. `tailrace
+  status` reads no bindings file and answers from the host's record.
+- Only publish and push make the layout, the first time, where the path
+  is missing or an empty directory; push needs no `[signing]`, since it
+  signs nothing. verify, sync and rebuild never make or write one.
+- The host's record of the versions it published is a file per version
+  under the repository's common git directory, `tailrace/published/`,
+  which status reads. It can be deleted and rebuilt with `tailrace
+  rebuild`, which writes it again from the store and git: one entry for
+  each tag the branch landed whose name the store resolves to that
+  component's index.
 - `[store] registry` names one repository of a registry, such as
   `123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace` or
   `localhost:5000/tailrace`, which holds everything the store holds. No

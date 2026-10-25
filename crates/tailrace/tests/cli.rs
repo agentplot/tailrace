@@ -8,7 +8,9 @@ use std::process::Command;
 use clap::Parser;
 use serde_json::Value;
 use tailrace::{run, Binding, Cli};
-use tailrace_core::{answer_json, publish, sync, write, Ask, Entry, History, Kept, SyncAsk};
+use tailrace_core::{
+    answer_json, publish, push, sync, write, Ask, Entry, History, Kept, PushAsk, SyncAsk,
+};
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
     Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, Outcome,
@@ -201,27 +203,32 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
 /// A passing verdict of `test` on `build` at the host's head, signed as
 /// the landing signs, recorded.
 fn passed(host: &Host, build: &str) {
+    host.fakes
+        .landing
+        .verdict(&host.head, verdict(&host.head, build));
+}
+
+/// A passing verdict of `test` on `build` at `head`, signed as the
+/// landing signs.
+fn verdict(head: &Revision, build: &str) -> Verdict {
     let id = SignerId::new("landing");
     let theirs = tailrace_fakes::FakeSigner::new();
     theirs.hold(&id);
     let claim = Claim {
         subject: Digest::of(build.as_bytes()),
         kind: ClaimKind::Verdict,
-        revision: host.head.clone(),
+        revision: head.clone(),
         build: Some(BuildId::new(build)),
         body: serde_json::json!({ "check": "test", "outcome": Outcome::Pass }),
     };
-    host.fakes.landing.verdict(
-        &host.head,
-        Verdict {
-            check: Check::new("test"),
-            build: BuildId::new(build),
-            outcome: Outcome::Pass,
-            signer: id.clone(),
-            envelope: theirs.sign(&claim, &id).unwrap(),
-            found: format!("the fake landing's record of test on {build}"),
-        },
-    );
+    Verdict {
+        check: Check::new("test"),
+        build: BuildId::new(build),
+        outcome: Outcome::Pass,
+        signer: id.clone(),
+        envelope: theirs.sign(&claim, &id).unwrap(),
+        found: format!("the fake landing's record of test on {build}"),
+    }
 }
 
 #[test]
@@ -275,6 +282,124 @@ fn sync_on_a_branch_the_repository_lacks_is_absent_and_one_that_did_not_land_it_
     assert_eq!(code, 1, "{printed}");
     let json: Value = serde_json::from_str(&printed).unwrap();
     assert_eq!(json["refused"]["why"]["not_landed"]["branch"], "release");
+}
+
+// Requirement: Push takes a landed revision
+
+/// `fakes` with the host's head landed, passing verdicts on `b7e1` and
+/// `c3d4` there, and no archive of `b7e1` on the host.
+fn landed_with_one_archive_missing(fakes: &mut Fakes, head: &Revision) {
+    fakes.landing.land(&Branch::new("main"), head);
+    for build in ["b7e1", "c3d4"] {
+        fakes.landing.verdict(head, verdict(head, build));
+    }
+    fakes
+        .projection(&Ecosystem::new("eco"))
+        .no_archive(&BuildId::new("b7e1"));
+}
+
+#[test]
+fn push_with_one_archive_missing_prints_one_written_and_one_absent_and_exits_0() {
+    let mut host = Host::new();
+    let head = host.head.clone();
+    landed_with_one_archive_missing(&mut host.fakes, &head);
+
+    let (code, printed) = host.run(&["push", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let entries = &printed["value"]["entries"];
+    assert_eq!(entries[0]["build"], "b7e1");
+    assert_eq!(entries[0]["answer"], "absent");
+    assert_eq!(entries[1]["build"], "c3d4");
+    assert_eq!(entries[1]["answer"], "ok");
+    assert_eq!(entries[1]["value"]["held_at"], Value::Null);
+    let digest = entries[1]["value"]["entry"]["digest"].as_str().unwrap();
+    assert!(digest.starts_with("sha256:"), "{printed}");
+    assert_eq!(printed["value"]["revision"], host.head.as_str());
+
+    let mut twin = Fakes::new();
+    landed_with_one_archive_missing(&mut twin, &head);
+    let core = push(
+        &twin.seams(),
+        &PushAsk {
+            branch: Branch::new("main"),
+            revision: head,
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+
+    let (code, printed) = host.run(&["push"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert_eq!(lines[0], "b7e1 absent: the archive of b7e1", "{printed}");
+    assert_eq!(
+        lines[1],
+        format!("c3d4 held already at {digest}"),
+        "{printed}"
+    );
+}
+
+#[test]
+fn the_built_binary_on_a_host_with_no_bindings_file_pushes_nothing() {
+    let host = Host::new();
+    let file = host.bindings_file();
+    let out = host.binary(&["push", "--json"]);
+    assert_eq!(out.status.code(), Some(4), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["answer"], "absent");
+    assert_eq!(json["absent"]["source"]["seam"], "host");
+    assert_eq!(
+        json["absent"]["what"],
+        format!("bindings file at {}", file.display())
+    );
+    assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
+    let history = History::open(&host.repo).unwrap();
+    assert!(
+        !Kept::at(&history).dir().exists(),
+        "the push kept something"
+    );
+    assert!(!file.parent().unwrap().exists(), "the push wrote a file");
+}
+
+// Requirement: Rebuild takes a landed revision
+
+#[test]
+fn rebuild_after_the_record_is_deleted_writes_its_entry_and_status_answers_as_before() {
+    let host = Host::new();
+    assert_eq!(host.run(&["publish", "HEAD"]).0, 0);
+    let (code, before) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{before}");
+    let history = History::open(&host.repo).unwrap();
+    let record = Kept::at(&history).dir().to_path_buf();
+    fs::remove_dir_all(&record).unwrap();
+    assert_eq!(
+        host.run(&["status", "--json"]).0,
+        4,
+        "the record was not deleted"
+    );
+
+    let (code, printed) = host.run(&["rebuild", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let json: Value = serde_json::from_str(&printed).unwrap();
+    assert_eq!(json["answer"], "ok");
+    assert_eq!(json["value"]["record"], record.display().to_string());
+    let entries = &json["value"]["entries"];
+    assert_eq!(entries.as_array().map(Vec::len), Some(1), "{printed}");
+    assert_eq!(entries[0]["answer"], "ok");
+    assert_eq!(entries[0]["value"], "wrote");
+    assert_eq!(entries[0]["entry"]["tag"], "v0.1.0");
+    assert_eq!(entries[0]["entry"]["revision"], host.head.as_str());
+
+    let (code, after) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{after}");
+    assert_eq!(after, before, "status answers otherwise after the rebuild");
+
+    let (code, printed) = host.run(&["rebuild"]);
+    assert_eq!(code, 0, "{printed}");
+    assert_eq!(
+        printed.trim_end(),
+        format!("repository 0.1.0 (v0.1.0) from {}: held", host.head)
+    );
 }
 
 // Requirement: Every answer is readable by a program on request

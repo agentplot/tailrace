@@ -530,6 +530,44 @@ fn sync_is_bound_as_verify_is_and_never_makes_the_layout() {
 }
 
 #[test]
+fn a_push_needs_no_signing_and_makes_a_missing_layout() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layouts").join("landing");
+    let binding = bound(&host, &layout, false, For::Push).unwrap();
+    assert_eq!(binding.signer, None);
+    assert!(
+        profiles::store::layout::Layout::open(&layout).is_ok(),
+        "push made no layout"
+    );
+    let digest = binding.seams.store.put_bytes(b"an archive").unwrap().digest;
+    assert_eq!(digest, Digest::of(b"an archive"));
+    assert!(
+        binding
+            .seams
+            .projection(&tailrace_seams::Ecosystem::new("moon-cache"))
+            .is_some(),
+        "the moon cache is not bound"
+    );
+}
+
+#[test]
+fn rebuild_is_bound_as_verify_is_and_never_makes_the_layout() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let rebuild = bound(&host, &layout, false, For::Rebuild);
+    assert!(
+        matches!(&rebuild, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store
+            && u.said.as_deref().is_some_and(|s| s.contains("No such file or directory"))),
+        "{:?}",
+        rebuild.err()
+    );
+    assert!(!layout.exists(), "rebuild made {}", layout.display());
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound(&host, &layout, false, For::Rebuild).unwrap();
+    assert_eq!(binding.signer, None);
+}
+
+#[test]
 fn a_file_naming_no_store_or_landing_is_absent_naming_the_table() {
     let host = Host::new();
     host.write("[landing]\nbranch = {}\n");
