@@ -17,7 +17,7 @@ verification is the moon task named, which the gate runs under
 ## 2. Acceptance
 
 - [x] 2.1 Sign the acceptance claim of design D4 as `ask.gate` through the bound signers before any write, absent naming the identity where none holds it, then attach it to the index alone; verify with tests that an accepted version's index holds one more claim signed as the gate, every artifact's claims and every digest are unchanged and no put was asked, and that a host with no gate key answers absent having written nothing (7, 26, 79, 95)
-- [ ] 2.2 Refuse `OfferedByGate` where the counted provenance's maker is the gate's identity, unless the policy's signer lists both provenance and acceptance, and write `offered.by` and `one_host` into the claim; verify with tests for a build host running the gate refused, the solo laptop's claim saying one host, and a separated gate's claim naming the offerer (27, 96, 108)
+- [x] 2.2 Refuse `OfferedByGate` where the counted provenance's maker is the gate's identity, unless the policy's signer lists both provenance and acceptance, and write `offered.by` and `one_host` into the claim; verify with tests for a build host running the gate refused, the solo laptop's claim saying one host, and a separated gate's claim naming the offerer (27, 96, 108)
 - [ ] 2.3 Answer an index already holding the gate's acceptance as accepted with that claim's digest and `already`, attaching nothing, whatever the head's policy now requires; verify with a test that judges again after a stricter policy lands (94)
 
 ## 3. The channels that follow each publish

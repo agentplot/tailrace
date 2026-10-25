@@ -190,6 +190,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     }
     let judging = Judging {
         seams,
+        gate: &ask.gate,
         revision: &revision,
         index: &index,
         on_index,
@@ -207,8 +208,12 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         wanting,
         why,
     };
-    let claims = match judging.count(&required)? {
-        Count::Satisfied { claims } => claims,
+    let (claims, offered_by, one_host) = match judging.count(&required)? {
+        Count::Satisfied {
+            claims,
+            offered_by,
+            one_host,
+        } => (claims, offered_by, one_host),
         Count::Wanting {
             artifact,
             wanting,
@@ -217,7 +222,8 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     };
 
     // 8: the acceptance signed before the one write, then attached to
-    // the index alone (26, 7).
+    // the index alone (26, 7), saying who offered what it accepts and
+    // whether that was the gate's own identity (108).
     let acceptance = Claim {
         subject: index.clone(),
         kind: ClaimKind::Acceptance,
@@ -228,6 +234,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
             "version": ask.version,
             "policy": { "audience": Audience::Acceptance, "revision": head },
             "claims": claims,
+            "offered": { "by": offered_by, "one_host": one_host },
         }),
     };
     let envelope = sign(seams, &acceptance, &ask.gate)?;
@@ -241,7 +248,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         policy_at: head.clone(),
         acceptance: envelope.digest(),
         already: false,
-        one_host: false,
+        one_host,
         channels: Vec::new(),
     })
 }
@@ -282,11 +289,22 @@ fn named_in(required: &Required) -> Vec<NamedSigner> {
     named
 }
 
-/// One version being judged: its revision, its index, the claims
-/// attached to the index, and each artifact in the index's order with
-/// the claims attached to it.
+/// 108: whether `wanted` names `signer` as one that may claim both
+/// provenance and acceptance, the one host that offers and accepts.
+fn offers_and_accepts(wanted: &RequiredClaim, signer: &SignerId) -> bool {
+    wanted.signers.iter().any(|s| {
+        s.id == *signer
+            && s.kinds.contains(&ClaimKind::Provenance)
+            && s.kinds.contains(&ClaimKind::Acceptance)
+    })
+}
+
+/// One version being judged by the gate signing as `gate`: its
+/// revision, its index, the claims attached to the index, and each
+/// artifact in the index's order with the claims attached to it.
 struct Judging<'a> {
     seams: &'a Seams,
+    gate: &'a SignerId,
     revision: &'a Revision,
     index: &'a Digest,
     on_index: Vec<Envelope>,
@@ -296,8 +314,13 @@ struct Judging<'a> {
 /// What one policy's judgment of every artifact came to.
 enum Count {
     /// Every required claim found, for every artifact: the envelopes that
-    /// satisfied each, in order.
-    Satisfied { claims: Vec<Digest> },
+    /// satisfied each, in order; the makers of the provenance counted;
+    /// and whether the gate's own identity made one (108).
+    Satisfied {
+        claims: Vec<Digest>,
+        offered_by: Vec<SignerId>,
+        one_host: bool,
+    },
     /// The first artifact and the first required claim found wanting.
     Wanting {
         artifact: Digest,
@@ -311,11 +334,19 @@ impl Judging<'_> {
     /// claim, in the policy's order; the first wanting refuses the whole.
     fn count(&self, required: &Required) -> Answer<Count> {
         let named = named_in(required);
-        let mut claims = Vec::new();
+        let (mut claims, mut offered_by, mut one_host) = (Vec::new(), Vec::new(), false);
         for (artifact, own) in &self.artifacts {
             for wanted in required.claims() {
                 match self.found(wanted, artifact, own, &named)? {
-                    Ok(envelope) => claims.push(envelope),
+                    Ok((envelope, maker)) => {
+                        claims.push(envelope);
+                        if wanted.kind == ClaimKind::Provenance {
+                            one_host |= maker == *self.gate;
+                            if !offered_by.contains(&maker) {
+                                offered_by.push(maker);
+                            }
+                        }
+                    }
                     Err(why) => {
                         return Ok(Count::Wanting {
                             artifact: artifact.clone(),
@@ -326,7 +357,11 @@ impl Judging<'_> {
                 }
             }
         }
-        Ok(Count::Satisfied { claims })
+        Ok(Count::Satisfied {
+            claims,
+            offered_by,
+            one_host,
+        })
     }
 
     /// The envelope of the first claim that counts for `wanted`, among
@@ -335,19 +370,22 @@ impl Judging<'_> {
     /// for the revision it names (13), through a signer `wanted` names
     /// within its reach (9, 116, rule core.7), and never from an identity
     /// that has expired (81). A rebuild counts only from a signer other
-    /// than the provenance's maker, saying the digests matched (30).
+    /// than the provenance's maker, saying the digests matched (30). A
+    /// provenance the gate's own identity made refuses the version unless
+    /// the policy lets that signer claim acceptance too (27, 96, 108), so
+    /// every provenance is read before the first that counts is answered.
     fn found(
         &self,
         wanted: &RequiredClaim,
         artifact: &Digest,
         own: &[Envelope],
         named: &[NamedSigner],
-    ) -> Answer<Result<Digest, WhyWanting>> {
+    ) -> Answer<Result<(Digest, SignerId), WhyWanting>> {
         let attached = own
             .iter()
             .map(|e| (artifact, e))
             .chain(self.on_index.iter().map(|e| (self.index, e)));
-        let mut near = None;
+        let (mut near, mut first) = (None, None);
         for (on, envelope) in attached {
             let Some(claim) = Claim::from_envelope(envelope) else {
                 continue;
@@ -408,10 +446,16 @@ impl Judging<'_> {
                     near.get_or_insert(WhyWanting::Unmatched { signer: maker });
                     continue;
                 }
-                return Ok(Ok(told.envelope));
+                if wanted.kind != ClaimKind::Provenance {
+                    return Ok(Ok((told.envelope, maker)));
+                }
+                if maker == *self.gate && !offers_and_accepts(wanted, &maker) {
+                    return Ok(Err(WhyWanting::OfferedByGate { signer: maker }));
+                }
+                first.get_or_insert((told.envelope, maker));
             }
         }
-        Ok(Err(near.unwrap_or(WhyWanting::Missing)))
+        Ok(first.ok_or_else(|| near.unwrap_or(WhyWanting::Missing)))
     }
 
     /// Which of `named` made each provenance of the version's revision
