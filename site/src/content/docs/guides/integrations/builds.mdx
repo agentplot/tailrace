@@ -26,7 +26,7 @@ landing's verdicts name.
 
 | member | profile | how | status |
 |---|---|---|---|
-| moon | C.3 | the repository names, in its policy file at the revision, the moon task that makes each output, `[build.outputs.<name>] task`; an output is that task's declared outputs; the build identity is moon's task hash, which sluice's verdict also carries; ensure is one run of the named tasks in a checkout of exactly the revision, replaying what is cached; report reads moon's own record of the run | built |
+| moon | C.3 | the repository names, in its policy file at the revision, the moon task that makes each output, `[build.outputs.<name>] task`; an output is that task's declared outputs; the build identity is moon's task hash, which sluice's verdict also carries; ensure is one run of the named tasks in a checkout of exactly the revision, replaying what is cached; report reads moon's own record of the run; a task's output archive is a cache entry under its task hash: `tailrace push`, run on the landing host after the landing, writes the archives of the landing's passing tasks as cache entries, which needs the host's checkouts to share moon's outputs directory so the archives of a landing's checks outlive the place they ran in, and `tailrace sync` renders them into a checkout | built |
 | a declared command | C.4 | where no task runner declares outputs, the repository declares, per output, the command, its inputs and the shell to run it through; the build identity is the git tree hash of the declared inputs at the revision | designed |
 
 ## Adding one

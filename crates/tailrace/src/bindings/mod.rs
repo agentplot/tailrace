@@ -8,6 +8,7 @@
 //! ```toml
 //! [store]
 //! layout = "~/.local/share/tailrace/layout"
+//! # registry = "registry.example.com/tailrace"   # a registry in its place
 //!
 //! [landing]
 //! branch = { remote = "origin" }   # the remote optional
@@ -33,8 +34,11 @@
 //! The binding made from the file binds the store, the landing and the
 //! signers it names, and from the repository the command runs in the
 //! build, the policy and every projection built, which the repository's
-//! policy file picks among (92, C.10); no ledger and no target are bound
-//! yet. Only a publish makes the layout it names (60, rule core.32).
+//! policy file picks among (92, C.10); the moon cache reads cache entries
+//! through a second binding of `[store]`, opened and never made (design
+//! D6). No ledger and no target are bound yet. Only a publish and a push
+//! make the layout they name, and a push needs no `[signing]`, since it
+//! signs nothing (60, rule core.32).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -167,6 +171,12 @@ impl Table {
             .clone()
             .try_into()
             .map_err(|e: toml::de::Error| unreadable(&self.file, Some(&self.at()), e.to_string()))
+    }
+
+    /// The value could not be read as its profile reads it, for `said`:
+    /// unreadable naming the file, the table and the key.
+    pub fn unreadable(&self, said: impl Into<String>) -> Not {
+        unreadable(&self.file, Some(&self.at()), said)
     }
 
     /// What a seam's profile family answers for a key that names none of
@@ -324,13 +334,16 @@ fn signing(file: &Path, home: Option<&Path>, table: &toml::Table) -> Answer<Sign
     })
 }
 
-/// The command a binding is made for: publish, which makes the layout
-/// the file names the first time, or verify, which never makes or writes
-/// one.
+/// The command a binding is made for: publish or push, which make the
+/// layout the file names the first time, or verify, sync or rebuild,
+/// which never make or write one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
     Verify,
+    Sync,
+    Push,
+    Rebuild,
 }
 
 /// The ledger, which the host's file names no profile of until bolt 4's
@@ -362,9 +375,9 @@ impl Keeper for NoLedger {
 /// it before anything is read; a file naming no `[store]` or no
 /// `[landing]` is absent naming the table. Every table is read before the
 /// layout is made, so a file that cannot bind leaves nothing behind. The
-/// store is named as the file names it, its key and its path with `~/`
-/// expanded, so the record names a directory a reader finds whoever's
-/// home it was written under (61, 118; design D9).
+/// store is named as the file names it, its key and what it names, a
+/// path with `~/` expanded, so the record names a directory a reader
+/// finds whoever's home it was written under (61, 118; design D9).
 pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
     let bindings = read(file, home)?;
     let signing = bindings.signing.as_ref();
@@ -382,12 +395,12 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         .as_ref()
         .ok_or_else(|| missing("landing"))?;
     let store = bindings.store.as_ref().ok_or_else(|| missing("store"))?;
+    let named = profiles::store::named(store)?;
     let landing = profiles::landing::bind(landing, repository)?;
-    let bound = profiles::store::bind(store, command == For::Publish)?;
-    let named = Source::new(
-        Seam::Store,
-        format!("{} {}", store.key(), store.path()?.display()),
-    );
+    let bound = profiles::store::bind(store, matches!(command, For::Publish | For::Push))?;
+    // After the seams' own store, so a publish or a push has made the
+    // layout.
+    let cache = profiles::store::bind(store, false)?;
     Ok(Binding {
         seams: Seams {
             store: bound,
@@ -396,7 +409,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
             policy: profiles::policy::bind(repository),
             keeper: Box::new(NoLedger),
             signers: profiles::signer::bind(signing),
-            projections: profiles::projection::bound(),
+            projections: profiles::projection::bound(cache, repository),
             targets: BTreeMap::new(),
         },
         store: named,

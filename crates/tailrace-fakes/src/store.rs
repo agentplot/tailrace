@@ -67,6 +67,13 @@ impl FakeStore {
             .insert(digest.clone(), Held::Bytes(bytes.to_vec()));
     }
 
+    /// 54: `name` removed and what it named left held, as a store's own
+    /// retention removes a cache entry's name; no operation of the store
+    /// seam removes anything.
+    pub fn forget(&self, name: &Name) {
+        self.state().names.remove(name);
+    }
+
     /// Everything the store holds now.
     pub fn contents(&self) -> StoreState {
         self.state().clone()
@@ -437,6 +444,25 @@ mod tests {
         let d = store.put_bytes(b"site").unwrap().digest;
         store.corrupt(&d, b"other");
         assert_eq!(store.read(&d), Ok(Held::Bytes(b"other".to_vec())));
+    }
+
+    #[test]
+    fn a_forgotten_name_resolves_absent_and_its_digest_still_reads() {
+        let store = FakeStore::new();
+        let name = Name::new("cache/b7e1");
+        let d = store.put_bytes(b"archive").unwrap().digest;
+        store.name(&name, &d, None).unwrap();
+        store.forget(&name);
+        assert_eq!(
+            store.resolve(&name),
+            Err(Not::absent(&source(), "name cache/b7e1"))
+        );
+        assert_eq!(store.read(&d), Ok(Held::Bytes(b"archive".to_vec())));
+        assert_eq!(
+            store.name(&name, &d, None),
+            Ok(()),
+            "made again from nothing"
+        );
     }
 
     #[test]

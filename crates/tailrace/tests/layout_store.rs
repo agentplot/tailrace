@@ -161,7 +161,12 @@ fn the_layout_keeps_the_stores_contract() {
         report.profile
     );
     assert_eq!(report.ran, store::scenarios().len());
-    assert_eq!(report.not_applicable, [], "{report}");
+    let not: Vec<&str> = report.not_applicable.iter().map(|n| n.scenario).collect();
+    assert_eq!(
+        not,
+        ["a name moved from a stale place, repaired from the ledger"],
+        "{report}"
+    );
 }
 
 #[test]

@@ -258,6 +258,102 @@ fn a_profile_no_family_knows_is_unreadable_naming_the_table() {
     }
 }
 
+#[test]
+fn a_registry_binds_a_store_named_by_its_repository() {
+    let host = Host::new();
+    host.write("[store]\nregistry = \"localhost:5000/tailrace\"\n\n[landing]\nbranch = {}\n");
+    let binding = bind(
+        &host.file(),
+        Some(&host.home()),
+        host.dir.path(),
+        For::Verify,
+    )
+    .unwrap();
+    assert_eq!(
+        binding.store,
+        Source::new(Seam::Store, "registry localhost:5000/tailrace")
+    );
+
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    host.write(&format!(
+        "[store]\nregistry = \"127.0.0.1:{port}/tailrace\"\n\n[landing]\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n"
+    ));
+    let binding = bind(
+        &host.file(),
+        Some(&host.home()),
+        host.dir.path(),
+        For::Publish,
+    )
+    .unwrap();
+    match binding
+        .seams
+        .store
+        .resolve(&tailrace_seams::Name::new("v1.0.0"))
+    {
+        Err(Not::Unreadable(u)) => assert_eq!(
+            u.source,
+            Source::new(
+                Seam::Store,
+                format!("OCI registry 127.0.0.1:{port}/tailrace")
+            )
+        ),
+        other => panic!("a registry nothing listens for answered {other:?}"),
+    }
+}
+
+#[test]
+fn a_registry_named_by_what_is_no_repository_is_unreadable_naming_the_key_and_the_value() {
+    let host = Host::new();
+    for (value, names) in [("\"tailrace\"", "\"tailrace\""), ("5000", "5000")] {
+        host.write(&format!(
+            "[store]\nregistry = {value}\n\n[landing]\nbranch = {{}}\n"
+        ));
+        match bind(
+            &host.file(),
+            Some(&host.home()),
+            host.dir.path(),
+            For::Verify,
+        ) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source, Source::host(host.file()));
+                assert_eq!(
+                    u.what,
+                    format!("{}, [store] registry", host.file().display())
+                );
+                let said = u.said.unwrap();
+                assert!(said.contains(names), "{said}");
+            }
+            other => panic!("registry = {value} answered {:?}", other.err()),
+        }
+    }
+}
+
+#[test]
+fn a_store_key_no_profile_reads_is_unreadable_listing_both_keys() {
+    let host = Host::new();
+    host.write("[store]\nbucket = \"/b\"\n\n[landing]\nbranch = {}\n");
+    match bind(
+        &host.file(),
+        Some(&host.home()),
+        host.dir.path(),
+        For::Verify,
+    ) {
+        Err(Not::Unreadable(u)) => assert_eq!(
+            u.said.as_deref(),
+            Some(
+                "[store] names bucket, which no store profile is bound by; \
+                 it reads layout or registry"
+            )
+        ),
+        other => panic!("answered {:?}", other.err()),
+    }
+}
+
 /// A file binding the layout at `layout`, a branch with no remote and,
 /// where `signing`, the signer `laptop`; and the binding it makes for
 /// `command`.
@@ -395,7 +491,80 @@ fn the_ledger_is_bound_to_nothing() {
         .keys()
         .map(|e| e.as_str())
         .collect();
-    assert_eq!(ecosystems, ["file", "image"]);
+    assert_eq!(ecosystems, ["file", "image", "moon-cache"]);
+}
+
+#[test]
+fn a_publishs_first_binding_makes_the_layout_and_the_moon_caches_store_reads_it() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layouts").join("laptop");
+    let binding = bound(&host, &layout, true, For::Publish).unwrap();
+    let digest = binding.seams.store.put_bytes(b"an archive").unwrap().digest;
+    let moon = binding
+        .seams
+        .projection(&tailrace_seams::Ecosystem::new("moon-cache"))
+        .expect("the moon cache is bound");
+    let entries = [tailrace_seams::CacheEntry {
+        build: tailrace_seams::BuildId::new("b7e1"),
+        digest,
+    }];
+    let checkout = host.dir.path().display().to_string();
+    moon.render(tailrace_seams::Contents::CacheEntries(&entries), &checkout)
+        .unwrap();
+    let archive = host.dir.path().join(".moon/cache/outputs/b7e1.tar.gz");
+    assert_eq!(fs::read(&archive).unwrap(), b"an archive");
+}
+
+#[test]
+fn sync_is_bound_as_verify_is_and_never_makes_the_layout() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    assert!(
+        matches!(bound(&host, &layout, false, For::Sync), Err(Not::Unreadable(u)) if u.source.seam == Seam::Store),
+        "sync bound a layout that is not there"
+    );
+    assert!(!layout.exists(), "sync made {}", layout.display());
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound(&host, &layout, false, For::Sync).unwrap();
+    assert_eq!(binding.signer, None);
+}
+
+#[test]
+fn a_push_needs_no_signing_and_makes_a_missing_layout() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layouts").join("landing");
+    let binding = bound(&host, &layout, false, For::Push).unwrap();
+    assert_eq!(binding.signer, None);
+    assert!(
+        profiles::store::layout::Layout::open(&layout).is_ok(),
+        "push made no layout"
+    );
+    let digest = binding.seams.store.put_bytes(b"an archive").unwrap().digest;
+    assert_eq!(digest, Digest::of(b"an archive"));
+    assert!(
+        binding
+            .seams
+            .projection(&tailrace_seams::Ecosystem::new("moon-cache"))
+            .is_some(),
+        "the moon cache is not bound"
+    );
+}
+
+#[test]
+fn rebuild_is_bound_as_verify_is_and_never_makes_the_layout() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let rebuild = bound(&host, &layout, false, For::Rebuild);
+    assert!(
+        matches!(&rebuild, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store
+            && u.said.as_deref().is_some_and(|s| s.contains("No such file or directory"))),
+        "{:?}",
+        rebuild.err()
+    );
+    assert!(!layout.exists(), "rebuild made {}", layout.display());
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound(&host, &layout, false, For::Rebuild).unwrap();
+    assert_eq!(binding.signer, None);
 }
 
 #[test]

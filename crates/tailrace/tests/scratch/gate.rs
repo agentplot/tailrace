@@ -1,7 +1,8 @@
 //! sluice itself, gating a scratch repository's `main` (design D9): the
 //! branch's policy requires moon tasks and trusts the signer `box`, the
 //! host signs as `box`, and a submission is landed by `sluice submit`
-//! and `sluice step`, as a host lands one. sluice runs with a home, a
+//! and `sluice step`, as a host lands one, each place prepared by the
+//! toolchain a test gives it, if any. sluice runs with a home, a
 //! configuration, a state and a cache of its own in the scratch
 //! directory, and none of the `SLUICE_*` or `MOON_*` variables of a gate
 //! that may be running these tests.
@@ -16,6 +17,21 @@ use super::{git_command, sluice, Repo, Scratch, MAIN};
 
 /// The signer the gate signs as.
 pub const SIGNER: &str = "box";
+
+/// A toolchain that links the place's moon outputs directory to
+/// `moon-outputs` under the repository's common directory and prints
+/// nothing, as this repository's devenv shell links each checkout's, so
+/// the archives of a landing's checks outlive its place.
+pub const LINK_OUTPUTS: [&str; 3] = [
+    "sh",
+    "-c",
+    "root=\"$(git rev-parse --show-toplevel)\" && \
+     common=\"$(git rev-parse --path-format=absolute --git-common-dir)\" && \
+     mkdir -p \"$common/moon-outputs\" \"$root/.moon/cache\" && \
+     if [ ! -L \"$root/.moon/cache/outputs\" ]; then \
+     rm -rf \"$root/.moon/cache/outputs\" && \
+     ln -s \"$common/moon-outputs\" \"$root/.moon/cache/outputs\"; fi",
+];
 
 /// sluice gating a scratch repository.
 pub struct Gate {
@@ -38,6 +54,17 @@ impl Gate {
     /// host's configuration names `box` and the key `recorder` keeps for
     /// it. The repository's moon workspace is the caller's.
     pub fn new(scratch: &Scratch, recorder: &Recorder, required: &[&str]) -> Gate {
+        Gate::with_toolchain(scratch, recorder, required, &[])
+    }
+
+    /// The gate of [`Gate::new`], sluice running `toolchain` in each place
+    /// before its run where it names a command.
+    pub fn with_toolchain(
+        scratch: &Scratch,
+        recorder: &Recorder,
+        required: &[&str],
+        toolchain: &[&str],
+    ) -> Gate {
         let home = scratch.path().join("sluice-home");
         for dir in ["home", "config/sluice", "state", "cache", "data"] {
             fs::create_dir_all(home.join(dir)).unwrap();
@@ -52,11 +79,18 @@ impl Gate {
         )
         .unwrap();
         let required: Vec<String> = required.iter().map(|r| format!("\"{r}\"")).collect();
+        let toolchain = match toolchain {
+            [] => String::new(),
+            parts => {
+                let parts: Vec<String> = parts.iter().map(|p| format!("{p:?}")).collect();
+                format!("toolchain = [{}]\n", parts.join(", "))
+            }
+        };
         let repo = scratch.repo.clone();
         repo.write(
             ".config/sluice.toml",
             &format!(
-                "[tests]\nrunner = \"moon\"\n\n\
+                "[tests]\nrunner = \"moon\"\n{toolchain}\n\
                  [signers.{SIGNER}]\nssh = \"{SIGNER} {}\"\n\n\
                  [branches.main]\nrequired = [{}]\ntimeout = \"5m\"\nremote = \"origin\"\ntrust = [\"{SIGNER}\"]\n",
                 recorder.public_key(SIGNER),

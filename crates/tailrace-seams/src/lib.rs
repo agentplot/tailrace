@@ -164,10 +164,10 @@ mod tests {
     }
 
     impl Projection for Nowhere {
-        fn pack(&self, _: &Output, _: &Version) -> Answer<Packed> {
+        fn pack(&self, _: &Output, _: &BuildId, _: Option<&Version>) -> Answer<Packed> {
             nothing(Seam::Projection, "pack")
         }
-        fn render(&self, _: &[Artifact], _: &str) -> Answer<Rendered> {
+        fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
             nothing(Seam::Projection, "render")
         }
         fn serve(&self, _: &Layout) -> Answer<Serving> {
@@ -270,13 +270,14 @@ mod tests {
                     name: OutputName::new("site"),
                     files: vec![],
                 },
-                &Version::new("1.0.0"),
+                &BuildId::new("b7e1"),
+                Some(&Version::new("1.0.0")),
             )),
             asked(projection.render(
-                &[Artifact {
+                Contents::Artifacts(&[Artifact {
                     digest: d.clone(),
                     meta,
-                }],
+                }]),
                 "at",
             )),
             asked(projection.serve(&Layout { at: "at".into() })),

@@ -13,15 +13,20 @@ at once, by the repository's authors (92).
 
 ## The contract
 
-The seam is three operations (84 to 86). **pack** takes an output and the
-version and answers the ecosystem's own bytes for it and the metadata the
-ecosystem gives them. **render** takes a set of artifacts and their
-metadata and answers a consumer layout in the ecosystem's own form, and
-which versions it holds. **serve** takes a consumer layout and answers the
-ecosystem's own clients over the protocol they read, for an ecosystem
-whose clients read no files. The same outputs and the same version pack
-to the same bytes, or the projection says it cannot promise so (87). A
-layout holds only versions whose verdict under its policy is satisfied.
+The seam is three operations (84 to 86). **pack** takes an output at a
+build identity and, where the bytes are an artifact's, the version, and
+answers the ecosystem's own bytes for it and the metadata the ecosystem
+gives them. A cache entry packs with no version, and its bytes carry no
+metadata that makes an offer (100). **render** takes a set of artifacts
+and their metadata, or of cache entries by build identity, and answers a
+consumer layout in the ecosystem's own form, and which versions, or which
+build identities, it holds. **serve** takes a consumer layout and answers
+the ecosystem's own clients over the protocol they read, for an ecosystem
+whose clients read no files. The same outputs and the same version, or
+the same build identity, pack to the same bytes, or the projection says
+it cannot promise so (87). A projection that packs no cache entries
+answers absent for one, as the file and image projections do. A layout
+holds only versions whose verdict under its policy is satisfied.
 
 pack is the ecosystem's own packager run against outputs the build left,
 with the version handed over the way that packager takes it, and never
@@ -40,7 +45,30 @@ revision and the build identity, never the version (24).
 | NuGet | the package file | a folder feed in the v3 layout | not needed | designed |
 | a file | any file, with a declared media type | a directory | not needed | pack built: the output's one file, its own bytes under every version, with no media type yet; render designed |
 | an image | an image as pushed | the OCI layout itself | the layout served as a registry | pack built: an OCI image archive, as `docker save` writes one, its own bytes under every version; render and serve designed |
-| moon's cache | a task's output archive, by task hash | moon's outputs directory, one archive per hash, shared by every checkout on the host and rendered from the task hashes the landing's verdicts name | not needed: moon reads the directory before any remote | designed |
+| moon's cache | a task's output archive, by task hash | moon's outputs directory, one archive per hash, rendered from the task hashes the landing's verdicts name | not needed: moon reads the directory before any remote | pack and render built: a cache entry only, never an artifact; see below |
+
+## moon's cache
+
+The moon cache projection packs no artifact: a pack given a version
+answers absent, so no policy file names it for an output (53). Its pack
+is the archive moon left for a task that passed,
+`.moon/cache/outputs/<task hash>.tar.gz`, its bytes unchanged and with no
+metadata, written to the store as a cache entry under the task hash. It
+says it cannot promise the same bytes again, since moon writes each
+file's time and owner into the archive (87). Its render reads each
+entry's bytes from the store, checks they are the entry's digest, and
+writes them as the archive of its task hash, leaving one moon already
+holds as it is; a build identity that is no task hash is refused before
+anything is written.
+
+`tailrace sync` renders the entries of the newest landed revision the
+checkout descends from, or of the revision named, from the task hashes
+its passing verdicts name, so moon replays what the landing already ran.
+An entry the store no longer holds is named as absent and refuses
+nothing: the task runs again (54). moon keeps an outputs directory per
+checkout, so one sync fills one checkout; the checkouts of a host share
+one directory only where each links its `.moon/cache/outputs` to it, and
+the render writes through the link.
 
 The repository binds its projections: the policy file's `[projections]`
 names the ecosystem of the projection that packs each output, such as

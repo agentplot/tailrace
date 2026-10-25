@@ -17,7 +17,7 @@ use tailrace_fakes::{
     BuildOp, Call, FakeProjection, FakeSigner, Fakes, KeeperOp, StoreOp, TargetOp,
 };
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, Digest,
+    Answer, Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, Contents, Digest,
     Ecosystem, Envelope, Environment, EnvironmentName, Layout, Manifest, Name, Outcome, Output,
     OutputName, Packed, Projection, Rendered, Report, Revision, Seam, Seams, Serving, Signer,
     SignerId, Source, Verdict, Version,
@@ -420,6 +420,14 @@ impl FakeWorld {
         self.packs.borrow().clone()
     }
 
+    /// The host's record deleted, its directory and every file in it,
+    /// as a person who deletes what tailrace keeps does (63).
+    pub fn delete_record(&self) {
+        let dir = self.kept().dir().to_path_buf();
+        fs::remove_dir_all(&dir)
+            .unwrap_or_else(|e| panic!("the record at {} was not deleted: {e}", dir.display()));
+    }
+
     /// Every file of the host's record, by path, with its bytes and when
     /// it was last written; none when the record holds nothing.
     pub fn record(&self) -> Vec<(PathBuf, Vec<u8>, SystemTime)> {
@@ -469,7 +477,7 @@ impl FakeWorld {
 }
 
 /// A projection that hands every operation to its fake and, at each
-/// pack, keeps the tags the shared history holds.
+/// pack of an artifact, keeps the tags the shared history holds.
 struct Watched {
     inner: FakeProjection,
     shared: Repo,
@@ -477,11 +485,17 @@ struct Watched {
 }
 
 impl Projection for Watched {
-    fn pack(&self, output: &Output, version: &Version) -> Answer<Packed> {
-        let packed = self.inner.pack(output, version);
-        if let Ok(p) = &packed {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+        let packed = self.inner.pack(output, at, version);
+        if let (
+            Ok(Packed {
+                meta: Some(meta), ..
+            }),
+            Some(version),
+        ) = (&packed, version)
+        {
             self.packs.borrow_mut().push(Packing {
-                ecosystem: p.meta.ecosystem().clone(),
+                ecosystem: meta.ecosystem().clone(),
                 version: version.clone(),
                 shared_tags: self.shared.tags(),
             });
@@ -489,8 +503,8 @@ impl Projection for Watched {
         packed
     }
 
-    fn render(&self, artifacts: &[Artifact], at: &str) -> Answer<Rendered> {
-        self.inner.render(artifacts, at)
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        self.inner.render(contents, at)
     }
 
     fn serve(&self, layout: &Layout) -> Answer<Serving> {

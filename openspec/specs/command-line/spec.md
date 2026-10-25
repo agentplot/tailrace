@@ -10,11 +10,11 @@ program.
 
 ### Requirement: Each command calls the one core and renders its answer
 
-`tailrace publish`, `tailrace verify` and `tailrace status` SHALL each
-turn their arguments into one question to the core and render the
-core's answer; no command SHALL read a seam, a file of the record or the
-history itself, or compute a version, a digest or a signer of its own
-(56, core.31).
+`tailrace publish`, `tailrace verify`, `tailrace status`, `tailrace
+sync`, `tailrace push` and `tailrace rebuild` SHALL each turn their
+arguments into one question to the core and render the core's answer; no
+command SHALL read a seam, a file of the record or the history itself,
+or compute a version, a digest or a signer of its own (56, core.31).
 
 #### Scenario: The same answer through the command line
 
@@ -92,3 +92,57 @@ a broken file's unreadable answer in their own form, as text or with
 
 - **WHEN** the built binary runs `tailrace status --json` on a host with no bindings file, in a repository whose host record holds one entry
 - **THEN** it prints that entry and exits 0
+
+### Requirement: Sync fills the checkout's cache from a landed revision
+
+`tailrace sync [revision]` SHALL take the revision whose verdicts name
+the entries, by default the newest revision of the branch the checkout
+descends from, `--branch` (by default `main`) and `--json`; it SHALL be
+bound by the host's bindings file as verify is, never making the store
+it names, and SHALL answer each build identity as rendered, absent, or
+the refusal or unreadable answer its render gave, exiting 0 when the
+only entries not rendered are absent (54, 57).
+
+#### Scenario: A sync with one entry gone
+
+- **WHEN** `tailrace sync --json` runs over the fakes for a landed revision whose verdicts name two build identities, one of which the store holds no entry for
+- **THEN** the printed JSON names one as rendered and the other as absent, and the exit is 0
+
+#### Scenario: A sync on an unbound host
+
+- **WHEN** the installed binary runs `tailrace sync` on a host with no bindings file
+- **THEN** it answers absent naming the bindings file's path, exits 4, and writes nothing
+
+### Requirement: Push takes a landed revision
+
+`tailrace push [revision]` SHALL take the landed revision whose
+archives it pushes, by default the local branch's head, `--branch` (by
+default `main`) and `--json`; it SHALL be bound by the host's bindings
+file, needing no `[signing]`, and SHALL answer each build identity as
+written, held already, absent, or the refusal or unreadable answer its
+write gave, exiting 0 when the only build identities not written or
+held are absent (54, 57).
+
+#### Scenario: A push with one archive missing
+
+- **WHEN** `tailrace push --json` runs over the fakes for a landed revision whose verdicts pass on two build identities, one of which has no archive on the host
+- **THEN** the printed JSON names one as written with its digest and the other as absent, its JSON is the core's answer value for value, and the exit is 0
+
+#### Scenario: A push on an unbound host
+
+- **WHEN** the built binary runs `tailrace push` on a host with no bindings file
+- **THEN** it answers absent naming the bindings file's path, exits 4, and writes nothing
+
+### Requirement: Rebuild takes a landed revision
+
+`tailrace rebuild [revision]` SHALL take the landed revision whose
+policy file declares the components, by default the local branch's
+head, `--branch` (by default `main`) and `--json`; it SHALL be bound by
+the host's bindings file as verify is, never making the store it names,
+and SHALL answer each entry it rebuilt as written or held, or the
+refusal its write gave (57, 63).
+
+#### Scenario: Rebuild after the record is deleted
+
+- **WHEN** a version is published over the fakes, the host's record is deleted, and `tailrace rebuild --json` runs
+- **THEN** it prints the version's entry as written, exits 0, and `tailrace status --json` then prints what it printed before the deletion
