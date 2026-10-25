@@ -189,8 +189,9 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
 /// cannot be read ends the verify unreadable (58). It counts only when
 /// its maker may claim its kind, and for a verdict its check (9, 116,
 /// rule core.7); an expired maker is reported beside and still counts
-/// (81, 117).
-fn tell(
+/// (81, 117). The gate tells by it too, and adds the joins acceptance
+/// needs.
+pub(crate) fn tell(
     seams: &Seams,
     signers: &[NamedSigner],
     on: &Digest,
