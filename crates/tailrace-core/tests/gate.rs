@@ -12,8 +12,8 @@ use tailrace_core::{
 use tailrace_fakes::{FakeSigner, KeeperOp, PolicyOp, SignerOp, StoreOp};
 use tailrace_seams::{
     Answer, Audience, Branch, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
-    NamedSigner, Not, Outcome, Required, RequiredClaim, Revision, Seam, Seams, Signer, SignerId,
-    Source, Store, Version, Why,
+    Envelope, Held, Manifest, Name, NamedSigner, Not, Outcome, Put, Required, RequiredClaim,
+    Revision, Seam, Seams, Signer, SignerId, Source, Store, Version, Why,
 };
 use world::{build_of, version_of, World, HOST, LANDING};
 
@@ -154,7 +154,7 @@ fn each_answer_renders_in_the_one_form_naming_the_index_and_both_revisions() {
     );
     let wanting = RequiredClaim {
         kind: ClaimKind::Verdict,
-        check: Some(tailrace_seams::Check::new("test")),
+        check: Some(Check::new("test")),
         signers: vec![],
     };
     let promotion = Digest::of(b"promotion");
@@ -610,4 +610,80 @@ fn a_rebuild_that_did_not_match_does_not_count_and_one_that_did_does() {
     rebuild_by(&world, &published, "verifier", true);
     let answer = judged(&world, &ask("0.2.0", ToldBy::Asked));
     assert!(matches!(answer, Ok(Judged::Accepted { .. })), "{answer:?}");
+}
+
+/// A store that cannot read the claims of one digest, in its own words,
+/// and hands every other operation to the fake.
+struct Failing {
+    inner: tailrace_fakes::FakeStore,
+    digest: Digest,
+}
+
+impl Store for Failing {
+    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
+        self.inner.put_bytes(bytes)
+    }
+    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
+        self.inner.put_artifact(manifest)
+    }
+    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
+        self.inner.attach(subject, attestation)
+    }
+    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
+        if *digest == self.digest {
+            return Err(Not::unreadable(
+                &Source::new(Seam::Store, "failing"),
+                format!("the claims of {digest}"),
+                Some("connection reset by peer".into()),
+            ));
+        }
+        self.inner.claims_of(digest)
+    }
+    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        self.inner.name(name, to, expected)
+    }
+    fn resolve(&self, name: &Name) -> Answer<Digest> {
+        self.inner.resolve(name)
+    }
+    fn read(&self, digest: &Digest) -> Answer<Held> {
+        self.inner.read(digest)
+    }
+}
+
+#[test]
+fn claims_that_cannot_be_read_are_unreadable_naming_the_digest_with_the_stores_words() {
+    let (world, published) = published_under(acceptance());
+    let second = artifacts(&published)[1].clone();
+    let mut seams = holding(&world, &[GATE]);
+    seams.store = Box::new(Failing {
+        inner: world.fakes.store.clone(),
+        digest: second.clone(),
+    });
+    let before = counts(&world);
+    let Err(Not::Unreadable(u)) = accept(&seams, &world.history(), &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("claims that cannot be read were answered")
+    };
+    assert!(u.what.contains(second.as_str()), "{}", u.what);
+    assert_eq!(u.said.as_deref(), Some("connection reset by peer"));
+    assert_eq!(u.source.seam, Seam::Store);
+    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+}
+
+#[test]
+fn a_name_that_resolves_to_no_index_is_unreadable_and_no_refusal() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    let artifact = artifacts(&published)[0].clone();
+    let tag = Name::new("lib-v0.2.0");
+    world
+        .fakes
+        .store
+        .name(&tag, &artifact, Some(index))
+        .unwrap();
+    let Err(Not::Unreadable(u)) = judged(&world, &ask("0.2.0", ToldBy::Asked)) else {
+        panic!("a name naming no index was judged")
+    };
+    assert!(u.what.contains(artifact.as_str()), "{}", u.what);
+    assert!(u.what.contains("index"), "{}", u.what);
 }
