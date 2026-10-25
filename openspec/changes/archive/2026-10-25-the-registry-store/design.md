@@ -63,8 +63,8 @@ Readings taken for this design:
 **Goals:**
 
 - The store group passing against zot and the reference distribution in
-  the gate, and against a real ECR repository by hand, with no change
-  to the seam, the suite or the fakes.
+  the gate, and against a real ECR repository by hand as the bolt's
+  acceptance, with no change to the seam, the suite or the fakes.
 - A name at bytes' digest on a registry as on every store, so a cache
   entry named `cache/<build identity>` resolves to its bytes.
 - One artifact, one digest, in a layout and in a registry, so a copy
@@ -270,7 +270,7 @@ puts are held already from earlier runs, which the group allows.
   repair against zot with a fake keeper.
 - `tests/registry_ecr.rs` (a `tools-ecr` task tagged `check-ecr`,
   outside the gate, core.38): the group over ECR, run by hand with a
-  live AWS session, refusing to run naming `TAILRACE_TOOLS_ECR` when
+  live AWS session as the bolt's acceptance, refusing to run naming `TAILRACE_TOOLS_ECR` when
   the host names no repository. The host names it, and the
   `AWS_PROFILE` ECR's helper reads, in `devenv.local.nix`, and maps the
   registry host to `ecr-login` in its Docker configuration.
@@ -292,8 +292,8 @@ ADR 0014 for the rest. The issues the store group cannot show (a
 parameterised media type, tag immutability, create on push, a
 lifecycle rule expiring untagged manifests) are read by hand against
 the same account and recorded, since they are ECR's behaviour outside
-anything the store sends. The record waits on the ECR run, and so on
-the user naming the repository (Open Questions).
+anything the store sends. The record waits on the ECR run, the bolt's
+acceptance (D15).
 
 ### D14. A digest held as bytes is named through a cache manifest
 
@@ -329,6 +329,21 @@ Alternative: refusing to name a blob. Rejected by ADR 0014: bolt 3's
 replay from ECR rests on naming a cache entry, and every other store
 names bytes.
 
+### D15. ECR is the bolt's acceptance
+
+The gate proves the profile against zot and the reference distribution,
+each started for the test; ECR is proven once, by hand, as the bolt's
+acceptance, because only a person's live session reaches it (core.38).
+The code stage builds the `check-ecr` task and leaves the ECR group of
+tasks unticked. At the bolt's acceptance the team's ops runs it with the
+user's live session, on a host whose `devenv.local.nix` names the ECR
+repository and the `AWS_PROFILE` its helper reads; the repository is
+the host's, never the change's. What that run answers decides the rest
+of the group: a form ECR refuses changed in `oci.rs`, the ADR's ECR
+readings, and ECR's mark on the stores page moved from `designed` to
+`built`. A run that fails is the acceptance failing, reported with
+ECR's words, and the bolt waits on it.
+
 ## Risks / Trade-offs
 
 - [ECR rejects tailrace's manifest or referrer form (2783)] → the ECR
@@ -338,8 +353,9 @@ names bytes.
   ADR records.
 - [ECR is proven only when someone runs it] → the gate cannot hold a
   person's AWS session (core.38), so ECR is proven by hand under
-  `check-ecr`; the task refuses to run naming what is missing rather
-  than passing, and the ADR records the date of the run it rests on.
+  `check-ecr` as the bolt's acceptance (D15); the task refuses to run
+  naming what is missing rather than passing, and the ADR records the
+  date of the run it rests on.
 - [ECR refuses the cache manifest] → the same as any other form ECR
   refuses: changed in `oci.rs`; the layout writes no cache manifest,
   so no layout digest moves.
@@ -362,8 +378,5 @@ records.
 
 ## Open Questions
 
-- Which ECR repository the by-hand run pushes to: a repository in
-  Willdan's dev account (`wldn-dev`), or none in this bolt. The user
-  decides; until then the ECR tasks and the ADR's ECR readings wait,
-  and everything else in this change goes on.
+None.
 

@@ -114,8 +114,9 @@ lost the entry to another writer SHALL be reported, never retried.
 
 name SHALL read the tag first and refuse a move from anywhere but the
 expected digest, naming where it is; after the put it SHALL read the
-tag back, and a tag found at another digest SHALL be refused naming
-that digest, as a lost race, with nothing retried (70, 71, 109,
+tag back, again while it answers the former place up to the profile's
+bound, and refuse naming a third digest as a lost race, or the former
+place once the bound passes, never putting it again (70, 71, 109, C.1,
 core.6). A name SHALL be escaped into a valid tag, one name to one tag.
 
 #### Scenario: A name made, moved and resolved
@@ -132,6 +133,11 @@ core.6). A name SHALL be escaped into a valid tag, one name to one tag.
 
 - **WHEN** another writer moves the tag between the store's put and its read back
 - **THEN** the move is refused naming the other writer's digest, and the store puts the tag no second time
+
+#### Scenario: A read back at the former place within the bound
+
+- **WHEN** the tag's read back after the put answers the digest it was moved from, as a registry not yet showing the put answers it, and a read again within the profile's bound answers the digest it was moved to
+- **THEN** the move is made and is no lost race, and the store puts the tag no second time
 
 #### Scenario: A name no tag can carry as written
 
@@ -215,8 +221,9 @@ name none in the bindings file (64, core.21).
 The suite's store group SHALL pass against zot and against the
 reference distribution in the tools layer, which the gate requires,
 and against a real ECR repository in a check of its own outside the
-gate, tagged `check-ecr` and run by hand with a live session, since
-it needs a credential a person signs in for (93, core.38). The ECR
+gate, tagged `check-ecr` and run by hand with a live session as the
+bolt's acceptance, since it needs a credential a person signs in for
+(93, core.38). The ECR
 check SHALL refuse to run, naming the setting it lacks, on a host that
 names no ECR repository, rather than pass without running.
 
@@ -230,7 +237,7 @@ names no ECR repository, rather than pass without running.
 - **WHEN** the tools layer runs the store group against a reference distribution started for the test
 - **THEN** every scenario of the group passes, attestations held through the referrers tag
 
-#### Scenario: ECR, by hand
+#### Scenario: ECR, by hand, as the bolt's acceptance
 
 - **WHEN** `moon run ':#check-ecr'` runs on a host whose `devenv.local.nix` names an ECR repository, with a live session for it
 - **THEN** every scenario of the group passes against that repository, each run's names apart from every earlier run's

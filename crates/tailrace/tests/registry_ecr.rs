@@ -13,7 +13,7 @@ mod registry;
 
 use std::cell::{Cell, RefCell};
 use std::net::TcpListener;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use registry::{cache_entries, free_port};
 use tailrace::profiles::store::registry::Registry;
@@ -122,6 +122,18 @@ impl StoreRig for EcrRig {
             .expect_err("nothing listens on the port")
             .to_string()
     }
+
+    /// The registry's bound: its tag reads may answer a moved name's
+    /// former place for that long (C.1, ADR 0015).
+    fn settles_within(&self) -> Duration {
+        self.live.registry.bound()
+    }
+
+    /// The registry's word: its names take no condition, ECR's tag put
+    /// among them (C.1, ADR 0015).
+    fn names_conditional(&self) -> bool {
+        self.live.registry.names_conditional()
+    }
 }
 
 /// A prefix no earlier run's names carry.
@@ -150,14 +162,20 @@ fn ecr_keeps_the_stores_contract() {
         report.profile
     );
     assert_eq!(report.ran, store::scenarios().len());
-    assert_eq!(report.not_applicable, [], "{report}");
+    let not: Vec<&str> = report.not_applicable.iter().map(|n| n.scenario).collect();
+    assert_eq!(not, ["a name moved from where it is not"], "{report}");
 }
 
 #[test]
 fn ecr_names_a_cache_entry_through_a_cache_manifest() {
     let repository = repository();
-    cache_entries(&Prefixed {
-        registry: Registry::new(&repository).expect("the repository the host names"),
-        prefix: format!("{}-cache-", run_prefix()),
-    });
+    let registry = Registry::new(&repository).expect("the repository the host names");
+    let within = registry.bound();
+    cache_entries(
+        &Prefixed {
+            registry,
+            prefix: format!("{}-cache-", run_prefix()),
+        },
+        within,
+    );
 }

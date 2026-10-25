@@ -17,6 +17,9 @@
 mod client;
 mod tag;
 
+use std::thread;
+use std::time::{Duration, Instant};
+
 use serde::Deserialize;
 use tailrace_seams::{
     Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store, Why,
@@ -32,6 +35,15 @@ use client::{encoded, Answered, Client};
 const MANIFESTS: &str = "application/vnd.oci.image.manifest.v1+json, \
                          application/vnd.oci.image.index.v1+json";
 
+/// How long name reads a tag again while it answers the place it was
+/// moved from: a registry may answer a tag's former digest for seconds
+/// after the put, ECR for over ten (C.1, ADR 0015).
+const BOUND: Duration = Duration::from_secs(30);
+
+/// The wait before a tag is read again the first time; each wait after
+/// is twice the one before.
+const FIRST_WAIT: Duration = Duration::from_millis(250);
+
 /// A store held in one repository of an OCI registry. Every answer names
 /// the store seam and the repository.
 pub struct Registry {
@@ -41,6 +53,7 @@ pub struct Registry {
     source: Source,
     client: Client,
     hook: Option<Box<dyn Fn(&str)>>,
+    bound: Duration,
 }
 
 /// The few fields of a manifest's JSON the store reads before its form.
@@ -100,6 +113,7 @@ impl Registry {
             client: Client::new(host, &source),
             source,
             hook: None,
+            bound: BOUND,
         })
     }
 
@@ -123,6 +137,31 @@ impl Registry {
     #[doc(hidden)]
     pub fn between_put_and_read_back(&mut self, hook: impl Fn(&str) + 'static) {
         self.hook = Some(Box::new(hook));
+    }
+
+    /// How long a tag may answer a place it was at after a move, before
+    /// or after one read has shown the move: the profile's bound, 30 s,
+    /// or the one a test set (C.1, 36, ADR 0015).
+    pub fn bound(&self) -> Duration {
+        self.bound
+    }
+
+    /// Whether a name moves only from the digest it is expected at by the
+    /// registry's own condition on the put: never, since the distribution
+    /// specification defines no conditional tag put and no registry this
+    /// profile binds honours one. name's check before the put is a read a
+    /// lagging replica defeats, so its refusal of a move from a place the
+    /// name has left is best effort (C.1, ADR 0015).
+    pub fn names_conditional(&self) -> bool {
+        false
+    }
+
+    /// A tag read again for at most `bound` while it answers the place
+    /// it was moved from, in place of the profile's, so a test sees the
+    /// bound pass (ADR 0015).
+    #[doc(hidden)]
+    pub fn read_again_within(&mut self, bound: Duration) {
+        self.bound = bound;
     }
 
     fn url(&self, path: &str) -> String {
@@ -383,6 +422,27 @@ impl Registry {
         }
     }
 
+    /// Where `tag`, put at `to` from `former`, is found once the registry
+    /// shows the put: read back, and read again at growing intervals
+    /// while it answers the former place, for at most the bound. A third
+    /// digest is answered at once, and the former place once the bound
+    /// has passed; the put is never repeated (C.1, 109, ADR 0015, rule
+    /// core.6).
+    fn shown(&self, tag: &str, former: Option<&Digest>, to: &Digest) -> Answer<Option<Digest>> {
+        self.read_back(tag);
+        let deadline = Instant::now() + self.bound;
+        let mut wait = FIRST_WAIT;
+        loop {
+            let found = self.tag_at(tag)?;
+            let left = deadline.saturating_duration_since(Instant::now());
+            if found.as_ref() == Some(to) || found.as_ref() != former || left.is_zero() {
+                return Ok(found);
+            }
+            thread::sleep(wait.min(left));
+            wait *= 2;
+        }
+    }
+
     /// The referrers index the referrers tag `tag` holds; none when the
     /// tag names nothing, and refused naming it when it names no image
     /// index (design D6).
@@ -631,11 +691,13 @@ impl Store for Registry {
         listed.iter().map(|r| self.envelope(r)).collect()
     }
 
-    /// The name's tag read first and moved only from `expected`, the
-    /// manifest `to` names put under it, or the cache manifest of the
-    /// bytes it names, and the tag read back: refused naming where it is
-    /// otherwise, before the put or after it, and nothing is retried (70,
-    /// 109, design D7, D14, rule core.6).
+    /// The name's tag read first and moved only from `expected`, by that
+    /// read's best effort, the manifest `to` names put under it, or the
+    /// cache manifest of the bytes it names, and the tag read back until
+    /// the registry shows the put: refused naming where it is otherwise,
+    /// before the put or after it, the place it was moved from once the
+    /// bound has passed, and nothing is retried (70, 109, C.1, design D7,
+    /// D14, ADR 0015, rule core.6).
     fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
         let tag = self.tag(name)?;
         let at = self.tag_at(&tag)?;
@@ -663,12 +725,20 @@ impl Store for Registry {
             },
         };
         self.put_manifest(&tag, &media_type, &bytes)?;
-        self.read_back(&tag);
-        let found = self.tag_at(&tag)?;
-        if found.as_ref() != Some(to) {
-            return Err(Not::refused(&self.source, Why::NameAt { at: found }, None));
+        let found = self.shown(&tag, at.as_ref(), to)?;
+        if found.as_ref() == Some(to) {
+            return Ok(());
         }
-        Ok(())
+        let said =
+            (found == at).then(|| {
+                format!(
+                "the registry still answered {tag} at {}, where it was before {to} was put under \
+                 it, {:?} after the put, and it was not put again",
+                found.as_ref().map_or_else(|| "nothing".into(), Digest::to_string),
+                self.bound
+            )
+            });
+        Err(Not::refused(&self.source, Why::NameAt { at: found }, said))
     }
 
     /// The digest the name's tag names, the bytes' at a cache manifest

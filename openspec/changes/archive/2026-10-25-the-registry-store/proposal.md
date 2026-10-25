@@ -71,20 +71,20 @@ write into the store this change binds.
   digests and the same claims.
 - **ECR's open issues are answered by a push against a real
   repository.** The store's conformance scenarios run against a real
-  ECR repository, by hand with a live AWS session, and an ADR records
-  what ECR answered on each open issue (aws/containers-roadmap 2306 and
-  2783): whether it takes tailrace's manifests, a referrer with a
-  subject, the referrers list filtered by type, a manifest put by
-  digest alone, and the cache manifest.
+  ECR repository, by hand with a live AWS session, as the bolt's
+  acceptance, and an ADR records what ECR answered on each open issue
+  (aws/containers-roadmap 2306 and 2783): whether it takes tailrace's
+  manifests, a referrer with a subject, the referrers list filtered by
+  type, a manifest put by digest alone, and the cache manifest.
 - **The store's conformance scenarios pass against zot in the gate and
   against ECR by hand.** The profile's tests run the suite's store
   group against zot and against the reference distribution (a registry
   with no referrers API, for the fallback) in the tools layer, which
   the gate requires. The run against ECR needs a credential a person
   signs in for, so it is a task of its own tagged `check-ecr`, outside
-  the gate, run by hand with `moon run ':#check-ecr'`, and it refuses
-  to run, naming the setting, on a host that names no ECR repository
-  (core.38). zot, the reference distribution and ECR's credential
+  the gate, run by hand with `moon run ':#check-ecr'` as the bolt's
+  acceptance, and it refuses to run, naming the setting, on a host that
+  names no ECR repository (core.38). zot, the reference distribution and ECR's credential
   helper are pinned in `devenv.nix`.
 - **Credentials are the host's.** The profile reaches a registry's
   credential at the moment of use through the host's Docker
@@ -111,9 +111,12 @@ Out of scope, and what each waits on:
 - What the cache puts and names, and when: the moon cache unit of this
   bolt, which writes through the store this change binds. This change
   only lets a registry name bytes, as every store does.
-- Which ECR repository the by-hand run pushes to: the user's to say
-  (a repository in Willdan's dev account, or none in this bolt). The
-  ECR tasks wait on it; nothing else in this change does.
+- The run against ECR itself: the bolt's acceptance, by the team's ops
+  with the user's live AWS session, against the repository the
+  acceptance host names in its `devenv.local.nix`. The code stage
+  builds the `check-ecr` task and everything else; the ECR run, what
+  it changes in `oci.rs` if ECR refuses a form, the ADR's ECR readings
+  and ECR's `built` mark on the stores page wait on that run.
 - GitHub's registry and Harbor: the profile speaks the protocol they
   speak, and they stay designed until something runs the suite against
   them.
@@ -183,6 +186,7 @@ crates/tailrace/moon.yml
 crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
 crates/tailrace/src/profiles/store/**
+crates/tailrace/tests/layout_store.rs
 crates/tailrace/tests/registry_store.rs
 crates/tailrace/tests/registry_ecr.rs
 crates/tailrace/tests/registry/**
@@ -194,6 +198,10 @@ crates/tailrace-conformance/src/register.rs
 crates/tailrace-conformance/src/core/mod.rs
 crates/tailrace-conformance/src/core/copy.rs
 crates/tailrace-conformance/src/core/ledger.rs
+crates/tailrace-conformance/src/seams/store.rs
+crates/tailrace-conformance/tests/fakes.rs
+crates/tailrace-conformance/tests/lagging.rs
+crates/tailrace-conformance/tests/unconditional.rs
 site/src/content/docs/guides/integrations/stores.mdx
 site/src/content/docs/guides/self-hosting.mdx
 ```

@@ -14,9 +14,10 @@ is added; the profile's unit tests run in the `cli` project's `test`
 task (check-fast), everything that needs a registry the test starts
 runs in the tools layer (check-tools), and the run against ECR is a
 task of its own tagged `check-ecr`, outside the gate, run by hand with
-a live AWS session (core.38). The ECR tasks are marked by hand: they
-wait on the user naming the ECR repository, and nothing else waits on
-them.
+a live AWS session (core.38). Tasks 8.2 to 8.4 and 8.6 are the bolt's
+acceptance (design D15): the team's ops does them by hand with the
+user's live session, and the code stage leaves them unticked; nothing
+else in this change waits on them.
 
 ## 1. Dependencies and pins
 
@@ -62,13 +63,14 @@ them.
 - [x] 7.2 Add the scenario of design D11 below the marker in `crates/tailrace-conformance/src/core/ledger.rs`, citing 109, and remove 109's entry from `src/register.rs` in the same commit. Verify `devenv shell -- cargo test -p tailrace-conformance` passes and the coverage check reports 109 cited and not pending.
 - [x] 7.3 Verify in `registry_store.rs`: with a fake keeper whose head promotion is about one index and the hook moving the channel's tag in zot to a second, the repair reports the lost race naming the second and the tag ends at the first.
 
-## 8. ECR
+## 8. ECR, the bolt's acceptance
 
 - [x] 8.1 Write `crates/tailrace/tests/registry_ecr.rs` behind the `tools` feature: the store group over the repository `TAILRACE_TOOLS_ECR` names, every name prefixed per run (design D12), refusing to run naming `env.TAILRACE_TOOLS_ECR` in `devenv.local.nix` when it is unset or empty; and a `tools-ecr` task in `crates/tailrace/moon.yml` tagged `check-ecr` and not `check-tools`, outside the gate (core.38), its command `cargo test -p tailrace --features tools --test registry_ecr`, its inputs the `tools` task's and `$TAILRACE_TOOLS_ECR`, its comment saying it runs by hand with `moon run ':#check-ecr'` and a live session. Verify `devenv shell -- moon run ':#check-ecr'` refuses naming the variable on a host that names none, and `devenv shell -- moon run ':#check-tools'` does not run `tools-ecr`.
-- [ ] 8.2 By hand, once the user names the ECR repository: on a host whose `devenv.local.nix` names it, with `AWS_PROFILE` and the Docker `credHelpers` entry for `ecr-login`, and a live session, verify `devenv shell -- moon run ':#check-ecr'` passes, the cache manifest's scenarios of 4.6 among what it pushes. Record the date, the region and each answer ECR gave for 8.4.
-- [ ] 8.3 By hand, after 8.2: if ECR refuses a form the profile writes, change it in `oci.rs` for both profiles and rerun 4.5, 4.6, `layout_store.rs` and 8.2; record in 8.4 whether a layout's digests changed (the cache manifest's form changes none, since the layout writes none). Verify the four pass.
-- [ ] 8.4 By hand, after 8.2: write `docs/adr/<n>-…` in the form `adrs.toml` sets, with the next number (0015, since main holds 0014, unless another record has taken it by then): the decisions of design D7 and D4, citing ADR 0014 for one repository, the envelope type and the cache manifest, and what ECR answered on each issue the registry-store spec lists, with the date and region; read by hand against the same account, since the store sends none of them, a manifest whose artifact type carries a parameter (2306), a tag put into a repository with immutable tags, a push into a repository that does not exist, and whether a lifecycle rule expiring untagged images would take an artifact only an index names. Verify the ADR numbers check in check-fast passes and the ADR names every issue the spec lists.
+- [x] 8.2 At the bolt's acceptance, by hand: on a host whose `devenv.local.nix` names the ECR repository, with `AWS_PROFILE` and the Docker `credHelpers` entry for `ecr-login`, and a live session, verify `devenv shell -- moon run ':#check-ecr'` passes, the cache manifest's scenarios of 4.6 among what it pushes. Record the date, the region and each answer ECR gave for 8.4.
+- [x] 8.3 At the bolt's acceptance, after 8.2: if ECR refuses a form the profile writes, change it in `oci.rs` for both profiles and rerun 4.5, 4.6, `layout_store.rs` and 8.2; record in 8.4 whether a layout's digests changed (the cache manifest's form changes none, since the layout writes none). Verify the four pass.
+- [x] 8.4 At the bolt's acceptance, after 8.2: write `docs/adr/<n>-…` in the form `adrs.toml` sets, with the next number (0015, since main holds 0014, unless another record has taken it by then): the decisions of design D7 and D4, citing ADR 0014 for one repository, the envelope type and the cache manifest, and what ECR answered on each issue the registry-store spec lists, with the date and region; read by hand against the same account, since the store sends none of them, a manifest whose artifact type carries a parameter (2306), a tag put into a repository with immutable tags, a push into a repository that does not exist, and whether a lifecycle rule expiring untagged images would take an artifact only an index names. Verify the ADR numbers check in check-fast passes and the ADR names every issue the spec lists.
 - [x] 8.5 In `site/src/content/docs/guides/integrations/stores.mdx`, mark zot and the reference distribution `built`, Amazon ECR `built` only once 8.2 has passed and `designed` until then, leave GitHub's registry and Harbor `designed`, and say how the registry store holds what it holds: one declared repository, attestations as referrers typed by the envelope with the predicate type annotated and the referrers tag where the API is absent, a cache entry's bytes named through a cache manifest, a tag checked before and read back after, the host's Docker credentials, and ECR proven by hand outside the gate. Verify the site's moon build task passes in the gate (10.1).
+- [x] 8.6 At the bolt's acceptance, after 8.2: in `site/src/content/docs/guides/integrations/stores.mdx`, mark Amazon ECR `built`, and say ECR was proven by a push on the date 8.2 records. Verify the site's moon build task passes with `devenv shell -- moon run ':#check-fast'`.
 
 ## 9. The rules
 

@@ -12,6 +12,8 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::rc::Rc;
 use std::sync::Mutex;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use registry::{cache_manifest, Kind, Proxy, RegistryRig, Server, PASSWORD, USER};
 use serde_json::{json, Value};
@@ -128,7 +130,8 @@ fn group(kind: Kind) {
         report.profile
     );
     assert_eq!(report.ran, store::scenarios().len());
-    assert_eq!(report.not_applicable, [], "{report}");
+    let not: Vec<&str> = report.not_applicable.iter().map(|n| n.scenario).collect();
+    assert_eq!(not, ["a name moved from where it is not"], "{report}");
 }
 
 #[test]
@@ -184,12 +187,15 @@ on_both!(
     the_same_attestation_attached_twice_is_held_once,
     another_tools_referrer_is_not_answered_and_is_left,
     a_race_lost_after_the_put_is_refused_naming_the_other_writer,
+    a_read_back_at_the_former_place_within_the_bound_is_no_lost_race,
+    a_tag_still_at_the_former_place_once_the_bound_passes_is_refused_naming_it,
     two_names_differing_only_in_escaped_characters_resolve_apart,
     bytes_are_named_through_a_cache_manifest,
     a_race_lost_on_a_cache_entrys_name_is_refused_naming_the_other_writer,
     a_registry_behind_a_credential_helper,
     a_version_in_a_layout_copied_into_a_registry,
     a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger,
+    the_check_before_the_put_refuses_a_move_from_where_the_name_is_not,
 );
 
 fn the_same_bytes_put_twice_are_uploaded_once(kind: Kind) {
@@ -515,6 +521,92 @@ fn a_race_lost_after_the_put_is_refused_naming_the_other_writer(kind: Kind) {
     assert_eq!(direct.resolve(&name), Ok(other));
 }
 
+/// A name `site-v1` made at the first of two artifacts, a store through
+/// the proxy whose put of the tag is followed by the tag put back at the
+/// first, as a registry not yet showing a put answers it, and `shown`
+/// run with the repository after; and the two artifacts.
+fn put_back_after_the_put(
+    kind: Kind,
+    shown: impl Fn(String, Digest, Digest) + 'static,
+) -> (Server, Proxy, Registry, [Digest; 2]) {
+    let server = Server::start(kind);
+    let proxy = Proxy::before(&server);
+    let repository = server.repository();
+    let direct = Registry::new(&repository).unwrap();
+    let [at, to] = ["1.0.0", "1.1.0"].map(|v| put(&direct, v));
+    direct.name(&Name::new("site-v1"), &at, None).unwrap();
+    let mut store = proxy.store(&repository);
+    let (former, moved) = (at.clone(), to.clone());
+    store.between_put_and_read_back(move |tag| {
+        Registry::new(&repository)
+            .unwrap()
+            .name(&Name::new(tag), &former, Some(&moved))
+            .expect("the tag is put back at the former place");
+        shown(repository.clone(), former.clone(), moved.clone());
+    });
+    (server, proxy, store, [at, to])
+}
+
+/// The requests `passed` names: the puts, and the reads of `site-v1`.
+fn puts_and_reads(passed: &[registry::Passed]) -> (usize, usize) {
+    let puts = passed.iter().filter(|p| p.method == "PUT").count();
+    let reads = passed
+        .iter()
+        .filter(|p| p.method == "GET" && p.path.ends_with("manifests/site-v1"))
+        .count();
+    (puts, reads)
+}
+
+fn a_read_back_at_the_former_place_within_the_bound_is_no_lost_race(kind: Kind) {
+    let (_server, proxy, store, [at, to]) =
+        put_back_after_the_put(kind, |repository, former, moved| {
+            thread::spawn(move || {
+                thread::sleep(Duration::from_secs(1));
+                Registry::new(&repository)
+                    .unwrap()
+                    .name(&Name::new("site-v1"), &moved, Some(&former))
+                    .expect("the registry shows the put");
+            });
+        });
+    let name = Name::new("site-v1");
+    proxy.passed();
+    assert_eq!(store.name(&name, &to, Some(&at)), Ok(()));
+    let (puts, reads) = puts_and_reads(&proxy.passed());
+    assert_eq!(puts, 1, "the tag was put again");
+    assert!(reads > 2, "the tag was read {reads} times, never again");
+    assert_eq!(store.resolve(&name), Ok(to));
+}
+
+fn a_tag_still_at_the_former_place_once_the_bound_passes_is_refused_naming_it(kind: Kind) {
+    let (_server, proxy, mut store, [at, to]) = put_back_after_the_put(kind, |_, _, _| {});
+    let bound = Duration::from_secs(1);
+    store.read_again_within(bound);
+    let name = Name::new("site-v1");
+    proxy.passed();
+    let started = Instant::now();
+    let refusal = refused(store.name(&name, &to, Some(&at)));
+    assert!(
+        started.elapsed() >= bound,
+        "refused before the bound passed"
+    );
+    assert_eq!(&refusal.source, store.source());
+    assert_eq!(
+        refusal.why,
+        Why::NameAt {
+            at: Some(at.clone())
+        }
+    );
+    let said = refusal.said.unwrap();
+    assert!(
+        said.contains(&at.to_string()) && said.contains(&to.to_string()),
+        "{said}"
+    );
+    let (puts, reads) = puts_and_reads(&proxy.passed());
+    assert_eq!(puts, 1, "the tag was put again");
+    assert!(reads > 2, "the tag was read {reads} times, never again");
+    assert_eq!(store.resolve(&name), Ok(at));
+}
+
 fn two_names_differing_only_in_escaped_characters_resolve_apart(kind: Kind) {
     let server = Server::start(kind);
     let store = server.store();
@@ -543,7 +635,7 @@ fn bytes_are_named_through_a_cache_manifest(kind: Kind) {
     let server = Server::start(kind);
     let proxy = Proxy::before(&server);
     let store = proxy.store(&server.repository());
-    registry::cache_entries(&store);
+    registry::cache_entries(&store, store.bound());
 
     let entry = b"a cache entry under two names";
     let bytes = store.put_bytes(entry).unwrap().digest;
@@ -884,4 +976,47 @@ fn a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger(kind: Kind) {
         })
     );
     assert_eq!(direct.resolve(&name), Ok(first));
+}
+
+/// name's check before the put, which is best effort on a registry, its
+/// names taking no condition (C.1, ADR 0015): where every read shows a
+/// move at once, as zot's and the reference distribution's do, a move
+/// from where the name is not, or from nothing of a name made, is refused
+/// naming where the name is, an artifact's digest or a cache entry's
+/// bytes' and never their cache manifest's (design D14), and nothing is
+/// put.
+fn the_check_before_the_put_refuses_a_move_from_where_the_name_is_not(kind: Kind) {
+    let server = Server::start(kind);
+    let proxy = Proxy::before(&server);
+    let store = proxy.store(&server.repository());
+    assert!(!store.names_conditional());
+    let [at, other, elsewhere] = ["1.0.0", "1.1.0", "1.2.0"].map(|v| put(&store, v));
+    let [bytes, moved] = [b"a cache entry".as_slice(), b"another cache entry"]
+        .map(|entry| store.put_bytes(entry).unwrap().digest);
+    let (name, entry) = (Name::new("site-v1"), Name::new("cache/two"));
+    store.name(&name, &at, None).unwrap();
+    store.name(&entry, &bytes, None).unwrap();
+    store.name(&entry, &moved, Some(&bytes)).unwrap();
+    proxy.passed();
+    for (name, to, expected, is) in [
+        (&name, &other, Some(&elsewhere), &at),
+        (&name, &other, None, &at),
+        (&entry, &bytes, Some(&bytes), &moved),
+    ] {
+        assert_eq!(
+            refused(store.name(name, to, expected)).why,
+            Why::NameAt {
+                at: Some(is.clone())
+            },
+            "{name} moved from {expected:?}"
+        );
+    }
+    let wrote: Vec<_> = proxy
+        .passed()
+        .into_iter()
+        .filter(|p| p.method != "HEAD" && p.method != "GET")
+        .collect();
+    assert_eq!(wrote, [], "a refused move wrote");
+    assert_eq!(store.resolve(&name), Ok(at));
+    assert_eq!(store.resolve(&entry), Ok(moved));
 }

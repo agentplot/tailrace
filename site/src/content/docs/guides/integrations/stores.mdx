@@ -28,7 +28,7 @@ not held.
 
 | member | profile | how | status |
 |---|---|---|---|
-| Amazon ECR | C.1, an OCI registry | over the distribution protocol, everything in one declared repository; the credential from ECR's helper; proven by hand, outside the gate | designed |
+| Amazon ECR | C.1, an OCI registry | over the distribution protocol, everything in one declared repository; the credential from ECR's helper; proven by hand, outside the gate, by a push on 2026-10-25 | built |
 | GitHub Container Registry | C.1 | the same, under the owner's packages | designed |
 | Harbor | C.1 | the same, in a project of the operator's | designed |
 | zot | C.1 | the same, on a host or on object storage, attestations listed by its referrers API; proven in the gate | built |
@@ -50,9 +50,12 @@ referrers of that type by the referrers API, or, where a registry has
 none, by the referrers tag the distribution specification defines in its
 place. A name is a tag, the name escaped into one. No registry refuses a
 tag put by the digest it is expected to be at, so name reads the tag
-first and refuses a move from anywhere else, and reads it back after the
-put: a tag found at another digest is a lost race, refused naming that
-digest and never retried (70, 109). A tag names only a manifest, so a
+first and refuses a move from anywhere else as far as that read shows,
+and reads it back after the put, again while the registry still answers
+the former place, for up to 30 seconds: a tag found at another digest is
+a lost race, refused naming that digest and never retried (70, 109). A
+read can lag a put, as ECR's do, so nothing rests on the check: a
+channel's name found elsewhere is repaired from the ledger (109). A tag names only a manifest, so a
 cache entry's bytes are named through a cache manifest whose one layer
 is the bytes, and resolve answers the bytes' digest (100); a cache
 manifest is no artifact, and claims-of never lists it. The credential is
@@ -62,8 +65,9 @@ names, reached when the registry asks for one and kept nowhere (64).
 zot and the reference distribution are proven in the gate, each started
 for the test. ECR needs a person's live AWS session, which the gate does
 not hold, so its run is a check of its own outside the gate, run by hand
-with `moon run ':#check-ecr'` against a repository the host names; ECR
-stays designed until that run passes.
+with `moon run ':#check-ecr'` against a repository the host names. ECR
+was proven by that run's push on 2026-10-25, in us-west-2; ADR 0015
+records what ECR answered.
 
 The layout is bound for a host by its bindings file, `[store] layout =
 "<path>"`, and a registry by `[store] registry = "<host>/<repository>"`
