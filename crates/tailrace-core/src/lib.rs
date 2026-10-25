@@ -21,6 +21,7 @@
 //! | [`verify`](mod@verify) | which signer the policy names made each attestation on a version, and whether each counts | 3, 9, 65, 80, 81, 116, 117; core.4, core.7 |
 //! | [`cache`](mod@cache) | a cache entry under its build identity in the store, written by packing with no version and named from nothing, never an artifact; a checkout's cache filled from a landed revision's passing verdicts, an entry gone answered and refusing nothing | 52 to 54, 100, C.3; core.6, core.11, core.30 |
 //! | [`push`](mod@push) | the step after a landing: the cache entry of each build identity a landed revision's passing verdicts name, written from what its build left on the host, offering nothing and keeping nothing | 52 to 54, 61, 77, 78, 100, C.3; core.6 |
+//! | [`gate`](mod@gate) | an offered version judged under the policy for acceptance at the governed branch's landed head: accepted whole with one claim of the gate's own on its index, no byte changed, or refused whole naming the artifact and the claim found wanting; the gate never accepting what it offered but on the one host; and each channel that follows each publish promoted by the gate, the ledger appended before the name moves | 7, 9, 13, 25 to 30, 33, 35, 39, 94 to 96, 105, 107, 108; core.4, core.6, core.7, core.14, core.15, core.34 |
 //!
 //! Every read and the claim take a [`Landed`], which only the landing
 //! seam's yes makes, and answer an `Answer`: absent, refused and
@@ -35,6 +36,7 @@
 pub mod cache;
 pub mod copy;
 pub mod declared;
+pub mod gate;
 pub mod history;
 pub mod landed;
 pub mod provenance;
@@ -50,6 +52,7 @@ pub mod version;
 pub use cache::*;
 pub use copy::*;
 pub use declared::*;
+pub use gate::*;
 pub use history::*;
 pub use landed::*;
 pub use provenance::*;
