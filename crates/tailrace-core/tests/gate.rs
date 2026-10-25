@@ -109,9 +109,9 @@ fn judged(world: &World, ask: &AcceptAsk) -> Answer<Judged> {
     accept(&holding(world, &[GATE]), &world.history(), ask)
 }
 
-/// How many writes the store, the keeper and the signer were asked from
-/// the counts `before`.
-fn writes_since(world: &World, before: (usize, usize, usize)) -> Vec<String> {
+/// Every write the store and the keeper were asked, and every signature
+/// the host's signer was asked, since the counts `before`.
+fn acts_since(world: &World, before: (usize, usize, usize)) -> Vec<String> {
     let store = world.fakes.store.calls()[before.0..]
         .iter()
         .filter(|c| {
@@ -271,7 +271,7 @@ fn a_version_never_offered_is_absent_naming_its_tag_and_nothing_is_written() {
     };
     assert!(a.what.contains("lib-v9.9.9"), "{}", a.what);
     assert_eq!(a.source.seam, Seam::Store);
-    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
 }
 
 // Requirement: The policy is read at the governed branch's landed head
@@ -292,7 +292,7 @@ fn a_branch_head_not_landed_is_refused_and_nothing_is_read_of_the_policy_or_writ
         }
     );
     assert_eq!(world.fakes.policy.calls().len(), policy);
-    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
 }
 
 #[test]
@@ -336,7 +336,7 @@ fn a_policy_landed_after_the_publish_is_the_one_read() {
         assert_eq!(call.op, PolicyOp::PolicyFor);
         assert_eq!(call.given["revision"], later.as_str(), "{:?}", call.given);
     }
-    assert_eq!(writes_since(&world, before.0), Vec::<String>::new());
+    assert_eq!(acts_since(&world, before.0), Vec::<String>::new());
 }
 
 // Requirement: The gate judges only a landed revision's version
@@ -367,7 +367,7 @@ fn a_version_whose_revision_did_not_land_is_refused_naming_it_and_nothing_is_att
             revision: world.head.clone(),
         }
     );
-    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
 }
 
 // Requirement: Each artifact is judged against each required claim in order
@@ -530,7 +530,7 @@ fn the_second_of_two_artifacts_wanting_refuses_the_version_whole_and_attaches_no
     assert_eq!(wanting.kind, ClaimKind::Verdict);
     assert_eq!(wanting.check, Some(Check::new("test")));
     assert_eq!(why, WhyWanting::Missing);
-    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
     let now: Vec<_> = std::iter::once(index)
         .chain(&digests)
         .map(|d| world.fakes.store.claims_of(d).unwrap())
@@ -667,7 +667,7 @@ fn claims_that_cannot_be_read_are_unreadable_naming_the_digest_with_the_stores_w
     assert!(u.what.contains(second.as_str()), "{}", u.what);
     assert_eq!(u.said.as_deref(), Some("connection reset by peer"));
     assert_eq!(u.source.seam, Seam::Store);
-    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
 }
 
 #[test]
@@ -686,4 +686,94 @@ fn a_name_that_resolves_to_no_index_is_unreadable_and_no_refusal() {
     };
     assert!(u.what.contains(artifact.as_str()), "{}", u.what);
     assert!(u.what.contains("index"), "{}", u.what);
+}
+
+// Requirement: Acceptance attaches one claim and changes no bytes
+
+#[test]
+fn an_accepted_version_holds_one_more_claim_on_its_index_and_no_byte_changes() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    let digests = artifacts(&published);
+    let on_index = world.fakes.store.claims_of(index).unwrap();
+    let on_artifacts: Vec<_> = digests
+        .iter()
+        .map(|d| world.fakes.store.claims_of(d).unwrap())
+        .collect();
+    let manifest = world.fakes.store.read(index).unwrap();
+    let before = world.fakes.store.calls().len();
+
+    let Ok(Judged::Accepted {
+        acceptance,
+        already,
+        one_host,
+        channels,
+        ..
+    }) = judged(&world, &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("the version was not accepted")
+    };
+    assert!(!already && !one_host && channels.is_empty());
+
+    let now = world.fakes.store.claims_of(index).unwrap();
+    assert_eq!(now.len(), on_index.len() + 1);
+    assert_eq!(now[..on_index.len()], on_index[..]);
+    let added = now.last().unwrap();
+    assert_eq!(added.digest(), acceptance);
+    let made = world
+        .fakes
+        .signer
+        .verify(added, &[named(GATE, &[ClaimKind::Acceptance], &[])])
+        .unwrap();
+    assert_eq!(made.signer, SignerId::new(GATE));
+    let claim = Claim::from_envelope(added).unwrap();
+    assert_eq!(claim.subject, *index);
+    assert_eq!(claim.kind, ClaimKind::Acceptance);
+    assert_eq!(claim.revision, world.head);
+    assert_eq!(claim.build, None);
+    assert_eq!(claim.body["component"], "lib");
+    assert_eq!(claim.body["version"], "0.2.0");
+    assert_eq!(
+        claim.body["policy"],
+        json!({ "audience": "acceptance", "revision": world.head.as_str() })
+    );
+    assert_eq!(claim.body["claims"].as_array().unwrap().len(), 4);
+
+    for (digest, held) in digests.iter().zip(&on_artifacts) {
+        assert_eq!(&world.fakes.store.claims_of(digest).unwrap(), held);
+    }
+    assert_eq!(world.fakes.store.read(index).unwrap(), manifest);
+    assert_eq!(
+        world.fakes.store.resolve(&Name::new("lib-v0.2.0")),
+        Ok(index.clone())
+    );
+    let asked: Vec<StoreOp> = world.fakes.store.calls()[before..]
+        .iter()
+        .map(|c| c.op)
+        .filter(|op| !matches!(op, StoreOp::Resolve | StoreOp::Read | StoreOp::ClaimsOf))
+        .collect();
+    assert_eq!(asked, [StoreOp::Attach], "the store was asked {asked:?}");
+}
+
+// Requirement: The gate signs only under the accepting credential
+
+#[test]
+fn a_host_with_no_gate_key_answers_absent_naming_the_identity_and_writes_nothing() {
+    let (world, _) = published_under(acceptance());
+    let before = counts(&world);
+    let Err(Not::Absent(a)) = accept(
+        &world.fakes.seams(),
+        &world.history(),
+        &ask("0.2.0", ToldBy::Publish),
+    ) else {
+        panic!("a host with no gate key accepted")
+    };
+    assert_eq!(a.source.seam, Seam::Signer);
+    assert!(a.what.contains(GATE), "{}", a.what);
+    assert_eq!(
+        acts_since(&world, before),
+        ["signer Sign"],
+        "more than the one signature asked"
+    );
+    assert!(world.fakes.keeper.calls().is_empty());
 }
