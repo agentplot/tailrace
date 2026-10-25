@@ -12,7 +12,9 @@ use scratch::{git_fails, Scratch, POLICY_FILE};
 use tailrace::profiles::policy::file::PolicyFile;
 use tailrace_conformance::seams::policy::{self, PolicyRig};
 use tailrace_conformance::{run, Rig};
-use tailrace_seams::{Audience, ChannelName, NamedSigner, Policy, Required, Revision};
+use tailrace_seams::{
+    Audience, ChannelName, ComponentName, DeclaredChannel, NamedSigner, Policy, Required, Revision,
+};
 
 /// A scratch repository and the policy file over it.
 struct PolicyFileRig {
@@ -103,6 +105,35 @@ fn policy_file(policies: &[(Audience, Required)]) -> String {
     text
 }
 
+/// The policy file declaring `components`, each with every key the core
+/// requires, and each of `channels` requiring nothing, naming its
+/// component only where several are declared.
+fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) -> String {
+    let mut text = String::new();
+    for name in components {
+        text.push_str(&format!(
+            "[[component]]\nname = {}\noutputs = []\npaths = {}\nprefix = {}\n\n",
+            quoted(name.as_str()),
+            list([format!("{name}/**").as_str()]),
+            quoted(&format!("{name}-v")),
+        ));
+    }
+    for channel in channels {
+        text.push_str(&format!("[channels.{}]\nrequire = []\n", channel.name));
+        if components.len() > 1 {
+            text.push_str(&format!(
+                "component = {}\n",
+                quoted(channel.component.as_str())
+            ));
+        }
+        if let Some(bound_to) = &channel.bound_to {
+            text.push_str(&format!("bound_to = {}\n", quoted(bound_to.as_str())));
+        }
+        text.push('\n');
+    }
+    text
+}
+
 impl Rig for PolicyFileRig {
     fn profile(&self) -> String {
         "policy file".into()
@@ -119,6 +150,13 @@ impl PolicyRig for PolicyFileRig {
         let repo = &self.scratch.repo;
         repo.write(POLICY_FILE, &policy_file(policies));
         Revision::new(repo.commit("chore: the policy"))
+    }
+
+    /// The policy file declaring `components` and `channels`, committed.
+    fn declaring(&self, components: &[ComponentName], channels: &[DeclaredChannel]) -> Revision {
+        let repo = &self.scratch.repo;
+        repo.write(POLICY_FILE, &declaring_file(components, channels));
+        Revision::new(repo.commit("chore: the channels"))
     }
 
     /// The repository removed, and git's words for reading it.

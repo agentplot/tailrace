@@ -1,8 +1,8 @@
 //! The policy's group: 82 and 83, and 116 as a policy keeps it (B.5).
 
 use tailrace_seams::{
-    Audience, ChannelName, Check, ClaimKind, NamedSigner, Policy, Required, RequiredClaim,
-    Revision, Seam, SignerId,
+    Audience, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel, NamedSigner, Policy,
+    Required, RequiredClaim, Revision, Seam, SignerId,
 };
 
 use crate::seams::{absent, unreadable};
@@ -19,6 +19,11 @@ pub trait PolicyRig: Rig {
     /// channel one of them is bound to, which a profile that binds a
     /// channel only to one it declares (37) declares requiring no claim.
     fn at(&self, policies: &[(Audience, Required)]) -> Revision;
+
+    /// A landed revision at which the repository declares `components`
+    /// (none: the one component of its own) and each of `channels`, in the
+    /// component it names, bound where it is bound and requiring no claim.
+    fn declaring(&self, components: &[ComponentName], channels: &[DeclaredChannel]) -> Revision;
 
     /// The policy made unreachable, every operation answering unreadable,
     /// and the words it answers with.
