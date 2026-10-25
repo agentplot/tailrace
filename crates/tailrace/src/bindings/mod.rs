@@ -338,7 +338,10 @@ impl Keeper for NoLedger {
 /// layout is made, so a file that cannot bind leaves nothing behind. The
 /// store is named as the file names it, its key and what it names, a
 /// path with `~/` expanded, so the record names a directory a reader
-/// finds whoever's home it was written under (61, 118; design D9).
+/// finds whoever's home it was written under (61, 118; design D9). The
+/// signers are bound in the signer family's order: the one `[signing]`
+/// names first, the one publish signs with, and every other bound
+/// profile after it, verify-only (92).
 pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
     let bindings = read(file, home)?;
     let signing = bindings.signing.as_ref();
