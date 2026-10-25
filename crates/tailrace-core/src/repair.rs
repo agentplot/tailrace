@@ -2,11 +2,14 @@
 //! promotion is about, and a race lost on the name reported and repaired
 //! from the ledger, never retried blind (39, 101, 106, 109, rule core.6;
 //! design D9). The chain is read through the ledger seam and nothing is
-//! written to it; the store name a channel takes is the caller's.
+//! written to it, and a chain the ledger answered as last read moves no
+//! name (101, 106, rule core.4); the store name a channel takes is the
+//! caller's.
 
 use serde::Serialize;
 use tailrace_seams::{
-    Answer, ChannelName, Claim, ClaimKind, Digest, Keeper, Name, Not, Seam, Source, Store, Why,
+    Answer, ChannelName, Claim, ClaimKind, Digest, Keeper, Name, Not, Read, Seam, Source, Store,
+    Why,
 };
 
 use crate::BOUND;
@@ -30,10 +33,19 @@ pub enum Followed {
 /// The digest the head of `channel`'s chain is a promotion about (39):
 /// absent for an empty chain and refused naming a fork, as the keeper
 /// answers them (105, 121); unreadable naming the head when it holds no
-/// promotion claim of tailrace's form.
+/// promotion claim of tailrace's form, and unreadable naming the chain,
+/// with the ledger's words, when the ledger answered it as last read,
+/// whose head may be behind the one held (101, 106).
 fn head(keeper: &dyn Keeper, channel: &ChannelName) -> Answer<Digest> {
-    let chain = keeper.chain(channel)?.claims;
-    let Some(head) = chain.last() else {
+    let chain = keeper.chain(channel)?;
+    if let Read::Kept { said, .. } = chain.read {
+        return Err(Not::unreadable(
+            &Source::new(Seam::Keeper, BOUND),
+            format!("the chain of {channel}"),
+            Some(said),
+        ));
+    }
+    let Some(head) = chain.claims.last() else {
         return Err(Not::absent(
             &Source::new(Seam::Keeper, BOUND),
             format!("chain of {channel}"),
@@ -203,6 +215,24 @@ mod tests {
             other => panic!("answered {other:?}"),
         }
         assert_eq!(names(&store), 0);
+    }
+
+    #[test]
+    fn a_chain_read_as_last_read_is_unreadable_with_the_ledgers_words_and_the_store_asked_nothing()
+    {
+        let (before, head, _) = digests();
+        let (store, keeper) = (FakeStore::new(), keeper(&before, &head));
+        keeper.chain(&stable()).unwrap();
+        keeper.unreachable("ref unreadable");
+        match follow(&store, &keeper, &stable(), &channel_name(), Some(&before)) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source.seam, Seam::Keeper);
+                assert_eq!(u.what, "the chain of stable");
+                assert_eq!(u.said.as_deref(), Some("ref unreadable"));
+            }
+            other => panic!("a chain read as last read answered {other:?}"),
+        }
+        assert_eq!(store.calls().len(), 0, "the store was asked something");
     }
 
     #[test]
