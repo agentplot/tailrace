@@ -129,6 +129,10 @@ require = [
 [layout]
 require = [{ kind = "provenance", signers = ["laptop"] }]
 
+[channels.beta]
+on_each_publish = true
+require = [{ kind = "acceptance", signers = ["gate"] }]
+
 [channels.stable]
 bound_to = "beta"
 require = [{ kind = "acceptance", signers = ["gate"] }]
@@ -140,6 +144,54 @@ lists one. `require` names its signers by their `[signers]` names, and a
 name `[signers]` does not hold is refused, naming it; only a channel
 names `bound_to`. The policy is read at the landed revision, never from
 a checkout (65).
+
+### The gate and the channels that follow each publish
+
+The gate judges an offered version under `[acceptance]` as it stands at
+the branch's landed head when it judges, so a policy that lands binds
+every judgment after it (107), and a version once accepted stays
+accepted (94). It accepts the version whole or refuses it whole, naming
+the artifact and the claim it found wanting (28), and its acceptance is
+one more claim on the version's index: no byte changes (26).
+
+A channel with `on_each_publish = true` follows each publish. When a
+publish's answer tells the gate of a version and the gate accepts it,
+the gate judges the version under that channel's own `require` and,
+where it is met, promotes the channel itself: the promotion is held in
+the ledger before the channel's name moves (95). A publish never moves
+a channel, and a version the gate is asked about by anyone else moves
+none. Where the repository declares several components, a following
+channel names its own:
+
+```toml
+[channels.lib-beta]
+component = "lib"
+on_each_publish = true
+require = [{ kind = "acceptance", signers = ["gate"] }]
+```
+
+A following channel that names no component among several, names one
+the file does not declare, or names `bound_to` is unreadable, naming its
+table, and does not move: a bound channel takes its versions only from
+the channel it is bound to (37, 125).
+
+The gate never accepts what its own signer offered (27, 96). The one
+laptop that both offers and accepts says so by letting one signer claim
+both, and its acceptance then says the host accepted what it offered,
+so a reader tells it from a separated one (108):
+
+```toml
+[signers.laptop]
+ssh = "ssh-ed25519 AAAA… host@laptop"
+kinds = ["provenance", "acceptance"]
+
+[acceptance]
+require = [{ kind = "provenance", signers = ["laptop"] }]
+
+[channels.beta]
+on_each_publish = true
+require = [{ kind = "acceptance", signers = ["laptop"] }]
+```
 
 ## A team
 
