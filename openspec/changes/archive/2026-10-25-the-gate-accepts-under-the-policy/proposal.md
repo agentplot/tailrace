@@ -117,5 +117,6 @@ crates/tailrace-conformance/src/core/gate.rs
 crates/tailrace-conformance/src/register.rs
 crates/tailrace-conformance/src/lib.rs
 crates/tailrace-conformance/src/world.rs
+crates/tailrace-conformance/tests/fakes.rs
 site/src/content/docs/guides/self-hosting.mdx
 ```
