@@ -30,6 +30,13 @@ tasks:
     command: 'sh check-sccache.sh'
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true, cache: false}
+  # A merge made outside the shell, as a take is, passes the commit hooks
+  # devenv.nix installs (check-hooks.sh). It installs the hooks the shell
+  # it runs in builds, so it never replays.
+  hooks:
+    command: 'sh check-hooks.sh'
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true, cache: false}
   # No two decision records share a number (check-adrs.sh).
   adrs:
     command: 'sh check-adrs.sh'
