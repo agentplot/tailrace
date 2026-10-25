@@ -1,0 +1,779 @@
+//! Spec acceptance: the gate's judgment of a version published in the
+//! test, under the policy for acceptance at the branch's landed head, and
+//! the channels that follow each publish.
+
+mod common;
+mod world;
+
+use serde_json::json;
+use tailrace_core::{
+    accept, answer_json, AcceptAsk, Followed, Judged, Moved, Published, ToldBy, WhyWanting,
+};
+use tailrace_fakes::{FakeSigner, KeeperOp, PolicyOp, SignerOp, StoreOp};
+use tailrace_seams::{
+    Answer, Audience, Branch, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
+    Envelope, Held, Manifest, Name, NamedSigner, Not, Outcome, Put, Required, RequiredClaim,
+    Revision, Seam, Seams, Signer, SignerId, Source, Store, Version, Why,
+};
+use world::{build_of, version_of, World, HOST, LANDING};
+
+/// The identity the gate signs as, held by a signer of its own beside
+/// the host's.
+const GATE: &str = "gate";
+
+/// The moment every judgment here is made at.
+const WHEN: u64 = 1_767_225_600;
+
+fn named(id: &str, kinds: &[ClaimKind], checks: &[&str]) -> NamedSigner {
+    NamedSigner {
+        id: SignerId::new(id),
+        verified_by: format!("{id}'s key"),
+        kinds: kinds.to_vec(),
+        checks: checks.iter().map(|c| Check::new(*c)).collect(),
+    }
+}
+
+fn provenance_from(signer: NamedSigner) -> RequiredClaim {
+    RequiredClaim {
+        kind: ClaimKind::Provenance,
+        check: None,
+        signers: vec![signer],
+    }
+}
+
+fn verdict_from(signer: NamedSigner, check: &str) -> RequiredClaim {
+    RequiredClaim {
+        kind: ClaimKind::Verdict,
+        check: Some(Check::new(check)),
+        signers: vec![signer],
+    }
+}
+
+/// Acceptance requires the host's provenance and the landing's verdict
+/// of `test`.
+fn acceptance() -> Required {
+    Required::Acceptance {
+        claims: vec![
+            provenance_from(named(HOST, &[ClaimKind::Provenance], &[])),
+            verdict_from(named(LANDING, &[ClaimKind::Verdict], &["test"]), "test"),
+        ],
+    }
+}
+
+/// Acceptance requires the host's provenance alone.
+fn provenance_only() -> Required {
+    Required::Acceptance {
+        claims: vec![provenance_from(named(HOST, &[ClaimKind::Provenance], &[]))],
+    }
+}
+
+/// A world whose `lib` was published at its head, each output's build
+/// carrying the landing's passing `test` and `lint`, under `required`.
+fn published_under(required: Required) -> (World, Published) {
+    let world = World::new();
+    for o in ["lib-pack", "lib-docs"] {
+        let build = build_of(o, &world.head);
+        world.verdict("test", &build, Outcome::Pass, LANDING);
+        world.verdict("lint", &build, Outcome::Pass, LANDING);
+    }
+    world.fakes.policy.require(Audience::Acceptance, required);
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    (world, published)
+}
+
+fn ask(version: &str, told: ToldBy) -> AcceptAsk {
+    AcceptAsk {
+        branch: Branch::new("main"),
+        component: Some(ComponentName::new("lib")),
+        version: Version::new(version),
+        told,
+        gate: SignerId::new(GATE),
+        when: WHEN,
+    }
+}
+
+/// The world's fakes bound, with a signer of its own holding each of
+/// `holding` after the host's.
+fn holding(world: &World, holding: &[&str]) -> Seams {
+    let mut seams = world.fakes.seams();
+    for id in holding {
+        let signer = FakeSigner::new();
+        signer.hold(&SignerId::new(*id));
+        seams.signers.push(Box::new(signer));
+    }
+    seams
+}
+
+/// The gate's judgment of `ask`, the gate's identity at hand.
+fn judged(world: &World, ask: &AcceptAsk) -> Answer<Judged> {
+    accept(&holding(world, &[GATE]), &world.history(), ask)
+}
+
+/// Every write the store and the keeper were asked, and every signature
+/// the host's signer was asked, since the counts `before`.
+fn acts_since(world: &World, before: (usize, usize, usize)) -> Vec<String> {
+    let store = world.fakes.store.calls()[before.0..]
+        .iter()
+        .filter(|c| {
+            matches!(
+                c.op,
+                StoreOp::PutBytes | StoreOp::PutArtifact | StoreOp::Attach | StoreOp::Name
+            )
+        })
+        .map(|c| format!("store {:?}", c.op))
+        .collect::<Vec<_>>();
+    let keeper = world.fakes.keeper.calls()[before.1..]
+        .iter()
+        .filter(|c| c.op == KeeperOp::Append)
+        .map(|c| format!("keeper {:?}", c.op))
+        .collect::<Vec<_>>();
+    let signer = world.fakes.signer.calls()[before.2..]
+        .iter()
+        .filter(|c| c.op == SignerOp::Sign)
+        .map(|c| format!("signer {:?}", c.op))
+        .collect::<Vec<_>>();
+    [store, keeper, signer].concat()
+}
+
+fn counts(world: &World) -> (usize, usize, usize) {
+    (
+        world.fakes.store.calls().len(),
+        world.fakes.keeper.calls().len(),
+        world.fakes.signer.calls().len(),
+    )
+}
+
+// Requirement: The gate judges a version by its index's digest
+
+#[test]
+fn each_answer_renders_in_the_one_form_naming_the_index_and_both_revisions() {
+    let (index, revision, head) = (
+        Digest::of(b"index"),
+        Revision::new("4f2a9c1"),
+        Revision::new("7b3e0d2"),
+    );
+    let wanting = RequiredClaim {
+        kind: ClaimKind::Verdict,
+        check: Some(Check::new("test")),
+        signers: vec![],
+    };
+    let promotion = Digest::of(b"promotion");
+    let accepted: Answer<Judged> = Ok(Judged::Accepted {
+        component: ComponentName::new("lib"),
+        version: Version::new("0.2.0"),
+        index: index.clone(),
+        revision: revision.clone(),
+        policy_at: head.clone(),
+        acceptance: Digest::of(b"acceptance"),
+        already: false,
+        one_host: false,
+        channels: vec![
+            (
+                ChannelName::new("beta"),
+                Ok(Moved::Promoted {
+                    from: None,
+                    to: index.clone(),
+                    promotion: promotion.clone(),
+                    name: Followed::Moved { to: index.clone() },
+                }),
+            ),
+            (
+                ChannelName::new("edge"),
+                Ok(Moved::Held {
+                    artifact: Digest::of(b"artifact"),
+                    wanting: wanting.clone(),
+                    why: WhyWanting::Missing,
+                }),
+            ),
+            (
+                ChannelName::new("next"),
+                Err(Not::refused(
+                    &Source::new(Seam::Keeper, "bound"),
+                    Why::NotHead {
+                        head: Some(promotion.clone()),
+                    },
+                    None,
+                )),
+            ),
+        ],
+    });
+    let json = answer_json(&accepted);
+    assert_eq!(json["answer"], "ok");
+    let value = &json["value"];
+    assert_eq!(value["judged"], "accepted");
+    assert_eq!(value["index"], index.as_str());
+    assert_eq!(value["revision"], revision.as_str());
+    assert_eq!(value["policy_at"], head.as_str());
+    let channels = value["channels"].as_array().unwrap();
+    assert_eq!(channels[0]["channel"], "beta");
+    assert_eq!(channels[0]["answer"], "ok");
+    assert_eq!(channels[0]["value"]["moved"], "promoted");
+    assert_eq!(channels[0]["value"]["promotion"], promotion.as_str());
+    assert_eq!(channels[1]["value"]["moved"], "held");
+    assert_eq!(channels[1]["value"]["why"], "missing");
+    assert_eq!(channels[2]["answer"], "refused");
+    assert_eq!(
+        channels[2]["refused"]["why"],
+        json!({ "not_head": { "head": promotion.as_str() } })
+    );
+
+    let refused: Answer<Judged> = Ok(Judged::Refused {
+        component: ComponentName::new("lib"),
+        version: Version::new("0.2.0"),
+        index: index.clone(),
+        revision: revision.clone(),
+        policy_at: head.clone(),
+        artifact: Digest::of(b"artifact"),
+        wanting,
+        why: WhyWanting::Expired {
+            signer: SignerId::new("landing"),
+        },
+    });
+    let value = &answer_json(&refused)["value"];
+    assert_eq!(value["judged"], "refused");
+    assert_eq!(value["index"], index.as_str());
+    assert_eq!(value["revision"], revision.as_str());
+    assert_eq!(value["policy_at"], head.as_str());
+    assert_eq!(value["wanting"]["kind"], "verdict");
+    assert_eq!(value["why"], json!({ "expired": { "signer": "landing" } }));
+}
+
+#[test]
+fn the_answer_names_the_index_the_name_resolves_to_and_reads_nothing_before() {
+    let (world, published) = published_under(provenance_only());
+    let (_, index) = version_of(&published);
+    let before = world.fakes.store.calls().len();
+    let Ok(Judged::Accepted {
+        index: judged,
+        revision,
+        policy_at,
+        ..
+    }) = judged(&world, &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("the version was not accepted")
+    };
+    assert_eq!(&judged, index);
+    assert_eq!(revision, world.head);
+    assert_eq!(policy_at, world.head);
+    let ops: Vec<StoreOp> = world.fakes.store.calls()[before..]
+        .iter()
+        .map(|c| c.op)
+        .collect();
+    assert_eq!(ops[0], StoreOp::Resolve, "{ops:?}");
+}
+
+#[test]
+fn a_version_never_offered_is_absent_naming_its_tag_and_nothing_is_written() {
+    let (world, _) = published_under(provenance_only());
+    let before = counts(&world);
+    let Err(Not::Absent(a)) = judged(&world, &ask("9.9.9", ToldBy::Asked)) else {
+        panic!("a version never offered was judged")
+    };
+    assert!(a.what.contains("lib-v9.9.9"), "{}", a.what);
+    assert_eq!(a.source.seam, Seam::Store);
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+// Requirement: The policy is read at the governed branch's landed head
+
+#[test]
+fn a_branch_head_not_landed_is_refused_and_nothing_is_read_of_the_policy_or_written() {
+    let (world, _) = published_under(provenance_only());
+    let later = world.repo.touch("feat: lib again", &["crates/lib"]);
+    let (before, policy) = (counts(&world), world.fakes.policy.calls().len());
+    let Err(Not::Refused(r)) = judged(&world, &ask("0.2.0", ToldBy::Asked)) else {
+        panic!("a head the landing has not landed was judged")
+    };
+    assert_eq!(
+        r.why,
+        Why::NotLanded {
+            branch: Branch::new("main"),
+            revision: later,
+        }
+    );
+    assert_eq!(world.fakes.policy.calls().len(), policy);
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+#[test]
+fn a_policy_landed_after_the_publish_is_the_one_read() {
+    let (world, _) = published_under(provenance_only());
+    let later = world.repo.touch("chore: stricter", &["docs"]);
+    world.fakes.landing.land(&world.main, &later);
+    let review = RequiredClaim {
+        kind: ClaimKind::Review,
+        check: None,
+        signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
+    };
+    world.fakes.policy.require_at(
+        &later,
+        Audience::Acceptance,
+        Required::Acceptance {
+            claims: vec![
+                provenance_from(named(HOST, &[ClaimKind::Provenance], &[])),
+                review.clone(),
+            ],
+        },
+    );
+    let before = (counts(&world), world.fakes.policy.calls().len());
+    let Ok(Judged::Refused {
+        revision,
+        policy_at,
+        wanting,
+        why,
+        ..
+    }) = judged(&world, &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("the version was not refused under the later policy")
+    };
+    assert_eq!(revision, world.head);
+    assert_eq!(policy_at, later);
+    assert_eq!(wanting, review);
+    assert_eq!(why, WhyWanting::Missing);
+    let asked = world.fakes.policy.calls()[before.1..].to_vec();
+    assert!(!asked.is_empty());
+    for call in asked {
+        assert_eq!(call.op, PolicyOp::PolicyFor);
+        assert_eq!(call.given["revision"], later.as_str(), "{:?}", call.given);
+    }
+    assert_eq!(acts_since(&world, before.0), Vec::<String>::new());
+}
+
+// Requirement: The gate judges only a landed revision's version
+
+#[test]
+fn a_version_whose_revision_did_not_land_is_refused_naming_it_and_nothing_is_attached() {
+    let world = World::new();
+    world
+        .fakes
+        .policy
+        .require(Audience::Acceptance, provenance_only());
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    version_of(&published);
+    let later = world.repo.touch("feat: lib again", &["crates/lib"]);
+    let landing = tailrace_fakes::FakeLanding::new();
+    landing.land(&world.main, &later);
+    let mut seams = holding(&world, &[GATE]);
+    seams.landing = Box::new(landing);
+    let before = counts(&world);
+    let Err(Not::Refused(r)) = accept(&seams, &world.history(), &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("a version whose revision did not land was judged")
+    };
+    assert_eq!(
+        r.why,
+        Why::NotLanded {
+            branch: Branch::new("main"),
+            revision: world.head.clone(),
+        }
+    );
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+// Requirement: Each artifact is judged against each required claim in order
+
+/// The artifacts a published answer names, in the index's order.
+fn artifacts(published: &Published) -> Vec<Digest> {
+    match published {
+        Published::Version { artifacts, .. } => {
+            artifacts.iter().map(|a| a.digest.clone()).collect()
+        }
+        Published::Unchanged { .. } => panic!("unchanged: {published:?}"),
+    }
+}
+
+/// The refusal a judgment answered: the artifact, the claim wanting and
+/// why.
+fn refusal(answer: Answer<Judged>) -> (Digest, RequiredClaim, WhyWanting) {
+    match answer {
+        Ok(Judged::Refused {
+            artifact,
+            wanting,
+            why,
+            ..
+        }) => (artifact, wanting, why),
+        other => panic!("the version was not refused: {other:?}"),
+    }
+}
+
+#[test]
+fn every_required_claim_found_accepts_the_version() {
+    let (world, _) = published_under(acceptance());
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Asked));
+    assert!(matches!(answer, Ok(Judged::Accepted { .. })), "{answer:?}");
+}
+
+#[test]
+fn a_verdict_from_a_signer_the_policy_does_not_name_refuses_and_stays_attached() {
+    let world = World::new();
+    for o in ["lib-pack", "lib-docs"] {
+        world.verdict("test", &build_of(o, &world.head), Outcome::Pass, "stranger");
+    }
+    world
+        .fakes
+        .policy
+        .require(Audience::Acceptance, acceptance());
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let first = &artifacts(&published)[0];
+    let held = world.fakes.store.claims_of(first).unwrap();
+
+    let (artifact, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(&artifact, first);
+    assert_eq!(wanting.kind, ClaimKind::Verdict);
+    assert_eq!(why, WhyWanting::Missing);
+    assert_eq!(world.fakes.store.claims_of(first).unwrap(), held);
+}
+
+#[test]
+fn a_verdict_from_a_signer_beyond_its_reach_does_not_count() {
+    let world = World::new();
+    for o in ["lib-pack", "lib-docs"] {
+        world.verdict("test", &build_of(o, &world.head), Outcome::Pass, HOST);
+    }
+    let host = named(HOST, &[ClaimKind::Provenance], &[]);
+    world.fakes.policy.require(
+        Audience::Acceptance,
+        Required::Acceptance {
+            claims: vec![provenance_from(host.clone()), verdict_from(host, "test")],
+        },
+    );
+    world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(wanting.kind, ClaimKind::Verdict);
+    assert_eq!(why, WhyWanting::Missing);
+}
+
+#[test]
+fn a_provenance_naming_another_revision_does_not_count() {
+    let (world, published) = published_under(provenance_only());
+    let builder = FakeSigner::new();
+    builder.hold(&SignerId::new("builder"));
+    for artifact in artifacts(&published) {
+        let held = world.fakes.store.claims_of(&artifact).unwrap();
+        let claim = Claim {
+            revision: Revision::new("0".repeat(40)),
+            ..Claim::from_envelope(&held[0]).unwrap()
+        };
+        let other = builder.sign(&claim, &SignerId::new("builder")).unwrap();
+        world.fakes.store.attach(&artifact, &other).unwrap();
+    }
+    let required = provenance_from(named("builder", &[ClaimKind::Provenance], &[]));
+    world.fakes.policy.require(
+        Audience::Acceptance,
+        Required::Acceptance {
+            claims: vec![required.clone()],
+        },
+    );
+    let (artifact, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(artifact, artifacts(&published)[0]);
+    assert_eq!(wanting, required);
+    assert_eq!(why, WhyWanting::Missing);
+
+    for artifact in artifacts(&published) {
+        let held = world.fakes.store.claims_of(&artifact).unwrap();
+        let claim = Claim::from_envelope(&held[0]).unwrap();
+        let ours = builder.sign(&claim, &SignerId::new("builder")).unwrap();
+        world.fakes.store.attach(&artifact, &ours).unwrap();
+    }
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Asked));
+    assert!(
+        matches!(answer, Ok(Judged::Accepted { .. })),
+        "the builder's provenance of the version's revision did not count: {answer:?}"
+    );
+}
+
+// Requirement: An expired signer's claim does not count at acceptance
+
+#[test]
+fn a_provenance_from_an_expired_signer_refuses_naming_it() {
+    let (world, published) = published_under(acceptance());
+    world.fakes.signer.expire(&SignerId::new(HOST));
+    let (artifact, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(artifact, artifacts(&published)[0]);
+    assert_eq!(wanting.kind, ClaimKind::Provenance);
+    assert_eq!(
+        why,
+        WhyWanting::Expired {
+            signer: SignerId::new(HOST)
+        }
+    );
+}
+
+// Requirement: A version is accepted or refused whole
+
+#[test]
+fn the_second_of_two_artifacts_wanting_refuses_the_version_whole_and_attaches_nothing() {
+    let world = World::new();
+    let pack = build_of("lib-pack", &world.head);
+    world.verdict("test", &pack, Outcome::Pass, LANDING);
+    world.verdict(
+        "lint",
+        &build_of("lib-docs", &world.head),
+        Outcome::Pass,
+        LANDING,
+    );
+    world
+        .fakes
+        .policy
+        .require(Audience::Acceptance, acceptance());
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&published);
+    let digests = artifacts(&published);
+    let held: Vec<_> = std::iter::once(index)
+        .chain(&digests)
+        .map(|d| world.fakes.store.claims_of(d).unwrap())
+        .collect();
+    let before = counts(&world);
+
+    let (artifact, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(artifact, digests[1]);
+    assert_eq!(wanting.kind, ClaimKind::Verdict);
+    assert_eq!(wanting.check, Some(Check::new("test")));
+    assert_eq!(why, WhyWanting::Missing);
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+    let now: Vec<_> = std::iter::once(index)
+        .chain(&digests)
+        .map(|d| world.fakes.store.claims_of(d).unwrap())
+        .collect();
+    assert_eq!(now, held);
+}
+
+// Requirement: An independent rebuild is counted, never made
+
+/// Acceptance requires the host's provenance and a rebuild, which the
+/// host and a verifier may each claim.
+fn rebuilt() -> (RequiredClaim, Required) {
+    let rebuild = RequiredClaim {
+        kind: ClaimKind::Rebuild,
+        check: None,
+        signers: vec![
+            named(HOST, &[ClaimKind::Provenance, ClaimKind::Rebuild], &[]),
+            named("verifier", &[ClaimKind::Rebuild], &[]),
+        ],
+    };
+    let required = Required::Acceptance {
+        claims: vec![
+            provenance_from(named(HOST, &[ClaimKind::Provenance], &[])),
+            rebuild.clone(),
+        ],
+    };
+    (rebuild, required)
+}
+
+/// A rebuild of each artifact by `signer`, saying the digests `matched`
+/// or did not, attached beside it.
+fn rebuild_by(world: &World, published: &Published, signer: &str, matched: bool) {
+    let theirs = FakeSigner::new();
+    theirs.hold(&SignerId::new(signer));
+    for artifact in artifacts(published) {
+        let claim = Claim {
+            subject: artifact.clone(),
+            kind: ClaimKind::Rebuild,
+            revision: world.head.clone(),
+            build: None,
+            body: json!({ "matched": matched }),
+        };
+        let envelope = theirs.sign(&claim, &SignerId::new(signer)).unwrap();
+        world.fakes.store.attach(&artifact, &envelope).unwrap();
+    }
+}
+
+#[test]
+fn a_rebuild_by_the_offering_host_does_not_count() {
+    let (rebuild, required) = rebuilt();
+    let (world, published) = published_under(required);
+    rebuild_by(&world, &published, HOST, true);
+    let (_, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(wanting, rebuild);
+    assert_eq!(
+        why,
+        WhyWanting::Unmatched {
+            signer: SignerId::new(HOST)
+        }
+    );
+}
+
+#[test]
+fn a_rebuild_that_did_not_match_does_not_count_and_one_that_did_does() {
+    let (rebuild, required) = rebuilt();
+    let (world, published) = published_under(required);
+    rebuild_by(&world, &published, "verifier", false);
+    let (_, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(wanting, rebuild);
+    assert_eq!(
+        why,
+        WhyWanting::Unmatched {
+            signer: SignerId::new("verifier")
+        }
+    );
+
+    rebuild_by(&world, &published, "verifier", true);
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Asked));
+    assert!(matches!(answer, Ok(Judged::Accepted { .. })), "{answer:?}");
+}
+
+/// A store that cannot read the claims of one digest, in its own words,
+/// and hands every other operation to the fake.
+struct Failing {
+    inner: tailrace_fakes::FakeStore,
+    digest: Digest,
+}
+
+impl Store for Failing {
+    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
+        self.inner.put_bytes(bytes)
+    }
+    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
+        self.inner.put_artifact(manifest)
+    }
+    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
+        self.inner.attach(subject, attestation)
+    }
+    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
+        if *digest == self.digest {
+            return Err(Not::unreadable(
+                &Source::new(Seam::Store, "failing"),
+                format!("the claims of {digest}"),
+                Some("connection reset by peer".into()),
+            ));
+        }
+        self.inner.claims_of(digest)
+    }
+    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        self.inner.name(name, to, expected)
+    }
+    fn resolve(&self, name: &Name) -> Answer<Digest> {
+        self.inner.resolve(name)
+    }
+    fn read(&self, digest: &Digest) -> Answer<Held> {
+        self.inner.read(digest)
+    }
+}
+
+#[test]
+fn claims_that_cannot_be_read_are_unreadable_naming_the_digest_with_the_stores_words() {
+    let (world, published) = published_under(acceptance());
+    let second = artifacts(&published)[1].clone();
+    let mut seams = holding(&world, &[GATE]);
+    seams.store = Box::new(Failing {
+        inner: world.fakes.store.clone(),
+        digest: second.clone(),
+    });
+    let before = counts(&world);
+    let Err(Not::Unreadable(u)) = accept(&seams, &world.history(), &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("claims that cannot be read were answered")
+    };
+    assert!(u.what.contains(second.as_str()), "{}", u.what);
+    assert_eq!(u.said.as_deref(), Some("connection reset by peer"));
+    assert_eq!(u.source.seam, Seam::Store);
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+#[test]
+fn a_name_that_resolves_to_no_index_is_unreadable_and_no_refusal() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    let artifact = artifacts(&published)[0].clone();
+    let tag = Name::new("lib-v0.2.0");
+    world
+        .fakes
+        .store
+        .name(&tag, &artifact, Some(index))
+        .unwrap();
+    let Err(Not::Unreadable(u)) = judged(&world, &ask("0.2.0", ToldBy::Asked)) else {
+        panic!("a name naming no index was judged")
+    };
+    assert!(u.what.contains(artifact.as_str()), "{}", u.what);
+    assert!(u.what.contains("index"), "{}", u.what);
+}
+
+// Requirement: Acceptance attaches one claim and changes no bytes
+
+#[test]
+fn an_accepted_version_holds_one_more_claim_on_its_index_and_no_byte_changes() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    let digests = artifacts(&published);
+    let on_index = world.fakes.store.claims_of(index).unwrap();
+    let on_artifacts: Vec<_> = digests
+        .iter()
+        .map(|d| world.fakes.store.claims_of(d).unwrap())
+        .collect();
+    let manifest = world.fakes.store.read(index).unwrap();
+    let before = world.fakes.store.calls().len();
+
+    let Ok(Judged::Accepted {
+        acceptance,
+        already,
+        one_host,
+        channels,
+        ..
+    }) = judged(&world, &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("the version was not accepted")
+    };
+    assert!(!already && !one_host && channels.is_empty());
+
+    let now = world.fakes.store.claims_of(index).unwrap();
+    assert_eq!(now.len(), on_index.len() + 1);
+    assert_eq!(now[..on_index.len()], on_index[..]);
+    let added = now.last().unwrap();
+    assert_eq!(added.digest(), acceptance);
+    let made = world
+        .fakes
+        .signer
+        .verify(added, &[named(GATE, &[ClaimKind::Acceptance], &[])])
+        .unwrap();
+    assert_eq!(made.signer, SignerId::new(GATE));
+    let claim = Claim::from_envelope(added).unwrap();
+    assert_eq!(claim.subject, *index);
+    assert_eq!(claim.kind, ClaimKind::Acceptance);
+    assert_eq!(claim.revision, world.head);
+    assert_eq!(claim.build, None);
+    assert_eq!(claim.body["component"], "lib");
+    assert_eq!(claim.body["version"], "0.2.0");
+    assert_eq!(
+        claim.body["policy"],
+        json!({ "audience": "acceptance", "revision": world.head.as_str() })
+    );
+    assert_eq!(claim.body["claims"].as_array().unwrap().len(), 4);
+
+    for (digest, held) in digests.iter().zip(&on_artifacts) {
+        assert_eq!(&world.fakes.store.claims_of(digest).unwrap(), held);
+    }
+    assert_eq!(world.fakes.store.read(index).unwrap(), manifest);
+    assert_eq!(
+        world.fakes.store.resolve(&Name::new("lib-v0.2.0")),
+        Ok(index.clone())
+    );
+    let asked: Vec<StoreOp> = world.fakes.store.calls()[before..]
+        .iter()
+        .map(|c| c.op)
+        .filter(|op| !matches!(op, StoreOp::Resolve | StoreOp::Read | StoreOp::ClaimsOf))
+        .collect();
+    assert_eq!(asked, [StoreOp::Attach], "the store was asked {asked:?}");
+}
+
+// Requirement: The gate signs only under the accepting credential
+
+#[test]
+fn a_host_with_no_gate_key_answers_absent_naming_the_identity_and_writes_nothing() {
+    let (world, _) = published_under(acceptance());
+    let before = counts(&world);
+    let Err(Not::Absent(a)) = accept(
+        &world.fakes.seams(),
+        &world.history(),
+        &ask("0.2.0", ToldBy::Publish),
+    ) else {
+        panic!("a host with no gate key accepted")
+    };
+    assert_eq!(a.source.seam, Seam::Signer);
+    assert!(a.what.contains(GATE), "{}", a.what);
+    assert_eq!(
+        acts_since(&world, before),
+        ["signer Sign"],
+        "more than the one signature asked"
+    );
+    assert!(world.fakes.keeper.calls().is_empty());
+}

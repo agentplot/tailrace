@@ -194,7 +194,7 @@ mod tests {
         fn append(&self, _: &ChannelName, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
             nothing(Seam::Keeper, "append")
         }
-        fn chain(&self, _: &ChannelName) -> Answer<Vec<Envelope>> {
+        fn chain(&self, _: &ChannelName) -> Answer<Chain> {
             nothing(Seam::Keeper, "chain")
         }
     }

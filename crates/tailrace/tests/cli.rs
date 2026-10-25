@@ -9,13 +9,14 @@ use clap::Parser;
 use serde_json::Value;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{
-    answer_json, publish, push, sync, write, Ask, Entry, History, Kept, PushAsk, SyncAsk,
+    answer_json, promote, publish, push, sync, write, Ask, Entry, History, Kept, PromoteAsk,
+    PushAsk, SyncAsk, To,
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
-    Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, Outcome,
-    Output, OutputName, Report, Required, Revision, Seam, Signer, SignerId, Source, Verdict,
-    Version,
+    Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
+    Ecosystem, NamedSigner, Outcome, Output, OutputName, Promotion, Report, Required,
+    RequiredClaim, Revision, Seam, Signer, SignerId, Source, Verdict, Version,
 };
 use tempfile::TempDir;
 
@@ -82,24 +83,7 @@ impl Host {
         );
         git(&repo, &["commit", "-q", "-m", "feat: the site"]);
         let head = Revision::new(git(&repo, &["rev-parse", "HEAD"]));
-
-        let mut fakes = Fakes::new();
-        fakes.landing.land(&Branch::new("main"), &head);
-        fakes.signer.hold(&SignerId::new("host"));
-        fakes.projection(&Ecosystem::new("eco"));
-        fakes.build.made(
-            &head,
-            &OutputName::new("site"),
-            Report {
-                build: tailrace_seams::BuildId::new("site-build"),
-                outcome: tailrace_seams::Outcome::Pass,
-                files: vec!["dist/site.tar".into()],
-            },
-        );
-        fakes.policy.require(
-            Audience::Acceptance,
-            Required::Acceptance { claims: vec![] },
-        );
+        let fakes = fakes_at(&head);
         Host {
             _root: root,
             repo,
@@ -167,6 +151,30 @@ impl Host {
             + self.fakes.signer.calls().len()
             + self.fakes.policy.calls().len()
     }
+}
+
+/// The fakes bound to publish `head`: landed on `main`, its one output
+/// built and passing, the host's identity at hand, and acceptance
+/// requiring nothing.
+fn fakes_at(head: &Revision) -> Fakes {
+    let mut fakes = Fakes::new();
+    fakes.landing.land(&Branch::new("main"), head);
+    fakes.signer.hold(&SignerId::new("host"));
+    fakes.projection(&Ecosystem::new("eco"));
+    fakes.build.made(
+        head,
+        &OutputName::new("site"),
+        Report {
+            build: tailrace_seams::BuildId::new("site-build"),
+            outcome: tailrace_seams::Outcome::Pass,
+            files: vec!["dist/site.tar".into()],
+        },
+    );
+    fakes.policy.require(
+        Audience::Acceptance,
+        Required::Acceptance { claims: vec![] },
+    );
+    fakes
 }
 
 // Requirement: Each command calls the one core and renders its answer
@@ -616,4 +624,155 @@ fn with_no_configuration_directory_set_the_file_under_the_home_binds_verify() {
     let what = json["unreadable"]["what"].as_str().unwrap();
     assert!(what.starts_with(&layout.display().to_string()), "{json}");
     assert!(!layout.exists(), "verify made the layout");
+}
+
+// Requirement: Promote takes a version and a channel
+
+fn stable() -> ChannelName {
+    ChannelName::new("stable")
+}
+
+/// A second feature committed on `main` after the host's head, and its
+/// revision.
+fn grown(host: &Host) -> Revision {
+    fs::write(host.repo.join("site/index.html"), "<p>hello again</p>").unwrap();
+    git(&host.repo, &["commit", "-q", "-am", "feat: the site grows"]);
+    Revision::new(git(&host.repo, &["rev-parse", "HEAD"]))
+}
+
+/// Over `fakes`, the host's head published as 0.1.0 and `second`, landed
+/// and built, as 0.2.0, each index carrying the host's acceptance, and
+/// the policy for `stable` requiring it of the host, which it names for
+/// acceptance and promotion (108).
+fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
+    fakes.landing.land(&Branch::new("main"), second);
+    fakes.build.made(
+        second,
+        &OutputName::new("site"),
+        Report {
+            build: BuildId::new("site-build-2"),
+            outcome: Outcome::Pass,
+            files: vec!["dist/site.tar".into()],
+        },
+    );
+    let history = History::open(&host.repo).unwrap();
+    for revision in [&host.head, second] {
+        let published = publish(
+            &fakes.seams(),
+            &history,
+            &Kept::at(&history),
+            &Ask {
+                branch: Branch::new("main"),
+                revision: revision.clone(),
+                component: None,
+                signer: SignerId::new("host"),
+                store: store(),
+            },
+        )
+        .unwrap();
+        let Ok(tailrace_core::Published::Version { index, .. }) = &published.components[0].1 else {
+            panic!("nothing was published: {published:?}")
+        };
+        let acceptance = Claim {
+            subject: index.clone(),
+            kind: ClaimKind::Acceptance,
+            revision: revision.clone(),
+            build: None,
+            body: serde_json::json!({}),
+        };
+        let envelope = fakes
+            .signer
+            .sign(&acceptance, &SignerId::new("host"))
+            .unwrap();
+        tailrace_seams::Store::attach(&fakes.store, index, &envelope).unwrap();
+    }
+    fakes.policy.require(
+        Audience::Channel(stable()),
+        Required::Channel {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![NamedSigner {
+                    id: SignerId::new("host"),
+                    verified_by: "the host's key".into(),
+                    kinds: vec![ClaimKind::Acceptance, ClaimKind::Promotion],
+                    checks: vec![],
+                }],
+            }],
+            bound_to: None,
+        },
+    );
+}
+
+#[test]
+fn promote_through_the_command_line_prints_the_cores_answer_value_for_value() {
+    let host = Host::new();
+    let second = grown(&host);
+    promotable(&host, &host.fakes, &second);
+    let (code, printed) = host.run(&["promote", "0.2.0", "--to", "stable", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+
+    let chain = tailrace_seams::Keeper::chain(&host.fakes.keeper, &stable()).unwrap();
+    let head = chain.claims.last().unwrap();
+    let asked = Promotion::of(&Claim::from_envelope(head).unwrap()).unwrap();
+    assert_eq!(printed["value"]["claim"], head.digest().as_str());
+
+    // The same question over an identical binding, at the moment the
+    // command asked it.
+    let other = fakes_at(&host.head);
+    promotable(&host, &other, &second);
+    let core = promote(
+        &other.seams(),
+        &History::open(&host.repo).unwrap(),
+        &PromoteAsk {
+            branch: Branch::new("main"),
+            component: None,
+            channel: stable(),
+            to: To::Version(Version::new("0.2.0")),
+            from: None,
+            signer: SignerId::new("host"),
+            at: asked.at,
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+    assert_eq!(printed["value"]["to"]["version"], "0.2.0");
+}
+
+#[test]
+fn promote_from_a_version_the_channel_has_left_exits_1_naming_where_it_is() {
+    let host = Host::new();
+    let second = grown(&host);
+    promotable(&host, &host.fakes, &second);
+    let (code, printed) = host.run(&["promote", "0.2.0", "--to", "stable"]);
+    assert_eq!(code, 0, "{printed}");
+    assert!(
+        printed.starts_with("stable moved to 0.2.0 (sha256:")
+            && printed.contains("its first promotion"),
+        "{printed}"
+    );
+    let (code, printed) = host.run(&["promote", "0.1.0", "--to", "stable", "--from", "0.1.0"]);
+    assert_eq!(code, 1, "{printed}");
+    assert!(printed.contains("stable is at 0.2.0"), "{printed}");
+    let (code, printed) = host.run(&["promote", "--back", "--to", "stable"]);
+    assert_eq!(code, 4, "{printed}");
+    assert!(printed.contains("a version stable moved from"), "{printed}");
+}
+
+#[test]
+fn a_version_and_back_together_are_arguments_promote_cannot_take() {
+    let host = Host::new();
+    let err = Cli::try_parse_from(["tailrace", "promote", "0.2.0", "--back", "--to", "stable"])
+        .expect_err("promote took a version and --back");
+    assert_eq!(err.exit_code(), 2);
+    assert!(err.to_string().contains("--back"), "{err}");
+    let err = Cli::try_parse_from(["tailrace", "promote", "--to", "stable"])
+        .expect_err("promote took neither a version nor --back");
+    assert_eq!(err.exit_code(), 2);
+
+    let out = host.binary(&["promote", "0.2.0", "--back", "--to", "stable"]);
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--back"), "{stderr}");
+    assert_eq!(host.calls(), 0, "the core was asked");
 }

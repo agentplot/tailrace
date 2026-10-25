@@ -6,8 +6,9 @@
 
 use serde::Serialize;
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, ComponentName, Digest, Envelope,
-    Held, Manifest, Name, NamedSigner, Not, Revision, Seam, Seams, SignerId, Source, Version, Why,
+    Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, Component, ComponentName, Digest,
+    Envelope, Held, Manifest, Name, NamedSigner, Not, Required, Revision, Seam, Seams, SignerId,
+    Source, Version, Why,
 };
 
 use crate::{policy_at, Declared, History, Landed, Provenance, BOUND, LOCAL, POLICY_FILE};
@@ -67,30 +68,7 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
     let head = history.head(&ask.branch)?;
     let at_head = Landed::check(seams.landing.as_ref(), &ask.branch, &head)?;
     let declared = Declared::read(history, &at_head)?;
-    let component = match &ask.component {
-        Some(name) => declared
-            .components
-            .iter()
-            .find(|c| c.name == *name)
-            .ok_or_else(|| {
-                Not::absent(
-                    &local(),
-                    format!("component {name} in {POLICY_FILE} at {head}"),
-                )
-            })?,
-        None => match declared.components.as_slice() {
-            [one] => one,
-            several => {
-                return Err(Not::refused(
-                    &local(),
-                    Why::WhichComponent {
-                        declared: several.iter().map(|c| c.name.clone()).collect(),
-                    },
-                    None,
-                ))
-            }
-        },
-    };
+    let component = chosen(&declared, ask.component.as_ref(), &head)?;
     let tag = format!("{}{}", component.prefix, ask.version);
 
     // 2: the name resolved in the store (rule core.4).
@@ -111,24 +89,7 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
         })?;
 
     // 4: the signers it names, one each, with all it lets each claim.
-    let mut signers: Vec<NamedSigner> = Vec::new();
-    for named in required.claims().iter().flat_map(|c| &c.signers) {
-        match signers.iter_mut().find(|s| s.id == named.id) {
-            Some(held) => {
-                for kind in &named.kinds {
-                    if !held.kinds.contains(kind) {
-                        held.kinds.push(*kind);
-                    }
-                }
-                for check in &named.checks {
-                    if !held.checks.contains(check) {
-                        held.checks.push(check.clone());
-                    }
-                }
-            }
-            None => signers.push(named.clone()),
-        }
-    }
+    let signers = merged(&required);
 
     // 5, 6: the index and each artifact, each attestation told.
     let Held::Manifest(Manifest::Index(meta)) = seams.store.read(&index)? else {
@@ -184,13 +145,71 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
     })
 }
 
+/// The signers `required` names, one each, with all it lets each claim
+/// across the claims it requires (82, 116). A promotion's judgment tells
+/// by them too.
+pub(crate) fn merged(required: &Required) -> Vec<NamedSigner> {
+    let mut signers: Vec<NamedSigner> = Vec::new();
+    for named in required.claims().iter().flat_map(|c| &c.signers) {
+        match signers.iter_mut().find(|s| s.id == named.id) {
+            Some(held) => {
+                for kind in &named.kinds {
+                    if !held.kinds.contains(kind) {
+                        held.kinds.push(*kind);
+                    }
+                }
+                for check in &named.checks {
+                    if !held.checks.contains(check) {
+                        held.checks.push(check.clone());
+                    }
+                }
+            }
+            None => signers.push(named.clone()),
+        }
+    }
+    signers
+}
+
+/// 123: the component `named`, or the only one `declared` holds at
+/// `head`; absent naming it where none is so named, and refused
+/// [`Why::WhichComponent`] where several are declared and none named.
+pub(crate) fn chosen<'d>(
+    declared: &'d Declared,
+    named: Option<&ComponentName>,
+    head: &Revision,
+) -> Answer<&'d Component> {
+    match named {
+        Some(name) => declared
+            .components
+            .iter()
+            .find(|c| c.name == *name)
+            .ok_or_else(|| {
+                Not::absent(
+                    &local(),
+                    format!("component {name} in {POLICY_FILE} at {head}"),
+                )
+            }),
+        None => match declared.components.as_slice() {
+            [one] => Ok(one),
+            several => Err(Not::refused(
+                &local(),
+                Why::WhichComponent {
+                    declared: several.iter().map(|c| c.name.clone()).collect(),
+                },
+                None,
+            )),
+        },
+    }
+}
+
 /// 80: which of `signers` made `envelope`, asked of each bound signer in
 /// turn until one says; none saying is no named signer, and one that
 /// cannot be read ends the verify unreadable (58). It counts only when
 /// its maker may claim its kind, and for a verdict its check (9, 116,
 /// rule core.7); an expired maker is reported beside and still counts
-/// (81, 117).
-fn tell(
+/// (81, 117). The gate tells by it too, and adds the joins acceptance
+/// needs, and a promotion's judgment tells by it unchanged.
+pub(crate) fn tell(
     seams: &Seams,
     signers: &[NamedSigner],
     on: &Digest,
