@@ -38,8 +38,8 @@ nothing yet SHALL exist with its marker.
 
 #### Scenario: The gate's group waits for its unit
 
-- **WHEN** the gate's group is listed in bolt 1
-- **THEN** it holds no scenario, and its marker is in place for bolt 4's gate unit to add below
+- **WHEN** the gate's group is listed once bolt 4's gate unit has landed
+- **THEN** its marker is in place and below it are that unit's scenarios, among them those playing S3, S5 and S9, and they cite 25 to 30, 94 to 96, 107 and 108, none of which the register still names
 
 #### Scenario: Every seam has a group
 

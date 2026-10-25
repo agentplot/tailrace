@@ -512,6 +512,65 @@ impl Projection for Watched {
     }
 }
 
+/// The identity the gate signs as, held by a signer of its own beside
+/// the host's (95).
+pub const GATE: &str = "gate";
+
+/// The moment the world's gate judges at, in seconds since the Unix
+/// epoch.
+pub const WHEN: u64 = 1_767_225_600;
+
+impl FakeWorld {
+    /// The policy file committed with `text` at the clone, pushed, and
+    /// landed on `main` with no verdicts; its revision.
+    pub fn land_policy(&self, text: &str) -> Revision {
+        let revision = self.repo().policy_file(text);
+        self.repo().push();
+        self.land(&revision, &[]);
+        revision
+    }
+
+    /// What the gate is asked of `version` on `main`, told of it by
+    /// `told`, signing as `gate`.
+    pub fn gate_ask(
+        &self,
+        version: &str,
+        told: tailrace_core::ToldBy,
+        gate: &str,
+    ) -> tailrace_core::AcceptAsk {
+        tailrace_core::AcceptAsk {
+            branch: self.main.clone(),
+            component: None,
+            version: Version::new(version),
+            told,
+            gate: SignerId::new(gate),
+            when: WHEN,
+        }
+    }
+
+    /// The fakes as the one binding, a signer of its own holding each of
+    /// `holding` bound after the host's.
+    pub fn seams_holding(&self, holding: &[&str]) -> Seams {
+        let mut seams = self.seams();
+        for id in holding {
+            let signer = FakeSigner::new();
+            signer.hold(&SignerId::new(*id));
+            seams.signers.push(Box::new(signer));
+        }
+        seams
+    }
+
+    /// The gate's judgment of `ask`, each of `holding` at hand beside the
+    /// host's identity.
+    pub fn judge(
+        &self,
+        ask: &tailrace_core::AcceptAsk,
+        holding: &[&str],
+    ) -> Answer<tailrace_core::Judged> {
+        tailrace_core::accept(&self.seams_holding(holding), &self.history(), ask)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tailrace_core::Landed;
