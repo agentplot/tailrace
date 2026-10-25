@@ -7,8 +7,8 @@
 use serde::Serialize;
 use tailrace_seams::{
     Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, Component, ComponentName, Digest,
-    Envelope, Held, Manifest, Name, NamedSigner, Not, Revision, Seam, Seams, SignerId, Source,
-    Version, Why,
+    Envelope, Held, Manifest, Name, NamedSigner, Not, Required, Revision, Seam, Seams, SignerId,
+    Source, Version, Why,
 };
 
 use crate::{policy_at, Declared, History, Landed, Provenance, BOUND, LOCAL, POLICY_FILE};
@@ -89,24 +89,7 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
         })?;
 
     // 4: the signers it names, one each, with all it lets each claim.
-    let mut signers: Vec<NamedSigner> = Vec::new();
-    for named in required.claims().iter().flat_map(|c| &c.signers) {
-        match signers.iter_mut().find(|s| s.id == named.id) {
-            Some(held) => {
-                for kind in &named.kinds {
-                    if !held.kinds.contains(kind) {
-                        held.kinds.push(*kind);
-                    }
-                }
-                for check in &named.checks {
-                    if !held.checks.contains(check) {
-                        held.checks.push(check.clone());
-                    }
-                }
-            }
-            None => signers.push(named.clone()),
-        }
-    }
+    let signers = merged(&required);
 
     // 5, 6: the index and each artifact, each attestation told.
     let Held::Manifest(Manifest::Index(meta)) = seams.store.read(&index)? else {
@@ -162,6 +145,31 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
     })
 }
 
+/// The signers `required` names, one each, with all it lets each claim
+/// across the claims it requires (82, 116). A promotion's judgment tells
+/// by them too.
+pub(crate) fn merged(required: &Required) -> Vec<NamedSigner> {
+    let mut signers: Vec<NamedSigner> = Vec::new();
+    for named in required.claims().iter().flat_map(|c| &c.signers) {
+        match signers.iter_mut().find(|s| s.id == named.id) {
+            Some(held) => {
+                for kind in &named.kinds {
+                    if !held.kinds.contains(kind) {
+                        held.kinds.push(*kind);
+                    }
+                }
+                for check in &named.checks {
+                    if !held.checks.contains(check) {
+                        held.checks.push(check.clone());
+                    }
+                }
+            }
+            None => signers.push(named.clone()),
+        }
+    }
+    signers
+}
+
 /// 123: the component `named`, or the only one `declared` holds at
 /// `head`; absent naming it where none is so named, and refused
 /// [`Why::WhichComponent`] where several are declared and none named.
@@ -200,7 +208,7 @@ pub(crate) fn chosen<'d>(
 /// its maker may claim its kind, and for a verdict its check (9, 116,
 /// rule core.7); an expired maker is reported beside and still counts
 /// (81, 117). The gate tells by it too, and adds the joins acceptance
-/// needs.
+/// needs, and a promotion's judgment tells by it unchanged.
 pub(crate) fn tell(
     seams: &Seams,
     signers: &[NamedSigner],
