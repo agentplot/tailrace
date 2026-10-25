@@ -68,10 +68,46 @@ fn provenance_only() -> Required {
     }
 }
 
+/// The policy file of the world, with `lib`'s channel `beta` following
+/// each publish.
+fn with_beta() -> String {
+    format!(
+        "{}\n[channels.beta]\non_each_publish = true\ncomponent = \"lib\"\n",
+        world::POLICY
+    )
+}
+
+fn beta() -> ChannelName {
+    ChannelName::new("beta")
+}
+
+/// The gate's acceptance, which `beta` requires.
+fn from_gate() -> RequiredClaim {
+    RequiredClaim {
+        kind: ClaimKind::Acceptance,
+        check: None,
+        signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
+    }
+}
+
+/// `beta` requires `claims`.
+fn beta_requires(world: &World, claims: Vec<RequiredClaim>) {
+    world.fakes.policy.require(
+        Audience::Channel(beta()),
+        Required::Channel {
+            claims,
+            bound_to: None,
+        },
+    );
+}
+
 /// A world whose `lib` was published at its head, each output's build
 /// carrying the landing's passing `test` and `lint`, under `required`.
 fn published_under(required: Required) -> (World, Published) {
-    let world = World::new();
+    published_in(World::new(), required)
+}
+
+fn published_in(world: World, required: Required) -> (World, Published) {
     for o in ["lib-pack", "lib-docs"] {
         let build = build_of(o, &world.head);
         world.verdict("test", &build, Outcome::Pass, LANDING);
@@ -952,4 +988,80 @@ component = "lib"
     let names: Vec<&str> = web.iter().map(|(n, _)| n.as_str()).collect();
     assert_eq!(names, ["web-beta", "edge", "other"]);
     assert_eq!(web[0].1, Ok(()));
+}
+
+// Requirement: Nothing accepted is un-accepted
+
+/// A later revision landed whose policy for acceptance requires a review
+/// no version carries.
+fn stricter(world: &World) -> Revision {
+    let later = world.repo.touch("chore: stricter", &["docs"]);
+    world.fakes.landing.land(&world.main, &later);
+    let review = RequiredClaim {
+        kind: ClaimKind::Review,
+        check: None,
+        signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
+    };
+    let Required::Acceptance { mut claims } = acceptance() else {
+        unreachable!()
+    };
+    claims.push(review);
+    world.fakes.policy.require_at(
+        &later,
+        Audience::Acceptance,
+        Required::Acceptance { claims },
+    );
+    later
+}
+
+#[test]
+fn a_version_the_gate_accepted_is_accepted_again_after_a_stricter_policy_lands() {
+    let (world, _) = published_in(World::with_policy(&with_beta()), acceptance());
+    beta_requires(&world, vec![from_gate()]);
+    let Ok(Judged::Accepted {
+        acceptance: first, ..
+    }) = judged(&world, &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("the gate did not accept")
+    };
+    let later = stricter(&world);
+    let before = counts(&world);
+
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Asked));
+    let Ok(Judged::Accepted {
+        acceptance,
+        already,
+        policy_at,
+        ..
+    }) = answer
+    else {
+        panic!("an accepted version was un-accepted: {answer:?}")
+    };
+    assert!(already);
+    assert_eq!(acceptance, first);
+    assert_eq!(policy_at, later);
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+#[test]
+fn an_acceptance_another_signer_made_is_not_the_gates() {
+    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    beta_requires(&world, vec![from_gate()]);
+    let (_, index) = version_of(&published);
+    let forged = Claim {
+        subject: index.clone(),
+        kind: ClaimKind::Acceptance,
+        revision: world.head.clone(),
+        build: None,
+        body: json!({ "offered": { "by": [HOST], "one_host": false } }),
+    };
+    let forged = world
+        .fakes
+        .signer
+        .sign(&forged, &SignerId::new(HOST))
+        .unwrap();
+    world.fakes.store.attach(index, &forged).unwrap();
+    stricter(&world);
+    let (_, wanting, _) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
+    assert_eq!(wanting.kind, ClaimKind::Review);
 }

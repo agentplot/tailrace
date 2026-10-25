@@ -199,48 +199,64 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         artifacts,
     };
 
-    // 7: every artifact against every required claim (28).
-    let refused = |artifact, wanting, why| Judged::Refused {
-        component: component.name.clone(),
-        version: ask.version.clone(),
-        index: index.clone(),
-        revision: revision.clone(),
-        policy_at: head.clone(),
-        artifact,
-        wanting,
-        why,
-    };
-    let (claims, offered_by, one_host) = match judging.count(&required)? {
-        Count::Satisfied {
-            claims,
-            offered_by,
-            one_host,
-        } => (claims, offered_by, one_host),
-        Count::Wanting {
-            artifact,
-            wanting,
-            why,
-        } => return Ok(refused(artifact, wanting, why)),
-    };
+    // 6: an acceptance the gate's identity made already answers the
+    // version accepted, whatever the head's policy now requires (94).
+    let mut found = None;
+    if judging.holds_acceptance() {
+        if let Some(named) = gate_named(seams, history, &at_head, &required, &ask.gate)? {
+            found = judging.already(&named)?;
+        }
+    }
+    let (acceptance, already, one_host) = match found {
+        Some((acceptance, one_host)) => (acceptance, true, one_host),
+        None => {
+            // 7: every artifact against every required claim (28).
+            let (claims, offered_by, one_host) = match judging.count(&required)? {
+                Count::Satisfied {
+                    claims,
+                    offered_by,
+                    one_host,
+                } => (claims, offered_by, one_host),
+                Count::Wanting {
+                    artifact,
+                    wanting,
+                    why,
+                } => {
+                    return Ok(Judged::Refused {
+                        component: component.name.clone(),
+                        version: ask.version.clone(),
+                        index: index.clone(),
+                        revision: revision.clone(),
+                        policy_at: head.clone(),
+                        artifact,
+                        wanting,
+                        why,
+                    })
+                }
+            };
 
-    // 8: the acceptance signed before the one write, then attached to
-    // the index alone (26, 7), saying who offered what it accepts and
-    // whether that was the gate's own identity (108).
-    let acceptance = Claim {
-        subject: index.clone(),
-        kind: ClaimKind::Acceptance,
-        revision: revision.clone(),
-        build: None,
-        body: json!({
-            "component": component.name,
-            "version": ask.version,
-            "policy": { "audience": Audience::Acceptance, "revision": head },
-            "claims": claims,
-            "offered": { "by": offered_by, "one_host": one_host },
-        }),
+            // 8: the acceptance signed before the one write, then
+            // attached to the index alone (26, 7), saying who offered what
+            // it accepts and whether that was the gate's own identity
+            // (108).
+            let acceptance = Claim {
+                subject: index.clone(),
+                kind: ClaimKind::Acceptance,
+                revision: revision.clone(),
+                build: None,
+                body: json!({
+                    "component": component.name,
+                    "version": ask.version,
+                    "policy": { "audience": Audience::Acceptance, "revision": head },
+                    "claims": claims,
+                    "offered": { "by": offered_by, "one_host": one_host },
+                }),
+            };
+            let envelope = sign(seams, &acceptance, &ask.gate)?;
+            seams.store.attach(&index, &envelope)?;
+            (envelope.digest(), false, one_host)
+        }
     };
-    let envelope = sign(seams, &acceptance, &ask.gate)?;
-    seams.store.attach(&index, &envelope)?;
 
     Ok(Judged::Accepted {
         component: component.name.clone(),
@@ -248,8 +264,8 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         index: index.clone(),
         revision: revision.clone(),
         policy_at: head.clone(),
-        acceptance: envelope.digest(),
-        already: false,
+        acceptance,
+        already,
         one_host,
         channels: Vec::new(),
     })
@@ -365,6 +381,42 @@ fn required_at(seams: &Seams, at_head: &Landed, audience: &Audience) -> Answer<R
     })
 }
 
+/// 94: the signer the policy at the head names by the gate's identity,
+/// looked for in what acceptance requires and then in what each channel
+/// the policy file declares requires, since a channel is what asks for
+/// the gate's acceptance; none where no policy names it.
+fn gate_named(
+    seams: &Seams,
+    history: &History,
+    at_head: &Landed,
+    acceptance: &Required,
+    gate: &SignerId,
+) -> Answer<Option<NamedSigner>> {
+    let named = |required: &Required| {
+        required
+            .claims()
+            .iter()
+            .flat_map(|c| &c.signers)
+            .find(|s| s.id == *gate)
+            .cloned()
+    };
+    if let Some(found) = named(acceptance) {
+        return Ok(Some(found));
+    }
+    for (channel, _) in channel_tables(history, at_head)? {
+        match required_at(seams, at_head, &Audience::Channel(channel)) {
+            Ok(required) => {
+                if let Some(found) = named(&required) {
+                    return Ok(Some(found));
+                }
+            }
+            Err(Not::Absent(_)) => continue,
+            Err(not) => return Err(not),
+        }
+    }
+    Ok(None)
+}
+
 /// 79, 95: `claim` signed as `gate` by the first bound signer that holds
 /// it at hand; absent naming the identity where none does.
 fn sign(seams: &Seams, claim: &Claim, gate: &SignerId) -> Answer<Envelope> {
@@ -433,6 +485,43 @@ enum Count {
 }
 
 impl Judging<'_> {
+    /// Whether the index holds any claim of acceptance of tailrace's form,
+    /// whoever made it.
+    fn holds_acceptance(&self) -> bool {
+        self.on_index
+            .iter()
+            .filter_map(Claim::from_envelope)
+            .any(|c| c.kind == ClaimKind::Acceptance)
+    }
+
+    /// 94: the envelope of an acceptance of the index that `named`, the
+    /// gate's identity, made, and whether it said one host; none where
+    /// the gate made none, a forged one by another signer among them.
+    fn already(&self, named: &NamedSigner) -> Answer<Option<(Digest, bool)>> {
+        for envelope in &self.on_index {
+            let Some(claim) = Claim::from_envelope(envelope) else {
+                continue;
+            };
+            if claim.kind != ClaimKind::Acceptance || claim.subject != *self.index {
+                continue;
+            }
+            let told = tell(
+                self.seams,
+                std::slice::from_ref(named),
+                self.index,
+                envelope,
+                Some(claim.kind),
+                None,
+                None,
+            )?;
+            if told.made_by.as_ref() == Some(self.gate) {
+                let one_host = claim.body["offered"]["one_host"].as_bool();
+                return Ok(Some((told.envelope, one_host.unwrap_or(false))));
+            }
+        }
+        Ok(None)
+    }
+
     /// 28: each artifact, in the index's order, against each required
     /// claim, in the policy's order; the first wanting refuses the whole.
     fn count(&self, required: &Required) -> Answer<Count> {
