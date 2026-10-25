@@ -6,7 +6,6 @@
 
 mod kms;
 
-use std::error::Error;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::time::{Duration, Instant};
@@ -14,7 +13,7 @@ use std::time::{Duration, Instant};
 use aws_sdk_kms::primitives::Blob;
 use aws_sdk_kms::types::{MessageType, SigningAlgorithmSpec};
 use kms::{
-    free_port, listed, Bound, StandIn, Switch, ACCESS_KEY, NO_CREDENTIALS, REGION, SECRET_KEY,
+    dead, listed, Bound, StandIn, Switch, ACCESS_KEY, NO_CREDENTIALS, REGION, SECRET_KEY,
     SESSION_TOKEN,
 };
 use p256::ecdsa::signature::Verifier;
@@ -24,7 +23,7 @@ use serde_json::json;
 use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use tailrace::profiles::signer::host_key::HostKey;
-use tailrace::profiles::signer::kms::{https, KeyArn, Kms, Reach};
+use tailrace::profiles::signer::kms::{KeyArn, Kms, Reach};
 use tailrace_conformance::seams::signer::{self, SignerRig};
 use tailrace_conformance::{run, Rig};
 use tailrace_seams::{
@@ -85,44 +84,6 @@ impl World {
             .sign(claim, &SignerId::new(arn))
             .unwrap_or_else(|not| panic!("sign as {arn} answered {not:?}"))
     }
-}
-
-/// The profile bound to a key at a loopback port nothing listens on, and
-/// the words the SDK answers a call there with, its chain of errors.
-fn dead(arn: &str) -> (Kms, String) {
-    let (port, held) = free_port();
-    drop(held);
-    let endpoint = format!("http://127.0.0.1:{port}");
-    let switch = Switch::new();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
-    let client = aws_sdk_kms::Client::from_conf(
-        aws_sdk_kms::Config::builder()
-            .behavior_version(aws_sdk_kms::config::BehaviorVersion::latest())
-            .region(aws_sdk_kms::config::Region::new(REGION))
-            .credentials_provider(switch.provider())
-            .http_client(https())
-            .endpoint_url(&endpoint)
-            .retry_config(aws_sdk_kms::config::retry::RetryConfig::disabled())
-            .build(),
-    );
-    let failed = runtime
-        .block_on(client.describe_key().key_id(arn).send())
-        .expect_err("nothing listens on the port");
-    let mut words = vec![failed.to_string()];
-    let mut at = failed.source();
-    while let Some(error) = at {
-        words.push(error.to_string());
-        at = error.source();
-    }
-    let kms = Kms::new(KeyArn::parse(arn).unwrap()).reaching(Reach::Given {
-        credentials: switch.provider(),
-        http: https(),
-        endpoint: Some(endpoint),
-    });
-    (kms, words.join(": "))
 }
 
 /// The signer group's rig over a fresh stand-in: a key it signs as, a
@@ -541,6 +502,7 @@ fn a_host_keys_envelope_is_refused_reaching_nothing() {
         &["fleet", "laptop"],
     );
     assert!(said.contains("not a DER-encoded ECDSA signature"), "{said}");
+    assert_eq!(world.stand_in.requests(), 0);
     let said = no_named_signer(
         world
             .verifying()
@@ -554,7 +516,7 @@ fn a_host_keys_envelope_is_refused_reaching_nothing() {
     assert_eq!(
         world.stand_in.requests(),
         2,
-        "only the second key's sign reached KMS"
+        "a verify against signers no KMS key lists reached KMS; only the sign did"
     );
 }
 
@@ -689,4 +651,28 @@ fn no_service_at_the_endpoint_is_unreadable_within_ten_seconds() {
         started.elapsed()
     );
     assert_eq!(said, words);
+}
+
+#[test]
+fn bound_by_an_alias_the_binding_is_unreadable_naming_the_value() {
+    let alias = "arn:aws:kms:us-west-2:111122223333:alias/fleet";
+    let file = std::path::Path::new("/config/tailrace/config.toml");
+    let table: toml::Table = toml::from_str(&format!("kms = \"{alias}\"")).unwrap();
+    match tailrace::profiles::signer::read(file, None, &table) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.what, format!("{}, [signing] kms", file.display()));
+            let said = u.said.unwrap();
+            assert!(said.starts_with(alias), "{said}");
+            assert!(said.contains("a key is named by its key ARN"), "{said}");
+        }
+        other => panic!("{alias} bound as {other:?}, not unreadable"),
+    }
+}
+
+#[test]
+fn bound_by_its_key_arn_it_signs_as_the_arn_in_its_region() {
+    let arn = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
+    let kms = Kms::new(KeyArn::parse(arn).unwrap());
+    assert_eq!(kms.key().map(KeyArn::as_str), Some(arn));
+    assert_eq!(kms.key().map(KeyArn::region), Some("us-west-2"));
 }

@@ -23,14 +23,15 @@
 //! ```
 //!
 //! `[store]`, `[landing]` and `[ledger]` each name their profile by their
-//! one key,
-//! so a later profile is a new key and not a new shape; `[signing]`
-//! names the host's signer and its key file, in the landing's own
-//! `[signing]` shape. A path is absolute or begins `~/`, expanded
-//! against the home directory. This module reads each table generically
-//! and names no tool (rule core.1): the key of each seam's table is
+//! one key, so a later profile is a new key and not a new shape;
+//! `[signing]` names the host's signer and its key file, in the
+//! landing's own `[signing]` shape, or a key in a key service by the
+//! key's own name. A path is absolute or begins `~/`, expanded against
+//! the home directory. This module reads each table generically and names no
+//! tool or service (rule core.1): the key of each seam's table is
 //! matched to its profile by the `bind` function of that seam's profile
-//! family, under `profiles/`.
+//! family, and `[signing]` is read whole by the signer profiles' family,
+//! under `profiles/`.
 //!
 //! A missing file is absent naming its path, and a broken one unreadable
 //! naming the file and the table or key, with the parser's words where
@@ -55,9 +56,10 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tailrace_seams::{
-    Answer, Chain, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, SignerId, Source,
+    Answer, Chain, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, Source,
 };
 
+use crate::profiles::signer::Signing;
 use crate::{profiles, unsigned, Binding};
 
 #[cfg(test)]
@@ -97,13 +99,6 @@ pub struct Table {
     value: toml::Value,
 }
 
-/// `[signing]`: the identity the host signs as, and its key file.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Signing {
-    pub signer: SignerId,
-    pub key: PathBuf,
-}
-
 /// The host and the bindings file, as every answer of the file names it.
 pub fn source(file: &Path) -> Source {
     Source::host(file)
@@ -111,7 +106,7 @@ pub fn source(file: &Path) -> Source {
 
 /// `at` of the file, `[landing]` or `[signing] key`, could not be read,
 /// for `said`.
-fn unreadable(file: &Path, at: Option<&str>, said: impl Into<String>) -> Not {
+pub(crate) fn unreadable(file: &Path, at: Option<&str>, said: impl Into<String>) -> Not {
     let what = match at {
         Some(at) => format!("{}, {at}", file.display()),
         None => file.display().to_string(),
@@ -122,7 +117,7 @@ fn unreadable(file: &Path, at: Option<&str>, said: impl Into<String>) -> Not {
 /// `text` as a path: absolute, or beginning `~/` and expanded against
 /// `home`; unreadable naming `at` otherwise, since a relative path would
 /// mean another file in each working directory.
-fn path_of(file: &Path, home: Option<&Path>, at: &str, text: &str) -> Answer<PathBuf> {
+pub(crate) fn path_of(file: &Path, home: Option<&Path>, at: &str, text: &str) -> Answer<PathBuf> {
     if Path::new(text).is_absolute() {
         return Ok(PathBuf::from(text));
     }
@@ -244,7 +239,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
             "store" => bindings.store = Some(seam(file, home, "store", table)?),
             "landing" => bindings.landing = Some(seam(file, home, "landing", table)?),
             "ledger" => bindings.ledger = Some(seam(file, home, "ledger", table)?),
-            "signing" => bindings.signing = Some(signing(file, home, table)?),
+            "signing" => bindings.signing = Some(profiles::signer::read(file, home, table)?),
             "build" | "projections" => {
                 return Err(unreadable(
                     file,
@@ -307,39 +302,6 @@ fn seam(
     }
 }
 
-/// `[signing]`: `signer` and `key`, and nothing else.
-fn signing(file: &Path, home: Option<&Path>, table: &toml::Table) -> Answer<Signing> {
-    if let Some(other) = table
-        .keys()
-        .find(|k| !matches!(k.as_str(), "signer" | "key"))
-    {
-        return Err(unreadable(
-            file,
-            Some(&format!("[signing] {other}")),
-            format!("[signing] names {other}, and reads signer and key alone"),
-        ));
-    }
-    let text = |key: &str| -> Answer<&str> {
-        let at = format!("[signing] {key}");
-        match table.get(key) {
-            Some(value) => value
-                .as_str()
-                .ok_or_else(|| unreadable(file, Some(&at), format!("{at} is not a string"))),
-            None => Err(unreadable(
-                file,
-                Some(&at),
-                format!("[signing] names no {key}"),
-            )),
-        }
-    };
-    let signer = text("signer")?;
-    let key = path_of(file, home, "[signing] key", text("key")?)?;
-    Ok(Signing {
-        signer: SignerId::new(signer),
-        key,
-    })
-}
-
 /// The command a binding is made for: publish or push, which make the
 /// layout the file names the first time; verify, sync or rebuild, which
 /// never make or write one; or promote, which needs the host's signer
@@ -388,7 +350,10 @@ impl Keeper for NoLedger {
 /// layout is made, so a file that cannot bind leaves nothing behind. The
 /// store is named as the file names it, its key and what it names, a
 /// path with `~/` expanded, so the record names a directory a reader
-/// finds whoever's home it was written under (61, 118; design D9).
+/// finds whoever's home it was written under (61, 118; design D9). The
+/// signers are bound in the signer family's order: the one `[signing]`
+/// names first, the one publish signs with, and every other bound
+/// profile after it, verify-only (92).
 pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
     let bindings = read(file, home)?;
     let signing = bindings.signing.as_ref();
@@ -433,7 +398,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
             targets: BTreeMap::new(),
         },
         store: named,
-        signer: signing.map(|s| s.signer.clone()),
+        signer: signing.map(Signing::signer),
     })
 }
 

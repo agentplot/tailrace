@@ -12,13 +12,17 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use aws_credential_types::provider::error::CredentialsError;
 use aws_credential_types::provider::{future, ProvideCredentials};
-use aws_sdk_kms::config::{Credentials, SharedCredentialsProvider, SharedHttpClient};
+use aws_sdk_kms::config::retry::RetryConfig;
+use aws_sdk_kms::config::{
+    BehaviorVersion, Credentials, Region, SharedCredentialsProvider, SharedHttpClient,
+};
 use aws_smithy_http_client::test_util::infallible_client_fn;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
@@ -27,7 +31,7 @@ use p256::ecdsa::signature::Signer as _;
 use p256::ecdsa::{Signature, SigningKey};
 use p256::pkcs8::EncodePublicKey;
 use serde_json::{json, Value};
-use tailrace::profiles::signer::kms::{Kms, Reach};
+use tailrace::profiles::signer::kms::{https, KeyArn, Kms, Reach};
 use tailrace_seams::{Answer, Claim, ClaimKind, Envelope, Made, NamedSigner, Signer, SignerId};
 
 /// The account and region every key of the stand-in is in.
@@ -330,7 +334,8 @@ fn error(code: &str, message: &str) -> (u16, Value) {
 /// not promise low-S, and a verifier that takes only low-S signatures
 /// must normalize first.
 fn high_s(sig: &Signature) -> Signature {
-    let (r, s) = sig.split_scalars();
+    let low = sig.normalize_s().unwrap_or(*sig);
+    let (r, s) = low.split_scalars();
     Signature::from_scalars(r.to_bytes(), (-*s).to_bytes()).unwrap()
 }
 
@@ -339,21 +344,26 @@ fn high_s(sig: &Signature) -> Signature {
 #[derive(Clone, Debug)]
 pub struct Switch {
     on: Arc<AtomicBool>,
-    credentials: Credentials,
+    inner: SharedCredentialsProvider,
 }
 
 impl Switch {
     /// The stand-in's known access key and session token.
     pub fn new() -> Switch {
+        Switch::over(SharedCredentialsProvider::new(Credentials::new(
+            ACCESS_KEY,
+            SECRET_KEY,
+            Some(SESSION_TOKEN.into()),
+            None,
+            "stand-in",
+        )))
+    }
+
+    /// The credentials `inner` finds, the host's chain among them.
+    pub fn over(inner: SharedCredentialsProvider) -> Switch {
         Switch {
             on: Arc::new(AtomicBool::new(true)),
-            credentials: Credentials::new(
-                ACCESS_KEY,
-                SECRET_KEY,
-                Some(SESSION_TOKEN.into()),
-                None,
-                "stand-in",
-            ),
+            inner,
         }
     }
 
@@ -372,11 +382,11 @@ impl ProvideCredentials for Switch {
     where
         Self: 'a,
     {
-        future::ProvideCredentials::ready(if self.on.load(Ordering::SeqCst) {
-            Ok(self.credentials.clone())
+        if self.on.load(Ordering::SeqCst) {
+            self.inner.provide_credentials()
         } else {
-            Err(CredentialsError::not_loaded(NO_CREDENTIALS))
-        })
+            future::ProvideCredentials::ready(Err(CredentialsError::not_loaded(NO_CREDENTIALS)))
+        }
     }
 }
 
@@ -422,6 +432,46 @@ pub fn listed(id: &str, verified_by: &str) -> NamedSigner {
         ],
         checks: vec![],
     }
+}
+
+/// The profile bound to the key at `arn`, reaching KMS at a loopback port
+/// nothing listens on, and the words the SDK answers a call there with:
+/// its chain of errors, read by a client of the SDK's own.
+pub fn dead(arn: &str) -> (Kms, String) {
+    let key = KeyArn::parse(arn).unwrap();
+    let (port, held) = free_port();
+    drop(held);
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let switch = Switch::new();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let client = aws_sdk_kms::Client::from_conf(
+        aws_sdk_kms::Config::builder()
+            .behavior_version(BehaviorVersion::latest())
+            .region(Region::new(key.region().to_string()))
+            .credentials_provider(switch.provider())
+            .http_client(https())
+            .endpoint_url(&endpoint)
+            .retry_config(RetryConfig::disabled())
+            .build(),
+    );
+    let failed = runtime
+        .block_on(client.describe_key().key_id(arn).send())
+        .expect_err("nothing listens on the port");
+    let mut words = vec![failed.to_string()];
+    let mut at = failed.source();
+    while let Some(error) = at {
+        words.push(error.to_string());
+        at = error.source();
+    }
+    let kms = Kms::new(key).reaching(Reach::Given {
+        credentials: switch.provider(),
+        http: https(),
+        endpoint: Some(endpoint),
+    });
+    (kms, words.join(": "))
 }
 
 /// A port on the loopback interface nothing listens on once the listener

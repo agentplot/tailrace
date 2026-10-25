@@ -129,6 +129,7 @@ crates/tailrace/src/profiles/signer/tests.rs
 crates/tailrace/src/profiles/signer/kms/**
 crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
+crates/tailrace-conformance/src/seams/host.rs
 crates/tailrace/tests/kms/**
 crates/tailrace/tests/kms_signer.rs
 crates/tailrace/tests/kms_account.rs

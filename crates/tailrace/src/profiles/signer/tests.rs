@@ -1,0 +1,162 @@
+//! Spec host-bindings: `[signing]` read by the signer profiles' family,
+//! a host key or a KMS key, and the order every signer profile is bound
+//! in, none of it reading a file or reaching a service.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use serde_json::json;
+use tailrace_seams::{Answer, Claim, ClaimKind, Digest, Not, Revision, Seam, Source};
+use tempfile::TempDir;
+
+use super::*;
+use crate::bindings::{self, For};
+
+const ARN: &str = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
+
+fn file() -> PathBuf {
+    PathBuf::from("/config/tailrace/config.toml")
+}
+
+/// `[signing]` as `text` holds it, read by the family.
+fn signing(text: &str) -> Answer<Signing> {
+    let table: toml::Table = toml::from_str(text).unwrap();
+    read(&file(), Some(Path::new("/home/a")), &table)
+}
+
+/// The words of an unreadable `[signing]`, once it names the file and
+/// `at`.
+fn unreadable(text: &str, at: &str) -> String {
+    match signing(text) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::host(file()));
+            assert_eq!(u.what, format!("{}, {at}", file().display()));
+            u.said.expect("the words it was read with")
+        }
+        other => panic!("{text} read as {other:?}, not unreadable"),
+    }
+}
+
+fn key() -> KeyArn {
+    KeyArn::parse(ARN).unwrap()
+}
+
+#[test]
+fn kms_alone_reads_as_the_key_service_signer_named_by_its_arn() {
+    let read = signing(&format!("kms = \"{ARN}\"")).unwrap();
+    assert_eq!(read, Signing::Kms(key()));
+    assert_eq!(read.signer(), SignerId::new(ARN));
+}
+
+#[test]
+fn a_host_key_reads_as_before() {
+    let read = signing("signer = \"laptop\"\nkey = \"~/.config/tailrace/signing\"").unwrap();
+    assert_eq!(
+        read,
+        Signing::HostKey {
+            signer: SignerId::new("laptop"),
+            key: PathBuf::from("/home/a/.config/tailrace/signing"),
+        }
+    );
+    assert_eq!(read.signer(), SignerId::new("laptop"));
+}
+
+#[test]
+fn kms_beside_a_host_keys_signer_or_key_is_unreadable_naming_the_table() {
+    for (text, others) in [
+        (format!("kms = \"{ARN}\"\nsigner = \"laptop\""), "signer"),
+        (format!("kms = \"{ARN}\"\nkey = \"/keys/laptop\""), "key"),
+        (
+            format!("kms = \"{ARN}\"\nsigner = \"laptop\"\nkey = \"/keys/laptop\""),
+            "key and signer",
+        ),
+    ] {
+        assert_eq!(
+            unreadable(&text, "[signing]"),
+            format!(
+                "[signing] names kms with {others}, and a key service signer's name is its \
+                 key's: the table names kms alone"
+            )
+        );
+    }
+}
+
+#[test]
+fn kms_naming_an_alias_or_no_key_arn_is_unreadable_naming_the_value() {
+    let alias = "arn:aws:kms:us-west-2:111122223333:alias/fleet";
+    let said = unreadable(&format!("kms = \"{alias}\""), "[signing] kms");
+    assert!(said.starts_with(alias), "{said}");
+    assert!(said.contains("a key is named by its key ARN"), "{said}");
+    let said = unreadable("kms = \"alias/fleet\"", "[signing] kms");
+    assert!(said.starts_with("alias/fleet is no KMS key ARN"), "{said}");
+    assert_eq!(
+        unreadable("kms = 7", "[signing] kms"),
+        "[signing] kms is not a string"
+    );
+}
+
+#[test]
+fn the_profile_signing_is_bound_first_and_the_other_verify_only() {
+    let host_key = Signing::HostKey {
+        signer: SignerId::new("laptop"),
+        key: PathBuf::from("/no/such/key"),
+    };
+    assert_eq!(
+        plan(Some(&host_key)),
+        [
+            Bound::HostKey(HostKey::new(SignerId::new("laptop"), "/no/such/key")),
+            Bound::Kms(None),
+        ]
+    );
+    assert_eq!(
+        plan(Some(&Signing::Kms(key()))),
+        [
+            Bound::Kms(Some(key())),
+            Bound::HostKey(HostKey::verifying()),
+        ]
+    );
+    assert_eq!(
+        plan(None),
+        [Bound::HostKey(HostKey::verifying()), Bound::Kms(None)]
+    );
+    assert_eq!(bind(Some(&host_key)).len(), 2);
+    assert_eq!(bind(None).len(), 2);
+}
+
+#[test]
+fn a_key_service_host_is_bound_for_publish_signing_as_the_arn() {
+    let dir = TempDir::new().unwrap();
+    let file = bindings::path(Some(dir.path().join("config").as_os_str()), None).unwrap();
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(
+        &file,
+        format!(
+            "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[signing]\nkms = \"{ARN}\"\n",
+            dir.path().join("layout").display()
+        ),
+    )
+    .unwrap();
+    let binding = bindings::bind(&file, None, dir.path(), For::Publish).unwrap();
+    assert_eq!(binding.signer, Some(SignerId::new(ARN)));
+    let claim = Claim {
+        subject: Digest::of(b"an artifact"),
+        kind: ClaimKind::Provenance,
+        revision: Revision::new("4f2a9c1"),
+        build: None,
+        body: json!({}),
+    };
+    // Asked as another identity, each answers absent, reaching nothing,
+    // and names itself: the KMS key first, then the verify-only host key.
+    let [first, second] = binding.seams.signers.as_slice() else {
+        panic!("{} signers are bound", binding.seams.signers.len())
+    };
+    for (signer, source) in [(first, Kms::source()), (second, HostKey::source())] {
+        match signer.sign(&claim, &SignerId::new("laptop")) {
+            Err(Not::Absent(a)) => {
+                assert_eq!(a.source, source);
+                assert_eq!(a.source.seam, Seam::Signer);
+            }
+            other => panic!("{source} answered {other:?}"),
+        }
+    }
+}
