@@ -41,7 +41,7 @@ needing git alone.
 
 ## 5. Conformance
 
-- [ ] 5.1 Below the marker of `crates/tailrace-conformance/src/seams/keeper.rs`, add "a chain read as last read" (design D13), and update the fakes' keeper rig in `tests/fakes.rs` (spec `conformance-suite`, the keeper's contract). Verify `devenv shell -- moon run conformance:test` passes with the scenario reported passed over the fakes and, through 3.1 and 3.2, over both profiles.
+- [x] 5.1 Below the marker of `crates/tailrace-conformance/src/seams/keeper.rs`, add "a chain read as last read" (design D13), and update the fakes' keeper rig in `tests/fakes.rs` (spec `conformance-suite`, the keeper's contract). Verify `devenv shell -- moon run conformance:test` passes with the scenario reported passed over the fakes and, through 3.1 and 3.2, over both profiles.
 - [ ] 5.2 Below the marker of `core/ledger.rs`, add the eight scenarios of design D13, citing as it says, S6, S7 and S8 naming the scenario each plays, with whatever `world.rs` needs to put a second version, attach the gate's acceptance and a rebuild claim, and name the gate and the rebuild signer in the fake policy; remove 32, 33, 37, 38, 39, 101 and 106 from `register.rs`, move 41 and 97 to the first target's block with S6's environment half as the reason, and move 125 to a block for `the-policy-seam-lists-the-channels` (or into its block where it has merged first), 131 giving a channel its component as the reason (spec `conformance-suite`, promotion over the fakes). Verify `devenv shell -- moon run conformance:test conformance:coverage` passes, the coverage output naming those seven cited and 41, 97 and 125 pending.
 
 ## 6. The record and the site
