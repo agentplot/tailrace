@@ -5,7 +5,9 @@
 //! to 30, 94 to 96, 107, 108, rules core.4, core.7, core.14; design D1).
 //! It imports nothing of publish, and publish nothing of it.
 
-use serde::{Serialize, Serializer};
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
     Answer, Audience, Branch, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Held,
@@ -15,7 +17,7 @@ use tailrace_seams::{
 
 use crate::{
     answer_json, chosen, policy_at, tell, Declared, Followed, History, Landed, Provenance, BOUND,
-    LOCAL,
+    LOCAL, POLICY_FILE,
 };
 
 /// What told the gate of a version (95): a publish's answer, or an asker
@@ -251,6 +253,107 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         one_host,
         channels: Vec::new(),
     })
+}
+
+/// The keys of a `[channels.<name>]` table the gate reads; every other
+/// key is left to its reader (design D6).
+#[derive(Deserialize)]
+struct ChannelKeys {
+    #[serde(default)]
+    on_each_publish: bool,
+    component: Option<ComponentName>,
+    bound_to: Option<ChannelName>,
+}
+
+/// The policy file's channel tables, each with where it begins.
+#[derive(Deserialize)]
+struct ChannelTables {
+    #[serde(default)]
+    channels: BTreeMap<ChannelName, toml::Spanned<toml::Value>>,
+}
+
+/// Every `[channels.<name>]` table of the policy file at the landed
+/// revision, in the file's order, each read for the keys the gate reads
+/// or not, in the parser's words; none where there is no file.
+fn channel_tables(
+    history: &History,
+    landed: &Landed,
+) -> Answer<Vec<(ChannelName, Result<ChannelKeys, String>)>> {
+    let what = format!("{POLICY_FILE} at {}", landed.revision());
+    let unreadable = |said: String| Not::unreadable(&Source::history(LOCAL), &what, Some(said));
+    let bytes = match history.blob(landed, POLICY_FILE) {
+        Ok(bytes) => bytes,
+        Err(Not::Absent(_)) => return Ok(Vec::new()),
+        Err(not) => return Err(not),
+    };
+    let text = String::from_utf8(bytes).map_err(|e| unreadable(e.to_string()))?;
+    let file: ChannelTables = toml::from_str(&text).map_err(|e| unreadable(e.to_string()))?;
+    let mut tables: Vec<_> = file.channels.into_iter().collect();
+    tables.sort_by_key(|(_, table)| table.span().start);
+    Ok(tables
+        .into_iter()
+        .map(|(name, table)| {
+            let keys = table.into_inner().try_into().map_err(|e| e.to_string());
+            (name, keys)
+        })
+        .collect())
+}
+
+/// 32, 37, 125: the channels of `component` that follow each publish,
+/// in the policy file's order at the landed revision: each table with
+/// `on_each_publish = true` whose `component` names it, or naming none
+/// where it is the one declared. A following table that names no
+/// component among several, names one not declared, names `bound_to`,
+/// or cannot be read is unreadable naming the table (design D6).
+pub fn following(
+    history: &History,
+    landed: &Landed,
+    declared: &Declared,
+    component: &ComponentName,
+) -> Answer<Vec<(ChannelName, Answer<()>)>> {
+    let mut following = Vec::new();
+    for (name, keys) in channel_tables(history, landed)? {
+        let what = format!(
+            "[channels.{name}] in {POLICY_FILE} at {}",
+            landed.revision()
+        );
+        let unreadable =
+            |said: String| Err(Not::unreadable(&Source::history(LOCAL), &what, Some(said)));
+        let keys = match keys {
+            Ok(keys) => keys,
+            Err(said) => {
+                following.push((name, unreadable(said)));
+                continue;
+            }
+        };
+        if !keys.on_each_publish {
+            continue;
+        }
+        let answer = match (&keys.component, declared.components.as_slice()) {
+            (Some(named), _) if !declared.components.iter().any(|c| c.name == *named) => {
+                unreadable(format!(
+                    "it names the component {named}, which {POLICY_FILE} does not declare"
+                ))
+            }
+            (Some(named), _) if named != component => continue,
+            (Some(_), _) | (None, [_]) => match &keys.bound_to {
+                Some(bound) => unreadable(format!(
+                    "it follows each publish and is bound to {bound}, and a bound channel takes no version from a publish (37)"
+                )),
+                None => Ok(()),
+            },
+            (None, several) => unreadable(format!(
+                "it follows each publish and names no component, and several are declared: {}",
+                several
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+        };
+        following.push((name, answer));
+    }
+    Ok(following)
 }
 
 /// 82, 107: what `audience` requires at the landed head; absent naming

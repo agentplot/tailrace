@@ -7,7 +7,8 @@ mod world;
 
 use serde_json::json;
 use tailrace_core::{
-    accept, answer_json, AcceptAsk, Followed, Judged, Moved, Published, ToldBy, WhyWanting,
+    accept, answer_json, following, AcceptAsk, Declared, Followed, Judged, Moved, Published,
+    ToldBy, WhyWanting,
 };
 use tailrace_fakes::{FakeSigner, KeeperOp, PolicyOp, SignerOp, StoreOp};
 use tailrace_seams::{
@@ -857,4 +858,98 @@ fn a_separated_gates_acceptance_names_the_offerer() {
         claim.body["offered"],
         json!({ "by": [HOST], "one_host": false })
     );
+}
+
+// Requirement: A channel that follows each publish is declared in the policy file
+
+/// What `following` answers for `component` at the world's head: each
+/// channel, and the words of an unreadable one.
+fn followers(world: &World, component: &str) -> Vec<(String, Result<(), String>)> {
+    let landed = common::landed(&world.head);
+    let history = world.history();
+    let declared = Declared::read(&history, &landed).unwrap();
+    following(&history, &landed, &declared, &ComponentName::new(component))
+        .unwrap()
+        .into_iter()
+        .map(|(name, answer)| {
+            let answer = answer.map_err(|not| match not {
+                Not::Unreadable(u) => {
+                    assert!(
+                        u.what.starts_with(&format!("[channels.{name}]")),
+                        "{}",
+                        u.what
+                    );
+                    u.said.unwrap_or_default()
+                }
+                other => panic!("{name} answered {other:?}"),
+            });
+            (name.to_string(), answer)
+        })
+        .collect()
+}
+
+#[test]
+fn beta_follows_each_publish_of_the_one_component() {
+    let world = World::with_policy(
+        r#"
+outputs = ["site"]
+projections = { site = "eco-a" }
+
+[channels.beta]
+on_each_publish = true
+require = [{ kind = "acceptance", signers = ["gate"] }]
+
+[channels.stable]
+bound_to = "beta"
+"#,
+    );
+    assert_eq!(
+        followers(&world, "repository"),
+        [("beta".to_string(), Ok(()))]
+    );
+}
+
+#[test]
+fn a_publish_of_one_component_follows_only_its_own_channels_in_the_files_order() {
+    let world = World::with_policy(&format!(
+        r#"{}
+[channels.lib-beta]
+on_each_publish = true
+component = "lib"
+
+[channels.web-beta]
+on_each_publish = true
+component = "web"
+
+[channels.stable]
+on_each_publish = true
+component = "lib"
+bound_to = "lib-beta"
+
+[channels.edge]
+on_each_publish = true
+
+[channels.other]
+on_each_publish = true
+component = "app"
+
+[channels.nightly]
+component = "lib"
+"#,
+        world::POLICY
+    ));
+    let lib = followers(&world, "lib");
+    let names: Vec<&str> = lib.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["lib-beta", "stable", "edge", "other"]);
+    assert_eq!(lib[0].1, Ok(()));
+    let said = |i: usize| lib[i].1.clone().unwrap_err();
+    assert!(said(1).contains("bound to lib-beta"), "{}", said(1));
+    assert!(said(2).contains("names no component"), "{}", said(2));
+    assert!(said(2).contains("lib, web"), "{}", said(2));
+    assert!(said(3).contains("app"), "{}", said(3));
+
+    let web = followers(&world, "web");
+    let names: Vec<&str> = web.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names, ["web-beta", "edge", "other"]);
+    assert_eq!(web[0].1, Ok(()));
 }
