@@ -5,16 +5,19 @@
 mod common;
 mod world;
 
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
 use serde_json::json;
 use tailrace_core::{
     accept, answer_json, following, AcceptAsk, Declared, Followed, Judged, Moved, Published,
     ToldBy, WhyWanting,
 };
-use tailrace_fakes::{FakeSigner, KeeperOp, PolicyOp, SignerOp, StoreOp};
+use tailrace_fakes::{FakeKeeper, FakeSigner, KeeperOp, PolicyOp, SignerOp, StoreOp};
 use tailrace_seams::{
     Answer, Audience, Branch, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, Held, Manifest, Name, NamedSigner, Not, Outcome, Put, Required, RequiredClaim,
-    Revision, Seam, Seams, Signer, SignerId, Source, Store, Version, Why,
+    Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required,
+    RequiredClaim, Revision, Seam, Seams, Signer, SignerId, Source, Store, Version, Why,
 };
 use world::{build_of, version_of, World, HOST, LANDING};
 
@@ -649,14 +652,26 @@ fn a_rebuild_that_did_not_match_does_not_count_and_one_that_did_does() {
     assert!(matches!(answer, Ok(Judged::Accepted { .. })), "{answer:?}");
 }
 
-/// A store that cannot read the claims of one digest, in its own words,
-/// and hands every other operation to the fake.
-struct Failing {
+/// A store that hands every operation to the fake, first answering
+/// `claims_of` where the hook says so and telling `on_name` of each name
+/// move asked.
+struct Hooked {
     inner: tailrace_fakes::FakeStore,
-    digest: Digest,
+    claims_of: Box<dyn Fn(&Digest) -> Option<Not>>,
+    on_name: Box<dyn Fn(&Name)>,
 }
 
-impl Store for Failing {
+impl Hooked {
+    fn over(inner: &tailrace_fakes::FakeStore) -> Hooked {
+        Hooked {
+            inner: inner.clone(),
+            claims_of: Box::new(|_| None),
+            on_name: Box::new(|_| ()),
+        }
+    }
+}
+
+impl Store for Hooked {
     fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
         self.inner.put_bytes(bytes)
     }
@@ -667,16 +682,13 @@ impl Store for Failing {
         self.inner.attach(subject, attestation)
     }
     fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
-        if *digest == self.digest {
-            return Err(Not::unreadable(
-                &Source::new(Seam::Store, "failing"),
-                format!("the claims of {digest}"),
-                Some("connection reset by peer".into()),
-            ));
+        match (self.claims_of)(digest) {
+            Some(not) => Err(not),
+            None => self.inner.claims_of(digest),
         }
-        self.inner.claims_of(digest)
     }
     fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        (self.on_name)(name);
         self.inner.name(name, to, expected)
     }
     fn resolve(&self, name: &Name) -> Answer<Digest> {
@@ -692,9 +704,18 @@ fn claims_that_cannot_be_read_are_unreadable_naming_the_digest_with_the_stores_w
     let (world, published) = published_under(acceptance());
     let second = artifacts(&published)[1].clone();
     let mut seams = holding(&world, &[GATE]);
-    seams.store = Box::new(Failing {
-        inner: world.fakes.store.clone(),
-        digest: second.clone(),
+    let failing = second.clone();
+    seams.store = Box::new(Hooked {
+        claims_of: Box::new(move |digest| {
+            (*digest == failing).then(|| {
+                Not::unreadable(
+                    &Source::new(Seam::Store, "failing"),
+                    format!("the claims of {digest}"),
+                    Some("connection reset by peer".into()),
+                )
+            })
+        }),
+        ..Hooked::over(&world.fakes.store)
     });
     let before = counts(&world);
     let Err(Not::Unreadable(u)) = accept(&seams, &world.history(), &ask("0.2.0", ToldBy::Asked))
@@ -1127,4 +1148,257 @@ fn a_channel_requiring_a_review_the_version_lacks_stays_while_the_version_is_acc
     );
     assert_eq!(appends(&world), 0);
     assert_eq!(named_at(&world, "beta"), None);
+}
+
+// Requirement: A following channel moves through the ledger first
+
+/// A world whose `lib` was published under acceptance, `beta` following
+/// each publish and requiring the gate's acceptance.
+fn beta_world() -> (World, Published) {
+    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    beta_requires(&world, vec![from_gate()]);
+    (world, published)
+}
+
+/// `beta`'s answer of a judgment that accepted.
+fn beta_moved(answer: Answer<Judged>) -> Answer<Moved> {
+    let Ok(Judged::Accepted { mut channels, .. }) = answer else {
+        panic!("the version was not accepted: {answer:?}")
+    };
+    assert_eq!(channels.len(), 1, "{channels:?}");
+    let (channel, moved) = channels.remove(0);
+    assert_eq!(channel, beta());
+    moved
+}
+
+/// A promotion of `beta` to `subject`, signed as the gate.
+fn promotion_to(world: &World, subject: &Digest) -> Envelope {
+    let gate = FakeSigner::new();
+    gate.hold(&SignerId::new(GATE));
+    let claim = Claim {
+        subject: subject.clone(),
+        kind: ClaimKind::Promotion,
+        revision: world.head.clone(),
+        build: None,
+        body: json!({ "channel": "beta" }),
+    };
+    gate.sign(&claim, &SignerId::new(GATE)).unwrap()
+}
+
+#[test]
+fn the_ledger_holds_the_promotion_before_the_name_moves() {
+    let (world, published) = beta_world();
+    let (_, index) = version_of(&published);
+    let seen: Rc<RefCell<Vec<usize>>> = Rc::default();
+    let mut seams = holding(&world, &[GATE]);
+    let (keeper, held) = (world.fakes.keeper.clone(), seen.clone());
+    seams.store = Box::new(Hooked {
+        on_name: Box::new(move |name| {
+            if name.as_str() == "beta" {
+                held.borrow_mut()
+                    .push(keeper.chain(&beta()).map(|c| c.len()).unwrap_or(0));
+            }
+        }),
+        ..Hooked::over(&world.fakes.store)
+    });
+
+    let moved = beta_moved(accept(
+        &seams,
+        &world.history(),
+        &ask("0.2.0", ToldBy::Publish),
+    ));
+    let Ok(Moved::Promoted {
+        from,
+        to,
+        promotion,
+        name,
+    }) = moved
+    else {
+        panic!("beta was not promoted: {moved:?}")
+    };
+    assert_eq!((from, &to), (None, index));
+    assert_eq!(name, Followed::Moved { to: index.clone() });
+    assert_eq!(
+        *seen.borrow(),
+        [1],
+        "the name moved before the ledger held the promotion"
+    );
+    assert_eq!(named_at(&world, "beta").as_ref(), Some(index));
+
+    let chain = world.fakes.keeper.chain(&beta()).unwrap();
+    assert_eq!(chain.len(), 1);
+    assert_eq!(chain[0].digest(), promotion);
+    assert!(world
+        .fakes
+        .store
+        .claims_of(index)
+        .unwrap()
+        .contains(&chain[0]));
+    world
+        .fakes
+        .signer
+        .verify(&chain[0], &[named(GATE, &[ClaimKind::Promotion], &[])])
+        .unwrap();
+    let claim = Claim::from_envelope(&chain[0]).unwrap();
+    assert_eq!(
+        (&claim.subject, claim.kind, &claim.revision),
+        (index, ClaimKind::Promotion, &world.head)
+    );
+    assert_eq!(claim.body["channel"], "beta");
+    assert_eq!(claim.body["from"], json!(null));
+    assert_eq!(claim.body["to"], index.as_str());
+    assert_eq!(claim.body["asked_by"], "each publish");
+    assert_eq!(
+        claim.body["policy"],
+        json!({ "audience": { "channel": "beta" }, "revision": world.head.as_str() })
+    );
+    assert_eq!(claim.body["claims"].as_array().unwrap().len(), 2);
+    assert_eq!(claim.body["when"], WHEN);
+    assert_eq!(claim.body["predecessor"], json!(null));
+}
+
+#[test]
+fn a_promotion_names_the_chains_head_and_moves_the_name_from_where_it_left_it() {
+    let (world, published) = beta_world();
+    let (_, index) = version_of(&published);
+    let before = Digest::of(b"the version before");
+    world.fakes.store.put_bytes(b"the version before").unwrap();
+    let first = promotion_to(&world, &before);
+    world.fakes.keeper.append(&beta(), &first, None).unwrap();
+    world
+        .fakes
+        .store
+        .name(&Name::new("beta"), &before, None)
+        .unwrap();
+
+    let moved = beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish)));
+    let Ok(Moved::Promoted { from, name, .. }) = moved else {
+        panic!("beta was not promoted: {moved:?}")
+    };
+    assert_eq!(from, Some(before));
+    assert_eq!(name, Followed::Moved { to: index.clone() });
+    let chain = world.fakes.keeper.chain(&beta()).unwrap();
+    assert_eq!(chain.len(), 2);
+    let claim = Claim::from_envelope(&chain[1]).unwrap();
+    assert_eq!(claim.body["predecessor"], first.digest().as_str());
+    assert_eq!(named_at(&world, "beta").as_ref(), Some(index));
+}
+
+/// A keeper another writer appends `then` to right after the first
+/// chain it answers, counting the appends it is asked.
+struct Racing {
+    inner: FakeKeeper,
+    then: Envelope,
+    raced: Cell<bool>,
+    appended: Rc<Cell<usize>>,
+}
+
+impl Keeper for Racing {
+    fn append(
+        &self,
+        channel: &ChannelName,
+        promotion: &Envelope,
+        predecessor: Option<&Digest>,
+    ) -> Answer<Digest> {
+        self.appended.set(self.appended.get() + 1);
+        self.inner.append(channel, promotion, predecessor)
+    }
+    fn chain(&self, channel: &ChannelName) -> Answer<Vec<Envelope>> {
+        let answer = self.inner.chain(channel);
+        if !self.raced.replace(true) {
+            let head = answer
+                .as_ref()
+                .ok()
+                .and_then(|c| c.last())
+                .map(|e| e.digest());
+            self.inner
+                .append(channel, &self.then, head.as_ref())
+                .unwrap();
+        }
+        answer
+    }
+}
+
+#[test]
+fn a_chain_moved_between_read_and_append_is_refused_naming_its_head_and_nothing_is_retried() {
+    let (world, published) = beta_world();
+    let (_, index) = version_of(&published);
+    let theirs = promotion_to(&world, &Digest::of(b"another version"));
+    let appended = Rc::new(Cell::new(0));
+    let mut seams = holding(&world, &[GATE]);
+    seams.keeper = Box::new(Racing {
+        inner: world.fakes.keeper.clone(),
+        then: theirs.clone(),
+        raced: Cell::new(false),
+        appended: appended.clone(),
+    });
+
+    let moved = beta_moved(accept(
+        &seams,
+        &world.history(),
+        &ask("0.2.0", ToldBy::Publish),
+    ));
+    let Err(Not::Refused(r)) = moved else {
+        panic!("an append after another was answered {moved:?}")
+    };
+    assert_eq!(
+        r.why,
+        Why::NotHead {
+            head: Some(theirs.digest())
+        }
+    );
+    assert_eq!(appended.get(), 1, "the append was retried");
+    assert_eq!(named_at(&world, "beta"), None);
+    let promotions = world
+        .fakes
+        .store
+        .claims_of(index)
+        .unwrap()
+        .iter()
+        .filter_map(Claim::from_envelope)
+        .filter(|c| c.kind == ClaimKind::Promotion)
+        .count();
+    assert_eq!(promotions, 0, "a refused promotion was attached");
+}
+
+#[test]
+fn a_forked_chain_is_reported_and_nothing_is_appended_or_moved() {
+    let (world, _) = beta_world();
+    let root = promotion_to(&world, &Digest::of(b"the first"));
+    world.fakes.keeper.append(&beta(), &root, None).unwrap();
+    let (a, b) = (
+        promotion_to(&world, &Digest::of(b"one")),
+        promotion_to(&world, &Digest::of(b"two")),
+    );
+    world.fakes.keeper.fork(&beta(), &a, &b);
+    let before = appends(&world);
+
+    let moved = beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish)));
+    let Err(Not::Refused(r)) = moved else {
+        panic!("a forked chain was answered {moved:?}")
+    };
+    assert_eq!(
+        r.why,
+        Why::Fork {
+            predecessor: Some(root.digest()),
+            claims: vec![a.digest(), b.digest()],
+        }
+    );
+    assert_eq!(appends(&world), before);
+    assert_eq!(named_at(&world, "beta"), None);
+}
+
+#[test]
+fn a_channel_already_at_the_version_is_there_and_nothing_is_written() {
+    let (world, published) = beta_world();
+    let (_, index) = version_of(&published);
+    beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish))).unwrap();
+    let before = counts(&world);
+
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Publish));
+    let Ok(Judged::Accepted { already: true, .. }) = &answer else {
+        panic!("a version accepted was not answered accepted already: {answer:?}")
+    };
+    assert_eq!(beta_moved(answer), Ok(Moved::There { at: index.clone() }));
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
 }
