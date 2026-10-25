@@ -1,0 +1,86 @@
+---
+number: 15
+title: The registry store checks a tag before and after its put and takes the host's Docker credentials
+status: proposed
+date: 2026-10-25
+decision-makers:
+- Chuck Swanberg
+---
+
+# The registry store checks a tag before and after its put and takes the host's Docker credentials
+
+Deciders: proposed by the-registry-store unit of phase 1's bolt 3, which binds the store seam to an OCI registry and proves it against zot, the reference distribution and a real ECR repository (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 3), with the read again after a put ruled by madswan-design, for the user to accept with the change.
+Sources: statement clauses 22, 54, 59, 61, 64, 70, 71, 105, 109, 120, C.1 as amended at `agentplot/blueprints` 62283d9; ADRs 0003, 0014; rules core.6, core.19, core.20, core.21, core.38; the OCI distribution specification (main), its sections on pushing manifests and on the referrers API; aws/containers-roadmap issues 2306 and 2783; the change's design, D4, D7, D9, D13 and D15; three runs of the store's conformance group against ECR and reads by hand against the same registry, in us-west-2 on 2026-10-25.
+
+## Context and problem statement
+
+ADR 0014 settled where the registry store holds what it holds: one declared repository, attestations typed by tailrace's envelope type with the predicate type annotated, and a cache entry's bytes named through a cache manifest. Four questions were left to the profile.
+
+C.1 has a name moved "with the expected digest where the registry supports it and checked after the move where it does not". The distribution specification defines no conditional request for a tag put, and no registry this change binds honours one, so a tag put cannot be refused for being somewhere other than where the caller expects it. How does name keep a move from anywhere but the expected digest refused and a refused move reported, never retried (70, core.6)?
+
+ECR does not always show a put at once. In three runs of the store's conformance group against an ECR repository, one in three failed the same way: ECR took the tag's put, and the store's read back straight after it answered the manifest the tag was at before, so name refused its own move as a lost race. By hand, in one round of three, six reads over ten seconds after a tag's move all answered its former manifest; in six further rounds every read answered the new one. How does name tell a registry not yet showing its put from a race another writer won, without putting the tag again?
+
+ECR asks every request for a credential, and zot or Harbor ask where the operator sets them to. tailrace keeps no credential; one is the asker's, the host's or the environment's, reached at the moment of use (64, core.21). Where does the profile find one, and what does it keep?
+
+ECR announced support for OCI 1.1 in 2024, and two issues open against it say otherwise: 2306, a manifest whose artifact type or layer media type carries a parameter refused 405 `UNSUPPORTED` "Invalid JSON syntax", and 2783, an OCI 1.1 referrer manifest refused with the same words. Neither says what in the manifest ECR objects to, so only a push answers whether ECR takes the forms the profile writes.
+
+## Considered options
+
+For a name:
+
+1. Read the tag and refuse unless it is at the expected digest, put it, and read it back; a tag found at another digest after the put is a lost race, refused naming that digest, with nothing retried.
+2. A conditional put on the tag's `ETag` where a registry answers one, and option 1 elsewhere.
+3. A lock the store takes before a move, held in a tag or a ref of its own.
+4. No registry bound that cannot refuse a tag put conditionally.
+
+For a read back that answers the place the tag was moved from:
+
+1. Read again at growing intervals while the tag answers the former place, for at most a bound the profile names: the new digest is the move made, a third digest a lost race, and the bound passing a refusal naming the former place, with the put never repeated.
+2. The move answered made when the read back answers the former place, with no read again; only a third digest is a lost race.
+3. One read back, every digest but the new one a lost race.
+
+For the credential:
+
+1. The host's Docker configuration, through `docker_credential`: its `auths`, `credsStore` and `credHelpers`, ECR's `ecr-login` helper among those it runs, read when the registry's challenge asks for a credential.
+2. The AWS SDK's authorization token for an ECR host, and the Docker configuration for every other.
+3. A credential named in the bindings file or kept in tailrace's state.
+4. A login run before the store is used, `docker login` or `crane auth login`, as a subprocess.
+
+## Decision outcome
+
+A name is option 1. name reads the tag and refuses a move from anywhere but the expected digest, naming where the tag is; puts the manifest the digest names, or the cache manifest of bytes it names, under the tag; and reads the tag back, refusing naming what it found when that is a digest neither asked for nor the one the tag was moved from (70, 71). Nothing is retried after either refusal (core.6). The read back cannot close the window between the check and the put: two writers can each pass the check and each read back their own put when their puts and reads interleave, and the store cannot see it. That window is harmless for every name tailrace moves. A channel's name moves only by the gate, after the keeper took its promotion at the chain's head, which two promotions cannot both do (105, 120), and a race lost on it is repaired from the ledger by the core, which moves the name once from where it was found to the digest the head is about (109, design D9). A version's name is claimed in the shared history before anything is packed (22), so two publishers never reach the store with one version. A cache entry's name is at the bytes the build identity names, whoever writes it. The profile exposes one hook for the tests, run between the put and the read back and hidden from the docs, so the tools layer loses a race on purpose. Option 2 is a branch on a header no registry this change binds sends, code no test would run; it is a change to name alone when one does, and C.1 already allows it. Option 3 is state tailrace keeps beside the store (61, core.20) and binds no writer that does not take it, a person moving a tag with another tool among them. Option 4 binds no registry.
+
+The read back is option 1, with one bound for every registry the profile binds, 30 seconds (C.1). The first read again waits a quarter of a second and each later one twice as long as the one before, so the tag is read at about 0.25, 0.75, 1.75, 3.75, 7.75 and 15.75 seconds after the put and once more as the bound passes. A registry that shows its put at once answers the first read back and never waits; ECR, which answered a former digest for over ten seconds, is given three times that. A tag found at the new digest is the move made; at any third digest, the race another writer won, refused naming that digest at once (109); still at the former place when the bound passes, refused naming the former place, in words saying the registry still answered it there that long after the put and that nothing was put again. core.6 holds because nothing is retried: the put was answered as taken, and reading the tag again asks the registry what that one put did, moving nothing; the put is never repeated, and a refusal, either of the two, is reported. Option 2 answers a move made that the store never saw, and a writer moving the name back to the former place between the put and the read back goes unseen. Option 3 refuses on ECR, about one run in three, a move ECR took, so the store reports races no one ran and ECR cannot be proven.
+
+The credential is option 1. A request goes unauthenticated first, so a registry that asks for nothing is sent nothing. On a 401 the profile reads the `WWW-Authenticate` challenge and asks `docker_credential` for the host's credential for the registry host at that moment: for `Basic` it sends it; for `Bearer` it asks the challenge's realm for a token for the scope the challenge names, with the user and password as `Basic` or an identity token as a refresh grant, and sends the request once more with the token. What authorizes the next request is held in memory by the one handle for the life of the process and written nowhere (64, core.21). A host with no credential for the registry gets the challenge as the answer, refused in the registry's words and naming it (59, core.19); a helper that fails is unreadable in its own words. The bindings file names the repository and never a credential. One path serves every registry and the setup the operator already has for docker, crane and oras, and ECR through its helper, which reads `AWS_PROFILE` from the environment. Option 2 names one registry's SDK in the profile and brings a second dependency tree for what ECR's helper already does. Option 3 is what 64 and core.21 rule out. Option 4 is a further pinned tool whose login leaves the credential where the next run finds it, a store tailrace would have written.
+
+## What ECR answered
+
+The store's conformance group and the cache manifest's scenarios ran three times against the repository `tailrace-tools`, its tags mutable, in us-west-2 on 2026-10-25, by hand with a live session (`moon run ':#check-ecr'`, design D15), before name read a tag again; one run in three failed on the lag above, and no run was refused a form. The forms the store sends no store operation of, and the referrers API's two headers, were read by hand with oras 1.3.3 against the same registry on the same day, the immutable tag in a second repository, `tailrace-tools-immutable`. The account is named in none of the words below.
+
+| issue | what the store sends | what ECR answered | what the profile does |
+|---|---|---|---|
+| tailrace's artifact manifest | an OCI image manifest, artifact type `application/vnd.agentplot.tailrace.artifact.<ecosystem>`, config the metadata as canonical JSON, layers the bytes | taken: the repository holds the runs' artifact manifests, of artifact type `application/vnd.agentplot.tailrace.artifact.file` | writes it as on every registry |
+| tailrace's image index | an OCI image index, its component and version in annotations | taken: the repository holds the runs' image index | writes it as on every registry |
+| a referrer with a subject (2783) | an OCI image manifest typed by the envelope type, its subject the attested digest, its one layer the envelope, the predicate type in `in-toto.io/predicate-type` | taken: the repository holds the runs' referrers of artifact type `application/vnd.agentplot.tailrace.envelope.v1+json`, and a referrer pushed by hand was answered `201 Created` with `OCI-Subject` naming its subject; 2783's refusal did not occur | pushes the referrer and, with `OCI-Subject` answered, writes no referrers tag |
+| the referrers list filtered by artifact type | `GET /v2/<repository>/referrers/<digest>?artifactType=<envelope type>` | `200 OK` with `OCI-Filters-Applied: artifactType`, listing the referrer of the type asked for | reads claims from the referrers API |
+| a manifest put by digest alone | `PUT /v2/<repository>/manifests/<digest>`, no tag | taken: the repository holds the runs' manifests put by digest with no tag | puts every manifest by digest, and a tag only for a name |
+| the cache manifest | an OCI image manifest, artifact type `application/vnd.agentplot.tailrace.cache.v1`, config the empty descriptor, one layer the bytes as `application/octet-stream` | taken: the repository holds the runs' cache manifests of artifact type `application/vnd.agentplot.tailrace.cache.v1` | names bytes through it as on every registry |
+| a tag read straight after its put | `GET /v2/<repository>/manifests/<tag>` after the tag's put | the tag's former manifest, at times: in one run of three a read back straight after the put, and in one round of three by hand six reads over ten seconds after the move; the new manifest in every other | reads the tag again while it answers the former place, up to 30 seconds |
+| a media type with a parameter (2306) | none: read by hand, a manifest whose artifact type carries `; version=0.2`, and one whose layer's media type does | refused, both: `unsupported: Invalid parameter at 'ImageManifest' failed to satisfy constraint: 'Invalid JSON syntax'`; the same manifest with no parameter was taken. 2306 stands | writes no media type with a parameter: the envelope type carries its version in its name, and the predicate type is an annotation (ADR 0014) |
+| tag immutability | none: read by hand, a tag put twice into a repository with immutable tags | the same manifest under the same tag again was taken, at the same digest; another manifest under it was refused: `tag invalid: The image tag '<tag>' already exists in the 'tailrace-tools-immutable' repository and cannot be overwritten because the tag is immutable.` | name is refused carrying ECR's words verbatim, and nothing is retried (59, core.6) |
+| a repository that does not exist | none: read by hand, a blob and a manifest pushed into a repository the registry does not hold, `tailrace-tools-absent` | refused, both: `name unknown: The repository with name 'tailrace-tools-absent' does not exist in the registry with id '<account>'`; ECR made no repository | the put is refused carrying ECR's words, and the store makes no repository (design D2) |
+| a lifecycle rule expiring untagged images | none: read by hand, ECR's preview of a rule expiring untagged images beyond the newest one, over a lone untagged manifest, the untagged child of a tagged index, and a newer lone untagged manifest | the child of the tagged index was not in the expiring list; the older lone manifest was | nothing: the rule is the operator's |
+
+ECR refused no form the profile writes, so `oci.rs` writes on ECR what it writes on zot and the reference distribution, and no layout's digests changed.
+
+### Consequences
+
+- A name on a registry can lose a race the check before the put cannot see. The read back sees it, refused naming the other writer's digest, and for a channel the core repairs it from the ledger.
+- A move on ECR may take up to 30 seconds longer to answer while ECR shows the put; on a registry that shows it at once it takes no longer. A tag still at the former place when the bound passes is refused naming that place, and for a channel's name the core's repair reads that refusal as it reads any naming where the name was found (109, design D9).
+- The check before the put can read a former digest as the read back can. A move another writer made just before is then unseen until the read back, inside the window between the check and the put this decision already accepts (109).
+- When a registry this family binds answers a conditional tag put, the expected digest goes with the put there, a change to name alone.
+- A host binds a registry by naming its repository; its operator sets up the Docker credentials once, as for any client of that registry, and for ECR maps the registry host to `ecr-login` in `credHelpers` with the `AWS_PROFILE` the helper reads in the environment.
+- A repository with immutable tags keeps a name where it was made and refuses its move in ECR's words, so a store whose channels move needs mutable tags.
+- A lifecycle rule expiring untagged images leaves an artifact a tagged index names, by ECR's own preview, and takes a manifest no tag and no tagged index reaches; what it does to a referrer, whose subject a tag reaches, the preview did not read.
+- ECR is proven by the runs this record names and by no run of the gate, which holds no person's session (core.38); a later change to the forms `oci.rs` writes, or to how name reads a tag, is proven against ECR again by hand.
