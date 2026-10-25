@@ -22,7 +22,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tailrace::profiles::store::registry::Registry;
-use tailrace_conformance::seams::store::StoreRig;
+use tailrace_conformance::seams::store::{settled, StoreRig};
 use tailrace_conformance::Rig;
 use tailrace_seams::{Digest, Held, Name, Not, Store, Why};
 use tempfile::TempDir;
@@ -286,6 +286,12 @@ impl StoreRig for RegistryRig {
             .expect_err("nothing listens on the port")
             .to_string()
     }
+
+    /// The registry's bound: its tag reads may answer a moved name's
+    /// former place for that long (C.1, ADR 0015).
+    fn settles_within(&self) -> Duration {
+        self.live.bound()
+    }
 }
 
 /// One request a [`Proxy`] passed: its method, its path, and the status
@@ -440,8 +446,10 @@ pub fn cache_manifest(bytes: &[u8]) -> Vec<u8> {
 /// name at bytes moved with their digest as expected to other bytes, and
 /// a move from the first bytes then refused naming the others; the cache
 /// manifest's own digest read as bytes, never named, and the bytes'
-/// digest with no claims; a digest held neither way absent.
-pub fn cache_entries(store: &dyn Store) {
+/// digest with no claims; a digest held neither way absent. A moved
+/// name is read until it settles within `within`, the registry's bound,
+/// as the store group reads one (C.1, 36).
+pub fn cache_entries(store: &dyn Store, within: Duration) {
     let (entry, other): (&[u8], &[u8]) = (b"a cache entry", b"another cache entry");
     let bytes = store.put_bytes(entry).unwrap().digest;
     let moved = store.put_bytes(other).unwrap().digest;
@@ -449,12 +457,19 @@ pub fn cache_entries(store: &dyn Store) {
     for name in [&one, &two] {
         store.name(name, &bytes, None).unwrap();
     }
+    let resolved =
+        |name: &Name, to: &Digest, was: &[Option<&Digest>]| settled(store, within, name, to, was);
     for name in [&one, &two] {
-        assert_eq!(store.resolve(name).as_ref(), Ok(&bytes), "{name}");
+        assert_eq!(
+            resolved(name, &bytes, &[None]).as_ref(),
+            Ok(&bytes),
+            "{name}"
+        );
     }
 
     store.name(&two, &moved, Some(&bytes)).unwrap();
-    assert_eq!(store.resolve(&two).as_ref(), Ok(&moved));
+    let was = [None, Some(&bytes)];
+    assert_eq!(resolved(&two, &moved, &was).as_ref(), Ok(&moved));
     match store.name(&two, &bytes, Some(&bytes)) {
         Err(Not::Refused(r)) => assert_eq!(
             r.why,
@@ -464,7 +479,7 @@ pub fn cache_entries(store: &dyn Store) {
         ),
         answer => panic!("a move from bytes the name has left answered {answer:?}"),
     }
-    assert_eq!(store.resolve(&two).as_ref(), Ok(&moved));
+    assert_eq!(resolved(&two, &moved, &was).as_ref(), Ok(&moved));
 
     let manifest = cache_manifest(entry);
     let own = Digest::of(&manifest);
@@ -477,7 +492,7 @@ pub fn cache_entries(store: &dyn Store) {
         }
         answer => panic!("a name at a cache manifest's own digest answered {answer:?}"),
     }
-    assert_eq!(store.resolve(&one).as_ref(), Ok(&bytes));
+    assert_eq!(resolved(&one, &bytes, &[None]).as_ref(), Ok(&bytes));
 
     let missing = Digest::of(b"bytes no name names");
     let three = Name::new("cache/three");

@@ -1,6 +1,9 @@
 //! The store's group: 66 to 73, and the clauses of Part A a store's
 //! operations keep (B.1).
 
+use std::thread;
+use std::time::{Duration, Instant};
+
 use serde_json::json;
 use tailrace_seams::{
     Answer, ArtifactMeta, Claim, ClaimKind, Digest, Ecosystem, EcosystemName, Envelope, Held,
@@ -26,6 +29,13 @@ pub trait StoreRig: Rig {
     /// and the words it answers with, which the profile carries
     /// unchanged.
     fn unreachable(&self) -> String;
+
+    /// How long, after a move, the profile may still resolve the name to
+    /// a place it was at, as the profile declares; none by default, for
+    /// a store whose every read shows a move at once (C.1, 36).
+    fn settles_within(&self) -> Duration {
+        Duration::ZERO
+    }
 }
 
 pub fn scenarios() -> Vec<Scenario<dyn StoreRig>> {
@@ -123,6 +133,37 @@ fn attestation(subject: &Digest, says: &str) -> Envelope {
 
 fn is_absent<T: std::fmt::Debug>(answer: &Answer<T>) -> bool {
     matches!(answer, Err(Not::Absent(a)) if a.source.seam == Seam::Store)
+}
+
+/// What `name`, moved to `to`, resolves to in `store` once it settles:
+/// read again at growing intervals while it answers a place it was at,
+/// one of `was` (nothing among them where it was made from nothing),
+/// until `within`, the bound the profile declares, passes. Any other
+/// answer is answered at once, so a digest the name was never at fails
+/// without a wait (C.1, 36). A profile's own tests read a moved name
+/// through it as the group does.
+pub fn settled(
+    store: &dyn Store,
+    within: Duration,
+    name: &Name,
+    to: &Digest,
+    was: &[Option<&Digest>],
+) -> Answer<Digest> {
+    let deadline = Instant::now() + within;
+    let mut wait = Duration::from_millis(250);
+    loop {
+        let answer = store.resolve(name);
+        let former = match &answer {
+            Ok(at) => at != to && was.contains(&Some(at)),
+            absent => is_absent(absent) && was.contains(&None),
+        };
+        let left = deadline.saturating_duration_since(Instant::now());
+        if !former || left.is_zero() {
+            return answer;
+        }
+        thread::sleep(wait.min(left));
+        wait *= 2;
+    }
 }
 
 fn the_same_bytes_put_twice(rig: &dyn StoreRig) {
@@ -240,7 +281,10 @@ fn a_name_moved_from_where_it_is_not(rig: &dyn StoreRig) {
         "a move from nothing of a name made",
     );
     assert_eq!(
-        ok(store.resolve(&name), "resolve"),
+        ok(
+            settled(store, rig.settles_within(), &name, &at, &[None]),
+            "resolve"
+        ),
         at,
         "a refused move moved the name"
     );
@@ -249,7 +293,16 @@ fn a_name_moved_from_where_it_is_not(rig: &dyn StoreRig) {
         "a move from where the name is",
     );
     assert_eq!(
-        ok(store.resolve(&name), "resolve"),
+        ok(
+            settled(
+                store,
+                rig.settles_within(),
+                &name,
+                &other,
+                &[None, Some(&at)]
+            ),
+            "resolve"
+        ),
         other,
         "the name did not move"
     );

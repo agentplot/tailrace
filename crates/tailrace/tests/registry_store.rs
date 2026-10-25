@@ -633,7 +633,7 @@ fn bytes_are_named_through_a_cache_manifest(kind: Kind) {
     let server = Server::start(kind);
     let proxy = Proxy::before(&server);
     let store = proxy.store(&server.repository());
-    registry::cache_entries(&store);
+    registry::cache_entries(&store, store.bound());
 
     let entry = b"a cache entry under two names";
     let bytes = store.put_bytes(entry).unwrap().digest;

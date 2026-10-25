@@ -139,6 +139,13 @@ impl Registry {
         self.hook = Some(Box::new(hook));
     }
 
+    /// How long a tag may answer a place it was at after a move, before
+    /// or after one read has shown the move: the profile's bound, 30 s,
+    /// or the one a test set (C.1, 36, ADR 0015).
+    pub fn bound(&self) -> Duration {
+        self.bound
+    }
+
     /// A tag read again for at most `bound` while it answers the place
     /// it was moved from, in place of the profile's, so a test sees the
     /// bound pass (ADR 0015).
