@@ -1,9 +1,10 @@
-# moon runs tailrace's checks: one project per crate and for the site, each
-# holding its own checks (core.25); the root holds what spans the tree.
+# moon runs tailrace's checks: one project per crate, for the site and for
+# each plugin directory, each holding its own checks (core.25); the root
+# holds what spans the tree.
 # Each check is tagged with its layer, which a branch's policy requires by
 # tag:
 #   check-fast    the cargo tests over the fakes, format, lint, the site's
-#                 build: under a minute
+#                 build, the plugins' hooks and manifests: under a minute
 #   check-tools   the profiles' tests against moon, sluice and OpenSSH in
 #                 scratch repositories, the tools the devenv shell pins
 # The cargo tests are also tagged `cargo-test`. A task whose inputs are
@@ -19,6 +20,7 @@ projects:
   conformance: 'crates/tailrace-conformance'
   cli: 'crates/tailrace'
   site: 'site'
+  plugin-claude-code: 'plugins/claude-code'
   root: '.'
 
 # --affected compares against the merge-base with main.
