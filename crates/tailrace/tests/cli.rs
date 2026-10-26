@@ -9,13 +9,15 @@ use clap::Parser;
 use serde_json::Value;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{
-    answer_json, publish, push, sync, write, Ask, Entry, History, Kept, PushAsk, SyncAsk,
+    answer_json, artifact_name, publish, push, sync_checkout, write, Ask, CheckoutAsk, Entry,
+    History, Kept, Layouts, PushAsk,
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
-    Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, Outcome,
-    Output, OutputName, Report, Required, Revision, Seam, Signer, SignerId, Source, Verdict,
-    Version,
+    Artifact, ArtifactMeta, Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName,
+    Digest, Ecosystem, EcosystemName, IndexMeta, Manifest, NamedSigner, Outcome, Output,
+    OutputName, Pinned, Report, Required, RequiredClaim, Revision, Seam, Signer, SignerId, Source,
+    Store, Verdict, Version,
 };
 use tempfile::TempDir;
 
@@ -253,16 +255,20 @@ fn sync_with_one_entry_gone_prints_one_rendered_and_one_absent_and_exits_0() {
     assert_eq!(entries[1]["answer"], "ok");
     assert_eq!(printed["value"]["revision"], host.head.as_str());
 
-    let at = History::open(&host.repo).unwrap().workdir().unwrap();
-    let core = sync(
+    let history = History::open(&host.repo).unwrap();
+    let core = sync_checkout(
         &host.fakes.seams(),
-        &SyncAsk {
+        &Layouts::at(&history),
+        &CheckoutAsk {
             branch: Branch::new("main"),
             revision: host.head.clone(),
-            at: at.display().to_string(),
+            tree: history.workdir().unwrap(),
+            when: 0,
+            trusted: vec![],
         },
     );
     assert_eq!(printed, answer_json(&core));
+    assert_eq!(printed["value"]["layouts"], serde_json::json!([]));
 
     let (code, printed) = host.run(&["sync"]);
     assert_eq!(code, 0, "{printed}");
@@ -283,6 +289,187 @@ fn sync_on_a_branch_the_repository_lacks_is_absent_and_one_that_did_not_land_it_
     assert_eq!(code, 1, "{printed}");
     let json: Value = serde_json::from_str(&printed).unwrap();
     assert_eq!(json["refused"]["why"]["not_landed"]["branch"], "release");
+}
+
+/// `version` of `name` in `eco` put in the host's store with its index,
+/// the name a pin resolves through moved to it, and, where `accepted`,
+/// the gate's acceptance attached to the index.
+fn published(host: &Host, name: &str, version: &str, accepted: bool) {
+    let store = &host.fakes.store;
+    let meta = ArtifactMeta::new(
+        Ecosystem::new("eco"),
+        EcosystemName::new(name),
+        Version::new(version),
+    )
+    .unwrap();
+    let layer = store
+        .put_bytes(format!("{name} {version}").as_bytes())
+        .unwrap()
+        .digest;
+    let artifact = store
+        .put_artifact(&Manifest::Artifact {
+            meta: meta.clone(),
+            layers: vec![layer],
+        })
+        .unwrap()
+        .digest;
+    let index = IndexMeta::new(
+        ComponentName::new(name),
+        Version::new(version),
+        vec![Artifact {
+            digest: artifact,
+            meta,
+        }],
+    )
+    .unwrap();
+    let index = store.put_artifact(&Manifest::Index(index)).unwrap().digest;
+    let pointer = artifact_name(
+        &Ecosystem::new("eco"),
+        &EcosystemName::new(name),
+        &Version::new(version),
+    );
+    store.name(&pointer, &index, None).unwrap();
+    if accepted {
+        let gate = SignerId::new("gate");
+        let theirs = tailrace_fakes::FakeSigner::new();
+        theirs.hold(&gate);
+        let claim = Claim {
+            subject: index.clone(),
+            kind: ClaimKind::Acceptance,
+            revision: Revision::new("p1b11s4"),
+            build: None,
+            body: Value::Null,
+        };
+        store
+            .attach(&index, &theirs.sign(&claim, &gate).unwrap())
+            .unwrap();
+    }
+}
+
+/// The host's checkout pinning `pkg 1.1.0`, which the gate accepted,
+/// `lib 2.0.0`, which it did not, and `left-pad 1.3.0`, which the store
+/// does not name, under a policy for layouts requiring the gate's
+/// acceptance.
+fn pinning_one_of_each(host: &Host) {
+    published(host, "pkg", "1.1.0", true);
+    published(host, "lib", "2.0.0", false);
+    let tree = History::open(&host.repo).unwrap().workdir().unwrap();
+    let pin = |name: &str, version: &str| Pinned {
+        name: EcosystemName::new(name),
+        version: Version::new(version),
+    };
+    host.fakes.projections[&Ecosystem::new("eco")].lockfile(
+        &tree.display().to_string(),
+        &[
+            pin("pkg", "1.1.0"),
+            pin("lib", "2.0.0"),
+            pin("left-pad", "1.3.0"),
+        ],
+    );
+    host.fakes.policy.require(
+        Audience::Layout,
+        Required::Layout {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![NamedSigner {
+                    id: SignerId::new("gate"),
+                    verified_by: "the gate's key".into(),
+                    kinds: vec![ClaimKind::Acceptance],
+                    checks: vec![],
+                }],
+            }],
+        },
+    );
+}
+
+#[test]
+fn sync_with_a_version_refused_prints_the_cores_answer_and_exits_1() {
+    let host = Host::new();
+    pinning_one_of_each(&host);
+    let (code, printed) = host.run(&["sync", "--json"]);
+    assert_eq!(code, 1, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let layout = &printed["value"]["layouts"][0];
+    assert_eq!(layout["ecosystem"], "eco");
+    let pins = &layout["value"]["refreshed"]["pins"];
+    let answers: Vec<(&str, &str)> = pins
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap(), p["answer"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        answers,
+        [("pkg", "ok"), ("lib", "refused"), ("left-pad", "absent")]
+    );
+    let wanting = &pins[1]["refused"]["why"]["wanting"];
+    assert_eq!(wanting["version"]["version"], "2.0.0");
+    assert_eq!(wanting["wanting"]["kind"], "acceptance");
+    assert_eq!(wanting["checked"], serde_json::json!(["gate"]));
+
+    let history = History::open(&host.repo).unwrap();
+    let when = layout["value"]["refreshed"]["rendered_at"]
+        .as_u64()
+        .unwrap();
+    let core = sync_checkout(
+        &host.fakes.seams(),
+        &Layouts::at(&history),
+        &CheckoutAsk {
+            branch: Branch::new("main"),
+            revision: host.head.clone(),
+            tree: history.workdir().unwrap(),
+            when,
+            trusted: vec![],
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+
+    let (code, printed) = host.run(&["sync"]);
+    assert_eq!(code, 1, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(
+        lines[1].starts_with("layout eco at ")
+            && lines[1].ends_with(&format!(", rendered under its own policy at {}", host.head)),
+        "{printed}"
+    );
+    assert!(
+        lines[2].starts_with("  pkg 1.1.0 held, sha256:"),
+        "{printed}"
+    );
+    assert!(lines[3].starts_with("  lib 2.0.0: "), "{printed}");
+    assert!(lines[3].contains("acceptance"), "{printed}");
+    assert_eq!(lines[4], "  1 pin the store does not name", "{printed}");
+}
+
+#[test]
+fn sync_whose_layout_cannot_be_refreshed_prints_what_it_holds_and_the_stores_words_and_exits_3() {
+    let host = Host::new();
+    pinning_one_of_each(&host);
+    let (code, printed) = host.run(&["sync"]);
+    assert_eq!(code, 1, "{printed}");
+    host.fakes.store.fault(
+        StoreOp::Resolve,
+        Fault::Unreadable("connection refused".into()),
+        Times::UntilHealed,
+    );
+    let (code, printed) = host.run(&["sync"]);
+    assert_eq!(code, 3, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(
+        lines[1].contains(" left as it was, rendered 20")
+            && lines[1].ends_with(&format!("Z under its own policy at {}", host.head)),
+        "{printed}"
+    );
+    assert!(
+        lines[2].starts_with("  pkg 1.1.0 held, sha256:"),
+        "{printed}"
+    );
+    assert!(lines.contains(&"connection refused"), "{printed}");
+    assert!(
+        !printed.contains("lib 2.0.0"),
+        "a refusal was printed: {printed}"
+    );
 }
 
 // Requirement: Push takes a landed revision

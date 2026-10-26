@@ -63,7 +63,8 @@ pub enum Command {
     /// The versions this host published, from its own record.
     Status(commands::status::StatusArgs),
     /// Render the cache entries a landed revision's passing verdicts name
-    /// into this checkout, where its tools read them.
+    /// into this checkout, where its tools read them, and each layout of
+    /// the versions its lockfiles pin that the policy admits.
     Sync(commands::sync::SyncArgs),
     /// Write the cache entries of a landing's passing builds to the store,
     /// from what its build left on this host, after the landing.
