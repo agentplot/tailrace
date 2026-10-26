@@ -23,7 +23,7 @@ existed, so its digest does not change (1, 5, 13, 138).
 The layout store SHALL answer the listing of an ecosystem and a name
 from the ref names of its `index.json` that read back as that
 ecosystem's and that name's store names, answering each one's version,
-and absent where none does (138).
+and the empty list where none does (138).
 
 #### Scenario: Versions listed from the index's names
 
@@ -33,4 +33,4 @@ and absent where none does (138).
 #### Scenario: A name the layout does not hold
 
 - **WHEN** the versions of a name the layout store names at no version are asked
-- **THEN** the answer is absent naming the name, and nothing is written
+- **THEN** the answer is the empty list, and nothing is written

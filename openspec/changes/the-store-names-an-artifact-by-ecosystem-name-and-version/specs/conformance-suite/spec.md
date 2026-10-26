@@ -1,20 +1,20 @@
 ## ADDED Requirements
 
 ### Requirement: Store naming over the fakes
-A store-naming group SHALL hold the core to 138, and to 137's range,
-over the fakes, below its marker: what a publish names is found by a
-consumer by ecosystem, name and version alone, and a range resolves by
-the store's listing under the layout's policy. 138 SHALL leave the
-register, and 137's range its parts, in the commit whose scenario first
-cites them.
+A store-naming group SHALL hold the core to 138 over the fakes, below
+its marker: what a publish names is found by a consumer by ecosystem,
+name and version alone, on the index the publish answered, with the
+claims a layout reads beside it. 138 SHALL leave the register in the
+commit whose scenario first cites it, and the part of 137 about a range
+SHALL be named in the register as cargos-registry's.
 
-#### Scenario: A pin and a range found through what a publish wrote
-- **WHEN** a component whose two outputs pack as `eco` `site` and `cli` is published at 1.0.0 and at 1.1.0, a third version of `cli` is in the store refused by the policy, and a checkout pinning `site` 1.0.0 and declaring `cli` by the range `1.` is synced
-- **THEN** the layout holds `site` 1.0.0 and the newest admitted `cli` within the range, each from the index its publish answered, the refused version is answered naming its claim, and nothing in the checkout's ask or the answer names a component, a tag prefix or a repository
+#### Scenario: A pin found through what a publish wrote
+- **WHEN** a component whose two outputs pack as `eco` `site` and `cli` is published at 1.0.0 under a policy for layouts, and a checkout pinning `site` 1.0.0 is synced
+- **THEN** the layout holds `site` 1.0.0 from the index the publish answered, rendered under the layout-policy claim read from that index, and nothing in the checkout's ask or the answer names a component, a tag prefix or a repository
 
 #### Scenario: The register after store naming
 - **WHEN** the coverage check runs after this group's scenarios are added
-- **THEN** 138 is cited and not in the register, and no part of 137 is pending
+- **THEN** 138 is cited and not in the register, and the part of 137 about a range is pending naming cargos-registry
 
 ## MODIFIED Requirements
 
@@ -77,4 +77,4 @@ are listed (138).
 #### Scenario: A name's versions listed
 
 - **WHEN** an index is put and named `artifact/eco/@acme/site@1.0.0` and `artifact/eco/@acme/site@1.1.0+b.1`, another `artifact/eco/@acme/site-cli@1.0.0`, and the versions of `eco` `@acme/site` and of a name never named are asked
-- **THEN** the first answer is 1.0.0 and 1.1.0+b.1 and no other, each resolving to the index, and the second is absent, never an empty list
+- **THEN** the first answer is 1.0.0 and 1.1.0+b.1 and no other, each resolving to the index, and the second is the empty list, neither absent nor refused

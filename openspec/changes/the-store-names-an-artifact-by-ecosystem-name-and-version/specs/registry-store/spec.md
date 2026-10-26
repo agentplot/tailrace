@@ -43,8 +43,9 @@ C.1, core.5).
 The registry SHALL answer the listing of an ecosystem and a name from
 the tag list of that name's repository, every page of it, each tag read
 back as a version; a repository the registry does not hold, or one with
-no tags, SHALL be absent, and a tag that does not read back SHALL be
-unreadable naming the repository and the tag (138, C.1, core.19).
+no tags, SHALL be the empty list, and a tag that does not read back
+SHALL be unreadable naming the repository and the tag (138, C.1,
+core.19).
 
 #### Scenario: Versions listed by tags
 
@@ -54,7 +55,48 @@ unreadable naming the repository and the tag (138, C.1, core.19).
 #### Scenario: A name the registry never held
 
 - **WHEN** the versions of a name whose repository the registry does not hold are asked
-- **THEN** the answer is absent naming the name, never refused and never an empty list
+- **THEN** the answer is the empty list, neither absent nor refused
+
+### Requirement: A cache entry is a tag of its build profile's cache repository
+
+The registry SHALL hold the name `cache/<build identity>` as the tag of
+the build identity in the repository `cache/<build>` under the one the
+binding declares, `<build>` the bound build profile's name, with its
+cache manifest and the bytes it names held there, mounted from the
+declared repository or uploaded under their own digest where they are
+not (52, 135, C.1, core.5).
+
+#### Scenario: An entry named from bytes the declared repository holds
+- **WHEN** a store bound for a publish puts bytes and makes `cache/b7e1` at their digest
+- **THEN** the bytes are mounted into `cache/moon`, or uploaded there under their digest where the mount is declined, before the cache manifest and the tag are put
+
+### Requirement: A push writes into the cache repository alone
+
+A store bound for a push SHALL put bytes into the cache repository, and
+every other binding into the declared one. A read by digest SHALL ask
+the declared repository and, where it does not hold the digest, the
+cache repository (54, 135, core.14).
+
+#### Scenario: A push's cache entry
+- **WHEN** a store bound for a push puts a cache entry's bytes and makes `cache/b7e1` at their digest, with the moon build profile bound
+- **THEN** the repository `cache/moon` under the declared one holds the bytes, the cache manifest and the tag `b7e1`, the declared repository holds none of them, and resolve of `cache/b7e1` answers the bytes' digest
+
+#### Scenario: An entry's bytes read back
+- **WHEN** a store bound for a sync resolves `cache/b7e1` and reads the digest it answers
+- **THEN** the read answers the entry's bytes from the cache repository
+
+### Requirement: A repository nobody made is refused naming it
+
+The registry store SHALL never make a repository by an API of its own.
+Where a registry refuses a put because the repository it is for does not
+exist, as one that makes repositories only by a creation template does
+where none applies, the put SHALL be refused carrying the registry's
+words verbatim and naming the repository, and nothing SHALL be retried
+(C.1, 58, 59).
+
+#### Scenario: An artifact name's repository missing
+- **WHEN** a registry that makes no repository on push holds the declared repository and not `artifact/eco/site`, and the name `artifact/eco/site@1.3.0` is made
+- **THEN** the make is refused carrying the registry's words and naming `artifact/eco/site` under the declared repository, and no tag is put
 
 ## MODIFIED Requirements
 
@@ -63,17 +105,19 @@ unreadable naming the repository and the tag (138, C.1, core.19).
 The registry store SHALL hold every blob, manifest, attestation and
 name of the store in the one repository the host names, addressed by
 digest, on every registry, save each artifact's name, which is a tag of
-its own repository under the named one holding what its index names
-(C.1, ADR 0003). It SHALL never create a repository of its own accord;
-a registry that creates repositories on push may create the named one,
-and an artifact name's, on the first put.
+its own repository under the named one holding what its index names,
+and each cache entry, a tag of its build profile's cache repository
+under the named one holding its bytes (C.1, ADR 0003). It SHALL never
+create a repository of its own accord; a registry that creates
+repositories on push may create the named one, an artifact name's and a
+cache repository on the first put.
 
 #### Scenario: Everything in one repository
 
-- **WHEN** two artifacts of two ecosystem names, an index naming both, an attestation on each and a name that is no artifact's are put into a registry store
+- **WHEN** two artifacts of two ecosystem names, an index naming both, an attestation on each and a name that is neither an artifact's nor a cache entry's are put into a registry store
 - **THEN** the registry's one named repository holds every one of them, and no other repository is written
 
 #### Scenario: A repository that is not there
 
 - **WHEN** the named repository does not exist on a registry that does not create repositories on push, and bytes are put
-- **THEN** the put is refused carrying the registry's own words verbatim, and nothing is written elsewhere
+- **THEN** the put is refused carrying the registry's own words verbatim and naming the repository, and nothing is written elsewhere

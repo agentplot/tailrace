@@ -4,14 +4,14 @@ A consumer's lockfile pins a package by its name and version, and
 nothing in the store answers that pair today: a publish names a version
 only by its component's tag, `<prefix><version>`, which a consumer
 cannot spell without knowing the publisher's components and prefixes.
-And a package a manifest declares but no lockfile pins yet has no pin to
-look up at all. This change makes every publish name each artifact by
-its ecosystem, its name and its version, lets the store list the
-versions a name holds, and lets sync resolve a manifest's range by that
-listing under the layout's policy, so a consumer finds what it depends
-on by those alone and reads the version's claims from the index it lands
-on (`agentplot/blueprints:design/tailrace/requirements.md` at fbecdbf:
-138, with 3, 13, 49, 60, 109, 113, 137, B.1, B.6 and C.1).
+This change makes every publish name each artifact by its ecosystem, its
+name and its version, and lets the store list the versions a name holds,
+so a consumer finds what its lockfile pins by those alone and reads the
+version's claims from the index it lands on. On a registry it also gives
+cache entries a space of their own, so a credential that writes cache
+entries and nothing else can push them
+(`agentplot/blueprints:design/tailrace/requirements.md` at 2b8fc53: 138,
+with 3, 13, 49, 60, 109, 113, 135, 137, B.6 and C.1).
 
 ## What Changes
 
@@ -47,47 +47,56 @@ on (`agentplot/blueprints:design/tailrace/requirements.md` at fbecdbf:
   its digest.
 - **The store lists the versions a name holds.** The store seam gains a
   listing: given an ecosystem and a name, the versions the store names
-  under `artifact/<ecosystem>/<name>@`, or absent where it names none.
-  The layout store and the fake answer from the names they hold (138).
-- **A registry gives each artifact name a repository of its own.** The
-  registry profile holds `artifact/<ecosystem>/<name>@<version>` as the
-  tag `<version>` of the repository `artifact/<ecosystem>/<name>` under
-  the one the binding declares, lowercased and escaped as the
-  distribution protocol allows, so a name's versions are that
-  repository's tag list and no tag carries a package name. The version's
+  under `artifact/<ecosystem>/<name>@`, an empty list where it names
+  none, and unreadable only where the read fails. The layout store and
+  the fake answer from the names they hold (138). The listing is this
+  change's alone; cargos-registry reads it and adds none of its own.
+- **A registry keeps three spaces apart.** The registry profile holds
+  `artifact/<ecosystem>/<name>@<version>` as the tag `<version>` of the
+  repository `artifact/<ecosystem>/<name>` under the one the binding
+  declares, lowercased and escaped as the distribution protocol allows,
+  so a name's versions are that repository's tag list. A cache entry,
+  `cache/<build identity>`, moves out of the declared repository into
+  `cache/<build>` under it, one repository per build profile
+  (`cache/moon`), its build identity the tag; a push binds the store so
+  its bytes go there too, so a credential that writes `cache/` alone
+  pushes entries and can offer, accept or move nothing. The version's
   characters a tag refuses, `+` among them, are escaped one way and read
-  back. The index and what it names are mounted into that repository
-  from the declared one before the tag is put; everything else stays in
-  the declared repository (C.1). An ADR records this beside ADR 0014.
-- **A manifest's range resolves to the newest version the policy
-  admits.** A projection's pinned may answer, for a name the checkout's
-  manifest declares and no lockfile pins yet, the manifest's range. Sync
-  lists that name's versions, judges each under the layout's policy, and
-  has the projection's render hold the newest admitted version within
-  the range, so a first install resolves and the client writes the pin.
-  Every listed version the policy refuses is answered naming its claim
-  (137, 138, 99, 23).
+  back. The index and what it names are mounted into an artifact name's
+  repository from the declared one before its tag is put. Everything
+  else, indexes, artifacts, claims and channels, stays in the declared
+  repository (C.1, 135). An ADR records this, in part in place of ADR
+  0014's one repository.
+- **A missing repository is reported naming it.** A registry that makes
+  repositories on push only by a creation template, ECR among them,
+  refuses a put into a repository nobody made; the put is answered in
+  the registry's words naming the repository, and the self-hosting guide
+  says what the operator makes, or what template covers, before the
+  first publish (C.1, 58).
 - **No component's tag enters a reserved space.** A policy file whose
   component prefix, or whose rule's prefix, begins `artifact/`, `cache/`
   or `channel/` is refused when it is read, naming the component and the
   space (138).
 - **The answer names each artifact's name.** A publish's answer gives
   each artifact the store name it was made under (19, 57).
-- **The suite cites 138, and 137's range.** The store group proves the
-  listing on every store profile, the publish group's S1 proves the
-  names and the index's revision, and the layouts group proves a pin
-  and a range resolved through what a publish wrote; 138, and the part
-  of 137 about a range, leave the register.
+- **The suite cites 138.** The store group proves the listing on every
+  store profile, the publish group's S1 proves the names and the index's
+  revision, and a store-naming group proves a pin found through what a
+  publish wrote; 138 leaves the register, and the part of 137 about a
+  range is named in the register as cargos-registry's.
 
 Out of scope, and what each waits on:
 
+- A manifest's range resolved by the listing to the newest version the
+  layout's policy admits (137, 138): cargos-registry, which builds it on
+  this change's listing.
+- A component's indexes and channels each in a registry repository of
+  the component's own (C.1): not carved yet; this change keeps them in
+  the declared repository, and names the gap for the design agent.
 - A copy to another store carrying these names (103): later work the
-  planner places; the clause's scenario comes with the unit that does it.
-- Which versions fall within a range, and their order, for npm and Cargo
-  (137, 23): npm-rendered-and-served and cargos-registry answer pinned's
-  range and render the newest within it for their ecosystems; this
-  change gives the seam and the core's half, and the fake projection.
-- Pack given the component and its declared outputs (84): cargos-registry.
+  planner places.
+- The templates a fleet makes for ECR in its own configuration
+  (swancloud's at adoption): told to that fleet separately.
 - Serving a layout, and a sparse index leaving a refused version out of
   its listing (99, 114, 115): npm-rendered-and-served and
   cargos-registry.
@@ -105,63 +114,61 @@ None.
   publish fills in missing names and a missing layout policy; the answer
   names them; a publish moves no other name.
 - `seam-contracts`: index metadata names its revision and repository;
-  the store's contract gains the listing of a name's versions; a
-  projection's pinned may answer a range and its render holds the newest
-  version within it; an artifact's store name is spelled once.
+  the store's contract gains the listing of a name's versions; an
+  artifact's store name is spelled once.
 - `component-versions`: a component's prefix may not enter `artifact/`,
   `cache/` or `channel/`.
 - `layout-store`: an index's revision and repository are held in its
   bytes; a name's versions are listed from the index's names.
 - `registry-store`: an artifact's name is a tag of a repository of its
-  own, and its versions are that repository's tags.
-- `consumer-layouts`: a range with no pin resolves to the newest version
-  the policy admits within it.
-- `seam-fakes`: the fake projection answers ranges and holds the newest
-  version within each.
+  own, and its versions are that repository's tags; a cache entry is a
+  tag of its build profile's cache repository; a missing repository is
+  refused naming it.
 - `conformance-suite`: the store group lists a name's versions; S1 holds
   the artifact names and the index's revision; a store-naming group over
-  the fakes resolves a pin and a range through what a publish wrote; 138
-  and 137's range part leave the register.
+  the fakes finds a pin through what a publish wrote; 138 leaves the
+  register.
 
 ## Impact
 
 - `crates/tailrace-seams`: index metadata gains the revision and the
   repository; `RepositoryName` moves here from `tailrace-core`'s
   `served.rs`, which re-exports it; the artifact space's spelling and
-  its reading back; the store seam's listing; the projection seam's
-  range (`Pin`, `Ranged`, `Range`, `Contents::Ranged`).
+  its reading back; the store seam's listing.
 - `crates/tailrace-core`: publish makes the artifact names and reads the
-  repository from the landed branch's remote; render resolves ranges;
-  the policy file reader refuses a reserved prefix.
+  repository from the landed branch's remote; the policy file reader
+  refuses a reserved prefix; `render.rs` re-exports the moved spelling.
 - `crates/tailrace/src/profiles/store`: the OCI encoding writes and reads
   the index's revision and repository; the layout store lists; the
-  registry maps an artifact name to its repository and tag, mounts the
-  index into it, and lists its tags.
-- Every store and projection implementation: the fakes, the layout and
-  registry stores, the file, image and moon cache projections, and the
-  conformance rigs.
-- The fake store and projection, the conformance suite's store,
-  publish and layouts groups and register, and every test that counts
-  the names a publish moves.
-- A new ADR beside ADR 0014; the site's stores and projections pages.
+  registry maps an artifact name and a cache entry to their
+  repositories, mounts what each needs, and lists an artifact name's
+  tags.
+- `crates/tailrace/src/bindings` and `profiles/build`: the store binding
+  is given the build profile's name and, for a push, writes bytes into
+  the cache space.
+- The fake store, the conformance suite's store, publish and cache
+  groups and register, and every test that counts the names a publish
+  moves.
+- A new ADR beside ADRs 0014 and 0015; the site's stores page and its
+  self-hosting guide.
 - No new dependency.
 - Depends on bolt tailrace-the-gate-and-the-channels being on this bolt
   (`RepositoryName`, `History::remote_url`, the register's parts), and on
   the fix to render-under-a-policy that adopts the statement through 138
-  and registers 138 and 137's range as this unit's.
-- Overlaps cargos-registry and npm-rendered-and-served at the projection
-  seam: each implements pinned and render, which this change reshapes.
+  and registers 138 as this unit's.
+- Overlaps cargos-registry at the store seam: it reads this change's
+  listing.
 - Rules kept: core.1 and core.2 (the core spells the name; only the
-  registry profile turns it into a repository and tag; the projection
-  never reads the policy), core.4 (every name resolved before it is
-  acted on, every listed version resolved to its index), core.5 (a
-  mount copies bytes under their own digest), core.6 (a name made only
-  from nothing, a refused make reported and never retried), core.9 (the
-  index names its revision), core.12 (the index is still offered last;
-  names are not offers), core.17 (every listed version judged before it
-  can be held), core.18 (the name names no host or owner's store),
-  core.19 (a name with no versions is absent, a listing that fails
-  unreadable), core.33 (the scenarios cite what they exercise).
+  registry profile turns it into a repository and tag, and the bindings
+  name no tool), core.4 (every name resolved before it is acted on),
+  core.5 (a mount copies bytes under their own digest), core.6 (a name
+  made only from nothing, a refused make reported and never retried),
+  core.9 (the index names its revision), core.12 (the index is still
+  offered last; names are not offers), core.14 (a push's credential
+  writes cache entries alone), core.18 (the name names no host or
+  owner's store), core.19 (a listing that fails is unreadable, never an
+  empty list), core.30 (a cache entry stays apart from every artifact),
+  core.33 (the scenarios cite what they exercise).
 
 ## Touches
 
@@ -169,7 +176,6 @@ None.
 crates/tailrace-seams/src/artifact.rs
 crates/tailrace-seams/src/answer.rs
 crates/tailrace-seams/src/store.rs
-crates/tailrace-seams/src/projection.rs
 crates/tailrace-seams/src/lib.rs
 crates/tailrace-core/src/publish.rs
 crates/tailrace-core/src/declared.rs
@@ -180,21 +186,18 @@ crates/tailrace-core/src/render.rs
 crates/tailrace-core/src/lib.rs
 crates/tailrace-core/tests/**
 crates/tailrace-fakes/src/store.rs
-crates/tailrace-fakes/src/projection.rs
 crates/tailrace-fakes/src/lib.rs
 crates/tailrace-conformance/src/**
 crates/tailrace-conformance/tests/**
+crates/tailrace/src/bindings/*
 crates/tailrace/src/commands/publish.rs
-crates/tailrace/src/commands/sync.rs
+crates/tailrace/src/profiles/build/mod.rs
+crates/tailrace/src/profiles/store/mod.rs
 crates/tailrace/src/profiles/store/oci.rs
 crates/tailrace/src/profiles/store/layout/**
 crates/tailrace/src/profiles/store/registry/**
-crates/tailrace/src/profiles/projection/file/mod.rs
-crates/tailrace/src/profiles/projection/image/mod.rs
-crates/tailrace/src/profiles/projection/moon_cache/mod.rs
-crates/tailrace/src/profiles/projection/moon_cache/tests.rs
 crates/tailrace/tests/**
 docs/adr/*
 site/src/content/docs/guides/integrations/stores.mdx
-site/src/content/docs/guides/integrations/projections.mdx
+site/src/content/docs/guides/self-hosting.mdx
 ```
