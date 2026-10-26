@@ -5,8 +5,9 @@ A store-naming group SHALL hold the core to 138 over the fakes, below
 its marker: what a publish names is found by a consumer by ecosystem,
 name and version alone, on the index the publish answered, with the
 claims a layout reads beside it. 138 SHALL leave the register in the
-commit whose scenario first cites it, and the part of 137 about a range
-SHALL be named in the register as cargos-registry's.
+commit whose scenario first cites it, and the parts of 137 about a
+range and the closure SHALL be named in the register as
+cargos-registry's.
 
 #### Scenario: A pin found through what a publish wrote
 - **WHEN** a component whose two outputs pack as `eco` `site` and `cli` is published at 1.0.0 under a policy for layouts, and a checkout pinning `site` 1.0.0 is synced
@@ -14,7 +15,7 @@ SHALL be named in the register as cargos-registry's.
 
 #### Scenario: The register after store naming
 - **WHEN** the coverage check runs after this group's scenarios are added
-- **THEN** 138 is cited and not in the register, and the part of 137 about a range is pending naming cargos-registry
+- **THEN** 138 is cited and not in the register, and the parts of 137 about a range and the closure are pending naming cargos-registry
 
 ## MODIFIED Requirements
 

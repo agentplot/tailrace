@@ -104,14 +104,20 @@ with 3, 13, 49, 60, 109, 113, 125, 135, 137, B.6 and C.1).
 - **The suite cites 138.** The store group proves the listing on every
   store profile, the publish group's S1 proves the names and the index's
   revision, and a store-naming group proves a pin found through what a
-  publish wrote; 138 leaves the register, and the part of 137 about a
-  range is named in the register as cargos-registry's.
+  publish wrote; 138 leaves the register, and the parts of 137 about a
+  range and the closure are named in the register as cargos-registry's.
 
 Out of scope, and what each waits on:
 
-- A manifest's range resolved by the listing to the newest version the
-  layout's policy admits (137, 138): cargos-registry, which builds it on
-  this change's listing.
+- The core's loop over a checkout's names (137): a manifest's range
+  listed through this change's listing, each version judged under the
+  layout's policy, the newest admitted held, and what every held version
+  requires asked again until nothing held requires a name the layout
+  lacks; with the range types and their order: cargos-registry, which
+  lands after this change and builds on its listing
+  (`crates/tailrace-core/src/render.rs`).
+- What a held version's artifact requires of the family (140, B.6):
+  the-projection-answers-what-an-artifact-requires.
 - A copy to another store carrying these names (103): later work the
   planner places.
 - The templates a fleet makes for ECR in its own configuration
@@ -179,7 +185,7 @@ None.
   the fix to render-under-a-policy that adopts the statement through 138
   and registers 138 as this unit's.
 - Overlaps cargos-registry at the store seam: it reads this change's
-  listing.
+  listing, and this change lands first.
 - Rules kept: core.1 and core.2 (the core spells the name; only the
   registry profile turns it into a repository and tag, and the bindings
   name no tool), core.4 (every name resolved before it is acted on),

@@ -1,6 +1,6 @@
 ## 1. Before any code
 
-- [ ] 1.1 Confirm this branch holds bolt tailrace-the-gate-and-the-channels (`RepositoryName` in `crates/tailrace-core/src/served.rs`, `History::remote_url`, `Part` in `crates/tailrace-conformance/src/register.rs`), render-under-a-policy (`artifact_name` in `crates/tailrace-core/src/render.rs`, `Run::layout_policy` in `publish.rs`), and render's fix (the suite's statement list holding 137 and 138, the register naming 138 as this unit's); where any is missing, stop and say which through crew rather than writing it here. Verify: `git grep -n 'struct RepositoryName\|fn remote_url\|pub struct Part\|fn artifact_name\|fn layout_policy' -- crates` finds all five, and `git grep -n 'clause: 138' -- crates/tailrace-conformance/src/register.rs` finds the entry.
+- [ ] 1.1 Confirm this branch holds bolt tailrace-the-gate-and-the-channels (`RepositoryName` in `crates/tailrace-core/src/served.rs`, `History::remote_url`, `Part` in `crates/tailrace-conformance/src/register.rs`), render-under-a-policy (`artifact_name` in `crates/tailrace-core/src/render.rs`, `Run::layout_policy` in `publish.rs`), and render's fix (the suite's statement list holding 137 and 138, the register naming 138 as this unit's and 137's range and closure parts); where any is missing, stop and say which through crew rather than writing it here. Verify: `git grep -n 'struct RepositoryName\|fn remote_url\|pub struct Part\|fn artifact_name\|fn layout_policy' -- crates` finds all five, and `git grep -n 'clause: 138' -- crates/tailrace-conformance/src/register.rs` finds the entry.
 
 ## 2. One spelling, and index metadata naming where it came from
 
@@ -41,7 +41,7 @@
 ## 7. The suite cites 138
 
 - [ ] 7.1 Add the store group's listing scenario citing 138, and extend S1's check in `crates/tailrace-conformance/src/core/publish.rs` to read each artifact's name made at the index after the layout policy and before the version's, and the index naming the revision, citing 138 beside what it cites (D16). Verify: `devenv shell -- moon run tailrace-conformance:test` passes over the fake and the layout store, and `devenv shell -- moon run ':#check-tools'` passes the store group over the registry.
-- [ ] 7.2 Add the store-naming group over the fakes for the conformance-suite delta's scenarios, citing 138, and in the same commit remove 138 from the register and name the part of 137 about a range as cargos-registry's (D16). Verify: `devenv shell -- moon run tailrace-conformance:test` passes, and the coverage check reports 138 cited, 137's range part pending naming cargos-registry, and no scenario citing a clause it does not exercise.
+- [ ] 7.2 Add the store-naming group over the fakes for the conformance-suite delta's scenarios, citing 138, and in the same commit remove 138 from the register and name the parts of 137 about a range and the closure as cargos-registry's (D16). Verify: `devenv shell -- moon run tailrace-conformance:test` passes, and the coverage check reports 138 cited, 137's range and closure parts pending naming cargos-registry, and no scenario citing a clause it does not exercise.
 
 ## 8. End to end
 

@@ -46,11 +46,17 @@ read, through the moon cache projection's second binding of `[store]`
 The statement is `agentplot/blueprints` 4c14235: 138, read with 3, 13,
 49, 60, 109, 113, 125, 135, 137, B.6 and C.1, with the design agent's
 batch 25, 26 and 27 rulings and the planner's settlement of batch 26's
-collisions, and proposal 153, which puts the component's own repository
-into this change on batch 27's ruling (a3efbd8): the listing of a name's versions is this unit's alone, empty
-where the store holds nothing, and cargos-registry reads it; a
-manifest's range resolved by it is cargos-registry's; cache entries leave the declared repository for `cache/<build>`; 138's scenario is
-this unit's.
+collisions, proposal 153, which puts the component's own repository
+into this change on batch 27's ruling (a3efbd8), and the design agent's
+ruling on the dependency closure at 4c14235: the listing of a name's
+versions, `Store::versions`, is this unit's alone, empty where the store
+holds nothing, and this unit lands first; cargos-registry reads it and
+owns the core's loop (137: list through the store's versions, judge
+under the policy, hold, ask what each held version requires again until
+nothing held requires a name the layout lacks) and the range types; B.6's
+requires (140) is built by the-projection-answers-what-an-artifact-requires;
+cache entries leave the declared repository for `cache/<build>`; 138's
+scenario is this unit's.
 
 This change's code starts once two things are on its branch:
 
@@ -60,8 +66,8 @@ This change's code starts once two things are on its branch:
   reads `remote.<r>.url` as written with no `insteadOf` applied; and the
   conformance register's parts, and the statement list at 157c828.
 - **the fix to render-under-a-policy** that adopts the statement through
-  138 in the suite's list and registers 138, and 137's range sentence as
-  a part.
+  138 in the suite's list and registers 138, and 137's range and closure
+  sentences as parts.
 
 ## Goals / Non-Goals
 
@@ -77,8 +83,10 @@ written there by a push; a component's name names one repository;
 a missing repository refused naming it; no component's tag enters a
 reserved space; 138 cited by the suite.
 
-**Non-Goals:** a manifest's range resolved by the listing
-(cargos-registry); a version's tag in its component's repository (D10);
+**Non-Goals:** the core's loop that resolves a manifest's range by the
+listing and closes a layout over what its versions require, and the
+range types (cargos-registry); requires (140, the projection unit); a
+version's tag in its component's repository (D10);
 pack given the component (cargos-registry); a
 copy carrying the names (later work); serving.
 
@@ -215,7 +223,8 @@ and name match exactly; the layout store reads `index.json`'s ref
 names, as "a layout its index's names" says (138). The registry answers
 from a tag list (D11). The core orders nothing by the listing: which
 versions are newest is the ecosystem's (23), and no core path of this
-change reads it; cargos-registry's range does. Alternative: list by an
+change reads it; the core's loop over a manifest's range, which
+cargos-registry builds on this listing, does (137). Alternative: list by an
 arbitrary name prefix; refused, a registry can list one repository's
 tags but no prefix across repositories, and only the artifact space
 needs listing.
@@ -464,8 +473,8 @@ of them by version: the pin is held from the index the publish
 answered, the layout-policy claim read from that index, and nothing in
 the checkout's ask or the answer names a component, a prefix or a
 repository; it cites 138. 138 leaves the register in the commit whose
-scenarios cite it, and the part of 137 about a range is named in the
-register as cargos-registry's, which cites it.
+scenarios cite it, and the parts of 137 about a range and the closure
+are named in the register as cargos-registry's, which cites them.
 
 ### D17. Tests
 
@@ -531,9 +540,11 @@ runs in check-fast through the crates' `test` tasks.
 - [Two components that pack the same ecosystem name at the same version
   collide on one artifact name] → the second publish is refused naming
   the name and both indexes, never chosen between.
-- [cargos-registry adds a listing of its own as its change stands] → the
-  planner settled that it reads this one; the conductor sees the overlap
-  at the store seam's file.
+- [cargos-registry's change, as it stands, adds a listing of its own or
+  leaves the range loop to this unit] → the design agent ruled at
+  4c14235 that it reads this listing and owns the loop and the range
+  types, and this change lands first; the conductor sees the overlap at
+  the store seam's file.
 - [Code waits on the gate bolt and render's fix] → the first task checks
   both and stops through crew where either is missing.
 - [A version published before this change has no artifact names until
