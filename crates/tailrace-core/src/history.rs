@@ -450,4 +450,13 @@ impl History {
         let dir = self.git.commondir();
         dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())
     }
+
+    /// The git directory of the worktree this history was opened at, its
+    /// own and no other worktree's, which no push carries (50, 62): the
+    /// common directory for the main worktree, and the one git keeps for
+    /// a linked worktree under it.
+    pub fn git_dir(&self) -> PathBuf {
+        let dir = self.git.path();
+        dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())
+    }
 }

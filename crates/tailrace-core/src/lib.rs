@@ -8,7 +8,7 @@
 //! | module | what it keeps | statement, rules |
 //! |---|---|---|
 //! | [`landed`] | a revision is read only once the landing seam says its branch landed it, and the policy for an audience only at such a revision | 14, 65, 77, 82, 83; core.11, core.22 |
-//! | [`history`] | the files, commits and tags of a landed revision, from the local history and the shared one; a branch's head and the newest revision of it a checkout descends from, a revision resolved to its commit, the working tree's root, and the common directory every worktree shares | 21, 22, 62, 65, 123; core.4 |
+//! | [`history`] | the files, commits and tags of a landed revision, from the local history and the shared one; a branch's head and the newest revision of it a checkout descends from, a revision resolved to its commit, the working tree's root, the common directory every worktree shares, and each worktree's own git directory | 21, 22, 50, 62, 65, 123; core.4 |
 //! | [`declared`] | the components, the version rule and the projection each output is packed by, read from the policy file at the landed revision | 65, 123, C.10; core.22 |
 //! | [`version`] | a version per component from the history alone, the components a landing touched, and the claim of the version's name | 21 to 24, 124; core.6, core.13, core.37 |
 //! | [`provenance`] | the claim each artifact carries: what the host observed of its build, and the landing's verdicts carried as made | 11 to 13; core.8, core.9 |
