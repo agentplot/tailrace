@@ -1,8 +1,9 @@
 ## Why
 
 A family repository's `cargo build` cannot yet take a family crate from
-anything tailrace holds: no projection packs a crate or renders a layout
-Cargo reads. Bolt 5's Cargo unit closes that gap
+anything tailrace holds: no projection packs a crate, reads what a
+consumer's `Cargo.lock` pins, or renders a layout Cargo reads. Bolt 5's
+Cargo unit closes that gap
 (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 5,
 "Cargo's registry"), so a crate published by one family repository is
 built against by another from a layout rendered from the store, with
@@ -20,6 +21,11 @@ Cargo's own configuration naming it and the lockfile naming no host.
   same output and version pack to the same bytes and the projection
   promises so; a crate whose own manifest does not carry the version is
   refused. It packs no cache entries.
+- **pinned** (137): the names and versions a checkout's `Cargo.lock`
+  pins from a registry, spelled as the lockfile spells them, read from
+  the file alone; absent where the checkout holds no `Cargo.lock`. The
+  core resolves each through the name the store holds for it (138) and
+  hands render the artifacts it found; the projection resolves nothing.
 - **render** (85, 48): a local registry at the place given, holding
   exactly the crates given: each `.crate` file read through the store
   seam and checked against its digest, and an index line per version
@@ -30,19 +36,34 @@ Cargo's own configuration naming it and the lockfile naming no host.
 - The bindings bind the projection with a store of its own, as the moon
   cache is bound.
 - The conformance suite's whole projection group runs over it, and a
-  tools-layer test proves a consumer's `cargo build --offline` resolves a
-  family crate from the rendered layout through source replacement, its
-  lockfile naming the declared registry address and no path or host.
+  tools-layer test proves the loop: a consumer's `Cargo.lock` is read for
+  its pins, each pin is resolved through the store's name for it, the
+  crates are rendered, and `cargo build --offline --locked` resolves the
+  family crate from the layout through source replacement, the lockfile's
+  checksum matching the crate packed and its source naming the declared
+  registry address and no path or host.
+
+This change comes after two units of bolt 5 and builds on what they land:
+
+- **render under a policy** adds `pinned` to the projection seam with
+  the fakes and the core's render that chooses a layout's versions from
+  a lockfile's pins (137); this change implements `pinned` for Cargo.
+- **the store names an artifact by ecosystem, name and version** writes
+  the pointer from an ecosystem, a name and a version to an artifact's
+  digest that a publish leaves (138); the proof resolves its pins through
+  it.
 
 Out of scope, and what each waits on:
 
-- Which versions a layout holds, the policy it is rendered under, where a
-  lockfile's layout lives, and `tailrace sync` writing it: bolt 5's
-  "render under a policy" unit (47, 51, 99, 113).
-- The registry address a family crate's consumers declare, the same on
-  every host (49), and a consumer's `.cargo/config.toml`: the test
-  declares one of its own; the convention waits on the design (see
-  design, Open questions).
+- Which versions a layout holds, the policy it is rendered under, the
+  publisher's layout policy carried on the version's index (113), where
+  a lockfile's layout lives, and `tailrace sync` writing it: render under
+  a policy (47, 51, 99, 113).
+- Writing and moving the name pointers (109, 138): the store-naming unit.
+- The registry name and address a family crate's consumers declare, the
+  same on every host (49), and a consumer's `.cargo/config.toml`: the
+  test declares its own; the convention waits on the design (see design,
+  Open questions).
 - Refusing `cargo publish` in a tailrace repository: bolt 5's Claude Code
   plugin unit.
 - Crates of one workspace that depend on each other by path carry the
@@ -53,8 +74,8 @@ Out of scope, and what each waits on:
 
 ### New Capabilities
 
-- `cargo-projection`: the Cargo projection's pack, render and serve, and
-  its binding.
+- `cargo-projection`: the Cargo projection's pack, pinned, render and
+  serve, and its binding.
 
 ### Modified Capabilities
 
@@ -66,12 +87,13 @@ None.
   and its binding in `profiles/projection/mod.rs` and `bindings/mod.rs`.
 - New dependencies, appended (phase-1 plan, "Two shared files"):
   `flate2` and `tar` to read a crate's manifest, `toml_edit` to edit one
-  value of a manifest; `Cargo.lock` follows.
+  value of a manifest and to read a lockfile; `Cargo.lock` follows.
 - The `tools` task of `crates/tailrace/moon.yml` gains the new test.
 - Rules kept: core.1 and core.2 (all Cargo naming inside the profile; the
-  store reached only through the store seam it is handed), core.4 and
-  core.5 (bytes read by digest and checked), core.19 (cargo's words
-  carried verbatim), core.33 (the whole projection group runs).
+  store reached only through the store seam it is handed; pins resolved
+  by the core, not the profile), core.4 and core.5 (bytes read by digest
+  and checked), core.19 (cargo's words carried verbatim), core.33 (the
+  whole projection group runs).
 
 ## Touches
 

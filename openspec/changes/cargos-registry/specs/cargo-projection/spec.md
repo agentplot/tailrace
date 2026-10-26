@@ -45,6 +45,26 @@ nothing (84, 85).
 - **WHEN** pack is asked with no version, or render is asked for cache entries
 - **THEN** each answers absent naming cache entries and nothing is written
 
+### Requirement: The pins a Cargo lockfile holds
+
+The Cargo projection SHALL answer pinned for a checkout with the name
+and version of each package its root `Cargo.lock` pins from a registry,
+as the lockfile spells them, reading the file alone and running no
+cargo (137). A package with no source, or from git, SHALL be left out.
+A checkout with no `Cargo.lock` SHALL answer absent naming it, and a
+lockfile that cannot be read as one SHALL be refused naming the file
+with the parser's own words (58, 59).
+
+#### Scenario: A lockfile's registry pins
+
+- **WHEN** a checkout's `Cargo.lock` holds a workspace member, a crate from a sparse registry, a crate from crates.io and a crate from git
+- **THEN** pinned answers the sparse registry's crate and crates.io's crate by name and version as written, and neither the member nor the git crate
+
+#### Scenario: No lockfile
+
+- **WHEN** pinned is asked of a checkout with no `Cargo.lock`
+- **THEN** it answers absent naming `Cargo.lock`, and nothing is written
+
 ### Requirement: A local registry rendered from the store
 
 The Cargo projection SHALL render the artifacts given as a Cargo local
@@ -81,12 +101,13 @@ version than its metadata (core.4, core.5).
 ### Requirement: Cargo builds from the layout
 
 A consumer whose `.cargo/config.toml` replaces its family registry's
-source with the rendered local registry SHALL build against a family
-crate with `cargo build --offline`, and its lockfile SHALL name the
-registry's declared address and no layout path or host (46, 49). Serve
-SHALL answer absent, since Cargo reads the layout itself (86).
+source with a local registry rendered from its lockfile's pins, each
+resolved through the store's name for it (138), SHALL build against a
+family crate with `cargo build --offline --locked`. Its lockfile SHALL
+name the registry's declared address and no layout path or host (46,
+49). Serve SHALL answer absent, as Cargo reads the layout itself (86).
 
 #### Scenario: cargo build resolves a family crate from the layout
 
-- **WHEN** a crate is packed, put in a layout store, rendered, and a consumer depending on it through a registry replaced by the layout runs `cargo build --offline`
-- **THEN** the build succeeds, and `Cargo.lock` records the crate's source as the declared registry address with the crate's checksum
+- **WHEN** a consumer's `Cargo.lock` pins a family crate held in the store under its name, and its pins are read, resolved and rendered into the layout its configuration replaces the registry with
+- **THEN** `cargo build --offline --locked` succeeds, and `Cargo.lock` records the crate's source as the declared registry address with the checksum of the crate rendered
