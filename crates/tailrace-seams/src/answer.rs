@@ -305,6 +305,10 @@ pub enum Why {
         wanting: RequiredClaim,
         checked: Vec<SignerId>,
     },
+    /// 15, 16, 135: `output` came from `build`, whose cache entry the
+    /// store does not hold, so a publish of a landing with verdicts has
+    /// no bytes the landing's checks built to offer for it.
+    NotInStore { output: OutputName, build: BuildId },
     /// A refusal that names nothing beyond the source's own words.
     Said,
 }
@@ -499,6 +503,9 @@ impl fmt::Display for Why {
                     ", made by none of the signers checked: {}",
                     list(checked)
                 )
+            }
+            Why::NotInStore { output, build } => {
+                write!(f, "{output} from {build}: no cache entry in the store")
             }
             Why::Said => write!(f, "it refused"),
         }
@@ -747,6 +754,23 @@ mod tests {
     }
 
     #[test]
+    fn an_output_whose_entry_the_store_lacks_names_the_output_and_build_through_json() {
+        let not = Not::refused(
+            &Source::new(Seam::Store, "bound"),
+            Why::NotInStore {
+                output: OutputName::new("site"),
+                build: BuildId::new("b7e1"),
+            },
+            None,
+        );
+        assert_eq!(round_trip(&not), not);
+        let json = serde_json::to_value(&not).unwrap();
+        let why = &json["refused"]["why"]["not_in_store"];
+        assert_eq!(why["output"], "site", "{json}");
+        assert_eq!(why["build"], "b7e1", "{json}");
+    }
+
+    #[test]
     fn the_history_answers_as_a_source_with_gits_words() {
         const GIT: &str = " ! [rejected]        lib-v1.3.0 -> lib-v1.3.0 (already exists)\n\
                            error: failed to push some refs to '/srv/shared.git'\n\
@@ -951,6 +975,14 @@ mod tests {
                     path: "/srv/repo.git/tailrace/published/lib/lib-v1.3.0.json".into(),
                 },
                 "lib/lib-v1.3.0.json already holds another entry".into(),
+            ),
+            (
+                store(),
+                Why::NotInStore {
+                    output: OutputName::new("site"),
+                    build: BuildId::new("b7e1"),
+                },
+                "site from b7e1: no cache entry in the store".into(),
             ),
             (
                 Source::host("/srv/repo/.config/tailrace.toml"),
