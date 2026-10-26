@@ -49,4 +49,4 @@ Every command runs inside `devenv shell -- <command>`.
 ## 8. The site and the gate
 
 - [x] 8.1 Write on `site/src/content/docs/guides/integrations/landings.mdx` that with a remote bound the landing is read on the remote and, where it does not answer, from the host's copy as last fetched, saying when; that a no from the copy is refused saying to ask again; and where the copy lives (design D8): `moon run site:build`
-- [ ] 8.2 Run the gate's layers: `moon run ':#check-fast'` and `moon run ':#check-tools'`
+- [x] 8.2 Run the gate's layers: `moon run ':#check-fast'` and `moon run ':#check-tools'`
