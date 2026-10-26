@@ -2,9 +2,9 @@
 
 Fills a checkout's consumer layouts from the store with the versions its
 lockfiles pin, each judged under the consuming repository's policy for
-layouts or the publisher's, so a client reads only what the policy
-admits, and keeps on the host what each layout holds (47 to 51, 61 to
-63, 99, 113).
+layouts or, through the signers the host trusts, the publisher's, so a
+client reads only what the policy admits, and keeps on the host what
+each layout holds (47 to 51, 61 to 63, 99, 113, C.10).
 
 ## ADDED Requirements
 
@@ -51,39 +51,61 @@ rendered all the same, and an absence SHALL not count against the sync
 
 ### Requirement: The consumer's own policy at its landed revision
 A layout SHALL be rendered under the consuming repository's policy for
-layouts, read at the landed revision sync runs for, never from the
-checkout (113, 65, core.22). It SHALL be read once per sync and the
-same policy SHALL judge every layout of the checkout.
+layouts, its own `[layout]` or the given, read at the landed revision
+sync runs for, never from the checkout (113, 65, C.10, core.22). It
+SHALL be read once per sync and the same policy SHALL judge every layout
+of the checkout.
 
 #### Scenario: The policy read at the landed revision
 - **WHEN** a checkout whose working tree changes the policy file is synced for a landed revision whose policy file requires a claim the working tree's does not
 - **THEN** the policy was asked at the landed revision, and a version lacking that claim is refused
 
-### Requirement: The publisher's policy where the consumer declares none
-Where the consuming repository declares no policy for layouts at that
-revision, each version SHALL be judged under the publisher's policy for
-layouts, read from the one layout-policy claim attached to the
-version's index, reaching no repository but the consumer's own (113).
-Two layout-policy claims of different content on one index SHALL be
-unreadable, naming both, and neither chosen.
+#### Scenario: A consumer with no layout line
+- **WHEN** a consumer whose policy file holds no `[layout]` syncs one version its gate's signer accepted and one it did not
+- **THEN** the accepted version is held under the consumer's own policy, and the other is refused naming acceptance as the claim found wanting
+
+### Requirement: The publisher's policy, through the signers the host trusts
+Where the consuming repository has no policy of its own, each version
+SHALL be judged under the publisher's policy for layouts, read from the
+layout-policy claim on its index (113). Only such a claim by a signer
+the host's bindings trust SHALL count; any other is kept, never counted
+(C.10, 118, 9). Two counted claims of different content SHALL be
+unreadable, naming both, neither chosen.
 
 #### Scenario: Judged under the publisher's policy
-- **WHEN** a consumer with no policy for layouts syncs a version whose index carries a layout-policy claim requiring the gate's acceptance, and the index carries an acceptance claim by the signer it names
+- **WHEN** a consumer with no policy file, on a host that trusts the signer `gate`, syncs a version whose index carries a layout-policy claim by `gate` requiring acceptance by `gate`, and an acceptance claim by `gate`
 - **THEN** the version is held, and the answer and the record say it was judged under the publisher's policy at the revision the claim names
 
+#### Scenario: A publisher's policy the host does not trust
+- **WHEN** a consumer with no policy file syncs a version whose only layout-policy claim was made by a signer the host's bindings do not trust
+- **THEN** the version is refused naming the publisher's layout policy as the claim found wanting and the trusted signers it was checked against, and the claim stays attached
+
 #### Scenario: Two publisher's policies on one index
-- **WHEN** a version's index carries two layout-policy claims of different content
+- **WHEN** a version's index carries two layout-policy claims of different content, each by a trusted signer
 - **THEN** that version is answered unreadable naming both claims, and it is not held
+
+### Requirement: A publisher's required claim counts through a trusted signer
+Each claim the publisher's policy requires SHALL count only through a
+signer that policy names and the host trusts too, verified by the key
+the host trusts it by (C.10, core.7).
+
+#### Scenario: A required claim by a signer the host does not trust
+- **WHEN** the trusted publisher's policy requires acceptance by `gate` or `box`, the host trusts `gate` alone, and the only acceptance claim is by `box`
+- **THEN** the version is refused naming acceptance as the claim found wanting, checked against `gate` alone
 
 ### Requirement: No layout is rendered with no policy
 A version for which neither the consumer's policy nor a layout-policy
-claim on its index gives a policy for layouts SHALL be refused, naming
-the version and the publisher's layout policy as the claim found
-wanting, and SHALL NOT be held (core.17).
+claim a trusted signer made on its index gives a policy for layouts
+SHALL be refused, naming the version and the publisher's layout policy
+as the claim found wanting, and SHALL NOT be held (core.17, C.10).
 
 #### Scenario: No policy anywhere
-- **WHEN** a consumer with no policy for layouts syncs a version whose index carries no layout-policy claim
+- **WHEN** a consumer with no policy file syncs a version whose index carries no layout-policy claim
 - **THEN** the version is refused naming the publisher's layout policy as wanting, and the layout does not hold it
+
+#### Scenario: A host that trusts no signer
+- **WHEN** a consumer with no policy file syncs on a host whose bindings file names no `[trust]`
+- **THEN** every version the store names is refused naming the publisher's layout policy with no signer checked, and the layout holds none
 
 ### Requirement: Only versions whose claims satisfy the policy are held
 A version SHALL be held only when, for each claim the policy requires,

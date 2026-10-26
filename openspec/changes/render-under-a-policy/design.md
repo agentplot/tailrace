@@ -8,17 +8,22 @@ render and serve (`crates/tailrace-seams/src/projection.rs`); render
 already takes `Contents::Artifacts` and answers `Holds::Versions`, but
 no projection renders artifacts yet. The policy file profile answers
 `policy_for(revision, Audience::Layout)` from `[layout]`, absent where
-the file has none (ADR 0013). Verify tells each attestation on an index
+the file has none; nothing of the givens (C.10) is built yet. The host's
+bindings file (`crates/tailrace/src/bindings/`) binds `[store]`,
+`[landing]` and `[signing]` and names no signer the host trusts. Verify tells each attestation on an index
 and its artifacts by the named signer that made it (`verify.rs`,
 `tell`), and reaches no verdict. The host's record of published
 versions lives under the common git directory (`published.rs`).
 
-The statement this rests on: 47 to 51, 61 to 65, 85, 99, 113 and S4 at
-`agentplot/blueprints` e267a30, with the design agent's rulings there:
-the pointer names the version's index and is spelled
+The statement this rests on: 47 to 51, 61 to 65, 85, 99, 113, 118, 137,
+C.10 and S4 at `agentplot/blueprints` aa591ce, with the design agent's
+rulings there: the pointer names the version's index and is spelled
 `artifact/<ecosystem>/<name>@<version>` (138); pinned is the projection
 seam's (137); the publisher's layout policy rides the index as a claim
-(113). ADR 0006 puts the policy at render, not at serve.
+(113); the given policy for a layout admits a version the gate accepted
+and no other, and a consuming repository with no policy of its own
+counts the publisher's layout-policy claim, and every claim it reads,
+through the signers its host's bindings trust (C.10). ADR 0006 puts the policy at render, not at serve.
 
 Two other units of this bolt build on this one: cargos-registry
 implements pinned and render for Cargo, npm-rendered-and-served for npm
@@ -30,11 +35,14 @@ a policy of its own.
 
 **Goals:** pinned on the seam; a core render that resolves pins,
 judges each version under the layout's policy and renders what passes;
-`tailrace sync` filling layouts; the record of rendered layouts; the
-publisher's layout-policy claim written at publish.
+the given policy for a layout; the signers a host trusts; `tailrace
+sync` filling layouts; the record of rendered layouts; the publisher's
+layout-policy claim written at publish.
 
-**Non-Goals:** any ecosystem's own pinned or render; writing the
-`artifact/` pointer; serving; showing layouts in status.
+**Non-Goals:** any ecosystem's own pinned or render; a manifest's range
+where no pin exists; writing the `artifact/` pointer; serving; the
+givens as a fragment and the given acceptance and channels; showing
+layouts in status.
 
 ## Decisions
 
@@ -68,23 +76,41 @@ never counts against the sync.
 
 The consumer's policy is read once per sync with `policy_at(landed,
 &Audience::Layout)` at the revision sync runs for, which `Landed::check`
-made (65, core.22). An answer is the policy for every layout. Absent
-means each version is judged under the publisher's: the envelopes
-`claims_of(index)` holds that read as `Claim` of kind
-`ClaimKind::LayoutPolicy` about that index. Exactly one distinct body
-is the policy; none is a refusal of the version naming the publisher's
-layout policy as wanting (core.17: no layout rendered with no policy);
-two distinct bodies are unreadable naming both envelopes' digests,
-never one chosen (as core.34 refuses to choose in a fork). The
-consumer's policy unreadable or refused leaves every layout unrefreshed
-(D6). The answer and the record name the policy as
-`{ "own": { "revision" } }` or `{ "publisher": { "revision" } }` per
-version.
+made (65, core.22). An answer, the file's `[layout]` or the given (D11),
+is the policy for every layout. Absent, which the policy file profile
+answers only where the revision holds no policy file, is a consuming
+repository with no policy of its own: each version is judged under its
+publisher's.
 
-The publisher's claim is read as the store holds it: its body is the
-policy, and the claims it requires then count only through the signers
-it names (core.7). Nothing names a signer the consumer trusts to make
-the policy claim itself; see Open Questions.
+The publisher's policy is read from the envelopes `claims_of(index)`
+holds that read as `Claim` of kind `ClaimKind::LayoutPolicy` about that
+index, and only those `tell` says a signer the host trusts made
+(C.10, 118, core.7): the trusted signers (D12) are passed to `tell` as
+the signers that may make a layout-policy claim. A layout-policy claim
+by any other signer is kept and never counted (9). Exactly one distinct
+body among those counted is the policy; none is a refusal of the
+version, `Why::Wanting` naming the publisher's layout policy as wanting
+with the trusted signers as `checked` (core.17: no layout rendered with
+no policy); two distinct bodies are unreadable naming both envelopes'
+digests, never one chosen (as core.34 refuses to choose in a fork).
+
+Every claim the publisher's policy requires then counts only through a
+signer the host trusts too: each required claim keeps, of the signers
+the body names, those whose id the host trusts, each verified by the
+host's key for it and allowed the kinds and checks the body gives it.
+A required claim none of whose signers the host trusts keeps an empty
+list, and so is the claim found wanting (C.10: "refuses a layout whose
+claims count through none, naming the claim"). The narrowed claims are
+judged as D4 judges any policy's.
+
+`policy_for(own, trusted, version, index, on_index)` answers the
+policy and the claims to judge; the consumer's policy unreadable or
+refused leaves every layout unrefreshed (D6). The answer and the record
+name the policy as `{ "own": { "revision" } }` or
+`{ "publisher": { "revision" } }` per version. Alternative: count the
+publisher's claim as the store holds it; refused, since C.10 holds it
+to the host's trusted signers, and a store any host can write to would
+otherwise choose a consumer's policy.
 
 ### D4. The verdict: every required claim, in order, on the index or the artifact
 
@@ -123,7 +149,9 @@ Answer<CheckoutSynced>`, which runs `cache::sync` unchanged and then
 `layouts`, answering `{ branch, revision, entries, layouts }`. `SyncAsk`
 and `cache::sync` keep their shapes, so the cache's scenarios above the
 conformance marker are untouched. `CheckoutAsk` carries `when`, seconds
-since the Unix epoch, the command's clock: the core reads none.
+since the Unix epoch, the command's clock, so the core reads none, and
+`trusted`, the host's trusted signers (D12); `RenderAsk` carries
+`trusted` too.
 
 ### D6. A layout that cannot be refreshed
 
@@ -155,10 +183,11 @@ it loses nothing the next sync does not rewrite (63).
 ### D8. The publisher's claim at publish
 
 After the index is put and before the version's name is moved, publish
-asks `policy_at(landed, &Audience::Layout)`; on an answer it signs
-`Claim { subject: index, kind: LayoutPolicy, revision, build: None,
-body: { "claims": [...] } }` with the host's signer, as provenance is
-signed, and attaches it to the index (8, core.8, core.9). Absent attaches
+asks `policy_at(landed, &Audience::Layout)`; on an answer, the file's
+`[layout]` or the given (D11), it signs `Claim { subject: index, kind:
+LayoutPolicy, revision, build: None, body: { "claims": [...] } }` with
+the host's signer, as provenance is signed, and attaches it to the index
+(8, core.8, core.9). Absent, a revision with no policy file, attaches
 nothing; unreadable stops the publish before the name moves, as any
 other read does. Where `claims_of(index)` already holds a layout-policy
 claim of the same body, nothing is signed (18). `ClaimKind::LayoutPolicy`
@@ -177,7 +206,9 @@ when everything not rendered is absent.
 ### D10. Tests
 
 Unit tests in `crates/tailrace-core/tests/render.rs` over the fakes for
-D2 to D7, and in `tests/publish.rs` for D8. Conformance: the projection
+D2 to D7, and in `tests/publish.rs` for D8. The given (D11) is tested in
+the policy file profile's own tests over a scratch repository, and
+`[trust]` (D12) in the bindings module's tests. Conformance: the projection
 group gains the two pinned scenarios with a rig method saying whether
 the ecosystem has a lockfile and staging a checkout with and without
 one; the layouts group gains the scenarios of the spec, with the fake
@@ -186,14 +217,65 @@ register loses 47, 51, 99 and 113. The command line: `tailrace sync
 --json` over the fakes in `crates/tailrace/tests/`. All run in
 `check-fast` through the crates' existing `test` tasks.
 
+### D11. The given policy for a layout
+
+The policy file profile answers `Audience::Layout` for a file with no
+`[layout]` table with the given (C.10): `Required::Layout { claims: [{
+kind: acceptance, check: None, signers: <the gate> }] }`, where the gate
+is every `[signers]` entry whose `kinds` holds `acceptance`, in the
+file's order; where none does and exactly one entry's `kinds` holds
+`provenance`, that one, as the one host 108 admits; and otherwise none,
+so every version is refused naming acceptance with no signer checked,
+since 108 admits no gate. A file's own `[layout]` is answered as
+written and the given is not laid beneath it. A revision holding no
+policy file answers absent naming the policy file, as today. The given
+is built in the profile, beside the table it stands in for, as one
+function of the parsed file; the fragment the policy command shows, and
+the given acceptance and channels, are the gate's and the channels'
+units (C.10). The policy group's scenario of an absence asks a channel
+no file declares, `nightly`, in place of a layout, which the given now
+answers; its words and the clause it cites are unchanged.
+Alternative: the core lays the given beneath an absence; refused, since
+which signers may claim acceptance is in `[signers]`, which only the
+profile reads, and the seam has no operation answering it.
+
+### D12. The signers a host trusts
+
+The bindings file gains `[trust.<signer>]`, one table per signer the
+host trusts, each naming exactly one key whose string is what the
+signer's profile verifies it by, in the policy file's `[signers]` form
+without `kinds` and `checks`:
+
+```toml
+[trust.gate]
+ssh = "ssh-ed25519 AAAA… gate@box"
+```
+
+A table naming no key, or two, or anything but a string, is unreadable
+naming the file and the table; a file with no `[trust]` trusts no
+signer. `Bindings` gains `trust: Vec<NamedSigner>`, each with the
+id, its verifier, `kinds = [layout_policy]` and no checks, and
+`Binding` carries it to the command, which passes it on the ask (D5).
+The key is a public key, so nothing kept is a credential (64, core.21).
+No default trust is given, not even the host's own `[signing]`
+signer: its public half would be read from the private key file, and
+a consumer that has a policy of its own needs no trust at all.
+Alternative: trust named in each repository's policy file; refused,
+since the consumer this serves has no policy file, and section 2 gives
+which signers a host trusts to the operator.
+
 ## Risks / Trade-offs
 
 - [The pointer is not written yet] → until the store-naming unit lands,
   a real sync finds no family pin and answers each absent; tests write
   the names themselves.
-- [A layout judged under a publisher's claim the store alone vouches
-  for] → a consumer that wants its own trust declares `[layout]`; the
-  open question below goes to the design agent.
+- [A consumer with no policy file and no `[trust]` refuses every
+  version] → the refusal names the publisher's layout policy and no
+  signer checked, so the reader sees what to write; a family repository
+  with a policy file never reaches it.
+- [The given admits nothing where a file names several provenance
+  signers and no acceptance signer] → every version is refused naming
+  acceptance, as 108 refuses acceptance itself.
 - [Two judgments of claims under a policy, this one and bolt 4's gate]
   → both use verify's `tell`; folding them into one is a chore once
   bolt 4 is on `main`.
@@ -204,9 +286,16 @@ register loses 47, 51, 99 and 113. The command line: `tailrace sync
 
 For the design agent:
 
-- What makes a consumer with no policy trust the publisher's
-  layout-policy claim: today it is read as the store holds it, and
-  could be held to a signer the host's bindings trust (section 2 gives
-  the operator which signers a host trusts).
-- Whether the givens (C.10) should hold a policy for layouts, so a
-  family repository with no `[layout]` line renders anything at all.
+- A manifest's range where no lockfile pins a name (137): the core
+  would need the versions a name holds in the store, and the store seam
+  has no operation that lists names (66 to 72); and whether a version
+  falls within a range is the ecosystem's, which no projection
+  operation answers. This unit leaves ranges out until the statement
+  says how they are found.
+- "A consuming repository with no policy of its own" is read here as a
+  revision holding no policy file, since a file with no `[layout]` has
+  the given; and a host trusts no signer until its bindings file names
+  one, its own included.
+- The givens fragment's form has no word for "the signers that may claim
+  acceptance", which the given layout policy names; the profile
+  resolves it in code until the fragment is built.

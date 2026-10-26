@@ -1,8 +1,8 @@
 ## ADDED Requirements
 
 ### Requirement: The index carries the publisher's layout policy
-Where the publishing repository declares a policy for layouts at the
-landed revision, a publish SHALL sign it as a layout-policy claim about
+Where the publishing repository has a policy for layouts at the landed
+revision, its own `[layout]` or the given, a publish SHALL sign it as a layout-policy claim about
 the index, in the identity of the party running the publish and naming
 that revision, and attach it to the index after the index is put and
 before the version's name is moved (113, 8, core.8, core.9). Where none
@@ -13,8 +13,12 @@ carries that claim SHALL attach nothing more.
 - **WHEN** a revision whose policy file declares a policy for layouts is published
 - **THEN** the index carries one layout-policy claim by the publishing host naming the revision and the claims that policy requires, attached before the version's name was moved
 
-#### Scenario: A publish with no policy for layouts
-- **WHEN** a revision whose policy file declares no policy for layouts is published
+#### Scenario: A publish with no layout line
+- **WHEN** a revision whose policy file names a gate signer and no `[layout]` is published
+- **THEN** the index carries one layout-policy claim requiring acceptance by that gate signer
+
+#### Scenario: A publish with no policy file
+- **WHEN** a revision whose tree holds no policy file is published
 - **THEN** the index carries no layout-policy claim, and the publish answers as before
 
 #### Scenario: A repeat publish

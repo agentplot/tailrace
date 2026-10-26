@@ -26,18 +26,33 @@ Bolt 5, "render under a policy"; ADR 0006).
   metadata (138, 4). A name the store does not hold is answered absent:
   most of a lockfile's pins are third-party packages tailrace never
   published, and none of them is a refusal (51, 58).
+- **A repository with no layout line renders accepted versions.** The
+  policy file gives every repository whose file holds no `[layout]` the
+  given policy for a layout: a version the gate accepted and no other,
+  the gate being the signers the file lets claim acceptance, or the one
+  signer it names for provenance where it names none for acceptance
+  (C.10, 108). A repository whose revision holds no policy file has no
+  policy of its own.
 - **Each version is judged under the layout's policy.** The policy is the
-  consuming repository's own policy for layouts at the landed revision
-  sync runs for (113, 65); where the repository declares none, it is the
-  publisher's policy for layouts, read from the claim the publish
-  attached to the version's index (113). A version is held only when,
-  for every claim the policy requires in its order, a claim attached to
-  the index or to the artifact counts through a signer the policy names
-  (47, 9, core.7). A version refused is answered to whoever ran sync,
-  naming the version and the first claim found wanting (99). A version
-  for which no policy for layouts can be found anywhere is refused,
-  naming the publisher's layout policy as the claim found wanting, so no
-  layout is ever rendered with no policy (core.17).
+  consuming repository's own for layouts, its `[layout]` or the given,
+  at the landed revision sync runs for (113, 65). Where the consuming
+  repository has no policy of its own, it is the publisher's policy for
+  layouts, read from the layout-policy claim the publish attached to the
+  version's index, and that claim and every claim it requires count only
+  through the signers the host's bindings trust (C.10, 118, 9). A
+  version is held only when, for every claim the policy requires in its
+  order, a claim attached to the index or to the artifact counts through
+  a signer the policy names (47, 9, core.7). A version refused is
+  answered to whoever ran sync, naming the version and the first claim
+  found wanting (99). A version with no layout-policy claim a trusted
+  signer made is refused, naming the publisher's layout policy as the
+  claim found wanting, so no layout is ever rendered with no policy
+  (core.17).
+- **The host names the signers it trusts.** The host's bindings file
+  gains `[trust.<signer>]`, each naming one signer and the key it is
+  verified by, in the policy file's `[signers]` shape; a host whose file
+  names none trusts no signer (section 2: the operator decides which
+  signers a host trusts; 118).
 - **A layout lives in its checkout and holds only what it was given.**
   Each ecosystem's layout is rendered at `.tailrace/layouts/<ecosystem>/`
   in the checkout's working tree, a path the consumer's own configuration
@@ -54,11 +69,11 @@ Bolt 5, "render under a policy"; ADR 0006).
   held and refused, readable with a file reader and rebuilt by the next
   sync (61 to 63).
 - **A publish attaches the publisher's layout policy to the index.** Where
-  the publishing repository declares a policy for layouts at the landed
-  revision, the publish signs it as a claim of the publisher's about the
-  index and attaches it before the version's name is moved, so a
-  consumer with no policy of its own reads it from the store (113, 8,
-  core.8, core.9).
+  the publishing repository has a policy for layouts at the landed
+  revision, its `[layout]` or the given, the publish signs it as a claim
+  of the publisher's about the index and attaches it before the
+  version's name is moved, so a consumer with no policy of its own reads
+  it from the store (113, 8, core.8, core.9).
 - **`tailrace sync` answers the cache and the layouts in one answer.** It
   fills moon's cache as it does now and then each layout, naming every
   pin as held, refused with its claim, or absent, and each layout as
@@ -67,6 +82,13 @@ Bolt 5, "render under a policy"; ADR 0006).
 
 Out of scope, and what each waits on:
 
+- A name the checkout's manifest declares and no lockfile pins yet,
+  answered by pinned as the manifest's range and rendered as the newest
+  version the policy admits within it (137): the store seam has no
+  operation that lists the versions a name holds (66 to 72), and which
+  versions fall within a range is the ecosystem's; the design agent is
+  asked how the core finds them. This unit's pinned answers the
+  lockfile's pins alone.
 - Writing and moving the `artifact/<ecosystem>/<name>@<version>` pointer
   at publish, the store profiles carrying it, and keeping component tags
   out of `artifact/` (109, 138): the unit
@@ -78,6 +100,9 @@ Out of scope, and what each waits on:
   cargos-registry. A served layout answering a refusal in its response to
   the client (99) and the render on a miss (50, 115) call this unit's
   render.
+- The givens as a fragment the policy command shows, and the given
+  acceptance and channels (C.10, 108): the gate and the channels. This
+  unit gives the policy for a layout alone, in the policy file profile.
 - The conformance suite's statement list adopting clauses 126 to 138: the
   commit that adopts the statement past `agentplot/blueprints 5b00e15`.
   Until then no scenario can cite 137 or 138, so the pinned scenario
@@ -92,25 +117,29 @@ Out of scope, and what each waits on:
 ### New Capabilities
 
 - `consumer-layouts`: a checkout's layouts rendered from the store under
-  the consuming repository's policy or the publisher's, holding only
-  satisfied versions, refusals answered with their claim, a layout that
-  cannot be refreshed answering what it holds, and the host's record of
-  each layout.
+  the consuming repository's policy or, through the host's trusted
+  signers, the publisher's, holding only satisfied versions, refusals
+  answered with their claim, a layout that cannot be refreshed answering
+  what it holds, and the host's record of each layout.
 
 ### Modified Capabilities
 
-- `seam-contracts`: the projection seam gains pinned.
+- `seam-contracts`: the projection seam gains pinned; the publisher's
+  layout policy is a kind of claim.
 - `seam-fakes`: the fake projection answers pinned from what the test
   sets.
+- `policy-file`: a file with no `[layout]` answers the given policy for a
+  layout.
+- `host-bindings`: the file names the signers the host trusts.
 - `cache-entries`: filling the cache still reads no policy, now that sync
   also renders layouts that do.
 - `command-line`: `tailrace sync` answers the layouts beside the cache
   entries.
 - `publishing`: a publish attaches the publisher's layout policy to the
   index.
-- `conformance-suite`: the projection group holds pinned, and the
-  layouts group holds the core to 47, 50, 51, 61 to 63, 99 and 113,
-  playing S4.
+- `conformance-suite`: the policy group's absence is asked of a channel
+  no policy declares; the projection group holds pinned; the layouts
+  group holds the core to 47, 50, 51, 61 to 63, 99 and 113, playing S4.
 - `file-projection`, `image-projection`, `moon-cache-projection`: each
   answers pinned absent.
 
@@ -122,18 +151,23 @@ Out of scope, and what each waits on:
   `tailrace-core`; `tailrace sync` in `crates/tailrace`.
 - Every `Projection` implementation gains pinned: the fake, the file,
   image and moon cache profiles, and the conformance rigs.
+- The policy file profile's answer for a layout, and the bindings file's
+  `[trust]` tables, carried on the binding to sync.
 - The conformance register loses 47, 51, 99 and 113.
 - The site's projections page says how a consumer reads under a policy.
 - No new dependency.
 - Rules kept: core.1 and core.2 (the core names no ecosystem; pins read
   by the projection, resolved by the core through the store seam),
   core.4 (every pin resolved to a digest and the digest recorded),
-  core.7 (a claim counts only through a signer the policy names), core.8
-  and core.9 (the publisher's claim signed as the publishing host, naming
-  the revision), core.17, core.18 (a layout path names no host), core.19
-  and core.20 (three answers kept apart; the record readable with no
-  process and rebuilt), core.22 (the consumer's policy read at a landed
-  revision), core.31 (one core answer rendered by the command), core.33.
+  core.7 (a claim counts only through a signer the policy names, and for
+  the publisher's policy only through one the host trusts too), core.8
+  and core.9 (the publisher's claim signed as the publishing host,
+  naming the revision), core.17, core.18 (a layout path names no host),
+  core.19 and core.20 (three answers kept apart; the record readable
+  with no process and rebuilt), core.21 (a trusted signer is named by
+  its public key, no credential), core.22 (the consumer's policy read
+  at a landed revision), core.31 (one core answer rendered by the
+  command), core.33.
 
 ## Touches
 
@@ -151,8 +185,11 @@ crates/tailrace-core/tests/**
 crates/tailrace-fakes/src/projection.rs
 crates/tailrace-conformance/src/**
 crates/tailrace-conformance/tests/**
+crates/tailrace/src/lib.rs
+crates/tailrace/src/bindings/**
 crates/tailrace/src/commands/sync.rs
 crates/tailrace/src/render.rs
+crates/tailrace/src/profiles/policy/file/**
 crates/tailrace/src/profiles/projection/file/mod.rs
 crates/tailrace/src/profiles/projection/image/mod.rs
 crates/tailrace/src/profiles/projection/moon_cache/mod.rs
