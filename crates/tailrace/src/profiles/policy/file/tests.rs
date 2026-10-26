@@ -277,7 +277,7 @@ fn given(text: &str) -> Vec<NamedSigner> {
     let repo = Repo::new();
     let at = repo.at(text);
     match repo.policy().policy_for(&at, &Audience::Layout) {
-        Ok(Required::Layout { claims }) => match <[RequiredClaim; 1]>::try_from(claims) {
+        Ok(Required::Layout { claims, .. }) => match <[RequiredClaim; 1]>::try_from(claims) {
             Ok([claim]) => {
                 assert_eq!((claim.kind, claim.check), (ClaimKind::Acceptance, None));
                 claim.signers
@@ -364,6 +364,7 @@ fn a_layout_line_written_is_answered_with_nothing_of_the_given_beneath_it() {
                 check: None,
                 signers: vec![laptop()],
             }],
+            given: false,
         })
     );
 }

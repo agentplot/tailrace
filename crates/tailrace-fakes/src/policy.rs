@@ -121,12 +121,19 @@ mod tests {
     fn a_policy_at_one_revision_is_read_at_that_revision() {
         let policy = FakePolicy::new();
         let (old, new) = (Revision::new("old"), Revision::new("new"));
-        policy.require(Audience::Layout, Required::Layout { claims: vec![] });
+        policy.require(
+            Audience::Layout,
+            Required::Layout {
+                claims: vec![],
+                given: false,
+            },
+        );
         policy.require_at(
             &new,
             Audience::Layout,
             Required::Layout {
                 claims: vec![claim("test")],
+                given: false,
             },
         );
         assert_eq!(

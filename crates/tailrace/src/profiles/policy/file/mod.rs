@@ -289,6 +289,7 @@ impl Policy for PolicyFile {
             (None, Audience::Layout) => {
                 return Ok(Required::Layout {
                     claims: given_layout(&signers),
+                    given: false,
                 })
             }
             (None, _) => return Err(absent()),
@@ -317,7 +318,10 @@ impl Policy for PolicyFile {
         }
         Ok(match audience {
             Audience::Acceptance => Required::Acceptance { claims },
-            Audience::Layout => Required::Layout { claims },
+            Audience::Layout => Required::Layout {
+                claims,
+                given: false,
+            },
             Audience::Channel(_) => Required::Channel {
                 claims,
                 bound_to: table.bound_to.clone(),

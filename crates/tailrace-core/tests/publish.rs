@@ -944,10 +944,13 @@ fn layout_policies(world: &World, published: &Published) -> Vec<(Envelope, Claim
 
 /// `world`'s policy for layouts requiring `claims`.
 fn layout(world: &World, claims: Vec<RequiredClaim>) {
-    world
-        .fakes
-        .policy
-        .require(Audience::Layout, Required::Layout { claims });
+    world.fakes.policy.require(
+        Audience::Layout,
+        Required::Layout {
+            claims,
+            given: false,
+        },
+    );
 }
 
 #[test]

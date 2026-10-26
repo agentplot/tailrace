@@ -379,6 +379,7 @@ fn pinning_one_of_each(host: &Host) {
                     checks: vec![],
                 }],
             }],
+            given: false,
         },
     );
 }

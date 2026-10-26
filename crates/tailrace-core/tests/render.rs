@@ -267,6 +267,7 @@ fn the_consumers_policy_is_read_at_the_landed_revision() {
         Audience::Layout,
         Required::Layout {
             claims: vec![provenance()],
+            given: false,
         },
     );
     fakes.policy.require_at(
@@ -274,6 +275,7 @@ fn the_consumers_policy_is_read_at_the_landed_revision() {
         Audience::Layout,
         Required::Layout {
             claims: vec![acceptance(), provenance()],
+            given: false,
         },
     );
     assert_eq!(
@@ -1210,9 +1212,14 @@ impl Checkout {
     fn landed(&self, claims: Vec<RequiredClaim>, pins: Option<&[Pinned]>) {
         let revision = Revision::new(LANDED);
         self.fakes.landing.land(&Branch::new("main"), &revision);
-        self.fakes
-            .policy
-            .require_at(&revision, Audience::Layout, Required::Layout { claims });
+        self.fakes.policy.require_at(
+            &revision,
+            Audience::Layout,
+            Required::Layout {
+                claims,
+                given: false,
+            },
+        );
         if let Some(pins) = pins {
             self.projection
                 .lockfile(&self.tree.display().to_string(), pins);

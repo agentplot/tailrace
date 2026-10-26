@@ -132,10 +132,14 @@ fn trusts(ids: &[&str]) -> Vec<NamedSigner> {
 fn landed(world: &FakeWorld, claims: Option<Vec<RequiredClaim>>) -> Revision {
     world.land(&world.head, &[]);
     if let Some(claims) = claims {
-        world
-            .fakes
-            .policy
-            .require_at(&world.head, Audience::Layout, Required::Layout { claims });
+        world.fakes.policy.require_at(
+            &world.head,
+            Audience::Layout,
+            Required::Layout {
+                claims,
+                given: false,
+            },
+        );
     }
     world.head.clone()
 }
@@ -317,10 +321,13 @@ fn a_pin_the_store_does_not_name(world: &FakeWorld) {
 }
 
 fn the_consumers_own_policy_at_its_landed_revision(world: &FakeWorld) {
-    world
-        .fakes
-        .policy
-        .require(Audience::Layout, Required::Layout { claims: vec![] });
+    world.fakes.policy.require(
+        Audience::Layout,
+        Required::Layout {
+            claims: vec![],
+            given: false,
+        },
+    );
     let revision = landed(world, Some(vec![acceptance()]));
     let (index, _) = site(world, "1.0.0", false);
     publishers(world, &index, &[], GATE);
@@ -476,6 +483,7 @@ fn a_version_refused_after_it_was_held(world: &FakeWorld) {
         Audience::Layout,
         Required::Layout {
             claims: vec![acceptance(), provenance()],
+            given: false,
         },
     );
     let again = synced(world, &since, 2, &[]);
