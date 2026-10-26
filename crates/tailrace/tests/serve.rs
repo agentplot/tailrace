@@ -19,8 +19,9 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use scratch::{Repo, Scratch, MAIN, POLICY_FILE};
 use serde_json::Value;
-use tailrace::commands::serve::host::{find_or_start, name, Host, SERVING};
+use tailrace::commands::serve::host::{checkout_of, find_or_start, name, Host, SERVING};
 use tailrace::commands::serve::{serve_on, Served};
+use tailrace::commands::status::page;
 use tailrace::{run, Cli, REVISION};
 use tailrace_core::{answer_json, Entry, History, Kept, OverviewAsk, RepositoryName};
 use tailrace_fakes::FakeSigner;
@@ -558,6 +559,45 @@ fn a_file_of_repositories_that_does_not_parse_is_the_roots_unreadable_answer() {
 
 // Requirement: The first asker that finds none starts it, and one lock
 // keeps it one
+
+#[test]
+fn the_page_is_named_and_the_process_started_where_none_answers() {
+    let world = World::new();
+    let repo = world.repo();
+    // The remote's address names the repository; git reads it from the
+    // scratch remote.
+    let address_of = "https://example.com/o/r.git";
+    repo.git(&["remote", "set-url", "origin", address_of]);
+    repo.git(&[
+        "config",
+        &format!("url.{}.insteadOf", world.scratch.remote.display()),
+        address_of,
+    ]);
+    let address = free();
+    let host = world.host.clone();
+    let answered = page(&repo.path, &world.host, address, move || {
+        thread::spawn(move || serve_on(address, &host, Duration::from_secs(60)));
+        Ok(())
+    });
+    assert_eq!(answered, Ok(format!("http://{address}/o/r/status")));
+    let named = RepositoryName {
+        owner: "o".into(),
+        name: "r".into(),
+    };
+    assert_eq!(checkout_of(&world.host, &named), Ok(repo.path.clone()));
+    let (status, served) = json(address, "/o/r/status.json");
+    assert_eq!(status, 200, "{served}");
+    assert_eq!(
+        served["value"]["channels"]["answer"], "ok",
+        "the landing and ledger answer through the rewritten remote: {served}"
+    );
+
+    // Asked again, the process answers and nothing is started.
+    let again = page(&repo.path, &world.host, address, || {
+        panic!("started a second")
+    });
+    assert_eq!(again, Ok(format!("http://{address}/o/r/status")));
+}
 
 #[test]
 fn a_second_serve_with_the_lock_held_returns_at_once_saying_the_first_answers() {
