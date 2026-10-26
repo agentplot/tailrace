@@ -43,7 +43,7 @@ one commit.
 
 ## 7. The record and the guide
 
-- [ ] 7.1 Write `docs/adr/0019-a-channel-is-its-component-and-name-and-the-policy-says-how-it-moves.md` in MADR form, status proposed, recording design D1 to D5 with the options each weighed and the sources (125, 131, 32, 37, 95, C.10, C.13, C.14 at agentplot/blueprints 7749369; ADRs 0009, 0010, 0016; rules core.1, core.2, core.7, core.37); verify with the root project's `adrs` task (`moon run :adrs`) passing, no two records sharing a number
+- [x] 7.1 Write `docs/adr/0019-a-channel-is-its-component-and-name-and-the-policy-says-how-it-moves.md` in MADR form, status proposed, recording design D1 to D5 with the options each weighed and the sources (125, 131, 32, 37, 95, C.10, C.13, C.14 at agentplot/blueprints 7749369; ADRs 0009, 0010, 0016; rules core.1, core.2, core.7, core.37); verify with the root project's `adrs` task (`moon run :adrs`) passing, no two records sharing a number
 - [ ] 7.2 In `site/src/content/docs/guides/self-hosting.mdx`, say that every component has `beta` and `stable` with no line written and who promotes them, show a line under `stable`, the per-component `[channels.<component>.<name>]` form, a hand-declared channel each way it moves, and a manual and an after environment with the channels they make; in `guides/integrations/ledgers.mdx` and `how-it-works.mdx`, give the ref and the store name with the component where components are declared; verify with `site:build`
 
 ## 8. The gate
