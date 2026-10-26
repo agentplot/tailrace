@@ -299,3 +299,46 @@ fn a_projection_naming_an_undeclared_output_is_unreadable_naming_it() {
     };
     assert!(u.said.unwrap().contains("projections names cli"));
 }
+
+#[test]
+fn an_output_packed_as_notes_is_refused_naming_the_component_and_the_output() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit(
+        "chore: policy",
+        &[(
+            POLICY_FILE,
+            "outputs = [\"site\", \"changelog\"]\n[projections]\nsite = \"file\"\nchangelog = \"notes\"\n",
+        )],
+    );
+    let Err(Not::Refused(r)) = read(&repo) else {
+        panic!("an output packed as notes was read")
+    };
+    assert_eq!(r.why, Why::Said);
+    assert_eq!(r.source.seam, Seam::History);
+    let said = r.said.unwrap();
+    assert!(
+        said.contains("component repository: projections packs changelog as notes"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_components_output_packed_as_notes_is_refused_naming_both() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    let policy = TWO.replace(
+        "prefix = \"web-v\"\n",
+        "prefix = \"web-v\"\nprojections = { site = \"file\", cli = { ecosystem = \"notes\" } }\n",
+    );
+    repo.commit("chore: policy", &[(POLICY_FILE, &policy)]);
+    let Err(Not::Refused(r)) = read(&repo) else {
+        panic!("a component's output packed as notes was read")
+    };
+    assert_eq!(r.why, Why::Said);
+    let said = r.said.unwrap();
+    assert!(
+        said.contains("component web: projections packs cli as notes"),
+        "{said}"
+    );
+}

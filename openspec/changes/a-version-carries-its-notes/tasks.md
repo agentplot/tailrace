@@ -5,7 +5,7 @@
 
 ## 2. No output is packed as `notes`
 
-- [ ] 2.1 Refuse in `Declared::read` a projection table naming the ecosystem `notes`, `Why::Said` with words naming the component and the output (D9). Verify: `crates/tailrace-core/tests/declared.rs` tests for the top-level and a component's projection table, and a publish test that the refused file asks the fake build nothing.
+- [x] 2.1 Refuse in `Declared::read` a projection table naming the ecosystem `notes`, `Why::Said` with words naming the component and the output (D9). Verify: `crates/tailrace-core/tests/declared.rs` tests for the top-level and a component's projection table, and a publish test that the refused file asks the fake build nothing.
 
 ## 3. Publish carries the notes
 

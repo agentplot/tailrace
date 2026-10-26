@@ -175,6 +175,22 @@ fn an_output_with_no_projection_is_refused_naming_it_before_the_build() {
 }
 
 #[test]
+fn an_output_packed_as_notes_is_refused_before_the_build_is_asked() {
+    let world =
+        World::with_policy(&world::POLICY.replace("lib-docs = \"eco-b\"", "lib-docs = \"notes\""));
+    let Err(Not::Refused(r)) = world.publish(&world.ask()) else {
+        panic!("a policy file packing an output as notes was published")
+    };
+    assert_eq!(r.why, Why::Said);
+    let said = r.said.unwrap();
+    assert!(said.contains("component lib"), "{said}");
+    assert!(said.contains("lib-docs"), "{said}");
+    assert_eq!(world.fakes.build.calls(), []);
+    no_pack(&world);
+    nothing_offered(&world);
+}
+
+#[test]
 fn a_projection_not_bound_is_absent_naming_the_ecosystem() {
     let world =
         World::with_policy(&world::POLICY.replace("lib-docs = \"eco-b\"", "lib-docs = \"eco-c\""));
