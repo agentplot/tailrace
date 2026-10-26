@@ -220,6 +220,18 @@ fn a_cargo_that_cannot_be_run_is_unreadable_in_the_operating_systems_words() {
     report.assert();
 }
 
+#[test]
+fn the_cargo_projection_packs_no_cache_entries() {
+    let report = run(
+        projection::GROUP,
+        &scenarios(&["a projection that packs no cache entries"]),
+        &|| Box::new(CargoRig::new()),
+    );
+    assert_eq!((report.profile.as_str(), report.ran), (ECOSYSTEM, 1));
+    report.assert();
+    assert_eq!(report.not_applicable, [], "{report}");
+}
+
 // Requirement: A pack leaves the checkout as it was and refuses what it
 // cannot promise
 

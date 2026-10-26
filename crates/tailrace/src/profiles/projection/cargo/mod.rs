@@ -2,8 +2,10 @@
 //! own packager, and a local registry rendered from the store, which a
 //! consumer's Cargo reads through source replacement.
 //!
-//! It reaches the store only through the store seam it is handed (rule
-//! core.2), and runs the cargo it is bound to.
+//! It packs no cache entries: a pack with no version and a render of
+//! cache entries answer absent naming them, and read and write nothing
+//! (84, 85). It reaches the store only through the store seam it is
+//! handed (rule core.2), and runs the cargo it is bound to.
 
 mod crate_file;
 #[cfg(test)]
@@ -90,11 +92,58 @@ impl Projection for CargoProjection {
         })
     }
 
-    fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
-        Err(not_built("render", ECOSYSTEM, &CargoProjection::source()))
+    fn render(&self, contents: Contents<'_>, _: &str) -> Answer<Rendered> {
+        let source = CargoProjection::source();
+        let Contents::Artifacts(_) = contents else {
+            return Err(no_cache_entries(&source));
+        };
+        Err(not_built("render", ECOSYSTEM, &source))
     }
 
     fn serve(&self, _: &Layout) -> Answer<Serving> {
         Err(not_built("serve", ECOSYSTEM, &CargoProjection::source()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tailrace_fakes::FakeStore;
+    use tailrace_seams::{CacheEntry, Digest, OutputName};
+    use tempfile::TempDir;
+
+    use super::*;
+
+    #[test]
+    fn a_pack_with_no_version_and_a_render_of_cache_entries_are_absent_and_touch_nothing() {
+        let dir = TempDir::new().unwrap();
+        let store = FakeStore::new();
+        let gone = dir.path().join("cargo");
+        let projection =
+            CargoProjection::new(dir.path(), Box::new(store.clone())).cargo_program(&gone);
+        let absent = Not::absent(&CargoProjection::source(), "cache entries");
+        let output = Output {
+            name: OutputName::new("fam"),
+            files: vec!["fam/Cargo.toml".into()],
+        };
+        assert_eq!(
+            projection.pack(&output, &BuildId::new("b7e1"), None),
+            Err(absent.clone())
+        );
+        let entries = [CacheEntry {
+            build: BuildId::new("b7e1"),
+            digest: Digest::of(b"archive"),
+        }];
+        assert_eq!(
+            projection.render(Contents::CacheEntries(&entries), "layouts/cargo"),
+            Err(absent)
+        );
+        assert_eq!(store.calls(), [], "the store was read");
+        assert_eq!(
+            fs::read_dir(dir.path()).unwrap().count(),
+            0,
+            "the checkout was written"
+        );
     }
 }
