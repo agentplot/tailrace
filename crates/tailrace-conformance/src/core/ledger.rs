@@ -11,9 +11,9 @@ use tailrace_core::{
 };
 use tailrace_fakes::{FakeKeeper, FakeStore, Fault, KeeperOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
-    channel_name, Answer, Chain, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope,
-    IndexMeta, Keeper, Manifest, Moved, Name, Not, Promotion, Signature, Signer, SignerId, Store,
-    Version, Why, IN_TOTO,
+    channel_name, Answer, Chain, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest,
+    Envelope, IndexMeta, Keeper, Manifest, Moved, Name, Not, Promotion, Signature, Signer,
+    SignerId, Store, Version, Why, IN_TOTO,
 };
 
 use crate::core::publish::{one, passing};
@@ -79,6 +79,12 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             cites: &[60, 101],
             run: a_channel_read_from_the_ledger_alone,
         },
+        Scenario {
+            name: "stable promoted by the gate's signer",
+            plays: None,
+            cites: &[32, 9, 125],
+            run: stable_promoted_by_the_gates_signer,
+        },
     ]
 }
 
@@ -106,7 +112,7 @@ fn two_indexes(world: &FakeWorld) -> (Digest, Digest) {
 
 fn a_race_lost_on_a_channels_name(world: &FakeWorld) {
     let (index, other) = two_indexes(world);
-    let channel = ChannelName::new(STABLE);
+    let channel = stable();
     let promotion = Claim {
         subject: index.clone(),
         kind: ClaimKind::Promotion,
@@ -169,8 +175,8 @@ fn a_race_lost_on_a_channels_name(world: &FakeWorld) {
 
 const BETA: &str = "beta";
 
-fn stable() -> ChannelName {
-    ChannelName::new(STABLE)
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new(STABLE))
 }
 
 fn to(version: &str) -> To {
@@ -244,7 +250,7 @@ fn written(world: &FakeWorld) -> (usize, usize, usize) {
 }
 
 /// The promotions of `channel`'s chain, in order.
-fn chain_of(world: &FakeWorld, channel: &ChannelName) -> Vec<Promotion> {
+fn chain_of(world: &FakeWorld, channel: &ChannelId) -> Vec<Promotion> {
     ok(world.fakes.keeper.chain(channel), "the chain")
         .claims
         .iter()
@@ -266,7 +272,7 @@ struct Watching {
 }
 
 impl Keeper for Watching {
-    fn append(&self, c: &ChannelName, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
+    fn append(&self, c: &ChannelId, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
         let writes = self
             .store
             .calls()
@@ -281,7 +287,7 @@ impl Keeper for Watching {
         self.at.set(Some(writes));
         self.inner.append(c, p, d)
     }
-    fn chain(&self, c: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, c: &ChannelId) -> Answer<Chain> {
         self.inner.chain(c)
     }
 }
@@ -450,7 +456,7 @@ fn a_bound_channel_takes_what_its_bound_channel_held(world: &FakeWorld) {
         ),
         Why::NeverHeld {
             channel: stable(),
-            bound_to: ChannelName::new(BETA),
+            bound_to: ChannelId::new(None, ChannelName::new(BETA)),
         },
         "a version beta never held reached stable"
     );
@@ -488,6 +494,7 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
                 ClaimKind::Acceptance,
                 vec![named("another-gate", &both)],
             )],
+            vec![named("another-gate", &both)],
             ClaimKind::Acceptance,
             "another-gate",
         ),
@@ -499,30 +506,27 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
                     vec![named("verifier", &[ClaimKind::Rebuild])],
                 ),
             ],
+            vec![named(GATE, &both)],
             ClaimKind::Rebuild,
             "verifier",
         ),
         (
-            vec![
-                required(
-                    ClaimKind::Acceptance,
-                    vec![named(GATE, &[ClaimKind::Acceptance])],
-                ),
-                required(
-                    ClaimKind::Promotion,
-                    vec![named("approver", &[ClaimKind::Promotion])],
-                ),
-            ],
+            vec![required(
+                ClaimKind::Acceptance,
+                vec![named(GATE, &[ClaimKind::Acceptance])],
+            )],
+            vec![named("approver", &[ClaimKind::Promotion])],
             ClaimKind::Promotion,
             "approver",
         ),
     ];
-    for (claims, kind, signer) in cases {
+    for (claims, promoted_by, kind, signer) in cases {
         world.fakes.policy.require(
             tailrace_seams::Audience::Channel(stable()),
             tailrace_seams::Required::Channel {
                 claims,
                 bound_to: None,
+                promoted_by,
             },
         );
         let before = written(world);
@@ -707,5 +711,72 @@ fn a_channel_read_from_the_ledger_alone(world: &FakeWorld) {
         world.store_calls().len(),
         asked,
         "reading a channel asked the store"
+    );
+}
+
+/// 32, 9, 125: `stable` whose policy names the gate, which may claim
+/// acceptance alone, as its one promoter, as the policy gives `stable`
+/// with no line written, bound to `beta`; and the version `beta` held.
+fn given_stable(world: &FakeWorld) {
+    two_versions(world);
+    world.channel_policy(BETA, false, None);
+    let gate = tailrace_seams::NamedSigner {
+        id: SignerId::new(GATE),
+        verified_by: format!("{GATE}'s key"),
+        kinds: vec![ClaimKind::Acceptance],
+        checks: vec![],
+    };
+    world.fakes.policy.require(
+        tailrace_seams::Audience::Channel(stable()),
+        tailrace_seams::Required::Channel {
+            claims: vec![tailrace_seams::RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![gate.clone()],
+            }],
+            bound_to: Some(ChannelName::new(BETA)),
+            promoted_by: vec![gate],
+        },
+    );
+    claim_of(
+        world.promote(&world.promote_ask(BETA, to("0.2.0"))),
+        "beta to 0.2.0",
+    );
+}
+
+fn stable_promoted_by_the_gates_signer(world: &FakeWorld) {
+    given_stable(world);
+    claim_of(
+        world.promote(&world.promote_ask(STABLE, to("0.2.0"))),
+        "stable to 0.2.0 by the gate",
+    );
+    let chain = chain_of(world, &stable());
+    assert_eq!(chain.len(), 1, "stable's chain holds other than the move");
+    assert_eq!(chain[0].asked_by, SignerId::new(GATE));
+
+    let other = FakeWorld::new();
+    given_stable(&other);
+    let before = written(&other);
+    let by_laptop = PromoteAsk {
+        signer: SignerId::new("laptop"),
+        ..other.promote_ask(STABLE, to("0.2.0"))
+    };
+    assert_eq!(
+        refused(other.promote(&by_laptop), "stable to 0.2.0 by laptop"),
+        Why::Wanting {
+            kind: ClaimKind::Promotion,
+            check: None,
+            signers: vec![SignerId::new(GATE)],
+        },
+        "a signer the policy does not name promoted stable"
+    );
+    assert_eq!(
+        written(&other),
+        before,
+        "a refused promotion wrote or signed"
+    );
+    assert!(
+        matches!(other.fakes.keeper.chain(&stable()), Err(Not::Absent(_))),
+        "stable's chain was appended to"
     );
 }

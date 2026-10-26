@@ -1,7 +1,9 @@
 //! The ledger seam (B.8) held as git refs (C.13): one ref per channel,
-//! `refs/tailrace/ledger/<channel>`, each commit holding one promotion
-//! claim and naming as its one parent the commit of the claim before it,
-//! the first a commit with no parent (105, 120 to 122; design D9).
+//! `refs/tailrace/ledger/<channel>` where the repository declares no
+//! component and `refs/tailrace/ledger/<component>/<channel>` where it
+//! declares components (125), each commit holding one promotion claim
+//! and naming as its one parent the commit of the claim before it, the
+//! first a commit with no parent (105, 120 to 122; design D9).
 //!
 //! Where a remote is bound, every chain and append first reads the
 //! remote's ref into the repository's own copy, which moves only forward:
@@ -22,7 +24,7 @@ use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use tailrace_seams::{
-    canonical, Answer, Chain, ChannelName, Claim, Digest, Envelope, Keeper, Not, Promotion, Read,
+    canonical, Answer, Chain, ChannelId, Claim, Digest, Envelope, Keeper, Not, Promotion, Read,
     Seam, Source, Why,
 };
 
@@ -47,15 +49,17 @@ fn source() -> Source {
     Source::new(Seam::Keeper, "git_ref")
 }
 
-/// The ref holding `channel`'s chain.
-fn ledger(channel: &ChannelName) -> String {
-    format!("refs/tailrace/ledger/{channel}")
+/// The ref holding `channel`'s chain, the channel as it is spelled: a
+/// component's slash is a segment of the ref's path, which git allows
+/// (C.13).
+fn ledger(channel: &ChannelId) -> String {
+    format!("refs/tailrace/ledger/{}", channel.spelled())
 }
 
 /// The ref the remote's chain of `channel` is fetched into, made anew at
 /// every fetch, so its reflog says when the remote was last read.
-fn fetched(channel: &ChannelName) -> String {
-    format!("refs/tailrace/fetched/{channel}")
+fn fetched(channel: &ChannelId) -> String {
+    format!("refs/tailrace/fetched/{}", channel.spelled())
 }
 
 /// A chain as a read found it: each claim by the commit holding it, from
@@ -167,7 +171,7 @@ impl GitRef {
 
     /// The claim `commit` holds; unreadable naming the commit where its
     /// tree holds no claim.
-    fn envelope_at(&self, channel: &ChannelName, commit: &str) -> Answer<Envelope> {
+    fn envelope_at(&self, channel: &ChannelId, commit: &str) -> Answer<Envelope> {
         let ran = self.git(
             &["cat-file", "blob", &format!("{commit}:{FILE}")],
             &[0, 128],
@@ -187,7 +191,7 @@ impl GitRef {
     /// 121: every claim from the first commit to `tip`, in order;
     /// unreadable naming the first commit with two parents, or holding no
     /// claim, never answered in part.
-    fn walk(&self, channel: &ChannelName, tip: &str) -> Answer<Vec<(String, Envelope)>> {
+    fn walk(&self, channel: &ChannelId, tip: &str) -> Answer<Vec<(String, Envelope)>> {
         let ran = self.git(&["rev-list", "--reverse", "--parents", tip], &[0])?;
         let mut links = Vec::new();
         for line in String::from_utf8_lossy(&ran.stdout).lines() {
@@ -208,7 +212,7 @@ impl GitRef {
     /// The newest time, in seconds since the Unix epoch, the repository
     /// wrote `channel`'s ref or fetched its remote's, from their reflogs;
     /// `None` where neither logged a write.
-    fn when(&self, channel: &ChannelName) -> Answer<Option<u64>> {
+    fn when(&self, channel: &ChannelId) -> Answer<Option<u64>> {
         let mut newest = None;
         for name in [ledger(channel), fetched(channel)] {
             if self.commit_at(&name)?.is_none() {
@@ -239,7 +243,7 @@ impl GitRef {
     /// 60, C.13: the remote not answering, for `failed`, git's own words:
     /// the repository's copy of `channel`'s chain as last fetched or
     /// appended, saying when; `failed` itself where it holds none.
-    fn kept(&self, channel: &ChannelName, failed: Not) -> Answer<Held> {
+    fn kept(&self, channel: &ChannelId, failed: Not) -> Answer<Held> {
         let said = match &failed {
             Not::Unreadable(u) => u.said.clone().unwrap_or_default(),
             _ => return Err(failed),
@@ -263,7 +267,7 @@ impl GitRef {
     /// naming the claims it lost, and a remote and a copy that part a
     /// fork naming the first claim of each side, the copy kept (105,
     /// 122). With none, the repository's own ref.
-    fn read(&self, channel: &ChannelName) -> Answer<Held> {
+    fn read(&self, channel: &ChannelId) -> Answer<Held> {
         let name = ledger(channel);
         let Some(remote) = &self.remote else {
             let links = match self.commit_at(&name)? {
@@ -358,7 +362,7 @@ impl GitRef {
 
     /// 122: `remote` no longer holds `claims`, which this repository read
     /// from it.
-    fn lost(&self, channel: &ChannelName, remote: &str, claims: &[(String, Envelope)]) -> Not {
+    fn lost(&self, channel: &ChannelId, remote: &str, claims: &[(String, Envelope)]) -> Not {
         Not::unreadable(
             self.source(),
             format!(
@@ -410,7 +414,7 @@ impl Keeper for GitRef {
     /// answer, never appended to the copy alone.
     fn append(
         &self,
-        channel: &ChannelName,
+        channel: &ChannelId,
         promotion: &Envelope,
         predecessor: Option<&Digest>,
     ) -> Answer<Digest> {
@@ -460,7 +464,7 @@ impl Keeper for GitRef {
     /// 121: every claim of `channel` from the first, read from the remote
     /// where one is bound and answers, and from the repository's copy as
     /// last fetched where it does not (60); absent where none is held.
-    fn chain(&self, channel: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, channel: &ChannelId) -> Answer<Chain> {
         let held = self.read(channel)?;
         if held.links.is_empty() {
             return Err(Not::absent(self.source(), format!("chain of {channel}")));

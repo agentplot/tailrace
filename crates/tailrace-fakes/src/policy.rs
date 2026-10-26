@@ -1,13 +1,14 @@
 //! The fake policy (B.5): what each audience requires, for every revision
-//! or for one, and the component each channel belongs to, as a test
-//! scripts it.
+//! or for one, and which channels move on each publish, as a test
+//! scripts it. A channel carries its component (125), and the fake gives
+//! no channel a test did not script: the channels a profile gives with
+//! nothing declared are that profile's (C.10).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::json;
 use tailrace_seams::{
-    Answer, Audience, ChannelName, ComponentName, DeclaredChannel, Not, Policy, Required, Revision,
-    Seam, REPOSITORY_COMPONENT,
+    Answer, Audience, ChannelId, DeclaredChannel, Moves, Not, Policy, Required, Revision, Seam,
 };
 
 use crate::Fake;
@@ -19,14 +20,14 @@ pub enum PolicyOp {
     Channels,
 }
 
-/// What each audience requires, and the component each channel belongs
-/// to, at every revision and at one.
+/// What each audience requires, at every revision and at one, and the
+/// channels that move on each publish, at every revision and at one.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PolicyState {
     every: BTreeMap<Audience, Required>,
     at: BTreeMap<(Revision, Audience), Required>,
-    belongs: BTreeMap<ChannelName, ComponentName>,
-    belongs_at: BTreeMap<(Revision, ChannelName), ComponentName>,
+    follows: BTreeSet<ChannelId>,
+    follows_at: BTreeSet<(Revision, ChannelId)>,
 }
 
 /// A policy in memory.
@@ -64,25 +65,17 @@ impl FakePolicy {
             .insert((revision.clone(), audience), required);
     }
 
-    /// `channel` in `component` at every revision; a channel no test puts
-    /// in a component belongs to the one named `repository` (123).
-    pub fn belongs(&self, channel: &ChannelName, component: &ComponentName) {
-        self.state()
-            .belongs
-            .insert(channel.clone(), component.clone());
+    /// 95: `channel`, where a policy is held for it, moves on each
+    /// accepted publish at every revision.
+    pub fn follows(&self, channel: &ChannelId) {
+        self.state().follows.insert(channel.clone());
     }
 
-    /// `channel` in `component` at `revision`, over the component it is
-    /// in at every revision.
-    pub fn belongs_at(
-        &self,
-        revision: &Revision,
-        channel: &ChannelName,
-        component: &ComponentName,
-    ) {
+    /// 95: `channel` moves on each accepted publish at `revision`.
+    pub fn follows_at(&self, revision: &Revision, channel: &ChannelId) {
         self.state()
-            .belongs_at
-            .insert((revision.clone(), channel.clone()), component.clone());
+            .follows_at
+            .insert((revision.clone(), channel.clone()));
     }
 }
 
@@ -98,13 +91,15 @@ impl Policy for FakePolicy {
     }
 
     /// 131: a channel for each channel audience held at `revision` or at
-    /// every revision, the revision's policy over every revision's, in
-    /// the component scripted for it, bound as its policy says. A binding
-    /// is answered as scripted, never checked.
+    /// every revision, the revision's policy over every revision's, by
+    /// name and then component, each in the component its identity
+    /// carries (125): bound where its policy names a binding, moving on
+    /// each publish where the test scripted it so, and by a promotion
+    /// alone otherwise. A binding is answered as scripted, never checked.
     fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>> {
         let given = json!({ "revision": revision });
         self.ask(PolicyOp::Channels, given, "the channels", |s, _| {
-            let mut held: BTreeMap<&ChannelName, &Required> = BTreeMap::new();
+            let mut held: BTreeMap<&ChannelId, &Required> = BTreeMap::new();
             for (audience, required) in &s.every {
                 if let Audience::Channel(channel) = audience {
                     held.insert(channel, required);
@@ -117,15 +112,18 @@ impl Policy for FakePolicy {
             }
             Ok(held
                 .into_iter()
-                .map(|(channel, required)| DeclaredChannel {
-                    name: channel.clone(),
-                    component: s
-                        .belongs_at
-                        .get(&(revision.clone(), channel.clone()))
-                        .or_else(|| s.belongs.get(channel))
-                        .cloned()
-                        .unwrap_or_else(|| ComponentName::new(REPOSITORY_COMPONENT)),
-                    bound_to: required.bound_to().cloned(),
+                .map(|(channel, required)| {
+                    let follows = s.follows.contains(channel)
+                        || s.follows_at.contains(&(revision.clone(), channel.clone()));
+                    let moves = match (required.bound_to(), follows) {
+                        (Some(to), _) => Moves::Bound { to: to.clone() },
+                        (None, true) => Moves::EachPublish,
+                        (None, false) => Moves::Promotion,
+                    };
+                    DeclaredChannel {
+                        channel: channel.clone(),
+                        moves,
+                    }
                 })
                 .collect())
         })
@@ -134,7 +132,7 @@ impl Policy for FakePolicy {
 
 #[cfg(test)]
 mod tests {
-    use tailrace_seams::{ChannelName, Check, ClaimKind, RequiredClaim, Source};
+    use tailrace_seams::{ChannelName, Check, ClaimKind, ComponentName, RequiredClaim, Source};
 
     use super::*;
     use crate::{Fault, Times};
@@ -145,6 +143,11 @@ mod tests {
             check: Some(Check::new(check)),
             signers: vec![],
         }
+    }
+
+    /// A channel of `component`, or of none where it names none.
+    fn id(component: Option<&str>, name: &str) -> ChannelId {
+        ChannelId::new(component.map(ComponentName::new), ChannelName::new(name))
     }
 
     #[test]
@@ -166,14 +169,8 @@ mod tests {
     #[test]
     fn a_bound_channel_names_its_channel() {
         let policy = FakePolicy::new();
-        let stable = Audience::Channel(ChannelName::new("stable"));
-        policy.require(
-            stable.clone(),
-            Required::Channel {
-                claims: vec![],
-                bound_to: Some(ChannelName::new("beta")),
-            },
-        );
+        let stable = Audience::Channel(id(None, "stable"));
+        policy.require(stable.clone(), channel(Some("beta")));
         let required = policy
             .policy_for(&Revision::new("4f2a9c1"), &stable)
             .unwrap();
@@ -233,42 +230,51 @@ mod tests {
         Required::Channel {
             claims: vec![],
             bound_to: bound_to.map(ChannelName::new),
+            promoted_by: vec![],
         }
     }
 
-    fn declared(name: &str, component: &str, bound_to: Option<&str>) -> DeclaredChannel {
-        DeclaredChannel {
-            name: ChannelName::new(name),
-            component: ComponentName::new(component),
-            bound_to: bound_to.map(ChannelName::new),
+    fn declared(channel: ChannelId, moves: Moves) -> DeclaredChannel {
+        DeclaredChannel { channel, moves }
+    }
+
+    fn bound(to: &str) -> Moves {
+        Moves::Bound {
+            to: ChannelName::new(to),
         }
     }
 
     #[test]
-    fn the_channels_are_in_the_component_scripted_at_a_revision_and_bound_as_their_policy_says() {
+    fn the_channels_move_as_scripted_each_in_its_own_component() {
         let policy = FakePolicy::new();
-        let (beta, stable) = (ChannelName::new("beta"), ChannelName::new("stable"));
+        let (beta, stable, edge) = (
+            id(Some("lib"), "beta"),
+            id(Some("lib"), "stable"),
+            id(None, "edge"),
+        );
         let (at, other) = (Revision::new("4f2a9c1"), Revision::new("77b0e3d"));
         policy.require(Audience::Channel(beta.clone()), channel(None));
-        policy.require(Audience::Channel(stable), channel(Some("beta")));
+        policy.require(Audience::Channel(stable.clone()), channel(Some("beta")));
+        policy.require_at(&at, Audience::Channel(edge.clone()), channel(None));
         policy.require(
             Audience::Acceptance,
             Required::Acceptance { claims: vec![] },
         );
-        policy.belongs_at(&at, &beta, &ComponentName::new("lib"));
+        policy.follows(&beta);
 
         assert_eq!(
             policy.channels(&at),
             Ok(vec![
-                declared("beta", "lib", None),
-                declared("stable", "repository", Some("beta")),
+                declared(beta.clone(), Moves::EachPublish),
+                declared(edge, Moves::Promotion),
+                declared(stable.clone(), bound("beta")),
             ])
         );
         assert_eq!(
             policy.channels(&other),
             Ok(vec![
-                declared("beta", "repository", None),
-                declared("stable", "repository", Some("beta")),
+                declared(beta, Moves::EachPublish),
+                declared(stable, bound("beta")),
             ])
         );
         let calls = policy.calls();
@@ -278,62 +284,83 @@ mod tests {
     }
 
     #[test]
-    fn a_channel_in_a_component_at_every_revision_yields_to_the_revisions() {
+    fn a_channel_follows_each_publish_at_one_revision_or_at_every_one() {
         let policy = FakePolicy::new();
-        let beta = ChannelName::new("beta");
+        let (beta, edge) = (id(None, "beta"), id(None, "edge"));
         let (at, other) = (Revision::new("4f2a9c1"), Revision::new("77b0e3d"));
         policy.require(Audience::Channel(beta.clone()), channel(None));
-        policy.belongs(&beta, &ComponentName::new("web"));
-        policy.belongs_at(&at, &beta, &ComponentName::new("lib"));
+        policy.require(Audience::Channel(edge.clone()), channel(None));
+        policy.follows(&beta);
+        policy.follows_at(&at, &edge);
         assert_eq!(
             policy.channels(&at),
-            Ok(vec![declared("beta", "lib", None)])
+            Ok(vec![
+                declared(beta.clone(), Moves::EachPublish),
+                declared(edge.clone(), Moves::EachPublish),
+            ])
         );
         assert_eq!(
             policy.channels(&other),
-            Ok(vec![declared("beta", "web", None)])
+            Ok(vec![
+                declared(beta, Moves::EachPublish),
+                declared(edge, Moves::Promotion),
+            ])
+        );
+    }
+
+    #[test]
+    fn two_components_channels_of_one_name_are_two() {
+        let policy = FakePolicy::new();
+        let (libs, webs) = (id(Some("lib"), "beta"), id(Some("web"), "beta"));
+        policy.require(Audience::Channel(webs.clone()), channel(None));
+        policy.require(Audience::Channel(libs.clone()), channel(None));
+        policy.follows(&webs);
+        assert_eq!(
+            policy.channels(&Revision::new("4f2a9c1")),
+            Ok(vec![
+                declared(libs, Moves::Promotion),
+                declared(webs, Moves::EachPublish),
+            ])
         );
     }
 
     #[test]
     fn a_channels_policy_at_a_revision_is_read_over_every_revisions() {
         let policy = FakePolicy::new();
-        let stable = Audience::Channel(ChannelName::new("stable"));
+        let stable = Audience::Channel(id(None, "stable"));
         let (old, new) = (Revision::new("old"), Revision::new("new"));
         policy.require(stable.clone(), channel(None));
         policy.require_at(&new, stable, channel(Some("beta")));
-        policy.require_at(
-            &new,
-            Audience::Channel(ChannelName::new("edge")),
-            channel(None),
-        );
+        policy.require_at(&new, Audience::Channel(id(None, "edge")), channel(None));
         assert_eq!(
             policy.channels(&old),
-            Ok(vec![declared("stable", "repository", None)])
+            Ok(vec![declared(id(None, "stable"), Moves::Promotion)])
         );
         assert_eq!(
             policy.channels(&new),
             Ok(vec![
-                declared("edge", "repository", None),
-                declared("stable", "repository", Some("beta")),
+                declared(id(None, "edge"), Moves::Promotion),
+                declared(id(None, "stable"), bound("beta")),
             ])
         );
     }
 
     #[test]
-    fn no_channel_declared_answers_an_empty_list() {
+    fn no_channel_scripted_answers_an_empty_list() {
         let policy = FakePolicy::new();
         policy.require(
             Audience::Acceptance,
             Required::Acceptance { claims: vec![] },
         );
+        policy.follows(&id(None, "beta"));
         assert_eq!(policy.channels(&Revision::new("4f2a9c1")), Ok(vec![]));
     }
 
     #[test]
     fn the_channels_can_be_faulted_and_are_recorded() {
         let policy = FakePolicy::new();
-        policy.require(Audience::Channel(ChannelName::new("beta")), channel(None));
+        let beta = Audience::Channel(id(None, "beta"));
+        policy.require(beta.clone(), channel(None));
         policy.fault(
             PolicyOp::Channels,
             Fault::Unreadable("no such revision".into()),
@@ -348,8 +375,6 @@ mod tests {
         let calls = policy.calls();
         assert_eq!(calls.len(), 2);
         assert!(calls.iter().all(|c| c.op == PolicyOp::Channels));
-        assert!(policy
-            .policy_for(&rev, &Audience::Channel(ChannelName::new("beta")))
-            .is_ok());
+        assert!(policy.policy_for(&rev, &beta).is_ok());
     }
 }

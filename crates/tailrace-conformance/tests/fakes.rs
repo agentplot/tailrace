@@ -15,7 +15,7 @@ use tailrace_conformance::seams::{
 };
 use tailrace_conformance::world::FakeWorld;
 use tailrace_conformance::{run, Report, Rig, Scenario};
-use tailrace_seams::{ChannelName, Digest, Envelope, Keeper, Not};
+use tailrace_seams::{ChannelId, Digest, Envelope, Keeper, Not};
 
 #[test]
 fn the_fake_store_keeps_the_stores_contract() {
@@ -167,11 +167,11 @@ impl KeeperRig for KeptKeeperRig {
         self.0.keeper()
     }
 
-    fn promotion(&self, channel: &ChannelName, n: u32) -> Envelope {
+    fn promotion(&self, channel: &ChannelId, n: u32) -> Envelope {
         self.0.promotion(channel, n)
     }
 
-    fn fork(&self, channel: &ChannelName) -> [Envelope; 2] {
+    fn fork(&self, channel: &ChannelId) -> [Envelope; 2] {
         self.0.fork(channel)
     }
 

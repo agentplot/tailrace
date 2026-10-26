@@ -16,8 +16,9 @@ use tailrace_conformance::world::{
 use tailrace_core::{accept, answer_json, publish, AcceptAsk, Kept, Published, ToldBy};
 use tailrace_fakes::KeeperOp;
 use tailrace_seams::{
-    Audience, Chain, ChannelName, Check, Claim, ClaimKind, Digest, Envelope, Keeper, NamedSigner,
-    Not, Outcome, Promotion, Required, RequiredClaim, Revision, Seam, Source, Store, Version,
+    Audience, Chain, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
+    Envelope, Keeper, NamedSigner, Not, Outcome, Promotion, Required, RequiredClaim, Revision,
+    Seam, Source, Store, Version,
 };
 use tempfile::TempDir;
 
@@ -27,8 +28,9 @@ const BETA: &str = "beta";
 /// The job a separated gate is told by.
 const JOB: &str = "the release job a push to main wakes";
 
-fn beta() -> ChannelName {
-    ChannelName::new(BETA)
+/// `beta` of the repository that declares no component.
+fn beta() -> ChannelId {
+    ChannelId::new(None, ChannelName::new(BETA))
 }
 
 fn named(id: &str, kinds: &[ClaimKind]) -> NamedSigner {
@@ -72,34 +74,43 @@ fn one_host() -> Required {
     acceptance(&[ClaimKind::Provenance, ClaimKind::Acceptance])
 }
 
-/// `beta` requires the host's acceptance and each of `more`.
-fn beta_requires(world: &FakeWorld, more: Vec<RequiredClaim>) {
+/// `channel` requires the host's acceptance and each of `more`, and is
+/// promoted by the host, the gate's signer.
+fn requires(world: &FakeWorld, channel: &ChannelId, more: Vec<RequiredClaim>) {
+    let host = named(HOST, &[ClaimKind::Acceptance, ClaimKind::Promotion]);
     let mut claims = vec![RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
-        signers: vec![named(HOST, &[ClaimKind::Acceptance, ClaimKind::Promotion])],
+        signers: vec![host.clone()],
     }];
     claims.extend(more);
     world.fakes.policy.require(
-        Audience::Channel(beta()),
+        Audience::Channel(channel.clone()),
         Required::Channel {
             claims,
             bound_to: None,
+            promoted_by: vec![host],
         },
     );
 }
 
-/// `policy` with `channel` landed, each of `outputs` built and given the
-/// landing's passing `test` at that revision, acceptance requiring
-/// `required` and `beta` the host's acceptance; the revision.
+/// `beta` requires the host's acceptance and each of `more`.
+fn beta_requires(world: &FakeWorld, more: Vec<RequiredClaim>) {
+    requires(world, &beta(), more);
+}
+
+/// `policy` landed, each of `outputs` built and given the landing's
+/// passing `test` at that revision, acceptance requiring `required`, and
+/// `channel` following each publish as the policy seam lists it,
+/// requiring the host's acceptance; the revision.
 fn landed(
     world: &FakeWorld,
     policy: &str,
-    channel: &str,
+    channel: &ChannelId,
     outputs: &[&str],
     required: Required,
 ) -> Revision {
-    let revision = world.land_policy(&format!("{policy}\n{channel}"));
+    let revision = world.land_policy(policy);
     let verdicts: Vec<_> = outputs
         .iter()
         .map(|o| {
@@ -116,20 +127,15 @@ fn landed(
     let built: Vec<_> = outputs.iter().map(|o| (*o, Outcome::Pass)).collect();
     world.outputs(&revision, &built);
     world.fakes.policy.require(Audience::Acceptance, required);
-    beta_requires(world, vec![]);
+    requires(world, channel, vec![]);
+    world.fakes.policy.follows(channel);
     revision
 }
 
 /// The one-component world with `beta` following each publish, landed
 /// under `required`; the revision.
 fn following(world: &FakeWorld, required: Required) -> Revision {
-    landed(
-        world,
-        POLICY,
-        "[channels.beta]\non_each_publish = true\n",
-        &["site", "server"],
-        required,
-    )
+    landed(world, POLICY, &beta(), &["site", "server"], required)
 }
 
 /// The host's binding over the world's fakes, signing as the host, with
@@ -314,14 +320,14 @@ impl Unbound {
 impl Keeper for Unbound {
     fn append(
         &self,
-        _: &ChannelName,
+        _: &ChannelId,
         _: &Envelope,
         _: Option<&Digest>,
     ) -> tailrace_seams::Answer<Digest> {
         Err(Unbound::absent())
     }
 
-    fn chain(&self, _: &ChannelName) -> tailrace_seams::Answer<Chain> {
+    fn chain(&self, _: &ChannelId) -> tailrace_seams::Answer<Chain> {
         Err(Unbound::absent())
     }
 }
@@ -338,10 +344,11 @@ fn accepted_with_no_ledger_bound_beta_is_absent_naming_the_ledger() {
 
     let gate = &json(&printed)["value"]["components"][0]["gate"];
     assert_eq!(gate["value"]["judged"], "accepted");
-    assert_eq!(gate["value"]["channels"][0]["channel"], BETA);
+    let beta_json = serde_json::json!({ "component": null, "name": BETA });
+    assert_eq!(gate["value"]["channels"][0]["channel"], beta_json);
     assert_eq!(gate["value"]["channels"][0], {
         let mut value = answer_json::<()>(&Err(Unbound::absent()));
-        value["channel"] = BETA.into();
+        value["channel"] = beta_json.clone();
         value
     });
     assert_eq!(of_kind(&world, &index, ClaimKind::Acceptance).len(), 1);
@@ -359,7 +366,7 @@ fn a_component_left_unchanged_tells_the_gate_nothing() {
     let revision = landed(
         &world,
         TWO_COMPONENTS,
-        "[channels.beta]\non_each_publish = true\ncomponent = \"lib\"\n",
+        &ChannelId::new(Some(ComponentName::new("lib")), ChannelName::new(BETA)),
         &["library", "server"],
         one_host(),
     );
