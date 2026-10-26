@@ -174,7 +174,9 @@ crates/tailrace-core/src/ledger.rs
 crates/tailrace-core/src/repair.rs
 crates/tailrace-core/src/verify.rs
 crates/tailrace-core/src/lib.rs
+crates/tailrace-core/src/gate.rs
 crates/tailrace-core/tests/ledger.rs
+crates/tailrace-core/tests/gate.rs
 crates/tailrace/src/profiles/mod.rs
 crates/tailrace/src/profiles/ledger/**
 crates/tailrace/src/bindings/mod.rs
@@ -189,6 +191,7 @@ crates/tailrace/tests/promote.rs
 crates/tailrace/tests/cli.rs
 crates/tailrace-conformance/src/seams/keeper.rs
 crates/tailrace-conformance/src/core/ledger.rs
+crates/tailrace-conformance/src/core/gate.rs
 crates/tailrace-conformance/src/register.rs
 crates/tailrace-conformance/src/world.rs
 crates/tailrace-conformance/tests/fakes.rs
