@@ -297,42 +297,127 @@ fn a_consumer_declaring_no_policy_for_layouts_has_none_and_one_unread_answers_it
     ));
 }
 
+/// The signers the host trusts, each by the host's own key for it,
+/// allowed to claim a layout policy alone.
+fn trusts(ids: &[&str]) -> Vec<NamedSigner> {
+    ids.iter()
+        .map(|id| NamedSigner {
+            id: SignerId::new(*id),
+            verified_by: format!("the host's key for {id}"),
+            kinds: vec![ClaimKind::LayoutPolicy],
+            checks: vec![],
+        })
+        .collect()
+}
+
+/// `claim` as the host counts it: its signers that the host trusts, each
+/// verified by the host's key for it.
+fn as_trusted(claim: RequiredClaim, ids: &[&str]) -> RequiredClaim {
+    RequiredClaim {
+        signers: claim
+            .signers
+            .into_iter()
+            .filter(|s| ids.contains(&s.id.as_str()))
+            .map(|s| NamedSigner {
+                verified_by: format!("the host's key for {}", s.id),
+                ..s
+            })
+            .collect(),
+        ..claim
+    }
+}
+
+/// The refusal `answer` is, naming the publisher's layout policy as the
+/// claim found wanting, checked against `checked`.
+fn no_publishers_policy(
+    answer: Result<(PolicyOf, Vec<RequiredClaim>), Not>,
+    version: &ArtifactMeta,
+    index: &Digest,
+    checked: &[&str],
+) {
+    match answer {
+        Err(Not::Refused(r)) => assert_eq!(
+            r.why,
+            Why::Wanting {
+                version: version.clone(),
+                index: index.clone(),
+                wanting: RequiredClaim {
+                    kind: ClaimKind::LayoutPolicy,
+                    check: None,
+                    signers: trusts(checked),
+                },
+                checked: checked.iter().map(|id| SignerId::new(*id)).collect(),
+            }
+        ),
+        other => panic!("no policy counting answered {other:?}"),
+    }
+}
+
 #[test]
 fn the_consumers_own_policy_judges_whatever_the_index_carries() {
+    let fakes = Fakes::new();
     let index = Digest::of(b"index");
     let own = Own {
         revision: Revision::new("4f2a9c1"),
         claims: vec![acceptance()],
     };
-    let on_index = [publishers(&index, &[provenance()], HOST)];
+    let on_index = [publishers(&index, &[provenance()], GATE)];
     assert_eq!(
-        policy_for(Some(&own), &meta(ECO, "pkg", "1.1.0"), &index, &on_index),
-        Ok((
+        policy_for(
+            &fakes.seams(),
+            Some(&own),
+            &trusts(&[GATE]),
+            &meta(ECO, "pkg", "1.1.0"),
+            &index,
+            &on_index
+        ),
+        Ok(Ok((
             PolicyOf::Own {
                 revision: Revision::new("4f2a9c1")
             },
             vec![acceptance()]
-        ))
+        )))
     );
+    assert_eq!(fakes.signer.calls(), [], "the publisher's claim was told");
 }
 
 #[test]
-fn with_no_policy_of_its_own_a_version_is_judged_under_its_publishers() {
+fn with_no_policy_of_its_own_a_version_is_judged_under_its_publishers_through_a_trusted_signer() {
+    let fakes = Fakes::new();
     let index = Digest::of(b"index");
     let on_index = [
         signed(&index, ClaimKind::Acceptance, json!(null), GATE),
         publishers(&index, &[acceptance(), provenance()], HOST),
         publishers(&index, &[acceptance(), provenance()], GATE),
-        publishers(&Digest::of(b"another index"), &[provenance()], HOST),
+        publishers(&Digest::of(b"another index"), &[provenance()], GATE),
     ];
-    let (policy, claims) = policy_for(None, &meta(ECO, "pkg", "1.1.0"), &index, &on_index).unwrap();
+    let (policy, claims) = policy_for(
+        &fakes.seams(),
+        None,
+        &trusts(&[GATE, HOST]),
+        &meta(ECO, "pkg", "1.1.0"),
+        &index,
+        &on_index,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(
         policy,
         PolicyOf::Publisher {
             revision: Revision::new("p1b11s4")
         }
     );
-    assert_eq!(claims, [acceptance(), provenance()]);
+    assert_eq!(
+        claims,
+        [
+            as_trusted(acceptance(), &[GATE]),
+            as_trusted(provenance(), &[HOST])
+        ]
+    );
+    assert_eq!(
+        claims[0].signers[0].verified_by, "the host's key for gate",
+        "the publisher's signer is verified by a key the host does not hold"
+    );
     assert_eq!(
         serde_json::to_value(&policy).unwrap(),
         json!({ "publisher": { "revision": "p1b11s4" } })
@@ -340,46 +425,131 @@ fn with_no_policy_of_its_own_a_version_is_judged_under_its_publishers() {
 }
 
 #[test]
+fn a_publishers_policy_by_a_signer_the_host_does_not_trust_does_not_count() {
+    let fakes = Fakes::new();
+    let index = Digest::of(b"index");
+    let version = meta(ECO, "pkg", "1.1.0");
+    let strangers = publishers(&index, &[provenance()], "stranger");
+    let answer = policy_for(
+        &fakes.seams(),
+        None,
+        &trusts(&[GATE]),
+        &version,
+        &index,
+        std::slice::from_ref(&strangers),
+    );
+    no_publishers_policy(answer.unwrap(), &version, &index, &[GATE]);
+
+    let gates = publishers(&index, &[acceptance()], GATE);
+    let (_, claims) = policy_for(
+        &fakes.seams(),
+        None,
+        &trusts(&[GATE]),
+        &version,
+        &index,
+        &[strangers, gates],
+    )
+    .unwrap()
+    .expect("the untrusted claim was counted beside the trusted one");
+    assert_eq!(claims, [as_trusted(acceptance(), &[GATE])]);
+}
+
+#[test]
+fn a_required_claim_through_a_signer_the_host_does_not_trust_is_found_wanting() {
+    let (fakes, located, _) = accepted();
+    let gate_or_box = RequiredClaim {
+        kind: ClaimKind::Acceptance,
+        check: None,
+        signers: vec![
+            named(GATE, &[ClaimKind::Acceptance], &[]),
+            named("box", &[ClaimKind::Acceptance], &[]),
+        ],
+    };
+    let on_index = [
+        publishers(&located.index, std::slice::from_ref(&gate_or_box), GATE),
+        signed(&located.index, ClaimKind::Acceptance, json!(null), "box"),
+    ];
+    let seams = fakes.seams();
+    let (_, claims) = policy_for(
+        &seams,
+        None,
+        &trusts(&[GATE]),
+        &located.artifact.meta,
+        &located.index,
+        &on_index,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(claims, [as_trusted(gate_or_box, &[GATE])]);
+    let (wanted, checked) = wanting(judge(&seams, &claims, &located, &on_index, &[]).unwrap());
+    assert_eq!(wanted.kind, ClaimKind::Acceptance);
+    assert_eq!(checked, [SignerId::new(GATE)]);
+}
+
+#[test]
 fn no_policy_anywhere_is_refused_naming_the_publishers_layout_policy() {
+    let fakes = Fakes::new();
     let index = Digest::of(b"index");
     let version = meta(ECO, "pkg", "1.1.0");
     let on_index = [signed(&index, ClaimKind::Acceptance, json!(null), GATE)];
-    match policy_for(None, &version, &index, &on_index) {
-        Err(Not::Refused(r)) => assert_eq!(
-            r.why,
-            Why::Wanting {
-                version,
-                index,
-                wanting: RequiredClaim {
-                    kind: ClaimKind::LayoutPolicy,
-                    check: None,
-                    signers: vec![],
-                },
-                checked: vec![],
-            }
-        ),
-        other => panic!("no policy anywhere answered {other:?}"),
-    }
+    let answer = policy_for(
+        &fakes.seams(),
+        None,
+        &trusts(&[GATE, HOST]),
+        &version,
+        &index,
+        &on_index,
+    );
+    no_publishers_policy(answer.unwrap(), &version, &index, &[GATE, HOST]);
+
+    let on_index = [publishers(&index, &[acceptance()], GATE)];
+    let answer = policy_for(&fakes.seams(), None, &[], &version, &index, &on_index);
+    no_publishers_policy(answer.unwrap(), &version, &index, &[]);
 }
 
 #[test]
 fn two_publishers_policies_of_different_content_are_unreadable_naming_both() {
+    let fakes = Fakes::new();
     let index = Digest::of(b"index");
     let first = publishers(&index, &[acceptance()], HOST);
-    let second = publishers(&index, &[provenance()], HOST);
+    let second = publishers(&index, &[provenance()], GATE);
     match policy_for(
+        &fakes.seams(),
         None,
+        &trusts(&[GATE, HOST]),
         &meta(ECO, "pkg", "1.1.0"),
         &index,
         &[first.clone(), second.clone()],
     ) {
-        Err(Not::Unreadable(u)) => {
+        Ok(Err(Not::Unreadable(u))) => {
             assert!(u.what.contains(&first.digest().to_string()), "{}", u.what);
             assert!(u.what.contains(&second.digest().to_string()), "{}", u.what);
             assert!(u.what.contains(&index.to_string()), "{}", u.what);
         }
         other => panic!("two policies answered {other:?}"),
     }
+}
+
+#[test]
+fn a_signer_that_cannot_tell_the_publishers_policy_is_the_outer_answer() {
+    let fakes = Fakes::new();
+    let index = Digest::of(b"index");
+    fakes.signer.fault(
+        tailrace_fakes::SignerOp::Verify,
+        Fault::Unreadable("key service down".into()),
+        Times::Once,
+    );
+    assert!(matches!(
+        policy_for(
+            &fakes.seams(),
+            None,
+            &trusts(&[GATE]),
+            &meta(ECO, "pkg", "1.1.0"),
+            &index,
+            &[publishers(&index, &[acceptance()], GATE)],
+        ),
+        Err(Not::Unreadable(u)) if u.said.as_deref() == Some("key service down")
+    ));
 }
 
 const LANDING: &str = "landing";

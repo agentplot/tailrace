@@ -9,12 +9,14 @@
 //! lockfile's pins are, and never a refusal (51, 58).
 //!
 //! A layout is judged under the consuming repository's own policy for
-//! layouts, read once at the landed revision sync runs for and never
-//! from the checkout (113, 65, rule core.22); where it declares none,
-//! each version under its publisher's, read from the one layout-policy
-//! claim on the version's index. A version with no policy anywhere is
-//! refused, so no layout holds a version judged under none (rule
-//! core.17; design D3). A version is held only when each claim the policy
+//! layouts, its `[layout]` or the given, read once at the landed revision
+//! sync runs for and never from the checkout (113, 65, C.10, rule
+//! core.22); where it has no policy of its own, each version under its
+//! publisher's, read from the one layout-policy claim on the version's
+//! index that a signer the host trusts made, each claim it requires
+//! counted only through a signer the host trusts too (C.10, 118). A
+//! version with no policy anywhere is refused, so no layout holds a
+//! version judged under none (rule core.17; design D3). A version is held only when each claim the policy
 //! requires, in its order, is satisfied by a claim attached to its index
 //! or its artifact that a signer the policy names made and may make (47,
 //! 9, 116, rule core.7); the first that none satisfies is the refusal,
@@ -24,8 +26,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Audience, Claim, ClaimKind, Digest, Ecosystem, EcosystemName,
-    Envelope, Held, Manifest, Name, Not, Pinned, Policy, RequiredClaim, Revision, Seam, Seams,
-    SignerId, Source, Store, Version, Why,
+    Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned, Policy, RequiredClaim, Revision,
+    Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
@@ -150,25 +152,57 @@ struct LayoutPolicyBody {
     claims: Vec<RequiredClaim>,
 }
 
+/// C.10, rule core.7: `claims`, a publisher's policy, each narrowed to
+/// the signers it names that the host trusts, each verified by the key
+/// the host trusts it by and allowed what the policy lets it claim. A
+/// claim none of whose signers the host trusts names none, and so is
+/// found wanting.
+fn through_trusted(trusted: &[NamedSigner], claims: Vec<RequiredClaim>) -> Vec<RequiredClaim> {
+    claims
+        .into_iter()
+        .map(|claim| RequiredClaim {
+            signers: claim
+                .signers
+                .into_iter()
+                .filter_map(|named| {
+                    let trust = trusted.iter().find(|t| t.id == named.id)?;
+                    Some(NamedSigner {
+                        verified_by: trust.verified_by.clone(),
+                        ..named
+                    })
+                })
+                .collect(),
+            ..claim
+        })
+        .collect()
+}
+
 /// 113, rule core.17: the policy `version`, whose index is `index`, is
-/// judged under: the consumer's `own` where it declares one; otherwise
-/// its publisher's, the one layout-policy claim about the index among
-/// `on_index`, the index's attestations, read as the store holds them
-/// (design D3). None is refused naming the publisher's layout policy as
-/// the claim found wanting; two of different content are unreadable
-/// naming both, and neither is chosen, as a fork is never chosen between
-/// (rule core.34).
+/// judged under, and the claims it requires: the consumer's `own` where it
+/// has one; otherwise its publisher's, the one layout-policy claim about
+/// the index among `on_index`, the index's attestations, that verify's
+/// telling says one of `trusted`, the signers the host trusts, made, its
+/// claims each counted only through a signer the host trusts too (C.10,
+/// 118, rule core.7; design D3). A layout-policy claim by any other
+/// signer stays attached and does not count (9). None counting is refused
+/// naming the publisher's layout policy as the claim found wanting,
+/// checked against the trusted signers; two of different content are
+/// unreadable naming both, and neither is chosen, as a fork is never
+/// chosen between (rule core.34). A signer that cannot say is the outer
+/// answer.
 pub fn policy_for(
+    seams: &Seams,
     own: Option<&Own>,
+    trusted: &[NamedSigner],
     version: &ArtifactMeta,
     index: &Digest,
     on_index: &[Envelope],
-) -> Answer<(PolicyOf, Vec<RequiredClaim>)> {
+) -> Pinning<(PolicyOf, Vec<RequiredClaim>)> {
     if let Some(own) = own {
         let policy = PolicyOf::Own {
             revision: own.revision.clone(),
         };
-        return Ok((policy, own.claims.clone()));
+        return Ok(Ok((policy, own.claims.clone())));
     }
     let mut found: Vec<(Digest, Claim)> = Vec::new();
     for envelope in on_index {
@@ -178,13 +212,25 @@ pub fn policy_for(
         if claim.kind != ClaimKind::LayoutPolicy || claim.subject != *index {
             continue;
         }
+        let told = tell(
+            seams,
+            trusted,
+            index,
+            envelope,
+            Some(claim.kind),
+            None,
+            None,
+        )?;
+        if !told.counts {
+            continue;
+        }
         if !found.iter().any(|(_, held)| held.body == claim.body) {
             found.push((envelope.digest(), claim));
         }
     }
     let store = Source::new(Seam::Store, BOUND);
     match found.as_slice() {
-        [] => Err(Not::refused(
+        [] => Ok(Err(Not::refused(
             &Source::new(Seam::Policy, BOUND),
             Why::Wanting {
                 version: version.clone(),
@@ -192,36 +238,38 @@ pub fn policy_for(
                 wanting: RequiredClaim {
                     kind: ClaimKind::LayoutPolicy,
                     check: None,
-                    signers: Vec::new(),
+                    signers: trusted.to_vec(),
                 },
-                checked: Vec::new(),
+                checked: trusted.iter().map(|t| t.id.clone()).collect(),
             },
             None,
-        )),
+        ))),
         [(envelope, claim)] => {
-            let body: LayoutPolicyBody =
-                serde_json::from_value(claim.body.clone()).map_err(|e| {
-                    Not::unreadable(
+            let body: LayoutPolicyBody = match serde_json::from_value(claim.body.clone()) {
+                Ok(body) => body,
+                Err(e) => {
+                    return Ok(Err(Not::unreadable(
                         &store,
                         format!("the layout policy {envelope} on {index}"),
                         Some(e.to_string()),
-                    )
-                })?;
+                    )))
+                }
+            };
             let policy = PolicyOf::Publisher {
                 revision: claim.revision.clone(),
             };
-            Ok((policy, body.claims))
+            Ok(Ok((policy, through_trusted(trusted, body.claims))))
         }
         several => {
             let claims: Vec<String> = several.iter().map(|(d, _)| d.to_string()).collect();
-            Err(Not::unreadable(
+            Ok(Err(Not::unreadable(
                 &store,
                 format!("the layout policies {} on {index}", claims.join(" and ")),
                 Some(format!(
                     "{} layout-policy claims of different content on one index, and none is chosen",
                     several.len()
                 )),
-            ))
+            )))
         }
     }
 }
