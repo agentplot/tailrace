@@ -51,16 +51,19 @@ pub const ORIGIN: &str = "origin";
 /// [`SLUICE_FILE`], read with git from that commit and never from the
 /// working tree (C.5, rule core.22); the plain branch otherwise, a `HEAD`
 /// naming no commit yet among them (C.6); either over [`given_remote`]'s
-/// remote. Unreadable with git's words where git cannot open the
-/// repository (58, 59), and as [`given_remote`] answers.
-pub fn given(file: &Path, repository: &Path) -> Answer<Box<dyn Landing>> {
+/// remote, which it answers beside the landing, so the given ledger is
+/// kept where the landing reads (C.13). Unreadable with git's words where
+/// git cannot open the repository (58, 59), and as [`given_remote`]
+/// answers.
+pub fn given(file: &Path, repository: &Path) -> Answer<(Box<dyn Landing>, Option<String>)> {
     let sluice = set_up_for_sluice(repository)?;
     let remote = remote_of(file, repository, &source(sluice))?;
-    Ok(if sluice {
-        Box::new(Sluice::new(repository, remote))
+    let landing: Box<dyn Landing> = if sluice {
+        Box::new(Sluice::new(repository, remote.clone()))
     } else {
-        Box::new(PlainBranch::new(repository, remote))
-    })
+        Box::new(PlainBranch::new(repository, remote.clone()))
+    };
+    Ok((landing, remote))
 }
 
 /// The remote of the landing a host binds where its file at `file` names

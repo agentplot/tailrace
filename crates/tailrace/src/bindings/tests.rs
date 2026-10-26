@@ -1151,7 +1151,7 @@ fn sluices_file_in_the_head_commit_binds_sluice() {
     sluice_file(&repo);
     git_in(&repo, &["add", ".config/sluice.toml"]);
     git_in(&repo, &["commit", "-q", "-m", "chore: sluice gates main"]);
-    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    let (landing, _) = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(landing_source(landing.as_ref(), &repo), sluice());
 }
 
@@ -1161,18 +1161,18 @@ fn sluices_file_only_in_the_working_tree_no_file_and_no_commit_bind_a_branch() {
     let repo = repository(&host);
     // No commit yet, sluice's file in the working tree alone.
     sluice_file(&repo);
-    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    let (landing, _) = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(landing_source(landing.as_ref(), &repo), branch());
     // A commit that holds no sluice file, with one in the working tree.
     git_in(
         &repo,
         &["commit", "-q", "--allow-empty", "-m", "feat: a start"],
     );
-    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    let (landing, _) = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(landing_source(landing.as_ref(), &repo), branch());
     // No file anywhere.
     fs::remove_dir_all(repo.join(".config")).unwrap();
-    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    let (landing, _) = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(landing_source(landing.as_ref(), &repo), branch());
 }
 
@@ -1243,7 +1243,7 @@ fn a_clone_reads_origin_beside_another_remote() {
         profiles::landing::given_remote(&host.file(), &repo),
         Ok(Some("origin".to_string()))
     );
-    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    let (landing, _) = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(
         remote_read(&host, landing.as_ref(), &head).as_deref(),
         Some("origin")
@@ -1258,7 +1258,7 @@ fn one_remote_of_another_name_is_read() {
         profiles::landing::given_remote(&host.file(), &repo),
         Ok(Some("github".to_string()))
     );
-    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    let (landing, _) = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(
         remote_read(&host, landing.as_ref(), &head).as_deref(),
         Some("github")
@@ -1273,7 +1273,7 @@ fn no_remote_reads_the_repositorys_own_refs() {
         profiles::landing::given_remote(&host.file(), &repo),
         Ok(None)
     );
-    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    let (landing, _) = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(remote_read(&host, landing.as_ref(), &head), None);
 }
 
@@ -1311,6 +1311,169 @@ fn a_written_landing_with_no_remote_reads_its_own_refs_in_a_clone() {
         remote_read(&host, binding.seams.landing.as_ref(), &head),
         None
     );
+}
+
+// Requirement: A table the file leaves out is bound to its given profile,
+// the given ledger kept on the landing's remote
+
+/// `stable`'s ref in the ledger's git refs.
+const STABLE_REF: &str = "refs/tailrace/ledger/stable";
+
+/// A bare repository at `<name>.git` in the host's directory, as a
+/// remote holds a checkout's refs, and its path.
+fn bare(host: &Host, name: &str) -> PathBuf {
+    let at = host.dir.path().join(format!("{name}.git"));
+    let made = std::process::Command::new("git")
+        .args(["init", "-q", "--bare", "-b", "main"])
+        .arg(&at)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .status()
+        .unwrap();
+    assert!(made.success());
+    at
+}
+
+/// The commit `name` names in the repository at `git_dir`, a checkout
+/// or a bare one, or none where it names none.
+fn ref_at(git_dir: &Path, name: &str) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(git_dir)
+        .args(["rev-parse", "--verify", "--quiet", name])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    out.status
+        .success()
+        .then(|| String::from_utf8(out.stdout).unwrap().trim().to_string())
+}
+
+/// The first promotion of `stable`, signed as the gate.
+fn promotion() -> Envelope {
+    let body = tailrace_seams::Promotion {
+        channel: ChannelName::new("stable"),
+        component: stable().component_name(),
+        to: tailrace_seams::Moved {
+            version: tailrace_seams::Version::new("0.1.0"),
+            index: Digest::of(b"0.1.0's index"),
+        },
+        from: None,
+        predecessor: None,
+        asked_by: SignerId::new("gate"),
+        policy: tailrace_seams::Satisfied {
+            revision: tailrace_seams::Revision::new(format!("{:040x}", 1)),
+            claims: vec![],
+        },
+        at: 1_767_225_600,
+    };
+    let signer = tailrace_fakes::FakeSigner::new();
+    signer.hold(&SignerId::new("gate"));
+    tailrace_seams::Signer::sign(
+        &signer,
+        &body.claim(tailrace_seams::Revision::new(format!("{:040x}", 1))),
+        &SignerId::new("gate"),
+    )
+    .unwrap()
+}
+
+/// `stable`'s first promotion appended through the ledger the host binds
+/// for a promote in `repo`, its given layout made first, since a promote
+/// never makes it.
+fn promoted(host: &Host, repo: &Path) -> Envelope {
+    profiles::store::layout::Layout::create(host.given_layout()).unwrap();
+    let binding = host
+        .bind(repo, For::Promote)
+        .unwrap_or_else(|not| panic!("promote bound nothing: {not}"));
+    let promotion = promotion();
+    binding
+        .seams
+        .keeper
+        .append(&stable(), &promotion, None)
+        .unwrap();
+    promotion
+}
+
+#[test]
+fn no_ledger_table_keeps_the_chain_on_origin_and_a_second_clone_with_no_file_reads_it() {
+    let host = Host::new();
+    let origin = bare(&host, "origin");
+    let (repo, _) = committed(&host, Some(&origin));
+    let promotion = promoted(&host, &repo);
+    let held = ref_at(&origin, STABLE_REF).expect("origin holds stable's chain");
+    assert_eq!(ref_at(&repo, STABLE_REF), Some(held), "the copy follows");
+
+    // A second machine, with no bindings file, in another clone of origin.
+    let other = Host::new();
+    let clone = other.dir.path().join("clone");
+    git_in(
+        other.dir.path(),
+        &[
+            "clone",
+            "-q",
+            origin.to_str().unwrap(),
+            clone.to_str().unwrap(),
+        ],
+    );
+    let chain = other
+        .bind(&clone, For::Status)
+        .unwrap_or_else(|not| panic!("status bound nothing: {not}"))
+        .seams
+        .keeper
+        .chain(&stable())
+        .unwrap_or_else(|not| panic!("the second clone read no chain: {not}"));
+    assert_eq!(chain.claims, vec![promotion]);
+    assert_eq!(chain.read, tailrace_seams::Read::Source);
+}
+
+#[test]
+fn a_checkout_with_no_remote_and_no_ledger_table_appends_to_its_own_ref() {
+    let host = Host::new();
+    let (repo, _) = committed(&host, None);
+    promoted(&host, &repo);
+    assert!(ref_at(&repo, STABLE_REF).is_some(), "its own ref holds it");
+    assert_eq!(ref_at(&repo, "refs/tailrace/fetched/stable"), None);
+}
+
+#[test]
+fn a_written_landing_with_no_remote_keeps_the_given_ledger_in_its_own_refs() {
+    let host = Host::new();
+    let origin = bare(&host, "origin");
+    let (repo, _) = committed(&host, Some(&origin));
+    host.write("[landing]\nbranch = {}\n");
+    promoted(&host, &repo);
+    assert!(ref_at(&repo, STABLE_REF).is_some(), "its own ref holds it");
+    assert_eq!(ref_at(&origin, STABLE_REF), None, "origin was written");
+}
+
+#[test]
+fn a_written_landings_remote_carries_the_given_ledger() {
+    let host = Host::new();
+    let origin = bare(&host, "origin");
+    let upstream = bare(&host, "upstream");
+    let (repo, _) = committed(&host, Some(&origin));
+    git_in(
+        &repo,
+        &["remote", "add", "upstream", upstream.to_str().unwrap()],
+    );
+    host.write("[landing]\nbranch = { remote = \"upstream\" }\n");
+    promoted(&host, &repo);
+    assert!(ref_at(&upstream, STABLE_REF).is_some(), "upstream holds it");
+    assert_eq!(ref_at(&origin, STABLE_REF), None, "origin was written");
+}
+
+#[test]
+fn a_fresh_repositorys_given_ledger_answers_that_no_chain_is_held() {
+    let host = Host::new();
+    let repo = repository(&host);
+    match chain_of(host.bind(&repo, For::Status)) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref"));
+            assert_eq!(a.what, "chain of stable");
+        }
+        other => panic!("a fresh repository's given ledger answered {other:?}"),
+    }
 }
 
 // Requirement: A host with no bindings file is bound to the given
@@ -1384,7 +1547,7 @@ fn no_file_and_an_empty_file_bind_the_given_profiles() {
 }
 
 #[test]
-fn status_with_no_file_binds_the_given_landing_and_the_git_ref_with_no_remote_and_makes_nothing() {
+fn status_with_no_file_binds_the_given_landing_and_the_git_ref_on_its_remote_and_makes_nothing() {
     let host = Host::new();
     let (repo, head) = with_remotes(&host, &["origin"]);
     let before = files(host.dir.path());
@@ -1395,9 +1558,14 @@ fn status_with_no_file_binds_the_given_landing_and_the_git_ref_with_no_remote_an
         remote_read(&host, binding.seams.landing.as_ref(), &head).as_deref(),
         Some("origin")
     );
+    let origin = host.dir.path().join("origin.git");
     match binding.seams.keeper.chain(&stable()) {
-        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
-        other => panic!("the given ledger answered {other:?}, not from the repository"),
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::new(Seam::Keeper, "git_ref"));
+            let said = u.said.unwrap_or_default();
+            assert!(said.contains(&origin.display().to_string()), "{said}");
+        }
+        other => panic!("the given ledger answered {other:?}, not from origin"),
     }
     assert_eq!(binding.store, given_store(&host));
     match binding.seams.store.resolve(&Name::new("v0.1.0")) {

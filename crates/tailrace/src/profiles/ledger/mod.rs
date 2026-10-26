@@ -58,10 +58,14 @@ pub fn in_store(table: &Table) -> bool {
 }
 
 /// The ledger a host binds where its file names no `[ledger]` (118,
-/// C.13): the git ref in the repository at `repository`, read and
-/// written with no remote.
-pub fn given(repository: &Path) -> Box<dyn Keeper> {
-    Box::new(GitRef::new(repository, None))
+/// C.13): the git ref over the repository at `repository`, kept on the
+/// landing's remote, `remote`, fetched from it before each read and
+/// pushed to it on each append as the branch is, so every checkout of
+/// the repository reads one chain; and in the repository's own refs,
+/// where it keeps its branch, with nothing pushed, where the landing has
+/// none.
+pub fn given(repository: &Path, remote: Option<String>) -> Box<dyn Keeper> {
+    Box::new(GitRef::new(repository, remote))
 }
 
 /// The common git directory of the repository at `repository`, which

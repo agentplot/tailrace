@@ -1,13 +1,12 @@
 //! Spec channel-status, two machines and one answer, S10 and S12, and
-//! spec host-bindings, a table the file leaves out bound to its given
-//! profile, over real profiles: a bare remote; machine A, a clone bound
-//! by a file of its own to a plain branch landing, an OCI layout, a host
-//! key and the git ref ledger on `origin`, which promotes through
-//! `tailrace::run`; and machine B, a second clone whose file names the
-//! shared ledger on `origin` alone, every other seam given as 118 binds
-//! it. A machine cut off from its remote is not asked here: its landing
-//! answers unreadable until the landing reads the host's copy of the
-//! branch as last fetched (77, C.5, C.6), and a chain as last read is
+//! spec host-bindings, status with nothing written, over real profiles:
+//! a bare remote; machine A, a clone bound by a file of its own to a
+//! plain branch landing, an OCI layout, a host key and the git ref ledger
+//! on `origin`, which promotes through `tailrace::run`; and machine B, a
+//! second clone on a host with no bindings file, bound as 118 binds such
+//! a host. A machine cut off from its remote is not asked here: its
+//! landing answers unreadable until the landing reads the host's copy of
+//! the branch as last fetched (77, C.5, C.6), and a chain as last read is
 //! proven over the fakes. Needs git alone, so it is in the fast layer.
 
 mod scratch;
@@ -34,10 +33,6 @@ use tailrace_seams::{
 };
 
 const GATE: &str = "gate";
-
-/// Machine B's bindings file: the git ref ledger on `origin`, every other
-/// table left out.
-const B_BINDINGS: &str = "[ledger]\ngit_ref = { remote = \"origin\" }\n";
 
 /// `args` asked through `tailrace::run` in the repository at `at` over
 /// `binding`: the exit and what it printed.
@@ -100,11 +95,7 @@ fn files(dir: &Path, git: bool) -> Vec<(PathBuf, Vec<u8>)> {
 /// component in its layout, each index carrying the gate's acceptance,
 /// and promoted `rc`, which moves by a promotion alone, to the first,
 /// then the second, `beta` and `stable` left empty; and machine B, a
-/// clone of the remote whose bindings file names the git ref ledger on
-/// `origin` and nothing else, with an empty home. A host with no file
-/// reads the ledger in its own refs, so a second machine reads the
-/// chain the first appends to only through a file naming the ledger's
-/// remote (118).
+/// clone of the remote with no bindings file and an empty home.
 struct Two {
     scratch: Scratch,
     a: Repo,
@@ -112,7 +103,7 @@ struct Two {
     a_home: PathBuf,
     b: Repo,
     b_home: PathBuf,
-    b_binding: PathBuf,
+    nowhere: PathBuf,
 }
 
 impl Two {
@@ -162,15 +153,13 @@ impl Two {
         let two = Two {
             b: scratch.clone_as("b"),
             b_home: scratch.path().join("b-host/home"),
-            b_binding: scratch.path().join("b-host/config/tailrace/config.toml"),
+            nowhere: scratch.path().join("b-host/config/tailrace/config.toml"),
             scratch,
             a,
             a_binding,
             a_home,
         };
         fs::create_dir_all(&two.b_home).unwrap();
-        fs::create_dir_all(two.b_binding.parent().unwrap()).unwrap();
-        fs::write(&two.b_binding, B_BINDINGS).unwrap();
 
         let binding = two.bind_a(For::Promote).expect("machine A binds");
         for (version, revision) in [("0.1.0", &first), ("0.2.0", &second)] {
@@ -218,11 +207,12 @@ impl Two {
         )
     }
 
-    /// Machine B's binding: its file naming the ledger alone, and the
-    /// empty home.
+    /// Machine B's binding: a bindings file's path that is not there,
+    /// and the empty home.
     fn bind_b(&self) -> Answer<Binding> {
+        assert!(!self.nowhere.exists());
         bindings::bind(
-            &self.b_binding,
+            &self.nowhere,
             Some(&self.b_home),
             None,
             &self.b.path,
@@ -234,7 +224,7 @@ impl Two {
     fn b_host(&self) -> Host {
         Host {
             state: self.scratch.path().join("b-host/state/tailrace"),
-            config: self.b_binding.clone(),
+            config: self.nowhere.clone(),
             home: Some(self.b_home.clone()),
             data: None,
         }
@@ -269,8 +259,7 @@ fn a_machine_that_never_published_answers_every_channel_as_the_one_that_promoted
     let two = Two::new();
     let ours = status(&two.bind_a(For::Status), &two.a.path);
 
-    // Machine B, its file naming the ledger alone, answers the same
-    // channels.
+    // Machine B, bound with nothing written, answers the same channels.
     let b_tree = files(&two.b.path, false);
     let theirs = status(&two.bind_b(), &two.b.path);
     let rc = channel(&theirs, "rc");
@@ -292,11 +281,7 @@ fn a_machine_that_never_published_answers_every_channel_as_the_one_that_promoted
     assert_eq!(theirs["value"]["published"]["answer"], "absent", "{theirs}");
     assert_eq!(theirs["value"]["environments"]["answer"], "unreadable");
     assert_eq!(files(&two.b_home, true), [], "B's home was written");
-    assert_eq!(
-        fs::read_to_string(&two.b_binding).unwrap(),
-        B_BINDINGS,
-        "B's bindings file was written"
-    );
+    assert!(!two.nowhere.exists(), "a bindings file was made");
     assert_eq!(files(&two.b.path, false), b_tree, "B's tree was written");
     let record = Kept::at(&History::open(&two.b.path).unwrap())
         .dir()
