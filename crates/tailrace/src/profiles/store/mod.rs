@@ -5,17 +5,53 @@ pub mod layout;
 mod oci;
 pub mod registry;
 
+use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tailrace_seams::{Answer, Not, Seam, Source, Store};
 
-use crate::bindings::Table;
+use crate::bindings::{self, Table};
 use layout::Layout;
 use registry::Registry;
 
 /// The keys of `[store]`, one per profile.
 const KEYS: [&str; 2] = ["layout", "registry"];
+
+/// Where the given layout is, under the user's data directory.
+pub const GIVEN_LAYOUT: &str = "tailrace/layout";
+
+/// The store a host binds where its file at `file` names no `[store]`
+/// (118, C.2): the layout at [`GIVEN_LAYOUT`] under the user's data
+/// directory, `xdg_data_home` where it is set and not empty and
+/// `.local/share` under `home` otherwise, as a `[store] layout` table
+/// the file left out, so it is bound, named and made exactly as a
+/// written one is. Absent naming both variables where neither is set,
+/// since no given layout can be placed; nothing is read.
+pub fn given(file: &Path, xdg_data_home: Option<&OsStr>, home: Option<&Path>) -> Answer<Table> {
+    let data = match (xdg_data_home, home) {
+        (Some(dir), _) if !dir.is_empty() => PathBuf::from(dir),
+        (_, Some(home)) => home.join(".local/share"),
+        (_, None) => {
+            return Err(Not::absent(
+                &bindings::source(file),
+                format!(
+                    "binding of the store: neither XDG_DATA_HOME nor HOME is set to place \
+                     {GIVEN_LAYOUT}"
+                ),
+            ))
+        }
+    };
+    let layout = data.join(GIVEN_LAYOUT);
+    let text = layout.to_str().ok_or_else(|| {
+        bindings::unreadable(
+            file,
+            Some("[store] layout (given)"),
+            format!("{} is not a path in UTF-8", layout.display()),
+        )
+    })?;
+    Ok(Table::given(file, "store", "layout", text.into()))
+}
 
 /// The store `[store]` names (92, C.1, C.2): `layout`, the OCI layout at
 /// its path, made there when `make` and the path is missing or an empty
@@ -70,5 +106,47 @@ fn missing_or_empty(path: &Path) -> bool {
     match fs::read_dir(path) {
         Ok(mut entries) => entries.next().is_none(),
         Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn file() -> PathBuf {
+        PathBuf::from("/config/tailrace/config.toml")
+    }
+
+    #[test]
+    fn the_given_layout_is_under_the_data_directory_or_the_home() {
+        let home = Path::new("/home/a");
+        for (xdg, layout) in [
+            (Some(OsStr::new("/data")), "/data/tailrace/layout"),
+            (Some(OsStr::new("")), "/home/a/.local/share/tailrace/layout"),
+            (None, "/home/a/.local/share/tailrace/layout"),
+        ] {
+            let table = given(&file(), xdg, Some(home)).unwrap();
+            assert_eq!(table.key(), "layout");
+            assert_eq!(table.path(), Ok(PathBuf::from(layout)));
+            assert_eq!(
+                named(&table),
+                Ok(Source::new(Seam::Store, format!("layout {layout}")))
+            );
+        }
+        let table = given(&file(), Some(OsStr::new("/data")), None).unwrap();
+        assert_eq!(table.path(), Ok(PathBuf::from("/data/tailrace/layout")));
+    }
+
+    #[test]
+    fn with_neither_the_data_directory_nor_the_home_the_given_layout_is_absent() {
+        assert_eq!(
+            given(&file(), None, None),
+            Err(Not::absent(
+                &Source::host(file()),
+                "binding of the store: neither XDG_DATA_HOME nor HOME is set to place \
+                 tailrace/layout"
+            ))
+        );
+        assert!(given(&file(), Some(OsStr::new("")), None).is_err());
     }
 }
