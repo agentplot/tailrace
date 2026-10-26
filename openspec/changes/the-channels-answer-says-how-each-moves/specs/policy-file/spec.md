@@ -8,8 +8,8 @@
 claims in the order the verdict reads them, each with its `kind`, its
 `check` where it is a verdict, and the `signers` by their names in
 `[signers]` (82). A channel's table SHALL hold such a list in `require`
-or leave it out, requiring nothing of its own, and MAY name `bound_to`
-or `on_each_publish` (83, 37, 95). The acceptance and layout tables
+or leave it out, requiring nothing of its own, and MAY name `bound_to`,
+`on_each_publish` or `on` (83, 37, 95, C.10). The acceptance and layout tables
 SHALL name no channel.
 
 #### Scenario: Acceptance requires two claims
@@ -36,8 +36,9 @@ SHALL name no channel.
 
 Where the revision holds no policy file, or its file holds no table for
 the audience asked, the answer SHALL be absent naming the audience (82,
-58), except for a channel the file gives or an environment's words make,
-whose policy SHALL be answered as given (C.10). A file that cannot be
+58), except for a channel the givens hold and the table in force has
+on, or one an environment's words make, whose policy SHALL be answered
+as given (C.10). A file that cannot be
 read or parsed SHALL be unreadable naming the file and the revision,
 with git's or the parser's own words (59).
 
@@ -58,7 +59,7 @@ with git's or the parser's own words (59).
 
 #### Scenario: A channel neither given nor declared
 
-- **WHEN** the policy for `edge` is asked and the file neither declares nor makes it
+- **WHEN** the policy for `edge` is asked and neither the file nor the fragment declares it and no environment makes it
 - **THEN** the answer is absent naming the channel
 
 ### Requirement: A channel's table names its component
@@ -99,10 +100,10 @@ table and the form to use. The profile reads only each component's
 
 ### Requirement: A channel is bound within its component
 
-A `bound_to` SHALL name a channel of the same component that the file
-declares, gives or makes; one that names a channel of no such kind
-SHALL be unreadable naming the table and the channel it names (37,
-125). A channel's component and how it moves SHALL be read the same way
+A `bound_to` SHALL name a channel of the same component that the table
+in force has on or an environment makes; one that names a channel of no
+such kind SHALL be unreadable naming the table and the channel it names
+(37, 125). A channel's component and how it moves SHALL be read the same way
 whether the channels are listed or one channel's policy is asked, so
 the two never disagree (83).
 
@@ -113,7 +114,7 @@ the two never disagree (83).
 
 #### Scenario: A binding to a channel not declared
 
-- **WHEN** `[channels.next]` names `bound_to = "edge"` and the file neither declares, gives nor makes an `edge`
+- **WHEN** `[channels.next]` names `bound_to = "edge"` and neither the file nor the fragment declares an `edge` and no environment makes one
 - **THEN** the channels are unreadable, naming `[channels.next]` and `edge`
 
 #### Scenario: A binding to a given channel
@@ -123,12 +124,12 @@ the two never disagree (83).
 
 ### Requirement: The profile lists the channels the file declares
 
-The profile SHALL answer channels with `beta` and `stable` of every
-component, each channel an environment's words make, and each channel
-table the file holds, once each, ordered by name and then component,
-each with its component and how it moves (131, C.10). Where the
-revision holds no policy file the answer SHALL be `beta` and `stable`
-of the one component. A revision the repository does not hold, or a
+The profile SHALL answer channels with every channel the table in force
+has on, the givens of every component among them, and each channel an
+environment's words make, once each, ordered by name and then
+component, each with its component and how it moves (131, C.10). Where
+the revision holds no policy file the answer SHALL be the givens that
+are on, of the one component. A revision the repository does not hold, or a
 file that cannot be read, SHALL answer as policy-for answers it (58,
 59).
 
@@ -164,13 +165,13 @@ bound channel takes no version from a publish (37).
 
 #### Scenario: A channel of neither key
 
-- **WHEN** `[channels.lts]` names only `require`
-- **THEN** `lts` is listed moving by a promotion alone
+- **WHEN** `[channels.edge]` names only `require`
+- **THEN** `edge` is listed moving by a promotion alone
 
 ### Requirement: The given channels' policy names the gate
 
-The policy for `beta`, `stable` or a channel an environment's words
-make SHALL require, first, an acceptance by the signers `[signers]`
+The policy for a channel the givens hold that the table in force has
+on, or a channel an environment's words make, SHALL require, first, an acceptance by the signers `[signers]`
 lets claim acceptance, then any `require` a line under it names, in
 order; and SHALL name those same signers, the gate, as its promoters
 whatever the line names (32, C.10). A hand-declared channel's promoters
@@ -183,23 +184,37 @@ SHALL be the signers its `require` names that may claim promotion.
 
 #### Scenario: A hand-declared channel's promoters
 
-- **WHEN** `[channels.lts]` requires an acceptance from `gate`, and `[signers.release]` with kinds `promotion` is named in its `require`
-- **THEN** the policy for `lts` names `release` as its promoter
+- **WHEN** `[channels.edge]` requires an acceptance from `gate`, and `[signers.release]` with kinds `promotion` is named in its `require`
+- **THEN** the policy for `edge` names `release` as its promoter
+
+#### Scenario: A given's line naming another promoter
+
+- **WHEN** `[channels.alpha]` requires a promotion from `release`, a signer of kinds `promotion` alone
+- **THEN** the policy for `alpha` requires the gate's acceptance and then that claim, and names only the gate as its promoter
 
 ### Requirement: The environments' words are read
 
 An environment SHALL be declared as `[environments.<name>]` where no
 component is declared and `[environments.<component>.<name>]` where
-components are, naming its `channel`, `policy` (`auto` or `manual`,
-`auto` where unwritten) and `after`, a list of environment names of the
-same component (C.10). Any other `policy`, or a `channel` the file does
-not declare, give or make, SHALL be unreadable naming the table. Its
-other keys SHALL be left to their readers.
+components are. Its keys SHALL be C.10's words and no others: its
+`channel`, `policy` (`auto` or `manual`, `auto` where unwritten),
+`after`, a list of environment names of the same component, and
+`target`, which the profile SHALL leave to the target's reader, reading
+nothing of its value (C.10). Any other `policy`, or a `channel` the
+file does not declare, give or make, SHALL be unreadable naming the
+table. Any other key SHALL be unreadable naming the table and the key,
+since a target's own settings sit in the target's table and nowhere
+else (C.10).
+
+#### Scenario: An environment naming its target
+
+- **WHEN** `[environments.site]` names `channel = "stable"` and a `target`
+- **THEN** the channels answer is read, and `site` makes no channel
 
 #### Scenario: An environment with a target's own key
 
 - **WHEN** `[environments.site]` names `channel = "stable"` and `bucket = "example-site"`
-- **THEN** the channels answer is read, `site` makes no channel, and `bucket` is not read
+- **THEN** the channels are unreadable naming `[environments.site]` and `bucket`, and saying a target's settings sit in the target's table
 
 #### Scenario: An unknown policy word
 
@@ -209,9 +224,10 @@ other keys SHALL be left to their readers.
 ### Requirement: An environment's channel is named for it
 
 The channel a manual or after environment is given SHALL take the
-environment's name, in its component, and a line under it SHALL be read
-as a line under a given channel (C.10). A channel so made that shares a
-name with a given channel, or a line under it naming another binding or
+environment's name, in its component, and a line under it SHALL add
+claims after the gate's acceptance (C.10). A channel so made that
+shares a name with a channel the fragment holds, on or off, or with
+another made channel, or a line under it naming another binding or
 `on_each_publish`, SHALL be unreadable naming the table.
 
 #### Scenario: A manual environment named beta
@@ -223,3 +239,42 @@ name with a given channel, or a line under it naming another binding or
 
 - **WHEN** the manual environment `prod` names `stable`, and `[channels.prod]` names `bound_to = "stable"` and a `require`
 - **THEN** `prod` is listed bound to `stable`, and its policy requires the gate's acceptance and then the line's claims
+
+#### Scenario: A manual environment named for a held given
+
+- **WHEN** `[environments.lts]` names `channel = "stable"` and `policy = "manual"`, and the file writes no `[channels.lts]`
+- **THEN** the channels are unreadable naming `[environments.lts]`
+
+### Requirement: The table in force lays the fragment beneath the file
+
+The profile SHALL read every answer from one table in force: the
+repository's file as written, with the fragment's table of each channel
+it holds laid beneath the repository's table of that channel in every
+component, as `[channels.<name>]` where no component is declared and
+`[channels.<component>.<name>]` where components are (C.10, 125). A key
+the repository writes SHALL replace the fragment's; `on_each_publish`
+and `bound_to` SHALL be replaced together where either is written; and
+`on` SHALL be true in a table the repository writes unless it writes
+`on = false`. A fragment that does not parse, or holds a table other
+than a channel's, SHALL make every answer unreadable naming the
+givens; the shipped fragment SHALL parse.
+
+#### Scenario: A line under one component's given
+
+- **WHEN** the file declares `lib` and `web` and `[channels.lib.stable]` requires a rebuild from `verifier`
+- **THEN** the policy for `stable` of `lib` requires the gate's acceptance and then the rebuild, and the policy for `stable` of `web` the gate's acceptance alone, both bound to their component's `beta`
+
+#### Scenario: A line that restates how a given moves
+
+- **WHEN** `[channels.stable]` names `bound_to = "beta"` and a `require`
+- **THEN** `stable` is listed bound to `beta`, and its policy requires the gate's acceptance and then the line's claims
+
+#### Scenario: A fragment that does not parse
+
+- **WHEN** the profile is given a fragment that is not well formed, and the channels or any policy are asked
+- **THEN** the answer is unreadable naming the givens, with the parser's words verbatim
+
+#### Scenario: The shipped fragment
+
+- **WHEN** the shipped fragment is read
+- **THEN** it parses, holds only channels' tables, and has `beta` and `stable` on and `alpha` and `lts` off

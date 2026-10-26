@@ -85,9 +85,11 @@ claims naming one predecessor SHALL be refused as a fork, naming both,
 never answered by choosing one (105, 122). A chain answered from the
 copy the host last read, because the source holding the ledger did not
 answer, SHALL say when that copy was read and carry the source's words
-of why it did not answer; a chain read from the source itself SHALL say
-so. An append SHALL never be held by such a copy alone (60, 61, C.13,
-C.14).
+of why it did not answer, a channel the copy holds no claim of answered
+as a chain of no claims saying so, never as an absence; a chain read
+from the source itself SHALL say so. An append SHALL never be held by
+such a copy alone (60 as amended at agentplot/blueprints b64d367, 61,
+C.13, C.14).
 
 #### Scenario: An append whose predecessor is not the head
 
@@ -98,6 +100,11 @@ C.14).
 
 - **WHEN** the source holding a chain the host has read cannot be reached, and the chain is asked
 - **THEN** the answer is the claims as last read, the time of that read and the source's words, and an append is unreadable
+
+#### Scenario: An empty chain read as last read
+
+- **WHEN** the host last read a channel's chain holding no claim, and the source holding it then cannot be reached
+- **THEN** the answer is a chain of no claims, the time of that read and the source's words, and not absent
 
 #### Scenario: Two components' chains of one name
 

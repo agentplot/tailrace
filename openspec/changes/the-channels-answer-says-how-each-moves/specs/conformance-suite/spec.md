@@ -17,7 +17,11 @@ none (125, 37), listed beside the channels the profile gives with
 nothing declared and like them (131). The group's rig SHALL declare
 components and channels, each with how it moves, at a landed revision
 as well as policies for audiences, and SHALL answer the channels its
-profile gives a set of components with nothing declared.
+profile gives a set of components with nothing declared. The group
+SHALL hold a profile to the three ways a channel moves and SHALL name
+no channel a profile gives, its declared channels bearing names no
+profile gives, so a profile whose givens bear other names passes alike
+(C.10).
 
 #### Scenario: The claims an audience requires
 
@@ -67,7 +71,7 @@ claim it names as predecessor, a stale predecessor refused naming the
 head, a fork reported and never chosen; to 125: two components'
 channels of one name kept as two chains; and to 60 and 61 as C.13 and
 C.14 keep them: a chain the keeper cannot reach answered as last read,
-saying when, and never appended to.
+saying when, an empty chain as any other, and never appended to.
 
 #### Scenario: A chain appended in order
 
@@ -98,6 +102,11 @@ saying when, and never appended to.
 
 - **WHEN** a chain is appended and read, the keeper is made unreachable, and the chain is read again
 - **THEN** it answers the claims as read, a time no earlier than the first read, and the rig's words, and an append is unreadable with them
+
+#### Scenario: An empty chain read as last read
+
+- **WHEN** the chain of a channel never appended to is read, the keeper is made unreachable, and the chain is read again
+- **THEN** it answers no claims, a time no earlier than the first read, and the rig's words, and not that none is held
 
 ## ADDED Requirements
 

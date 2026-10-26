@@ -1,7 +1,7 @@
 //! The `tailrace` binary: the command line, tailrace's first surface.
 //! `tailrace publish`, `tailrace verify`, `tailrace status`, `tailrace
-//! sync`, `tailrace push`, `tailrace rebuild` and `tailrace promote` each
-//! turn their arguments into one question to the one core and render its
+//! sync`, `tailrace push`, `tailrace rebuild`, `tailrace promote` and
+//! `tailrace policy` each turn their arguments into one question to the one core and render its
 //! answer, as text for a person or, with `--json`, as the answer itself
 //! for a program; none reads a seam, the record or the history itself,
 //! or computes a version, a digest, a signer or a channel of its own (56,
@@ -16,10 +16,12 @@
 //! its own exit. `status` is bound to the landing, the policy and the
 //! ledger alone, and on a host with no bindings file as 118 binds such a
 //! host; a binding it cannot make is its channels' answer, and the
-//! host's record answers beside it (60). `tailrace serve` is the host's
-//! one serving process, tailrace's second surface: it binds nothing
-//! itself, and answers each request from the one core over the binding
-//! of the checkout that named the repository (57, 114, 132).
+//! host's record answers beside it (60). `policy` is bound as status is,
+//! with no store and no signer, and a binding it cannot make is its
+//! answer. `tailrace serve` is the host's one serving process, tailrace's
+//! second surface: it binds nothing itself, and answers each request from
+//! the one core over the binding of the checkout that named the
+//! repository (57, 114, 132).
 
 use std::io::Write;
 use std::path::Path;
@@ -82,6 +84,10 @@ pub enum Command {
     /// channel's policy and held by the ledger before the store follows,
     /// or back to the version it moved from.
     Promote(commands::promote::PromoteArgs),
+    /// The policy in force at the branch's landed head: what acceptance
+    /// and a layout require, and every channel, the givens among them,
+    /// with how each moves, its claims and its promoters.
+    Policy(commands::policy::PolicyArgs),
     /// The host's one serving process: every repository a checkout named,
     /// each as a page and as JSON, at the core's address, until idle.
     Serve(commands::serve::ServeArgs),
@@ -112,6 +118,7 @@ pub fn run(cli: &Cli, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write)
         Command::Push(args) => commands::push::run(args, binding, at, out),
         Command::Rebuild(args) => commands::rebuild::run(args, binding, at, out),
         Command::Promote(args) => commands::promote::run(args, binding, at, out),
+        Command::Policy(args) => commands::policy::run(args, binding, at, out),
         Command::Serve(args) => commands::serve::run(args, out),
     }
 }

@@ -1061,6 +1061,45 @@ fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making
     }
 }
 
+#[test]
+fn the_policy_command_binds_no_store_and_no_signer_whatever_the_file_names() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"/keys/laptop\"\n",
+        layout.display()
+    ));
+    let no_store = || {
+        Err(Not::absent(
+            &Source::new(Seam::Store, "unbound"),
+            "binding of the store, which tailrace policy binds none",
+        ))
+    };
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Policy)
+        .unwrap_or_else(|not| panic!("policy bound nothing: {not}"));
+    assert_eq!(
+        binding.seams.store.resolve(&Name::new("v0.1.0")),
+        no_store()
+    );
+    assert_eq!(binding.store, Source::new(Seam::Store, "unbound"));
+    assert_eq!(binding.signer, None);
+    assert!(binding.seams.projections.is_empty() && binding.seams.targets.is_empty());
+    assert!(!layout.exists(), "policy made {}", layout.display());
+
+    fs::remove_file(host.file()).unwrap();
+    let before = files(host.dir.path());
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Policy)
+        .unwrap_or_else(|not| panic!("policy on a host with no file bound nothing: {not}"));
+    assert_eq!(
+        binding.seams.store.resolve(&Name::new("v0.1.0")),
+        no_store()
+    );
+    assert_eq!(binding.signer, None);
+    assert_eq!(files(host.dir.path()), before, "binding policy made a file");
+}
+
 /// A repository in the host's directory with one commit on `main`, its
 /// remote `origin` at `origin` where one is given, and its path and the
 /// commit.

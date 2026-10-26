@@ -281,7 +281,7 @@ fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
 fn each_way_a_channel_moves(rig: &dyn PolicyRig) {
     let channels = [
         declared("edge", None, Moves::EachPublish),
-        declared("lts", None, Moves::Promotion),
+        declared("rc", None, Moves::Promotion),
         declared("next", None, bound("edge")),
     ];
     let at = rig.declaring(&[], &channels);

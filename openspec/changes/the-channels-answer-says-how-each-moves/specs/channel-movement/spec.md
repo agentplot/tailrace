@@ -46,47 +46,97 @@ slash and its name.
 - **WHEN** a repository declares no component and its `beta` is promoted
 - **THEN** the chain and the store name are spelled `beta` and `channel/beta`, as before components were spelled
 
-### Requirement: Every component has beta and stable
+### Requirement: The givens are a fragment beneath the file
 
-With no line written, every component SHALL have a channel `beta` that
-moves on each accepted publish and a channel `stable` bound to `beta`
-(C.10). Both SHALL be listed like a channel declared by hand, and the
-policy for each SHALL answer like any channel's.
+The given channels SHALL be a policy fragment in the policy file's own
+form, shipped with tailrace as data in the policy profile's directory
+and laid beneath the repository's file, the two read as one table in
+force by every answer the profile gives (C.10). The fragment SHALL hold
+`beta`, moving on each accepted publish, and `stable`, bound to `beta`,
+both on, and `alpha`, moving on each accepted publish, and `lts`, bound
+to `stable`, both off. Every component SHALL have each given that is
+on with no line written, listed like a channel declared by hand, with
+the policy for each answering like any channel's.
 
 #### Scenario: A repository that writes no channel
 
 - **WHEN** the policy file at a revision declares the components `lib` and `web` and no channel
-- **THEN** the channels answer is `beta` of `lib` and of `web`, each moving on each publish, and `stable` of each, bound to its component's `beta`
+- **THEN** the channels answer is `beta` of `lib` and of `web`, each moving on each publish, and `stable` of each, bound to its component's `beta`, and neither `alpha` nor `lts`
 
 #### Scenario: A repository with no policy file
 
 - **WHEN** the revision holds no policy file
 - **THEN** the channels answer is `beta` and `stable` of the one component, `stable` bound to `beta`
 
-### Requirement: A line under a given channel never changes how it moves
+#### Scenario: Another fragment
 
-A line written under `beta` or `stable` SHALL add the claims its
-versions must carry, after the gate's acceptance, and SHALL NOT widen
-who signs its promotion or change how it moves: a line restating how
-the channel moves SHALL be read, and one naming another way SHALL be
-unreadable naming its table (C.10).
+- **WHEN** the profile is given, in place of the shipped fragment, one holding only `edge` moving on each publish, and the revision holds no policy file
+- **THEN** the channels answer is `edge` alone, and the gate moves `edge` on an accepted publish with nothing else changed
+
+### Requirement: One line switches a held given on
+
+A repository SHALL switch on a channel the fragment holds off by
+writing that channel's table, `[channels.<name>]` or
+`[channels.<component>.<name>]`, with no key needed, since its keys are
+already written beneath (C.10). A channel the table in force has off
+SHALL not be listed, SHALL have no policy, and SHALL be named by no
+binding or environment.
+
+#### Scenario: alpha switched on
+
+- **WHEN** the file declares no component and holds `[channels.alpha]` and nothing under it
+- **THEN** the channels answer lists `alpha` moving on each publish beside `beta` and `stable`, and the policy for `alpha` names the gate as its promoter
+
+#### Scenario: lts of one component
+
+- **WHEN** the file declares `lib` and `web` and holds `[channels.lib.lts]`
+- **THEN** `lts` of `lib` is listed bound to `stable` of `lib`, and no `lts` of `web` is listed
+
+#### Scenario: A channel held off
+
+- **WHEN** the file writes no `alpha`, and an environment names `channel = "alpha"`
+- **THEN** the channels are unreadable naming the environment's table and `alpha`, and the policy for `alpha` alone is absent naming the channel
+
+### Requirement: The same line overrides a given
+
+A key the repository writes in a given channel's table SHALL replace
+the fragment's key: `on_each_publish` or `bound_to` SHALL replace how
+the channel moves, both keys together, `on = false` SHALL switch it
+off, and `require` SHALL add the claims its versions must carry after
+the gate's acceptance (C.10). No line SHALL widen who signs a given's
+promotion (32, C.10).
 
 #### Scenario: A line that adds a claim
 
 - **WHEN** `[channels.stable]` requires a rebuild claim from `verifier`
 - **THEN** the policy for `stable` requires the gate's acceptance and then the rebuild, and `stable` is still bound to `beta`
 
-#### Scenario: A line that would unbind stable
+#### Scenario: stable bound to alpha
 
-- **WHEN** `[channels.stable]` names `on_each_publish = true`
-- **THEN** the channels and the policy for `stable` are unreadable naming `[channels.stable]`
+- **WHEN** `[channels.alpha]` is written and `[channels.stable]` names `bound_to = "alpha"`
+- **THEN** `stable` is listed bound to `alpha`, and its policy names `alpha` as the channel it is bound to
+
+#### Scenario: beta made a promotion alone
+
+- **WHEN** `[channels.beta]` names `on_each_publish = false`
+- **THEN** `beta` is listed moving by a promotion alone, and no channel follows each publish
+
+#### Scenario: beta switched off
+
+- **WHEN** `[channels.beta]` names `on = false`, and `stable` is left as given
+- **THEN** the channels are unreadable naming `stable`'s table and `beta`, since `stable` is bound to a channel that is off
+
+#### Scenario: A cycle of bindings
+
+- **WHEN** `[channels.beta]` names `bound_to = "stable"` while `stable` is bound to `beta`
+- **THEN** the channels are unreadable naming a table of the cycle
 
 ### Requirement: The gate's signer promotes a given channel
 
-The policy for `beta` or `stable` SHALL require the gate's acceptance
-and SHALL name as the signers that may sign its promotion the signers
-the policy lets claim acceptance, the gate (32), whatever a line under
-the channel names; any other signer's promotion of it SHALL be refused
+The policy for a channel the givens hold and the table in force has on
+SHALL require the gate's acceptance and SHALL name as the signers that
+may sign its promotion the signers the policy lets claim acceptance,
+the gate (32), whatever a line under the channel names; any other signer's promotion of it SHALL be refused
 naming the promotion and those signers (9, 116).
 
 #### Scenario: The gate promotes stable
@@ -139,8 +189,10 @@ through `after` SHALL make the channels unreadable naming the table.
 
 A channel an environment's words make SHALL be listed, judged and
 promoted like a given channel: its policy requires the gate's
-acceptance and its promotion is signed by the gate's signer, and a line
-under it SHALL be read as a line under a given channel (131, C.10).
+acceptance and its promotion is signed by the gate's signer (131,
+C.10). A line under it SHALL add claims after the gate's acceptance,
+and one naming another way it moves SHALL be unreadable naming its
+table, since the environment's words say how it moves.
 
 #### Scenario: Promoting prod
 
@@ -151,6 +203,23 @@ under it SHALL be read as a line under a given channel (131, C.10).
 
 - **WHEN** `[channels.prod]` names `bound_to = "beta"` while the manual environment `prod` names `stable`
 - **THEN** the channels are unreadable naming `[channels.prod]`
+
+### Requirement: The core knows no channel's name
+
+The core, the seams and the fakes SHALL treat no channel apart by its
+name, and the policy file profile SHALL take every given's name and
+how it moves from the fragment alone, no Rust source of it naming one;
+the core SHALL know only the three ways a channel moves (C.10, 131).
+
+#### Scenario: Channels of no given name
+
+- **WHEN** the fake policy lists only `edge`, moving on each publish, and `next`, bound to `edge`, both promoted by the gate's signer, and the gate accepts a version a publish told it of
+- **THEN** `edge` moves, and the gate's signer's promotion moves `next` to that version, as `beta` and `stable` would move
+
+#### Scenario: A fragment of other names
+
+- **WHEN** the policy file profile is given a fragment holding `nightly` moving on each publish and `release` bound to it, and a file holding `[channels.release]` with a `require`
+- **THEN** the channels answer `nightly` and `release` as the fragment and the line say, and the policy for `release` names the gate as its promoter
 
 ### Requirement: The gate and the ledger learn a channel through the answer
 
