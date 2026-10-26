@@ -1,6 +1,6 @@
 //! Spec branch-landing: the landing seam bound to a plain git branch,
 //! each test on a scratch repository of its own, and the suite's landing
-//! group over it (design D9). Needs git alone, so it is in the fast
+//! group over it, with no remote bound and with one (design D9). Needs git alone, so it is in the fast
 //! layer; S13 over a plain branch and moon is in the tools layer
 //! (`landings_end_to_end.rs`).
 
@@ -14,17 +14,34 @@ use tailrace_conformance::seams::landing::{self, LandingRig, Recorded};
 use tailrace_conformance::{run, Rig};
 use tailrace_seams::{Branch, IsLanded, Landing, Not, Read, Revision, Verdicts};
 
-/// A scratch repository and the plain branch landing over it.
+/// A scratch repository and the plain branch landing over it, reading
+/// the repository's own branches or, bound to it, the remote's.
 struct BranchRig {
     scratch: Scratch,
     landing: PlainBranch,
+    remote: bool,
 }
 
 impl BranchRig {
     fn new() -> BranchRig {
         let scratch = Scratch::new();
         let landing = PlainBranch::new(&scratch.repo.path, None);
-        BranchRig { scratch, landing }
+        BranchRig {
+            scratch,
+            landing,
+            remote: false,
+        }
+    }
+
+    /// The landing bound to the scratch repository's remote, `origin`.
+    fn on_a_remote() -> BranchRig {
+        let scratch = Scratch::new();
+        let landing = PlainBranch::new(&scratch.repo.path, Some("origin".into()));
+        BranchRig {
+            scratch,
+            landing,
+            remote: true,
+        }
     }
 }
 
@@ -48,16 +65,21 @@ impl LandingRig for BranchRig {
     }
 
     fn reads_a_remote(&self) -> bool {
-        false
+        self.remote
     }
 
-    /// A commit on `main`; a plain branch records no verdicts, so the
-    /// suite hands it none.
+    /// A commit on `main`, pushed to the remote where the landing reads
+    /// one; a plain branch records no verdicts, so the suite hands it
+    /// none.
     fn landed(&self, verdicts: &[Recorded]) -> Revision {
         assert!(verdicts.is_empty(), "a plain branch records no verdicts");
         let repo = &self.scratch.repo;
         repo.write("landed.txt", &repo.head());
-        Revision::new(repo.commit("feat: landed"))
+        let landed = Revision::new(repo.commit("feat: landed"));
+        if self.remote {
+            repo.push();
+        }
+        landed
     }
 
     /// A commit on another branch only.
@@ -70,9 +92,15 @@ impl LandingRig for BranchRig {
         Revision::new(commit)
     }
 
-    /// The repository removed, and git's words for reading it.
+    /// The remote removed, and git's words for listing it, where the
+    /// landing reads one; otherwise the repository removed, and git's
+    /// words for reading it.
     fn unreachable(&self) -> String {
         let repo = &self.scratch.repo.path;
+        if self.remote {
+            fs::remove_dir_all(&self.scratch.remote).unwrap();
+            return git_fails(repo, &["ls-remote", "origin", "refs/heads/*"]);
+        }
         fs::remove_dir_all(repo).unwrap();
         git_fails(repo, &["rev-parse", "--git-common-dir"])
     }
@@ -107,6 +135,34 @@ fn the_landing_group_over_a_branch() {
             (
                 "a landing read as last fetched",
                 "the landing reads no remote: the repository is the landing itself"
+            ),
+        ],
+        "{report:?}"
+    );
+    report.assert();
+}
+
+#[test]
+fn the_landing_group_over_a_branch_on_a_remote() {
+    let report = run(landing::GROUP, &landing::scenarios(), &|| {
+        Box::new(BranchRig::on_a_remote())
+    });
+    assert_eq!(report.profile, "branch");
+    let skipped: Vec<(&str, &str)> = report
+        .not_applicable
+        .iter()
+        .map(|n| (n.scenario, n.why.as_str()))
+        .collect();
+    assert_eq!(
+        skipped,
+        [
+            (
+                "verdicts as the landing recorded them",
+                "the landing records no verdicts"
+            ),
+            (
+                "two signers, each by its own name",
+                "the landing records no verdicts"
             ),
         ],
         "{report:?}"

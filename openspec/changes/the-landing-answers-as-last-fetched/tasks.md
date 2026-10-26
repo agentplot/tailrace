@@ -26,7 +26,7 @@ Every command runs inside `devenv shell -- <command>`.
 
 - [x] 4.1 In `crates/tailrace/src/profiles/landing/branch/mod.rs`, after each fetch of a branch remake its copy `refs/tailrace/landing/heads/<branch>` so its reflog's one entry is the fetch's time, and read that time as the git ref ledger reads its own (design D2, D3): a test that a second read moves the copy's time and writes no remote-tracking ref or `FETCH_HEAD`: `moon run cli:test`
 - [x] 4.2 Where the remote's listing or fetch answers unreadable, answer landed from the copy of the branch and verdicts-of from the repository with the newest copy's time, each `Read::Kept` with git's words, and the failure itself where no copy answers; with no remote bound answer `Read::Source` (design D4); tests in `crates/tailrace/tests/landing_branch.rs` for the branch-landing delta's scenarios, a remote never fetched among them: `moon run cli:test`
-- [ ] 4.3 Give the branch rig `reads_a_remote`, and run the landing group a second time over a branch bound to a scratch remote, the rig pushing what it lands and cut off by removing the remote, each run's not-applicable scenarios as the branch-landing delta names them (design D7): `moon run cli:test`
+- [x] 4.3 Give the branch rig `reads_a_remote`, and run the landing group a second time over a branch bound to a scratch remote, the rig pushing what it lands and cut off by removing the remote, each run's not-applicable scenarios as the branch-landing delta names them (design D7): `moon run cli:test`
 
 ## 5. sluice reads its copy where the remote does not answer
 
