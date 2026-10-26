@@ -6,18 +6,28 @@
 //! revision, the index carries it as the publisher's layout-policy claim,
 //! attached before the version is named (113, 8); the given is never
 //! carried, and a consumer lays it beneath itself (C.10).
+//! Where the landing carries verdicts, the outputs come from the store:
+//! the cache entries the passing verdicts name are rendered into the
+//! checkout before the build is asked, so it replays what the landing's
+//! checks built, and an output whose entry the store lacks refuses the
+//! version before its name is claimed; a publish never offers what its
+//! own host built in their place (15, 16, 52, 135). A landing with no
+//! verdicts builds on the publishing host as it always has (C.6).
 //! A publish offers and does nothing more: it never accepts, promotes,
 //! moves a channel or reaches a target (20, rule core.10).
+
+use std::collections::BTreeSet;
 
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim, ClaimKind, Component,
-    ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Name, Not, Outcome,
-    Output, OutputName, Projection, Report, Required, Revision, Seam, Seams, SignerId, Source,
-    Verdict, Version, Why,
+    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, CacheEntry, Claim, ClaimKind,
+    Component, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Name,
+    Not, Outcome, Output, OutputName, Projection, Report, Required, Revision, Seam, Seams,
+    SignerId, Source, Verdict, Version, Why,
 };
 
+use crate::cache::{cache_name, fill};
 use crate::notes::{self, Rendered};
 use crate::{
     claim, derive, layout_policy_body, policy_at, touched, Carried, Declared, Derived, Entry,
@@ -26,8 +36,9 @@ use crate::{
 
 /// What a publish is asked: the revision, the branch that landed it, the
 /// one component to publish or every one the landing touched (124), the
-/// identity of the party running it, which signs (11, 79), and the store
-/// as the host's bindings name it, which the record keeps (61, 118).
+/// identity of the party running it, which signs (11, 79), the store as
+/// the host's bindings name it, which the record keeps (61, 118), and the
+/// working tree the landing's cache entries are rendered into (135).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ask {
     pub branch: Branch,
@@ -35,6 +46,7 @@ pub struct Ask {
     pub component: Option<ComponentName>,
     pub signer: SignerId,
     pub store: Source,
+    pub tree: String,
 }
 
 /// A publish's answer: per component, in the order the policy file
@@ -176,6 +188,7 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
         landed: &landed,
         declared: &declared,
         verdicts: None,
+        filled: None,
         layout: None,
     };
     let components = versions
@@ -198,8 +211,10 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
 }
 
 /// One publish's state across its components: the landing's verdicts,
-/// read once for the revision (78), and the policy for layouts, read once
-/// at it where an index is put (113).
+/// read once for the revision (78), the build identities whose cache
+/// entries were rendered from the store, filled once where there are
+/// verdicts (135), and the policy for layouts, read once at it where an
+/// index is put (113).
 struct Run<'a> {
     seams: &'a Seams,
     history: &'a History,
@@ -208,6 +223,7 @@ struct Run<'a> {
     landed: &'a Landed,
     declared: &'a Declared,
     verdicts: Option<Answer<Vec<Verdict>>>,
+    filled: Option<Answer<BTreeSet<BuildId>>>,
     layout: Option<Answer<Required>>,
 }
 
@@ -235,6 +251,45 @@ impl<'a> Run<'a> {
         let revision = self.landed.revision();
         self.verdicts
             .get_or_insert_with(|| seams.landing.verdicts_of(revision).map(|v| v.verdicts))
+            .clone()
+    }
+
+    /// 52, 135: the build identities `verdicts`' passing verdicts name
+    /// whose cache entries the store holds and a bound projection
+    /// rendered at the ask's working tree, each resolved once, filled
+    /// once per publish. An entry the store does not name, or that no
+    /// projection renders, is left out; any other answer of the store or
+    /// a render is the publish's whole answer. The store is asked only to
+    /// resolve and read (53).
+    fn filled(&mut self, verdicts: &[Verdict]) -> Answer<BTreeSet<BuildId>> {
+        let (seams, tree) = (self.seams, &self.ask.tree);
+        self.filled
+            .get_or_insert_with(|| {
+                let mut filled = BTreeSet::new();
+                let mut asked = BTreeSet::new();
+                for verdict in verdicts {
+                    if verdict.outcome != Outcome::Pass || !asked.insert(verdict.build.clone()) {
+                        continue;
+                    }
+                    let digest = match seams.store.resolve(&cache_name(&verdict.build)) {
+                        Ok(digest) => digest,
+                        Err(Not::Absent(_)) => continue,
+                        Err(not) => return Err(not),
+                    };
+                    let entry = CacheEntry {
+                        build: verdict.build.clone(),
+                        digest,
+                    };
+                    match fill(seams, entry, tree) {
+                        Ok(_) => {
+                            filled.insert(verdict.build.clone());
+                        }
+                        Err(Not::Absent(_)) => {}
+                        Err(not) => return Err(not),
+                    }
+                }
+                Ok(filled)
+            })
             .clone()
     }
 
@@ -316,9 +371,16 @@ impl<'a> Run<'a> {
             projections.push((ecosystem.clone(), projection));
         }
 
-        // 4, 5: the landing's verdicts, then every output in one asking
-        // and each one's report (74, 75, 78).
+        // 4, 5: the landing's verdicts, the cache entries their passing
+        // verdicts name rendered from the store where there are any, then
+        // every output in one asking and each one's report (52, 74, 75,
+        // 78, 135).
         let verdicts = self.verdicts()?;
+        let filled = if verdicts.is_empty() {
+            None
+        } else {
+            Some(self.filled(&verdicts)?)
+        };
         self.seams.build.ensure(revision, &component.outputs)?;
         let mut outputs = Vec::new();
         for (output, (ecosystem, projection)) in component.outputs.iter().zip(projections) {
@@ -336,6 +398,23 @@ impl<'a> Run<'a> {
         // version whole (15, 16, 111).
         for output in &mut outputs {
             output.verdicts = judge(&output.name, &output.report, &verdicts)?;
+        }
+
+        // 6: where there are verdicts, the first output whose build
+        // identity's entry was not rendered from the store refuses the
+        // version whole, before its name is claimed: what the build made
+        // in its place is never offered (15, 16, 58, 135).
+        if let Some(filled) = &filled {
+            if let Some(output) = outputs.iter().find(|o| !filled.contains(&o.report.build)) {
+                return Err(Not::refused(
+                    &bound(Seam::Store),
+                    Why::NotInStore {
+                        output: output.name.clone(),
+                        build: output.report.build.clone(),
+                    },
+                    None,
+                ));
+            }
         }
 
         // 7: the name claimed after judging and before any pack (22, rule

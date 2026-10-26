@@ -7,7 +7,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use serde_json::json;
-use tailrace_core::{publish, Ask, Entry, History, Kept, Publish, Published, NOTES, POLICY_FILE};
+use tailrace_core::{
+    cache_name, publish, Ask, Entry, History, Kept, Publish, Published, NOTES, POLICY_FILE,
+};
 use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
     Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest,
@@ -180,6 +182,7 @@ impl World {
             component: None,
             signer: SignerId::new(HOST),
             store: store(),
+            tree: self.repo.path.display().to_string(),
         }
     }
 
@@ -240,6 +243,21 @@ impl World {
     pub fn verdicts_for_every_output(&self, check: &str) {
         for o in ["lib-pack", "lib-docs", "site"] {
             self.verdict(check, &build_of(o, &self.head), Outcome::Pass, LANDING);
+        }
+    }
+
+    /// The cache entry of each of `outputs`' build identities at the head
+    /// held in the store under `cache/<build identity>`, as a check job's
+    /// push before the landing leaves it (52, 135).
+    pub fn pushed(&self, outputs: &[&str]) {
+        for o in outputs {
+            let build = build_of(o, &self.head);
+            let bytes = format!("the archive of {build}");
+            let digest = self.fakes.store.put_bytes(bytes.as_bytes()).unwrap().digest;
+            self.fakes
+                .store
+                .name(&cache_name(&build), &digest, None)
+                .unwrap();
         }
     }
 }

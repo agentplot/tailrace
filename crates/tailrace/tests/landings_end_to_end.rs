@@ -89,6 +89,7 @@ impl World {
             component: None,
             signer: SignerId::new(HOST),
             store: Source::new(Seam::Store, tailrace_fakes::PROFILE),
+            tree: self.scratch.repo.path.display().to_string(),
         };
         let mut published = publish(&self.seams(landing), &history, &Kept::at(&history), &ask)
             .expect("the publish answered")

@@ -155,6 +155,7 @@ fn published_in(world: World, required: Required) -> (World, Published) {
         world.verdict("lint", &build, Outcome::Pass, LANDING);
     }
     world.fakes.policy.require(Audience::Acceptance, required);
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     (world, published)
 }
@@ -604,6 +605,7 @@ fn a_verdict_from_a_signer_the_policy_does_not_name_refuses_and_stays_attached()
         .fakes
         .policy
         .require(Audience::Acceptance, acceptance());
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     let first = &artifacts(&published)[0];
     let held = world.fakes.store.claims_of(first).unwrap();
@@ -628,6 +630,7 @@ fn a_verdict_from_a_signer_beyond_its_reach_does_not_count() {
             claims: vec![provenance_from(host.clone()), verdict_from(host, "test")],
         },
     );
+    world.pushed(&["lib-pack", "lib-docs"]);
     world.publish_one(&world.ask_for("lib")).unwrap();
     let (_, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
     assert_eq!(wanting.kind, ClaimKind::Verdict);
@@ -712,6 +715,7 @@ fn the_second_of_two_artifacts_wanting_refuses_the_version_whole_and_attaches_no
         .fakes
         .policy
         .require(Audience::Acceptance, acceptance());
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     let (_, index) = version_of(&published);
     let digests = artifacts(&published);
@@ -2096,6 +2100,7 @@ fn the_second_outputs_verdict_wanting_refuses_naming_it_and_never_the_notes() {
         .fakes
         .policy
         .require(Audience::Acceptance, acceptance());
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     let (artifact, wanting, why) = refusal(judged(&world, &ask("0.2.0", ToldBy::Asked)));
     assert_eq!(artifact, artifacts(&published)[1]);

@@ -251,6 +251,7 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
             component: None,
             signer: SignerId::new("host"),
             store: store(),
+            tree: history.workdir().unwrap().display().to_string(),
         },
     );
     assert_eq!(printed, answer_json(&core));
@@ -1756,6 +1757,7 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
                 component: None,
                 signer: SignerId::new("host"),
                 store: store(),
+                tree: history.workdir().unwrap().display().to_string(),
             },
         )
         .unwrap();
@@ -1901,6 +1903,7 @@ fn accepted_with(line: &str, subject: &str) -> (Version, Vec<(ChannelId, Answer<
             component: None,
             signer: SignerId::new("host"),
             store: store(),
+            tree: history.workdir().unwrap().display().to_string(),
         },
     )
     .unwrap();

@@ -196,8 +196,9 @@ pub fn sync(seams: &Seams, ask: &SyncAsk) -> Answer<Synced> {
 /// `entry` rendered alone through every bound projection, passing over
 /// each that packs no cache entries, so one bad entry refuses only
 /// itself: the projections that rendered it, or the first other answer a
-/// render gave; absent naming cache entries when none rendered it.
-fn fill(seams: &Seams, entry: CacheEntry, at: &str) -> Answer<Filled> {
+/// render gave; absent naming cache entries when none rendered it. Sync
+/// and publish each fill a checkout with it (52, 135).
+pub(crate) fn fill(seams: &Seams, entry: CacheEntry, at: &str) -> Answer<Filled> {
     let mut rendered = Vec::new();
     let mut first = None;
     for (ecosystem, projection) in &seams.projections {

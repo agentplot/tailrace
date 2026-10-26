@@ -11,7 +11,8 @@ use tailrace_core::{
     answer_json, layout_policy_body, publish, Ask, Kept, Provenance, Published, BOUND, NOTES,
 };
 use tailrace_fakes::{
-    BuildOp, FakeProjection, FakeStore, Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times,
+    BuildOp, FakeProjection, FakeStore, Fault, LandingOp, PolicyOp, ProjectionOp, SignerOp,
+    StoreOp, Times,
 };
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName,
@@ -342,6 +343,78 @@ fn every_output_is_ensured_in_one_asking_then_reported_before_any_pack() {
     );
 }
 
+/// A projection over a fake that, at each render of cache entries,
+/// keeps what the build had been asked by then.
+struct Filling {
+    inner: FakeProjection,
+    build: tailrace_fakes::FakeBuild,
+    seen: Rc<RefCell<Vec<Vec<BuildOp>>>>,
+}
+
+impl Projection for Filling {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+        self.inner.pack(output, at, version)
+    }
+
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        if matches!(contents, Contents::CacheEntries(_)) {
+            self.seen.borrow_mut().push(build_ops(&self.build));
+        }
+        self.inner.render(contents, at)
+    }
+
+    fn serve(&self, layout: &Layout) -> Answer<Serving> {
+        self.inner.serve(layout)
+    }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+        self.inner.pinned(checkout)
+    }
+
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        self.inner.requires(held)
+    }
+
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        self.inner.satisfying(range, versions)
+    }
+}
+
+#[test]
+fn the_landings_cache_entries_are_rendered_before_the_one_ensure() {
+    let mut world = World::new();
+    world.verdicts_for_every_output("test");
+    world.pushed(&["lib-pack", "lib-docs"]);
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let history = world.history();
+    let mut seams = world.fakes.seams();
+    for e in ["eco-a", "eco-b"] {
+        seams.projections.insert(
+            eco(e),
+            Box::new(Filling {
+                inner: world.fakes.projection(&eco(e)),
+                build: world.fakes.build.clone(),
+                seen: seen.clone(),
+            }),
+        );
+    }
+    publish(&seams, &history, &Kept::at(&history), &world.ask_for("lib"))
+        .unwrap()
+        .components[0]
+        .1
+        .as_ref()
+        .unwrap();
+
+    assert_eq!(seen.borrow().len(), 4, "each entry through each projection");
+    for asked in seen.borrow().iter() {
+        assert_eq!(
+            asked,
+            &[],
+            "an entry was rendered after the build was asked"
+        );
+    }
+}
+
 #[test]
 fn an_output_the_build_could_not_make_refuses_the_version() {
     let world = World::with_policy(
@@ -453,6 +526,169 @@ fn a_build_the_landing_never_checked_is_refused_naming_every_identity() {
         }
     );
     nothing_offered(&world);
+}
+
+// Requirement: Where the landing carries verdicts, the outputs come from the store
+
+/// The names the store was asked to resolve, in order.
+fn resolved(world: &World) -> Vec<String> {
+    world
+        .fakes
+        .store
+        .calls()
+        .into_iter()
+        .filter(|c| c.op == StoreOp::Resolve)
+        .map(|c| c.given["name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// Each cache entry a projection was asked to render, by ecosystem, the
+/// place it was rendered at and its build identity.
+fn filled(world: &World) -> Vec<(String, String, String)> {
+    let mut filled = Vec::new();
+    for (e, p) in &world.fakes.projections {
+        for call in p.calls() {
+            if call.op != ProjectionOp::Render {
+                continue;
+            }
+            let at = call.given["at"].as_str().unwrap();
+            for entry in call.given["contents"]["cache_entries"]
+                .as_array()
+                .into_iter()
+                .flatten()
+            {
+                let build = entry["build"].as_str().unwrap();
+                filled.push((e.to_string(), at.to_string(), build.to_string()));
+            }
+        }
+    }
+    filled
+}
+
+#[test]
+fn both_entries_are_resolved_and_rendered_into_the_checkout_and_nothing_is_written() {
+    let world = World::new();
+    let (pack, docs) = (
+        build_of("lib-pack", &world.head),
+        build_of("lib-docs", &world.head),
+    );
+    world.verdict("test", &pack, Outcome::Pass, LANDING);
+    world.verdict("test", &docs, Outcome::Pass, LANDING);
+    world.pushed(&["lib-pack", "lib-docs"]);
+    let names = world.fakes.store.contents().names;
+    let since = world.fakes.store.calls().len();
+    world.publish_one(&world.ask_for("lib")).unwrap();
+
+    let at = world.repo.path.display().to_string();
+    let mut expected = Vec::new();
+    for e in ["eco-a", "eco-b"] {
+        for build in [&pack, &docs] {
+            expected.push((e.to_string(), at.clone(), build.to_string()));
+        }
+    }
+    assert_eq!(filled(&world), expected);
+    let cache: Vec<String> = resolved(&world)
+        .into_iter()
+        .filter(|n| n.starts_with("cache/"))
+        .collect();
+    assert_eq!(cache, [format!("cache/{pack}"), format!("cache/{docs}")]);
+    for call in &world.fakes.store.calls()[since..] {
+        if let StoreOp::Name = call.op {
+            assert!(
+                !call.given["name"].as_str().unwrap().starts_with("cache/"),
+                "a cache name was moved: {call:?}"
+            );
+        }
+    }
+    let now = world.fakes.store.contents().names;
+    for (name, digest) in &names {
+        assert_eq!(now.get(name), Some(digest), "{name} moved");
+    }
+}
+
+#[test]
+fn a_failed_verdicts_build_identity_is_not_resolved() {
+    let world = World::new();
+    let (pack, docs) = (
+        build_of("lib-pack", &world.head),
+        build_of("lib-docs", &world.head),
+    );
+    world.verdict("test", &pack, Outcome::Pass, LANDING);
+    world.verdict("test", &docs, Outcome::Fail, LANDING);
+    world.pushed(&["lib-pack", "lib-docs"]);
+    refused(world.publish_one(&world.ask_for("lib")));
+    let cache: Vec<String> = resolved(&world)
+        .into_iter()
+        .filter(|n| n.starts_with("cache/"))
+        .collect();
+    assert_eq!(cache, [format!("cache/{pack}")]);
+}
+
+#[test]
+fn a_landing_with_no_verdicts_fills_nothing() {
+    let world = World::new();
+    world.publish_one(&world.ask_for("lib")).unwrap();
+    assert!(
+        resolved(&world).iter().all(|n| !n.starts_with("cache/")),
+        "{:?}",
+        resolved(&world)
+    );
+    assert_eq!(filled(&world), []);
+}
+
+// Requirement: An output whose entry the store lacks refuses the version
+
+#[test]
+fn one_outputs_entry_missing_refuses_naming_it_with_no_tag_and_no_put() {
+    let world = World::new();
+    world.verdicts_for_every_output("test");
+    world.pushed(&["lib-pack"]);
+    let since = world.fakes.store.calls().len();
+    let r = refused(world.publish_one(&world.ask_for("lib")));
+    assert_eq!(
+        r.why,
+        Why::NotInStore {
+            output: output("lib-docs"),
+            build: build_of("lib-docs", &world.head),
+        }
+    );
+    assert_eq!(r.source.seam, Seam::Store);
+    let written: Vec<StoreOp> = world.fakes.store.calls()[since..]
+        .iter()
+        .map(|c| c.op)
+        .filter(|op| {
+            matches!(
+                op,
+                StoreOp::PutBytes | StoreOp::PutArtifact | StoreOp::Attach | StoreOp::Name
+            )
+        })
+        .collect();
+    assert_eq!(written, [], "the store was offered something");
+    assert_eq!(world.repo.tag_at("lib-v0.2.0"), None);
+    assert_eq!(world.shared.tag_at("lib-v0.2.0"), None);
+    for (e, p) in &world.fakes.projections {
+        assert!(
+            p.calls().iter().all(|c| c.op != ProjectionOp::Pack),
+            "{e} packed"
+        );
+    }
+}
+
+#[test]
+fn a_plain_branch_builds_on_the_publishing_host_with_no_entry_held() {
+    let world = World::new();
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let Published::Version { artifacts, .. } = &published else {
+        panic!("{published:?}")
+    };
+    assert_eq!(artifacts.len(), 2);
+    assert!(world
+        .fakes
+        .store
+        .contents()
+        .names
+        .keys()
+        .all(|n| !n.as_str().starts_with("cache/")));
 }
 
 // Requirement: The name is claimed after the outputs are judged and before anything is packed
@@ -698,6 +934,7 @@ fn the_verdicts_naming_a_build_are_carried_byte_for_byte() {
         Outcome::Pass,
         LANDING,
     );
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     let Published::Version { artifacts, .. } = published else {
         unreachable!()
@@ -737,6 +974,7 @@ fn the_verdicts_naming_a_build_are_carried_byte_for_byte() {
 fn every_envelope_signed_is_held_beside_its_subject_and_nowhere_else() {
     let world = World::new();
     world.verdicts_for_every_output("test");
+    world.pushed(&["lib-pack", "lib-docs"]);
     world.publish_one(&world.ask_for("lib")).unwrap();
     let signed: Vec<Envelope> = world
         .fakes
@@ -889,6 +1127,7 @@ fn a_publish_stopped_after_one_artifact_has_published_nothing() {
 fn the_same_revision_published_again_ends_at_the_same_index_and_writes_nothing() {
     let world = World::new();
     world.verdicts_for_every_output("test");
+    world.pushed(&["lib-pack", "lib-docs"]);
     let first = world.publish(&world.ask()).unwrap();
     let store = world.fakes.store.contents();
     let tags = (

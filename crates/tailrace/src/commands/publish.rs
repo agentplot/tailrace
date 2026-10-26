@@ -1,6 +1,8 @@
 //! `tailrace publish <revision>`: a landed revision offered as a version
 //! of each component it publishes (14 to 22). It takes no version: the
-//! core derives it (21, rule core.13).
+//! core derives it (21, rule core.13). The landing's cache entries are
+//! rendered into the working tree of the checkout it runs in, and a
+//! repository with none is absent before the core is asked (135).
 //!
 //! After the core's publish has answered, the command tells the host's
 //! gate of each version it offered where the bindings file names this
@@ -20,9 +22,9 @@ use clap::Args;
 use serde_json::{json, Value};
 use tailrace_core::{
     accept, answer_json, publish, AcceptAsk, Ask, History, Judged, Kept, Moved, Publish, Published,
-    ToldBy, WhyWanting,
+    ToldBy, WhyWanting, LOCAL,
 };
-use tailrace_seams::{Answer, Branch, ComponentName, Not, RequiredClaim};
+use tailrace_seams::{Answer, Branch, ComponentName, Not, RequiredClaim, Source};
 
 use crate::bindings::Teller;
 use crate::{render, unsigned, Binding};
@@ -116,12 +118,22 @@ fn ask(args: &PublishArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Offer
     let binding = binding.as_ref().map_err(Not::clone)?;
     let signer = binding.signer.clone().ok_or_else(unsigned)?;
     let history = History::open(at)?;
+    let tree = history.workdir().ok_or_else(|| {
+        Not::absent(
+            &Source::history(LOCAL),
+            format!(
+                "working tree at {}, which the landing's cache entries are rendered into",
+                at.display()
+            ),
+        )
+    })?;
     let ask = Ask {
         branch: Branch::new(&args.branch),
         revision: history.resolve(&args.revision)?,
         component: args.component.as_ref().map(ComponentName::new),
         signer,
         store: binding.store.clone(),
+        tree: tree.display().to_string(),
     };
     let publish = publish(&binding.seams, &history, &Kept::at(&history), &ask)?;
     // Only once the publish has answered: the gate, told of each version

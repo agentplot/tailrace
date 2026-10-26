@@ -322,6 +322,7 @@ impl FakeWorld {
             component: None,
             signer: self.host.clone(),
             store: self.store(),
+            tree: self.repo().path.display().to_string(),
         }
     }
 
