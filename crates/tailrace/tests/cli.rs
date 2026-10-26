@@ -1225,11 +1225,81 @@ fn policy_as_text_shows_the_layout_absent_beside_the_channels_and_exits_0() {
     );
     let channels = at("channels");
     assert_eq!(lines[channels + 1], "  beta, each publish", "{printed}");
-    assert_eq!(lines[channels + 4], "  stable, bound to beta", "{printed}");
+    assert_eq!(lines[channels + 5], "  stable, bound to beta", "{printed}");
     assert_eq!(
-        lines[channels + 6],
+        lines[channels + 7],
         "    promoted by no signer",
         "{printed}"
+    );
+    assert_eq!(
+        lines[channels + 8],
+        "    may be asked for by any asker",
+        "{printed}"
+    );
+}
+
+#[test]
+fn policy_shows_alpha_taking_prereleases_and_stables_approvers_value_for_value() {
+    let host = Host::new();
+    fs::write(
+        host.repo.join(".config/tailrace.toml"),
+        format!(
+            "{POLICY}\n[signers.gate]\nssh = \"ssh-ed25519 GGGG\"\nkinds = [\"acceptance\"]\n\n\
+             [signers.ci]\nssh = \"ssh-ed25519 CCCC\"\nkinds = [\"acceptance\"]\n\n\
+             [channels.alpha]\n\n\
+             [channels.stable]\napprovers = [\"ci\"]\n"
+        ),
+    )
+    .unwrap();
+    git(&host.repo, &["commit", "-q", "-am", "chore: the policy"]);
+    let head = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
+    host.fakes.landing.land(&Branch::new("main"), &head);
+
+    let (code, printed) = run_over(&host, over_the_file(&host), &["policy"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let at = |line: &str| {
+        lines
+            .iter()
+            .position(|l| *l == line)
+            .unwrap_or_else(|| panic!("no line {line:?}: {printed}"))
+    };
+    let alpha = at("  alpha, each publish, prereleases too");
+    assert_eq!(
+        lines[alpha + 3],
+        "    may be asked for by any asker",
+        "{printed}"
+    );
+    let stable = at("  stable, bound to beta");
+    assert_eq!(lines[stable + 2], "    promoted by ci, gate", "{printed}");
+    assert_eq!(lines[stable + 3], "    may be asked for by ci", "{printed}");
+
+    let (code, printed) = run_over(&host, over_the_file(&host), &["policy", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let history = History::open(&host.repo).unwrap();
+    let core = in_force(
+        &over_the_file(&host).seams,
+        &history,
+        &InForceAsk {
+            branch: Branch::new("main"),
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+    let channels = printed["value"]["channels"]["value"]
+        .as_array()
+        .expect("the channels");
+    assert_eq!(
+        channels[0]["moves"],
+        serde_json::json!({ "by": "each_publish", "prereleases": true })
+    );
+    let stable = channels
+        .iter()
+        .find(|c| c["channel"]["name"] == "stable")
+        .expect("stable");
+    assert_eq!(
+        stable["policy"]["value"]["channel"]["approvers"][0]["id"],
+        "ci"
     );
 }
 
