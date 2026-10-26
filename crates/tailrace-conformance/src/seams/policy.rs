@@ -2,8 +2,8 @@
 //! them (B.5).
 
 use tailrace_seams::{
-    Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel, Moves,
-    NamedSigner, Policy, Required, RequiredClaim, Revision, Seam, SignerId,
+    Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
+    HeldChannel, Moves, NamedSigner, Policy, Required, RequiredClaim, Revision, Seam, SignerId,
 };
 
 use crate::seams::{absent, unreadable};
@@ -30,6 +30,12 @@ pub trait PolicyRig: Rig {
     /// `components` with no channel declared, which it lists beside the
     /// declared like any of them; none where it gives none.
     fn given(&self, components: &[ComponentName]) -> Vec<DeclaredChannel>;
+
+    /// C.10: the givens the profile holds off for a repository declaring
+    /// `components` with no channel declared, each with how it would move
+    /// and the line that switches it on, in the order the channels answer
+    /// carries them; none where it holds none.
+    fn held(&self, components: &[ComponentName]) -> Vec<HeldChannel>;
 
     /// The policy made unreachable, every operation answering unreadable,
     /// and the words it answers with.
@@ -92,6 +98,12 @@ pub fn scenarios() -> Vec<Scenario<dyn PolicyRig>> {
             plays: None,
             cites: &[131, 58, 59],
             run: the_channels_of_a_policy_that_cannot_be_reached,
+        },
+        Scenario {
+            name: "the givens held off",
+            plays: None,
+            cites: &[131],
+            run: the_givens_held_off,
         },
     ]
 }
@@ -368,4 +380,37 @@ fn the_channels_of_a_policy_that_cannot_be_reached(rig: &dyn PolicyRig) {
     )]);
     let words = rig.unreachable();
     unreadable(rig.policy().channels(&at), Seam::Policy, &words, "channels");
+}
+
+/// 131, as C.10 has a profile hold givens off: the channels answer
+/// carries, apart from the channels in force, what the profile holds off,
+/// each with how it would move and the line that switches it on, and no
+/// channel is both.
+fn the_givens_held_off(rig: &dyn PolicyRig) {
+    let components = [ComponentName::new("lib"), ComponentName::new("web")];
+    let at = rig.declaring(
+        &components,
+        &[declared("edge", Some("lib"), Moves::Promotion)],
+    );
+    let answer = ok(rig.policy().channels(&at), "channels");
+    assert_eq!(
+        answer.held,
+        rig.held(&components),
+        "the policy held off other givens, ways they would move or lines than its profile holds off"
+    );
+    for held in &answer.held {
+        assert!(
+            !held.switch.is_empty(),
+            "{} is held off with no line that switches it on",
+            held.channel.channel
+        );
+        assert!(
+            !answer
+                .in_force
+                .iter()
+                .any(|c| c.channel == held.channel.channel),
+            "{} is both held off and in force",
+            held.channel.channel
+        );
+    }
 }
