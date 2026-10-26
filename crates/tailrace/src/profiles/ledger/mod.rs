@@ -30,11 +30,11 @@ struct StoreOptions {}
 /// The ledger `[ledger]` names (92, C.13, C.14) for the repository at
 /// `repository`: `git_ref`, with its optional remote, the repository
 /// holding the refs where it names none; or `store`, the chain held in
-/// the store `store` names, through a binding of its own that never
-/// makes it, and kept under the repository's common git directory (61,
-/// 62), absent naming `[store]` where the file names none. Unreadable
-/// naming any other key, or an option its profile does not read.
-pub fn bind(table: &Table, repository: &Path, store: Option<&Table>) -> Answer<Box<dyn Keeper>> {
+/// the store `store` binds, written or given, through a binding of its
+/// own that never makes it, and kept under the repository's common git
+/// directory (61, 62). Unreadable naming any other key, or an option its
+/// profile does not read.
+pub fn bind(table: &Table, repository: &Path, store: &Table) -> Answer<Box<dyn Keeper>> {
     match table.key() {
         "git_ref" => {
             let options: GitRefOptions = table.options()?;
@@ -42,7 +42,6 @@ pub fn bind(table: &Table, repository: &Path, store: Option<&Table>) -> Answer<B
         }
         "store" => {
             let StoreOptions {} = table.options()?;
-            let store = store.ok_or_else(|| table.missing("store"))?;
             let kept = common_dir(repository)?.join("tailrace").join("ledger");
             let store = crate::profiles::store::bind(store, false)?;
             Ok(Box::new(InStore::new(store, kept)))
@@ -56,12 +55,6 @@ pub fn bind(table: &Table, repository: &Path, store: Option<&Table>) -> Answer<B
 /// written with no remote.
 pub fn given(repository: &Path) -> Box<dyn Keeper> {
     Box::new(GitRef::new(repository, None))
-}
-
-/// 118: the ledger of a host with no bindings file, for the repository
-/// at `repository`: the git ref, on `remote` where one is given (C.13).
-pub fn unfiled(repository: &Path, remote: Option<String>) -> Box<dyn Keeper> {
-    Box::new(GitRef::new(repository, remote))
 }
 
 /// The common git directory of the repository at `repository`, which

@@ -146,15 +146,3 @@ pub fn remote(table: &Table) -> Answer<Option<String>> {
         _ => Err(table.unknown(&["sluice", "branch"])),
     }
 }
-
-/// 118: the landing of a host with no bindings file, over the repository
-/// at `repository` and `remote`: sluice where the repository's tree holds
-/// [`SLUICE_FILE`], so it is set up for it (C.5), and the plain branch
-/// otherwise (C.6).
-pub fn unfiled(repository: &Path, remote: Option<String>) -> Box<dyn Landing> {
-    if repository.join(SLUICE_FILE).is_file() {
-        Box::new(Sluice::new(repository, remote))
-    } else {
-        Box::new(PlainBranch::new(repository, remote))
-    }
-}

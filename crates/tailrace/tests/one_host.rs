@@ -227,6 +227,7 @@ fn two_landings_on_the_one_host_each_move_beta_in_the_same_run() {
     let binding = bindings::bind(
         &host.config.join("tailrace/config.toml"),
         Some(&host.home),
+        None,
         &host.repo().path,
         For::Verify,
     )

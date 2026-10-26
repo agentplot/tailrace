@@ -138,7 +138,7 @@ fn a_key_service_host_is_bound_for_publish_signing_as_the_arn() {
         ),
     )
     .unwrap();
-    let binding = bindings::bind(&file, None, dir.path(), For::Publish).unwrap();
+    let binding = bindings::bind(&file, None, None, dir.path(), For::Publish).unwrap();
     assert_eq!(binding.signer, Some(SignerId::new(ARN)));
     let claim = Claim {
         subject: Digest::of(b"an artifact"),
@@ -291,7 +291,7 @@ fn a_host_naming_no_signer_publishes_with_the_given_key_as_its_public_halfs_name
     fs::write(public_half(&key), public_line("laptop")).unwrap();
     let laptop = SignerId::new("laptop");
     for command in [For::Publish, For::Promote] {
-        let binding = bindings::bind(&file, None, dir.path(), command).unwrap();
+        let binding = bindings::bind(&file, None, None, dir.path(), command).unwrap();
         assert_eq!(binding.signer, Some(laptop.clone()), "{command:?}");
         assert_eq!(binding.seams.signers.len(), 2);
     }
@@ -320,7 +320,7 @@ fn with_no_public_half_the_given_signer_is_the_hosts_name_and_nothing_is_made() 
     let file = unsigned_file(dir.path());
     let public = public_half(&file.with_file_name("signing"));
     let host = given_signer(&public).unwrap();
-    let binding = bindings::bind(&file, None, dir.path(), For::Publish).unwrap();
+    let binding = bindings::bind(&file, None, None, dir.path(), For::Publish).unwrap();
     assert_eq!(binding.signer, Some(host));
     assert_eq!(names(file.parent().unwrap()), ["config.toml"]);
 }
@@ -334,7 +334,7 @@ fn a_host_naming_no_signer_binds_both_verify_only_for_every_other_command() {
     let public = public_half(&file.with_file_name("signing"));
     fs::write(&public, "no key here\n").unwrap();
     for command in [For::Verify, For::Sync, For::Push, For::Rebuild] {
-        let binding = bindings::bind(&file, None, dir.path(), command).unwrap();
+        let binding = bindings::bind(&file, None, None, dir.path(), command).unwrap();
         assert_eq!(binding.signer, None, "{command:?}");
         assert_eq!(binding.seams.signers.len(), 2);
     }

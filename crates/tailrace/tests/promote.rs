@@ -86,6 +86,7 @@ impl Machine {
         bindings::bind(
             &self.bindings_file(),
             Some(&self.home()),
+            None,
             &self.repo.path,
             command,
         )

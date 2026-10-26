@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use tailrace_seams::SignerId;
+use tailrace_seams::{Chain, ChannelName, SignerId};
 use tempfile::TempDir;
 
 use super::*;
@@ -39,8 +39,25 @@ impl Host {
         fs::write(file, text).unwrap();
     }
 
+    /// The user's data directory, `XDG_DATA_HOME`.
+    fn data(&self) -> PathBuf {
+        self.dir.path().join("data")
+    }
+
     fn read(&self) -> Answer<Bindings> {
         read(&self.file(), Some(&self.home()))
+    }
+
+    /// The binding the host's file, or its lack, makes for `command` in
+    /// the repository at `repository`.
+    fn bind(&self, repository: &Path, command: For) -> Answer<Binding> {
+        bind(
+            &self.file(),
+            Some(&self.home()),
+            Some(self.data().as_os_str()),
+            repository,
+            command,
+        )
     }
 
     /// The words of an unreadable answer, once it names the file and
@@ -144,16 +161,19 @@ fn a_key_under_the_home_is_expanded_and_tables_left_out_are_none() {
 }
 
 #[test]
-fn no_file_is_absent_naming_its_path() {
+fn no_file_reads_as_an_empty_file() {
     let host = Host::new();
-    let file = host.file();
-    assert_eq!(
-        host.read(),
-        Err(Not::absent(
-            &Source::host(&file),
-            format!("bindings file at {}", file.display())
-        ))
-    );
+    let empty = Bindings {
+        file: host.file(),
+        store: None,
+        landing: None,
+        ledger: None,
+        gate: None,
+        signing: None,
+    };
+    assert_eq!(host.read(), Ok(empty.clone()));
+    host.write("");
+    assert_eq!(host.read(), Ok(empty));
 }
 
 #[test]
@@ -295,13 +315,7 @@ fn a_profile_no_family_knows_is_unreadable_naming_the_table() {
 fn a_registry_binds_a_store_named_by_its_repository() {
     let host = Host::new();
     host.write("[store]\nregistry = \"localhost:5000/tailrace\"\n\n[landing]\nbranch = {}\n");
-    let binding = bind(
-        &host.file(),
-        Some(&host.home()),
-        host.dir.path(),
-        For::Verify,
-    )
-    .unwrap();
+    let binding = host.bind(host.dir.path(), For::Verify).unwrap();
     assert_eq!(
         binding.store,
         Source::new(Seam::Store, "registry localhost:5000/tailrace")
@@ -316,13 +330,7 @@ fn a_registry_binds_a_store_named_by_its_repository() {
         "[store]\nregistry = \"127.0.0.1:{port}/tailrace\"\n\n[landing]\nbranch = {{}}\n\n\
          [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n"
     ));
-    let binding = bind(
-        &host.file(),
-        Some(&host.home()),
-        host.dir.path(),
-        For::Publish,
-    )
-    .unwrap();
+    let binding = host.bind(host.dir.path(), For::Publish).unwrap();
     match binding
         .seams
         .store
@@ -346,12 +354,7 @@ fn a_registry_named_by_what_is_no_repository_is_unreadable_naming_the_key_and_th
         host.write(&format!(
             "[store]\nregistry = {value}\n\n[landing]\nbranch = {{}}\n"
         ));
-        match bind(
-            &host.file(),
-            Some(&host.home()),
-            host.dir.path(),
-            For::Verify,
-        ) {
+        match host.bind(host.dir.path(), For::Verify) {
             Err(Not::Unreadable(u)) => {
                 assert_eq!(u.source, Source::host(host.file()));
                 assert_eq!(
@@ -370,12 +373,7 @@ fn a_registry_named_by_what_is_no_repository_is_unreadable_naming_the_key_and_th
 fn a_store_key_no_profile_reads_is_unreadable_listing_both_keys() {
     let host = Host::new();
     host.write("[store]\nbucket = \"/b\"\n\n[landing]\nbranch = {}\n");
-    match bind(
-        &host.file(),
-        Some(&host.home()),
-        host.dir.path(),
-        For::Verify,
-    ) {
+    match host.bind(host.dir.path(), For::Verify) {
         Err(Not::Unreadable(u)) => assert_eq!(
             u.said.as_deref(),
             Some(
@@ -400,7 +398,7 @@ fn bound(host: &Host, layout: &Path, signing: bool, command: For) -> Answer<Bind
         "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n{signing}",
         layout.display()
     ));
-    bind(&host.file(), Some(&host.home()), host.dir.path(), command)
+    host.bind(host.dir.path(), command)
 }
 
 fn claim() -> tailrace_seams::Claim {
@@ -444,13 +442,7 @@ fn the_store_is_named_by_its_key_and_its_path_under_the_home() {
         "[store]\nlayout = \"~/layout\"\n\n[landing]\nbranch = {}\n\n\
          [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n",
     );
-    let binding = bind(
-        &host.file(),
-        Some(&host.home()),
-        host.dir.path(),
-        For::Publish,
-    )
-    .unwrap();
+    let binding = host.bind(host.dir.path(), For::Publish).unwrap();
     assert_eq!(
         binding.store,
         Source::new(
@@ -542,7 +534,7 @@ fn bound_with(
         "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n{ledger}{signing}",
         layout.display()
     ));
-    bind(&host.file(), Some(&host.home()), repo, command)
+    host.bind(repo, command)
 }
 
 /// What the bound ledger answers for `stable`'s chain.
@@ -760,21 +752,6 @@ fn rebuild_is_bound_as_verify_is_and_never_makes_the_layout() {
 }
 
 #[test]
-fn a_file_naming_no_store_or_landing_is_absent_naming_the_table() {
-    let host = Host::new();
-    host.write("[landing]\nbranch = {}\n");
-    match bind(
-        &host.file(),
-        Some(&host.home()),
-        host.dir.path(),
-        For::Verify,
-    ) {
-        Err(Not::Absent(a)) => assert!(a.what.contains("[store]"), "{a:?}"),
-        other => panic!("answered {:?}", other.err()),
-    }
-}
-
-#[test]
 fn a_profile_no_family_reads_is_unreadable_and_makes_nothing() {
     let host = Host::new();
     let layout = host.dir.path().join("layout");
@@ -783,12 +760,7 @@ fn a_profile_no_family_reads_is_unreadable_and_makes_nothing() {
          [signing]\nsigner = \"laptop\"\nkey = \"/k\"\n",
         layout.display()
     ));
-    match bind(
-        &host.file(),
-        Some(&host.home()),
-        host.dir.path(),
-        For::Publish,
-    ) {
+    match host.bind(host.dir.path(), For::Publish) {
         Err(Not::Unreadable(u)) => {
             assert_eq!(u.what, format!("{}, [landing]", host.file().display()));
             assert!(
@@ -815,7 +787,7 @@ fn bound_telling(host: &Host, layout: &Path, gate: &str, command: For) -> Answer
          [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n{gate}",
         layout.display()
     ));
-    bind(&host.file(), Some(&host.home()), host.dir.path(), command)
+    host.bind(host.dir.path(), command)
 }
 
 /// Where in the file an unreadable binding names, and its words.
@@ -964,40 +936,6 @@ fn stable() -> ChannelName {
 }
 
 #[test]
-fn a_file_naming_a_landing_alone_binds_status_with_the_chain_and_the_store_absent_naming_them() {
-    let host = Host::new();
-    let repo = repository(&host);
-    host.write("[landing]\nbranch = {}\n");
-    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status)
-        .unwrap_or_else(|not| panic!("status bound nothing: {not}"));
-    assert_eq!(
-        binding.seams.keeper.chain(&stable()),
-        Err(Not::absent(
-            &Source::new(Seam::Keeper, "unbound"),
-            format!(
-                "binding of the ledger, [ledger] in {}",
-                host.file().display()
-            ),
-        ))
-    );
-    assert_eq!(
-        binding.seams.store.resolve(&Name::new("v0.1.0")),
-        Err(Not::absent(
-            &Source::new(Seam::Store, "unbound"),
-            format!("binding of the store, [store] in {}", host.file().display()),
-        ))
-    );
-    assert_eq!(binding.signer, None);
-    assert!(binding.seams.projections.is_empty() && binding.seams.targets.is_empty());
-
-    host.write("[store]\nlayout = \"/layout\"\n");
-    match bind(&host.file(), Some(&host.home()), &repo, For::Status) {
-        Err(Not::Absent(a)) => assert!(a.what.contains("[landing]"), "{a:?}"),
-        other => panic!("status with no [landing] answered {:?}", other.err()),
-    }
-}
-
-#[test]
 fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making_it() {
     let host = Host::new();
     let repo = repository(&host);
@@ -1006,7 +944,7 @@ fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making
         "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[ledger]\nstore = {{}}\n",
         layout.display()
     ));
-    let missing = bind(&host.file(), Some(&host.home()), &repo, For::Status);
+    let missing = host.bind(&repo, For::Status);
     assert!(
         matches!(&missing, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store),
         "{:?}",
@@ -1014,7 +952,7 @@ fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making
     );
     assert!(!layout.exists(), "status made {}", layout.display());
     profiles::store::layout::Layout::create(&layout).unwrap();
-    match chain_of(bind(&host.file(), Some(&host.home()), &repo, For::Status)) {
+    match chain_of(host.bind(&repo, For::Status)) {
         Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "store")),
         other => panic!("a store ledger answered {other:?}"),
     }
@@ -1060,63 +998,11 @@ fn landed(binding: &Binding, head: &tailrace_seams::Revision) -> Answer<bool> {
 // Requirement: Status is bound with nothing written
 
 #[test]
-fn no_file_in_a_clone_with_origin_binds_the_plain_branch_and_the_git_ref_read_from_origin() {
-    let host = Host::new();
-    let gone = host.dir.path().join("gone.git");
-    let (repo, head) = committed(&host, Some(&gone));
-    let before = files(host.dir.path());
-    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status)
-        .unwrap_or_else(|not| panic!("status bound nothing: {not}"));
-    let named = gone.display().to_string();
-    match landed(&binding, &head) {
-        Err(Not::Unreadable(u)) => {
-            assert_eq!(u.source, Source::new(Seam::Landing, "branch"));
-            assert!(
-                u.said.as_deref().is_some_and(|s| s.contains(&named)),
-                "{u:?}"
-            );
-        }
-        other => panic!("the landing answered {other:?}, not from origin"),
-    }
-    match binding.seams.keeper.chain(&stable()) {
-        Err(Not::Unreadable(u)) => {
-            assert_eq!(u.source, Source::new(Seam::Keeper, "git_ref"));
-            assert!(
-                u.said.as_deref().is_some_and(|s| s.contains(&named)),
-                "{u:?}"
-            );
-        }
-        other => panic!("the ledger answered {other:?}, not from origin"),
-    }
-    assert!(matches!(
-        binding.seams.store.resolve(&Name::new("v0.1.0")),
-        Err(Not::Absent(a)) if a.source == Source::new(Seam::Store, "unbound")
-    ));
-    assert_eq!(binding.signer, None);
-    assert_eq!(files(host.dir.path()), before, "binding status made a file");
-}
-
-#[test]
-fn no_file_in_a_tree_holding_sluices_file_binds_sluice() {
-    let host = Host::new();
-    let gone = host.dir.path().join("gone.git");
-    let (repo, head) = committed(&host, Some(&gone));
-    let file = repo.join(profiles::landing::SLUICE_FILE);
-    fs::create_dir_all(file.parent().unwrap()).unwrap();
-    fs::write(&file, "").unwrap();
-    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status).unwrap();
-    match landed(&binding, &head) {
-        Err(Not::Unreadable(u)) => assert_eq!(u.source, Source::new(Seam::Landing, "sluice")),
-        other => panic!("the landing answered {other:?}, not sluice's"),
-    }
-}
-
-#[test]
 fn no_file_and_no_origin_binds_the_branch_and_the_git_ref_with_no_remote() {
     let host = Host::new();
     let (repo, head) = committed(&host, None);
     let before = files(host.dir.path());
-    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status).unwrap();
+    let binding = host.bind(&repo, For::Status).unwrap();
     assert_eq!(landed(&binding, &head), Ok(true));
     match binding.seams.keeper.chain(&stable()) {
         Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
@@ -1131,7 +1017,7 @@ fn the_landings_remote_is_the_files_or_origin_with_no_file_or_none() {
     let gone = host.dir.path().join("gone.git");
     let (repo, _) = committed(&host, Some(&gone));
     let remote = || landing_remote(&host.file(), Some(&host.home()), &repo);
-    assert_eq!(remote(), Ok(Some(ORIGIN.to_string())));
+    assert_eq!(remote(), Ok(Some("origin".to_string())));
     host.write("[landing]\nbranch = { remote = \"upstream\" }\n");
     assert_eq!(remote(), Ok(Some("upstream".to_string())));
     host.write("[landing]\nsluice = {}\n");

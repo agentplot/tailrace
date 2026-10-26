@@ -127,6 +127,12 @@ impl Host {
         self.root().join("config/tailrace/config.toml")
     }
 
+    /// Where the built binary's given layout is: under a data directory
+    /// of the scratch directory's own.
+    fn given_layout(&self) -> PathBuf {
+        self.root().join("data/tailrace/layout")
+    }
+
     /// `text` as the host's bindings file.
     fn bind(&self, text: &str) {
         let file = self.bindings_file();
@@ -134,9 +140,10 @@ impl Host {
         fs::write(file, text).unwrap();
     }
 
-    /// The built binary run in the repository, its home and its
-    /// configuration directory in the scratch directory, so it reads no
-    /// bindings file of the host running the tests.
+    /// The built binary run in the repository, its home, its
+    /// configuration directory and its data directory in the scratch
+    /// directory, so it reads no bindings file and makes no layout of the
+    /// host running the tests.
     fn binary(&self, args: &[&str]) -> std::process::Output {
         let home = self.root().join("home");
         fs::create_dir_all(&home).unwrap();
@@ -146,6 +153,7 @@ impl Host {
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("HOME", &home)
             .env("XDG_CONFIG_HOME", self.root().join("config"))
+            .env("XDG_DATA_HOME", self.root().join("data"))
             .output()
             .expect("the binary runs")
     }
@@ -362,17 +370,16 @@ fn push_with_one_archive_missing_prints_one_written_and_one_absent_and_exits_0()
 }
 
 #[test]
-fn the_built_binary_on_a_host_with_no_bindings_file_pushes_nothing() {
+fn the_built_binary_on_a_host_with_no_bindings_file_pushes_through_the_given_landing() {
     let host = Host::new();
     let file = host.bindings_file();
     let out = host.binary(&["push", "--json"]);
-    assert_eq!(out.status.code(), Some(4), "{out:?}");
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
     let json: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(json["answer"], "absent");
-    assert_eq!(json["absent"]["source"]["seam"], "host");
+    assert_eq!(json["answer"], "refused");
     assert_eq!(
-        json["absent"]["what"],
-        format!("bindings file at {}", file.display())
+        json["refused"]["why"]["not_landed"]["revision"],
+        host.head.as_str()
     );
     assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
     let history = History::open(&host.repo).unwrap();
@@ -380,7 +387,11 @@ fn the_built_binary_on_a_host_with_no_bindings_file_pushes_nothing() {
         !Kept::at(&history).dir().exists(),
         "the push kept something"
     );
-    assert!(!file.parent().unwrap().exists(), "the push wrote a file");
+    assert!(!file.exists(), "the push wrote a bindings file");
+    assert!(
+        !file.with_file_name("signing").exists(),
+        "the push made a key"
+    );
 }
 
 // Requirement: Rebuild takes a landed revision
@@ -751,50 +762,62 @@ fn a_moment_is_rendered_in_utc() {
     assert_eq!(tailrace::render::utc(1_793_000_000), "2026-10-26T07:33:20Z");
 }
 
-// Requirement: An unbound host answers absent
+// Requirement: A host with no bindings file is bound to the given
+// profiles (spec host-bindings)
+
+/// The store's unreadable answer in `out`, once it names `layout`.
+fn unreadable_layout(out: &std::process::Output, layout: &Path) {
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["answer"], "unreadable", "{json}");
+    assert_eq!(json["unreadable"]["source"]["seam"], "store", "{json}");
+    assert!(
+        json["unreadable"]["what"]
+            .as_str()
+            .is_some_and(|what| what.starts_with(&layout.display().to_string())),
+        "{json}"
+    );
+}
 
 #[test]
-fn the_built_binary_on_a_host_with_no_bindings_file_publishes_nothing() {
+fn the_built_binary_on_a_host_with_no_bindings_file_is_bound_to_the_given_profiles() {
     let host = Host::new();
     let file = host.bindings_file();
+    let layout = host.given_layout();
+    unreadable_layout(&host.binary(&["verify", "0.1.0", "--json"]), &layout);
+    assert!(!layout.exists(), "verify made the given layout");
+
     let out = host.binary(&["publish", "HEAD"]);
-    assert_eq!(out.status.code(), Some(4), "{out:?}");
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains(&file.display().to_string()), "{stdout}");
+    assert!(
+        stdout.contains(&format!("main has not landed {}", host.head)),
+        "{stdout}"
+    );
     assert_eq!(git(&host.repo, &["tag", "-l"]), "");
     assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
     let history = History::open(&host.repo).unwrap();
     assert!(!Kept::at(&history).dir().exists());
-    assert!(!file.parent().unwrap().exists(), "the publish wrote a file");
-
-    let verify = host.binary(&["verify", "0.1.0", "--json"]);
-    assert_eq!(verify.status.code(), Some(4));
-    let json: Value = serde_json::from_slice(&verify.stdout).unwrap();
-    assert_eq!(json["answer"], "absent");
-    assert_eq!(json["absent"]["source"]["seam"], "host");
-    assert_eq!(
-        json["absent"]["what"],
-        format!("bindings file at {}", file.display())
+    assert!(!file.exists(), "the publish wrote a bindings file");
+    assert!(
+        !file.with_file_name("signing").exists(),
+        "a publish that signed nothing made a key"
     );
 }
 
 #[test]
-fn the_built_binary_on_a_host_with_no_bindings_file_syncs_nothing() {
+fn the_built_binary_on_a_host_with_no_bindings_file_syncs_from_the_given_layout_and_makes_none() {
     let host = Host::new();
     let file = host.bindings_file();
-    let out = host.binary(&["sync", "--json"]);
-    assert_eq!(out.status.code(), Some(4), "{out:?}");
-    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(json["answer"], "absent");
-    assert_eq!(json["absent"]["source"]["seam"], "host");
-    assert_eq!(
-        json["absent"]["what"],
-        format!("bindings file at {}", file.display())
-    );
+    let layout = host.given_layout();
+    unreadable_layout(&host.binary(&["sync", "--json"]), &layout);
     assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
     assert!(!host.repo.join(".moon").exists(), "the sync wrote a cache");
-    assert!(!file.parent().unwrap().exists(), "the sync wrote a file");
+    assert!(!layout.exists(), "the sync made the given layout");
+    assert!(!file.exists(), "the sync wrote a bindings file");
 }
+
+// Requirement: An unbound host answers absent
 
 #[test]
 fn a_bindings_file_that_is_not_toml_is_one_json_document_in_the_parsers_words() {

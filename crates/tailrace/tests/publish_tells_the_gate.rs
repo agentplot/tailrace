@@ -454,7 +454,13 @@ fn teller_of_a_file_naming_none(world: &FakeWorld) -> Teller {
         ),
     )
     .unwrap();
-    match bindings::bind(&file, Some(host.path()), &world.repo().path, For::Publish) {
+    match bindings::bind(
+        &file,
+        Some(host.path()),
+        None,
+        &world.repo().path,
+        For::Publish,
+    ) {
         Ok(binding) => binding.gate,
         Err(not) => panic!("a file naming no [gate] bound nothing: {not}"),
     }

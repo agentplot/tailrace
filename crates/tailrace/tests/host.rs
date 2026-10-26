@@ -107,6 +107,7 @@ impl HostRig for BindingsRig {
         let binding = bindings::bind(
             &file,
             Some(&self.home()),
+            None,
             &self.scratch.repo.path,
             For::Publish,
         )?;

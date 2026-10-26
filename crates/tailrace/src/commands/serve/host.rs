@@ -45,8 +45,9 @@ const AGAIN: Duration = Duration::from_millis(100);
 const STARTING: Duration = Duration::from_secs(5);
 
 /// The host as the serving process and its askers read it: the state
-/// directory, the bindings file's path, and the home its `~/` paths are
-/// expanded against. `tailrace serve` and `tailrace status --page` read
+/// directory, the bindings file's path, the home its `~/` paths are
+/// expanded against, and the data directory the given layout is under
+/// (118). `tailrace serve` and `tailrace status --page` read
 /// them from the environment once; a test gives temporary directories,
 /// so it reads no file of the host running it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,11 +55,12 @@ pub struct Host {
     pub state: PathBuf,
     pub config: PathBuf,
     pub home: Option<PathBuf>,
+    pub data: Option<PathBuf>,
 }
 
 impl Host {
-    /// The host this process's `XDG_STATE_HOME`, `XDG_CONFIG_HOME` and
-    /// `HOME` place; absent naming them where none places a directory.
+    /// The host this process's `XDG_STATE_HOME`, `XDG_CONFIG_HOME`,
+    /// `XDG_DATA_HOME` and `HOME` place; absent naming them where none places a directory.
     pub fn of_environment() -> Answer<Host> {
         let home = std::env::var_os("HOME")
             .filter(|home| !home.is_empty())
@@ -79,17 +81,27 @@ impl Host {
             home.as_deref(),
         )
         .ok_or_else(|| unplaced("bindings file, XDG_CONFIG_HOME"))?;
+        let data = std::env::var_os("XDG_DATA_HOME")
+            .filter(|data| !data.is_empty())
+            .map(PathBuf::from);
         Ok(Host {
             state,
             config,
             home,
+            data,
         })
     }
 
     /// Status's binding in the checkout at `checkout`, from this host's
     /// bindings file or, where it has none, as 118 binds such a host.
     pub fn bind(&self, checkout: &Path) -> Answer<Binding> {
-        bindings::bind(&self.config, self.home.as_deref(), checkout, For::Status)
+        bindings::bind(
+            &self.config,
+            self.home.as_deref(),
+            self.data.as_deref().map(Path::as_os_str),
+            checkout,
+            For::Status,
+        )
     }
 
     fn repositories(&self) -> PathBuf {
@@ -384,6 +396,7 @@ mod tests {
             state: dir.path().join("state/tailrace"),
             config: dir.path().join("config/tailrace/config.toml"),
             home: Some(dir.path().join("home")),
+            data: None,
         }
     }
 
