@@ -288,6 +288,13 @@ pub enum Why {
         channel: ChannelId,
         bound_to: ChannelId,
     },
+    /// 32, C.10: `asker` asked for `channel` to move, and the channel's
+    /// policy lets only `approvers` ask.
+    NotApprover {
+        channel: ChannelId,
+        asker: SignerId,
+        approvers: Vec<SignerId>,
+    },
     /// A refusal that names nothing beyond the source's own words.
     Said,
 }
@@ -450,6 +457,15 @@ impl fmt::Display for Why {
             Why::NeverHeld { channel, bound_to } => write!(
                 f,
                 "{channel} is bound to {bound_to}, whose chain never held the version"
+            ),
+            Why::NotApprover {
+                channel,
+                asker,
+                approvers,
+            } => write!(
+                f,
+                "{asker} may not ask for {channel}; ask one of {}",
+                list(approvers)
             ),
             Why::Said => write!(f, "it refused"),
         }
@@ -910,6 +926,14 @@ mod tests {
                     bound_to: lib("beta"),
                 },
                 "lib/stable is bound to lib/beta, whose chain never held the version".into(),
+            ),
+            (
+                Why::NotApprover {
+                    channel: lib("stable"),
+                    asker: SignerId::new("laptop"),
+                    approvers: vec![SignerId::new("release"), SignerId::new("gate")],
+                },
+                "laptop may not ask for lib/stable; ask one of release, gate".into(),
             ),
         ];
         for (why, names) in cases {

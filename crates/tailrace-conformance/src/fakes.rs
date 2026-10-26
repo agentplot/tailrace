@@ -417,10 +417,11 @@ impl PolicyRig for FakePolicyRig {
                     claims: vec![],
                     bound_to: channel.bound_to().map(|c| c.name),
                     promoted_by: vec![],
+                    approvers: vec![],
                 },
             );
-            if channel.moves == Moves::EachPublish {
-                self.policy.follows_at(&at, &channel.channel);
+            if let Moves::EachPublish { prereleases } = channel.moves {
+                self.policy.follows_at(&at, &channel.channel, prereleases);
             }
         }
         at

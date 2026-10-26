@@ -10,7 +10,8 @@ branch, component, output, build identity, version, ecosystem and
 ecosystem name, artifact metadata and index metadata (4, 6), cache
 entry (52), claim and signed envelope (7, 8), verdict (78), signer,
 audience and the policy's requirements (82), the channel a policy
-declares with how it moves (131), environment and channel. A channel
+declares with how it moves (131), a given channel held off with the
+line that would switch it on (C.10), environment and channel. A channel
 SHALL be its component and its name together, its component none where
 the repository declares no component (125). The name of the one
 component of a repository that declares none (123) SHALL be defined
@@ -32,7 +33,7 @@ ecosystem, name or version (53).
 #### Scenario: A declared channel names its component
 
 - **WHEN** a channel a policy declares is written in its machine-readable form
-- **THEN** it names the channel's name, its component or that the repository declares none, and how it moves, naming the channel it is bound to where it is bound
+- **THEN** it names the channel's name, its component or that the repository declares none, and how it moves, naming the channel it is bound to where it is bound and whether it takes prereleases where it moves on each publish
 
 #### Scenario: A channel spelled
 
@@ -46,16 +47,27 @@ revision and an audience of acceptance, a channel with its component,
 or a layout, with the claims required, each with the signers that may
 make it and what each may claim (82), or absent where no policy is
 declared. The policy for a channel SHALL name the signers that may sign
-its promotion (32), and the policy for a channel bound to another SHALL
+its promotion (32) and the signers that may ask for it, none meaning any
+asker the gate verifies (129, C.10), and the policy for a channel bound to another SHALL
 name the channel it is bound to; the policy for acceptance SHALL name no
 channel (83). The policy SHALL answer channels, given a repository at a
 landed revision, with every channel its policy declares or gives, once
 each, ordered by name and then by component, each with the one
 component it belongs to (125) and how it moves: on each accepted
-publish, by a promotion alone, or bound to a channel of the same
-component (37, 83, 131); a repository that declares one component SHALL
+publish, with releases alone or prereleases too, by a promotion alone,
+or bound to a channel of the same component (37, 83, 131, C.10); a
+repository that declares one component SHALL
 have every channel in it, and one that declares none SHALL have every
-channel in that one, its channels spelled by name alone (123).
+channel in that one, its channels spelled by name alone (123). The
+same channels answer SHALL carry, apart from the channels in force,
+every channel the profile gives but holds until the repository switches
+it on, and the repository has not switched on, marked held, once each,
+ordered by name and then by component, each with its component, how it
+would move once switched on, and the line that would switch it on, in
+the profile's own words; an empty list where it holds none back; and
+never a channel in force (131 as amended at agentplot/blueprints
+1ae1cc5, C.10). The policy seam SHALL have no operation for the held
+givens apart from channels (136).
 
 #### Scenario: Acceptance names no channel
 
@@ -71,6 +83,21 @@ channel in that one, its channels spelled by name alone (123).
 
 - **WHEN** policy-for is asked for a channel
 - **THEN** it names the signers whose promotion of that channel counts, each with what it may claim
+
+#### Scenario: A channel's approvers
+
+- **WHEN** policy-for is asked for a channel whose policy names who may ask for it, and for one whose policy names none
+- **THEN** the first names those signers, and the second names none, which is any asker the gate verifies
+
+#### Scenario: A given held off
+
+- **WHEN** the channels are asked at a revision whose policy holds a given the repository has not switched on
+- **THEN** the one answer carries the channels in force and, apart from them, the held given marked held, naming its component, how it would move and the line that would switch it on, and no channel is both in force and held
+
+#### Scenario: A channels answer written and read back
+
+- **WHEN** a channels answer holding a channel in force and a given held off is written in its machine-readable form and read back
+- **THEN** it is the same value, the held given naming the channel, its component or that the repository declares none, how it would move and its line, apart from the channels in force
 
 ### Requirement: The keeper's contract
 

@@ -291,7 +291,7 @@ pub fn row(repository: &RepositoryName, overview: &Overview) -> Row {
                     component: channel.declared.channel.component_name(),
                     channel: channel.declared.channel.name.clone(),
                     at: channel.at.as_ref().map_err(Not::clone).map(|at| match at {
-                        Channel::Empty => HeadAt::Empty,
+                        Channel::Empty { .. } => HeadAt::Empty,
                         Channel::At { head, .. } => HeadAt::At {
                             version: head.to.version.clone(),
                             index: head.to.index.clone(),

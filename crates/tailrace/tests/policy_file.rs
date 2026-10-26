@@ -137,7 +137,12 @@ fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) ->
         };
         text.push_str(&format!("[channels.{table}]\nrequire = []\n"));
         match &channel.moves {
-            Moves::EachPublish => text.push_str("on_each_publish = true\n"),
+            Moves::EachPublish { prereleases } => {
+                text.push_str("on_each_publish = true\n");
+                if *prereleases {
+                    text.push_str("prereleases = true\n");
+                }
+            }
             Moves::Bound { to } => {
                 text.push_str(&format!("bound_to = {}\n", quoted(to.as_str())));
             }
@@ -173,9 +178,10 @@ impl PolicyRig for PolicyFileRig {
         Revision::new(repo.commit("chore: the channels"))
     }
 
-    /// C.10: each channel the shipped fragment has on, of every
-    /// component, or of the one where none is declared, moving as its
-    /// table says, in the order the channels answer them.
+    /// C.10: each channel the shipped fragment declares and does not
+    /// mark held, of every component, or of the one where none is
+    /// declared, moving as its table says, prereleases among it, in the
+    /// order the channels answer them.
     fn given(&self, components: &[ComponentName]) -> Vec<DeclaredChannel> {
         let fragment: toml::Table = toml::from_str(GIVENS).expect("the shipped fragment parses");
         let tables = fragment["channels"]
@@ -189,7 +195,7 @@ impl PolicyRig for PolicyFileRig {
         let mut given = Vec::new();
         for (name, table) in tables {
             let key = |key: &str| table.get(key);
-            if key("on").and_then(toml::Value::as_bool) == Some(false) {
+            if key("held").and_then(toml::Value::as_bool) == Some(true) {
                 continue;
             }
             let moves = match (
@@ -199,7 +205,9 @@ impl PolicyRig for PolicyFileRig {
                 (_, Some(to)) => Moves::Bound {
                     to: ChannelName::new(to),
                 },
-                (Some(true), None) => Moves::EachPublish,
+                (Some(true), None) => Moves::EachPublish {
+                    prereleases: key("prereleases").and_then(toml::Value::as_bool) == Some(true),
+                },
                 _ => Moves::Promotion,
             };
             for component in &scopes {

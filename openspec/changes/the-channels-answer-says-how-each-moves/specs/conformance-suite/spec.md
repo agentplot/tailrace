@@ -11,13 +11,18 @@ ecosystem (116); where the repository declares no policy for an
 audience, an absence naming the audience, the revision beside it being
 verify's to name, not the policy's (82); and the channels the policy
 declares, each with the one component it belongs to and how it moves,
-on each publish, by promotion alone, or bound within its component, one
+on each publish with releases alone or prereleases too, by promotion
+alone, or bound within its component, one
 component holding every channel where the repository declares one or
 none (125, 37), listed beside the channels the profile gives with
 nothing declared and like them (131). The group's rig SHALL declare
 components and channels, each with how it moves, at a landed revision
 as well as policies for audiences, and SHALL answer the channels its
-profile gives a set of components with nothing declared. The group
+profile gives a set of components with nothing declared, and the
+channels it holds off. The group SHALL hold the givens a profile holds
+off to the channels answer, carried apart from the channels in force,
+each naming how it would move and the line that would switch it on
+(131, C.10). The group
 SHALL hold a profile to the three ways a channel moves and SHALL name
 no channel a profile gives, its declared channels bearing names no
 profile gives, so a profile whose givens bear other names passes alike
@@ -55,8 +60,13 @@ profile gives, so a profile whose givens bear other names passes alike
 
 #### Scenario: Each way a channel moves
 
-- **WHEN** the channels are asked at a revision declaring one channel of each way it moves
-- **THEN** the answer says each as declared, and policy-for of each agrees on the channel it is bound to
+- **WHEN** the channels are asked at a revision declaring one channel of each way it moves, and a second channel moving on each publish with prereleases
+- **THEN** the answer says each as declared, prereleases of the second alone, and policy-for of each agrees on the channel it is bound to
+
+#### Scenario: The givens held off
+
+- **WHEN** the channels are asked at a revision declaring the components `lib` and `web` and the channel `edge` of `lib`
+- **THEN** the answer's held givens are what the rig says its profile holds off for `lib` and `web`, an empty list where it holds none, each with how it would move and a line, and none of them is among the answer's channels in force
 
 #### Scenario: The channels of a policy that cannot be reached
 
@@ -115,10 +125,12 @@ saying when, an empty chain as any other, and never appended to.
 The gate's and the ledger's groups SHALL hold the core to the channels
 the policy gives and makes: the gate moving every channel the channels
 answer says moves on each publish, of the component published and no
-other, and no channel it reads from the policy file (95, 125, 131); and
-a promotion of a channel whose policy names the gate's signer as its
-promoter, refusing any other signer (32, 9). Each scenario SHALL cite
-the clauses it exercises.
+other, and no channel it reads from the policy file (95, 125, 131), a
+prerelease moving only those that take prereleases (95, 131); a
+promotion of a channel whose policy names the gate's signer as its
+promoter, refusing any other signer (32, 9); and a promotion asked by
+a signer the channel's approvers do not name refused (32, 33). Each
+scenario SHALL cite the clauses it exercises.
 
 #### Scenario: beta of one component
 
@@ -129,3 +141,13 @@ the clauses it exercises.
 
 - **WHEN** the policy for `stable` names `gate` as the signer of its promotion, and in one world a host signing as `gate` and in another one signing as `laptop` promotes a version `beta` has held
 - **THEN** the first moves `stable`, and the second is refused naming the promotion and `gate` with nothing appended
+
+#### Scenario: A prerelease and the channels that follow
+
+- **WHEN** the fake policy lists `edge` moving on each publish with prereleases and `nightly` moving on each publish with releases alone, and the gate accepts a prerelease a publish told it of
+- **THEN** `edge` moves and `nightly` does not, and the version is accepted
+
+#### Scenario: An asker the approvers do not name
+
+- **WHEN** the policy for `next` names `gate` as its promoter and `ci` as the one signer that may ask, and a host signing as `gate` promotes a version
+- **THEN** the promotion is refused naming `gate` as the asker and `ci`, with nothing signed or appended

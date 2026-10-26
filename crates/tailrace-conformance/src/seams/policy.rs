@@ -149,9 +149,9 @@ fn the_claims_an_audience_requires(rig: &dyn PolicyRig) {
 }
 
 fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
-    let (stable, beta) = (
-        ChannelId::new(None, ChannelName::new("stable")),
-        ChannelName::new("beta"),
+    let (next, edge) = (
+        ChannelId::new(None, ChannelName::new("next")),
+        ChannelName::new("edge"),
     );
     let at = rig.at(&[
         (
@@ -159,11 +159,12 @@ fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
             Required::Acceptance { claims: claims() },
         ),
         (
-            Audience::Channel(stable.clone()),
+            Audience::Channel(next.clone()),
             Required::Channel {
                 claims: claims(),
-                bound_to: Some(beta.clone()),
+                bound_to: Some(edge.clone()),
                 promoted_by: vec![],
+                approvers: vec![],
             },
         ),
     ]);
@@ -178,12 +179,12 @@ fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
     );
     assert_eq!(acceptance.bound_to(), None, "acceptance names a channel");
     let bound = ok(
-        policy.policy_for(&at, &Audience::Channel(stable)),
+        policy.policy_for(&at, &Audience::Channel(next)),
         "policy-for a bound channel",
     );
     assert_eq!(
         bound.bound_to(),
-        Some(&beta),
+        Some(&edge),
         "the bound channel's policy answered {bound:?}"
     );
 }
@@ -248,7 +249,11 @@ fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
     let components = [ComponentName::new("lib"), ComponentName::new("web")];
     let channels = [
         declared("edge", Some("lib"), Moves::Promotion),
-        declared("nightly", Some("web"), Moves::EachPublish),
+        declared(
+            "nightly",
+            Some("web"),
+            Moves::EachPublish { prereleases: false },
+        ),
         declared("next", Some("lib"), bound("edge")),
     ];
     // Declared in another order than the answer's, which is by name.
@@ -260,7 +265,7 @@ fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
             channels[1].clone(),
         ],
     );
-    let listed = ok(rig.policy().channels(&at), "channels");
+    let listed = ok(rig.policy().channels(&at), "channels").in_force;
     assert_eq!(
         listed,
         with_given(rig, &components, &channels),
@@ -280,15 +285,31 @@ fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
 
 fn each_way_a_channel_moves(rig: &dyn PolicyRig) {
     let channels = [
-        declared("edge", None, Moves::EachPublish),
+        declared("edge", None, Moves::EachPublish { prereleases: false }),
+        declared("nightly", None, Moves::EachPublish { prereleases: true }),
         declared("rc", None, Moves::Promotion),
         declared("next", None, bound("edge")),
     ];
     let at = rig.declaring(&[], &channels);
+    let listed = ok(rig.policy().channels(&at), "channels").in_force;
     assert_eq!(
-        ok(rig.policy().channels(&at), "channels"),
+        listed,
         with_given(rig, &[], &channels),
         "the policy answered other ways a channel moves than it declares"
+    );
+    let moves = |name: &str| {
+        listed
+            .iter()
+            .find(|c| c.channel.name.as_str() == name)
+            .map(|c| c.moves.clone())
+    };
+    assert_eq!(
+        (moves("nightly"), moves("edge")),
+        (
+            Some(Moves::EachPublish { prereleases: true }),
+            Some(Moves::EachPublish { prereleases: false })
+        ),
+        "a following channel's prereleases are not answered as declared"
     );
     for channel in &channels {
         let policy = ok(
@@ -313,7 +334,7 @@ fn one_component_has_every_channel(rig: &dyn PolicyRig) {
             declared("next", component, bound("edge")),
         ];
         let at = rig.declaring(&components, &channels);
-        let listed = ok(rig.policy().channels(&at), "channels");
+        let listed = ok(rig.policy().channels(&at), "channels").in_force;
         assert_eq!(
             listed,
             with_given(rig, &components, &channels),
@@ -334,7 +355,7 @@ fn a_policy_declaring_no_channel(rig: &dyn PolicyRig) {
         Required::Acceptance { claims: claims() },
     )]);
     assert_eq!(
-        ok(rig.policy().channels(&at), "channels"),
+        ok(rig.policy().channels(&at), "channels").in_force,
         rig.given(&[]),
         "a policy declaring no channel answered other channels than its profile gives"
     );

@@ -264,10 +264,21 @@ fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Re
     write!(out, "  {:<width$}  ", channel.name().as_str())?;
     let bound = match &channel.declared.moves {
         Moves::Bound { to } => format!(", bound to {to}"),
-        Moves::EachPublish | Moves::Promotion => String::new(),
+        Moves::EachPublish { prereleases: true } => ", prereleases too".to_string(),
+        Moves::EachPublish { prereleases: false } | Moves::Promotion => String::new(),
     };
     match &channel.at {
-        Ok(Channel::Empty) => writeln!(out, "empty{bound}"),
+        Ok(Channel::Empty { read }) => {
+            write!(out, "empty{bound}")?;
+            if let Read::Kept { at, .. } = read {
+                write!(out, ", as last read {}", render::utc(*at))?;
+            }
+            writeln!(out)?;
+            if let Read::Kept { said, .. } = read {
+                words(out, said)?;
+            }
+            Ok(())
+        }
         Ok(Channel::At { head, chain, read }) => {
             write!(out, "{} ({}){bound}", head.to.version, head.to.index)?;
             if let Read::Kept { at, .. } = read {

@@ -8,9 +8,9 @@
 //!
 //! Each chain read from the store is kept, with when it was read, under
 //! the repository's common git directory beside the record of published
-//! versions, and is answered as last read where the store does not
-//! answer, saying when, with the store's words; append is then
-//! unreadable (60 to 62). What is kept is the chain alone: no
+//! versions, an empty one as any other, and is answered as last read
+//! where the store does not answer, saying when, with the store's words;
+//! append is then unreadable (60 to 62). What is kept is the chain alone: no
 //! credential, and nothing else the store holds (64).
 
 use std::fs;
@@ -274,17 +274,15 @@ impl InStore {
         })
     }
 
-    /// The chain of `channel` from the store, kept as read; from what is
-    /// kept where the store does not answer. Empty where the channel's
-    /// name names nothing.
+    /// The chain of `channel` from the store, kept as read, an empty one
+    /// as any other; from what is kept where the store does not answer.
+    /// Empty where the channel's name names nothing.
     fn read(&self, channel: &ChannelId) -> Answer<Chain> {
         match self.walk(channel) {
             Ok(walked) => {
                 let claims: Vec<Envelope> =
                     walked.into_iter().flatten().map(|l| l.envelope).collect();
-                if !claims.is_empty() {
-                    self.keep(channel, &claims)?;
-                }
+                self.keep(channel, &claims)?;
                 Ok(Chain {
                     claims,
                     read: Read::Source,
@@ -356,11 +354,12 @@ impl Keeper for InStore {
     }
 
     /// 121: every claim of `channel` from the first, walked in the store,
-    /// or as last read where the store does not answer (60); absent where
-    /// the channel's name names nothing.
+    /// or as last read where the store does not answer, a channel last
+    /// read holding none a chain of no claims so read (60); absent where
+    /// the store answers that the channel's name names nothing.
     fn chain(&self, channel: &ChannelId) -> Answer<Chain> {
         let chain = self.read(channel)?;
-        if chain.claims.is_empty() {
+        if chain.claims.is_empty() && chain.read == Read::Source {
             return Err(Not::absent(&source(), format!("chain of {channel}")));
         }
         Ok(chain)

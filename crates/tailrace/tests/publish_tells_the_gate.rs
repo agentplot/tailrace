@@ -90,6 +90,7 @@ fn requires(world: &FakeWorld, channel: &ChannelId, more: Vec<RequiredClaim>) {
             claims,
             bound_to: None,
             promoted_by: vec![host],
+            approvers: vec![],
         },
     );
 }
@@ -128,7 +129,7 @@ fn landed(
     world.outputs(&revision, &built);
     world.fakes.policy.require(Audience::Acceptance, required);
     requires(world, channel, vec![]);
-    world.fakes.policy.follows(channel);
+    world.fakes.policy.follows(channel, false);
     revision
 }
 

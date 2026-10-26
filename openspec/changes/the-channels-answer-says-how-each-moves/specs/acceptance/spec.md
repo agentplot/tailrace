@@ -39,6 +39,36 @@ and its promoters, and the acceptance SHALL stand (32, 9, core.7).
 - **WHEN** a hand-declared channel moves on each publish and its policy names `release`, not the gate's signer, as its promoter
 - **THEN** the version is accepted, the channel does not move, and its answer is refused naming the promotion and `release`
 
+### Requirement: A prerelease moves only the channels that take prereleases
+
+The gate SHALL move, of the channels that follow each publish, every
+one with an accepted release, and with an accepted prerelease only
+those the channels answer says take prereleases (C.10, 95, 131). A
+version is a prerelease where the version rule made it one, its
+semantic version carrying a prerelease part (21). The acceptance SHALL
+stand whichever channels move.
+
+#### Scenario: A prerelease accepted
+
+- **WHEN** `[channels.alpha]` is written, and the gate accepts the prerelease `1.3.0-pre.2` a publish told it of
+- **THEN** `alpha` moves to it, `beta` does not, and the version is accepted
+
+#### Scenario: A release accepted
+
+- **WHEN** `[channels.alpha]` is written, and the gate accepts the release `1.3.0` a publish told it of
+- **THEN** both `alpha` and `beta` move to it
+
+### Requirement: The gate's move on a publish is no asking
+
+The gate SHALL move a channel that follows each publish as its own act,
+recording its own signer as who asked and the publish as the cause,
+whatever `approvers` the channel's policy names (95, 129, C.10).
+
+#### Scenario: beta's approvers and a publish
+
+- **WHEN** `[channels.beta]` names `approvers = ["ci"]`, and the gate signing as `desk` accepts a version a publish told it of
+- **THEN** `beta` moves, its claim naming `desk` as who asked
+
 ## REMOVED Requirements
 
 ### Requirement: A channel that follows each publish is declared in the policy file

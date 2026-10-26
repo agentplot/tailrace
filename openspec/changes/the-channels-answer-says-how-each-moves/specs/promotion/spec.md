@@ -88,3 +88,24 @@ SHALL ask the store nothing and write nothing (101, 60, core.32).
 
 - **WHEN** the ledger answers a channel's chain as last read, holding no claim, with the time of that read and its words
 - **THEN** the answer is that the channel is empty, with that time and those words, and status shows it `empty, as last read` at that time with the words
+
+## ADDED Requirements
+
+### Requirement: Only an approver asks for a channel that names approvers
+
+Where the channel's policy names signers that may ask for it, a
+promotion SHALL be asked by one of them: the asker, the host's signer
+while no identity provider stands (129), SHALL be among them, or the
+promotion SHALL be refused naming the asker and the signers that may
+ask, before anything is signed or appended (32, C.10). Where the policy
+names none, any asker the gate verifies SHALL ask.
+
+#### Scenario: An asker the policy does not name
+
+- **WHEN** the policy for `stable` names `ci` as the one signer that may ask, and the host signing as `desk`, a promoter of `stable`, promotes a version `beta` has held
+- **THEN** the promotion is refused naming `desk` and `ci`, and nothing is signed or appended
+
+#### Scenario: A channel that names no approvers
+
+- **WHEN** the policy for `stable` names no approvers, and the host signing as the gate promotes a version `beta` has held
+- **THEN** `stable` moves, naming the gate as who asked

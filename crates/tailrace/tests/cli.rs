@@ -11,8 +11,8 @@ use tailrace::bindings::Teller;
 use tailrace::profiles::policy::file::PolicyFile;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{
-    answer_json, in_force, promote, publish, push, sync, write, Ask, Entry, History, InForceAsk,
-    Kept, PromoteAsk, PushAsk, SyncAsk, To,
+    accept, answer_json, in_force, promote, publish, push, sync, write, AcceptAsk, Ask, Entry,
+    History, InForceAsk, Judged, Kept, Moved, PromoteAsk, PushAsk, SyncAsk, To, ToldBy,
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
@@ -553,6 +553,7 @@ fn declared(fakes: &Fakes, channel: &str) {
             claims: vec![],
             bound_to: None,
             promoted_by: vec![],
+            approvers: vec![],
         },
     );
 }
@@ -777,6 +778,44 @@ fn status_says_the_landing_was_read_as_last_fetched_and_shows_every_channel() {
         channels["value"]["channels"][1]["at"]["value"]["head"]["to"]["version"],
         "0.2.0"
     );
+}
+
+#[test]
+fn status_prints_an_empty_channel_read_from_the_copy_as_last_read_with_its_words() {
+    let host = Host::new();
+    declared(&host.fakes, "preview");
+    let before = now();
+    assert_eq!(host.run(&["status"]).0, 0);
+    let after = now();
+    host.fakes.keeper.unreachable("fatal: unable to access");
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let preview = lines
+        .iter()
+        .position(|l| l.starts_with("  preview "))
+        .unwrap_or_else(|| panic!("no preview line: {printed}"));
+    let (said, when) = lines[preview]
+        .split_once("empty, as last read ")
+        .unwrap_or_else(|| panic!("preview is not empty as last read: {printed}"));
+    assert!(said.trim() == "preview", "{printed}");
+    assert!(when.starts_with("20") && when.ends_with('Z'), "{printed}");
+    assert_eq!(
+        lines[preview + 1].trim(),
+        "fatal: unable to access",
+        "{printed}"
+    );
+
+    let (code, printed) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let at = &printed["value"]["channels"]["value"]["channels"][0]["at"]["value"];
+    assert_eq!(at["state"], "empty", "{printed}");
+    let kept = &at["read"]["kept"];
+    assert_eq!(kept["said"], "fatal: unable to access", "{printed}");
+    let read_at = kept["at"].as_u64().expect("the copy's time");
+    assert!((before..=after).contains(&read_at), "{printed}");
 }
 
 #[test]
@@ -1067,6 +1106,7 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
             }],
             bound_to: None,
             promoted_by: vec![host_signer],
+            approvers: vec![],
         },
     );
 }
@@ -1142,6 +1182,87 @@ fn a_version_and_back_together_are_arguments_promote_cannot_take() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--back"), "{stderr}");
     assert_eq!(host.calls(), 0, "the core was asked");
+}
+
+// Requirement: A prerelease moves only the channels that take prereleases
+
+#[test]
+fn a_prerelease_accepted_with_alpha_written_moves_alpha_and_not_beta() {
+    let host = Host::new();
+    git(&host.repo, &["tag", "v0.1.0", host.head.as_str()]);
+    fs::write(
+        host.repo.join(".config/tailrace.toml"),
+        format!(
+            "{POLICY}\n[signers.host]\nssh = \"ssh-ed25519 HHHH\"\nkinds = [\"acceptance\"]\n\n\
+             [acceptance]\nrequire = []\n\n[channels.alpha]\n"
+        ),
+    )
+    .unwrap();
+    git(
+        &host.repo,
+        &["commit", "-q", "-am", "chore: alpha switched on"],
+    );
+    let head = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
+    let fakes = fakes_at(&head);
+    let history = History::open(&host.repo).unwrap();
+    let published = publish(
+        &fakes.seams(),
+        &history,
+        &Kept::at(&history),
+        &Ask {
+            branch: Branch::new("main"),
+            revision: head.clone(),
+            component: None,
+            signer: SignerId::new("host"),
+            store: store(),
+        },
+    )
+    .unwrap();
+    let Ok(tailrace_core::Published::Version { version, index, .. }) = &published.components[0].1
+    else {
+        panic!("nothing was published: {published:?}")
+    };
+    assert!(
+        version.as_str().contains("-pre."),
+        "{version} is no prerelease"
+    );
+
+    let mut seams = fakes.seams();
+    seams.policy = Box::new(PolicyFile::new(&host.repo));
+    let judged = accept(
+        &seams,
+        &history,
+        &AcceptAsk {
+            branch: Branch::new("main"),
+            component: None,
+            version: version.clone(),
+            told: ToldBy::Publish {
+                index: index.clone(),
+            },
+            gate: SignerId::new("host"),
+            when: 1_793_000_000,
+        },
+    );
+    let Ok(Judged::Accepted { channels, .. }) = judged else {
+        panic!("the prerelease was not accepted: {judged:?}")
+    };
+    let alpha = ChannelId::new(None, ChannelName::new("alpha"));
+    assert_eq!(
+        channels.iter().map(|(c, _)| c).collect::<Vec<_>>(),
+        [&alpha],
+        "{channels:?}"
+    );
+    assert!(
+        matches!(&channels[0].1, Ok(Moved::Promoted { to, .. }) if to == index),
+        "{channels:?}"
+    );
+    assert!(matches!(
+        tailrace_seams::Keeper::chain(
+            &fakes.keeper,
+            &ChannelId::new(None, ChannelName::new("beta"))
+        ),
+        Err(tailrace_seams::Not::Absent(_))
+    ));
 }
 
 // Requirement: Policy shows the policy in force
@@ -1234,13 +1355,14 @@ fn policy_as_text_shows_the_layout_absent_beside_the_channels_and_exits_0() {
     declared(&host.fakes, "beta");
     host.fakes
         .policy
-        .follows(&ChannelId::new(None, ChannelName::new("beta")));
+        .follows(&ChannelId::new(None, ChannelName::new("beta")), false);
     host.fakes.policy.require(
         Audience::Channel(stable()),
         Required::Channel {
             claims: vec![],
             bound_to: Some(ChannelName::new("beta")),
             promoted_by: vec![],
+            approvers: vec![],
         },
     );
     let (code, printed) = host.run(&["policy"]);
@@ -1265,11 +1387,81 @@ fn policy_as_text_shows_the_layout_absent_beside_the_channels_and_exits_0() {
     );
     let channels = at("channels");
     assert_eq!(lines[channels + 1], "  beta, each publish", "{printed}");
-    assert_eq!(lines[channels + 4], "  stable, bound to beta", "{printed}");
+    assert_eq!(lines[channels + 5], "  stable, bound to beta", "{printed}");
     assert_eq!(
-        lines[channels + 6],
+        lines[channels + 7],
         "    promoted by no signer",
         "{printed}"
+    );
+    assert_eq!(
+        lines[channels + 8],
+        "    may be asked for by any asker",
+        "{printed}"
+    );
+}
+
+#[test]
+fn policy_shows_alpha_taking_prereleases_and_stables_approvers_value_for_value() {
+    let host = Host::new();
+    fs::write(
+        host.repo.join(".config/tailrace.toml"),
+        format!(
+            "{POLICY}\n[signers.gate]\nssh = \"ssh-ed25519 GGGG\"\nkinds = [\"acceptance\"]\n\n\
+             [signers.ci]\nssh = \"ssh-ed25519 CCCC\"\nkinds = [\"acceptance\"]\n\n\
+             [channels.alpha]\n\n\
+             [channels.stable]\napprovers = [\"ci\"]\n"
+        ),
+    )
+    .unwrap();
+    git(&host.repo, &["commit", "-q", "-am", "chore: the policy"]);
+    let head = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
+    host.fakes.landing.land(&Branch::new("main"), &head);
+
+    let (code, printed) = run_over(&host, over_the_file(&host), &["policy"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let at = |line: &str| {
+        lines
+            .iter()
+            .position(|l| *l == line)
+            .unwrap_or_else(|| panic!("no line {line:?}: {printed}"))
+    };
+    let alpha = at("  alpha, each publish, prereleases too");
+    assert_eq!(
+        lines[alpha + 3],
+        "    may be asked for by any asker",
+        "{printed}"
+    );
+    let stable = at("  stable, bound to beta");
+    assert_eq!(lines[stable + 2], "    promoted by ci, gate", "{printed}");
+    assert_eq!(lines[stable + 3], "    may be asked for by ci", "{printed}");
+
+    let (code, printed) = run_over(&host, over_the_file(&host), &["policy", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let history = History::open(&host.repo).unwrap();
+    let core = in_force(
+        &over_the_file(&host).seams,
+        &history,
+        &InForceAsk {
+            branch: Branch::new("main"),
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+    let channels = printed["value"]["channels"]["value"]
+        .as_array()
+        .expect("the channels");
+    assert_eq!(
+        channels[0]["moves"],
+        serde_json::json!({ "by": "each_publish", "prereleases": true })
+    );
+    let stable = channels
+        .iter()
+        .find(|c| c["channel"]["name"] == "stable")
+        .expect("stable");
+    assert_eq!(
+        stable["policy"]["value"]["channel"]["approvers"][0]["id"],
+        "ci"
     );
 }
 

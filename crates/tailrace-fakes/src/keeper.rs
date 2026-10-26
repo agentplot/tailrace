@@ -86,8 +86,9 @@ impl FakeKeeper {
 
     /// The source holding the ledger no longer answers, for `words`, its
     /// own: a chain answered before is answered as then, [`Read::Kept`]
-    /// with the time of that answer and the words; one never answered,
-    /// and every append, unreadable with them (60, 61).
+    /// with the time of that answer and the words, one answered holding
+    /// none as a chain of no claims; one never answered, and every append,
+    /// unreadable with them (60, 61).
     pub fn unreachable(&self, words: impl Into<String>) {
         self.state().unreachable = Some(words.into());
     }
@@ -153,7 +154,10 @@ impl Keeper for FakeKeeper {
                 }
                 let chain = match s.chains.get(channel) {
                     Some(chain) if !chain.is_empty() => chain,
-                    _ => return Err(Not::absent(source, format!("chain of {channel}"))),
+                    _ => {
+                        s.answered.insert(channel.clone(), (Vec::new(), now()));
+                        return Err(Not::absent(source, format!("chain of {channel}")));
+                    }
                 };
                 if let Some(why) = fork(chain) {
                     return Err(Not::refused(source, why, None));
@@ -357,6 +361,32 @@ mod tests {
                 KeeperOp::Append
             ]
         );
+    }
+
+    #[test]
+    fn an_empty_chain_read_then_unreachable_is_a_chain_of_no_claims_as_last_read() {
+        let keeper = FakeKeeper::new();
+        let beta = id(None, "beta");
+        let before = now();
+        assert_eq!(
+            keeper.chain(&beta),
+            Err(Not::absent(&source(), "chain of beta"))
+        );
+        let after = now();
+        keeper.unreachable("ref unreadable");
+        let Ok(Chain {
+            claims,
+            read: Read::Kept { at, said },
+        }) = keeper.chain(&beta)
+        else {
+            panic!("an unreachable keeper answered no kept empty chain")
+        };
+        assert_eq!(claims, []);
+        assert!(
+            (before..=after).contains(&at),
+            "{at} is not the empty read's time"
+        );
+        assert_eq!(said, "ref unreadable");
     }
 
     #[test]

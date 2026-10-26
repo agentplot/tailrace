@@ -309,7 +309,7 @@ fn every_channel_at_its_version_or_empty(world: &FakeWorld) {
     }
     assert_eq!(
         channels[0].at,
-        Ok(Channel::Empty),
+        Ok(Channel::Empty { read: Read::Source }),
         "beta was never promoted"
     );
     assert_eq!(channels[0].declared.moves, Moves::Promotion);
