@@ -17,3 +17,20 @@ existed, so its digest does not change (1, 5, 13, 138).
 
 - **WHEN** an index naming no revision and no repository is put
 - **THEN** its image index carries no revision or repository annotation, and its digest is the one the same index had before indexes named them
+
+### Requirement: A name's versions are the index's names
+
+The layout store SHALL answer the listing of an ecosystem and a name
+from the ref names of its `index.json` that read back as that
+ecosystem's and that name's store names, answering each one's version,
+and absent where none does (138).
+
+#### Scenario: Versions listed from the index's names
+
+- **WHEN** a layout store names `artifact/npm/@acme/site@1.0.0`, `artifact/npm/@acme/site@1.1.0+b.1`, `artifact/npm/@acme/site-cli@1.0.0` and `site-v1.0.0`, and the versions of `npm` `@acme/site` are asked
+- **THEN** the answer is 1.0.0 and 1.1.0+b.1 and no other
+
+#### Scenario: A name the layout does not hold
+
+- **WHEN** the versions of a name the layout store names at no version are asked
+- **THEN** the answer is absent naming the name, and nothing is written

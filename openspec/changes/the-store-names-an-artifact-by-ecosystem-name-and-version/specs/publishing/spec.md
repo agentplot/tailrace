@@ -48,13 +48,13 @@ it is at and this index, and no name SHALL be made (70, 109, core.6).
 
 A new index SHALL name the revision it was published from, and the
 publishing repository by the owner and name of its landed branch's
-remote's address, as the address is written (13, 114, 138). Where the
-branch names no remote, or its address gives no owner and name, the
-index SHALL name no repository, and the publish SHALL go on.
+remote's address, as the address is written (13, 138). Where the branch
+names no remote, or its address gives no owner and name, the index SHALL
+name no repository, and the publish SHALL go on.
 
 #### Scenario: A repository with a remote
 
-- **WHEN** a revision of a repository whose branch's remote is `https://example.com/acme/site.git` is published
+- **WHEN** a revision of a repository whose branch's remote is `https://example.com/acme/site.git` is published, on a host whose git rewrites that address to a local path
 - **THEN** the index names the revision and the repository `acme/site`
 
 #### Scenario: A repository with no remote
@@ -84,20 +84,16 @@ has published nothing (6, 17, 113, 138, core.12, core.6).
 - **WHEN** a publish stops after one artifact is put
 - **THEN** no index is held, the version's name and every artifact's name resolve to nothing, and the host's record holds no entry for the version
 
-#### Scenario: The claims are on the index before any name
-
-- **WHEN** a revision whose policy file declares a policy for layouts is published
-- **THEN** the fake store records the layout-policy claim's attach to the index before the first artifact's name is made
-
 ### Requirement: A second publish of a revision ends at the same index
 
 A publish of a revision whose version's name already names an index
 SHALL compare each packed artifact's digest with the digest the index
-names for that ecosystem name. All the same, it SHALL make each
-artifact's name the store lacks at that index, write nothing else, and
-answer the same index (5, 18, 138, S2). One different, the publish
-SHALL be refused naming the artifact and both digests, nothing SHALL be
-offered or named, and the name SHALL stay with the first index (18, 87).
+names for that ecosystem name. All the same, it SHALL attach the
+publisher's layout policy where the index lacks it, make each artifact's
+name the store lacks at that index, write nothing else, and answer the
+same index (5, 18, 113, 138, S2). One different, the publish SHALL be
+refused naming the artifact and both digests, nothing SHALL be offered
+or named, and the name SHALL stay with the first index (18, 87).
 
 #### Scenario: The same revision again
 
@@ -106,8 +102,8 @@ offered or named, and the name SHALL stay with the first index (18, 87).
 
 #### Scenario: A version named before its artifacts were
 
-- **WHEN** the store holds a version's index and its tag but no artifact's name, as a publish before this change left it, and the revision is published again
-- **THEN** each artifact's name is made from nothing at that index, nothing is put or attached, and the answer names the same index
+- **WHEN** the store holds a version's index and its tag but no artifact's name and no layout-policy claim, as a publish before this change left it, and the revision, whose file writes a policy for layouts, is published again
+- **THEN** the layout-policy claim is attached to that index, each artifact's name is then made from nothing at it, nothing is put, and the answer names the same index
 
 #### Scenario: A projection that packs differently
 
@@ -138,3 +134,21 @@ artifacts' names (20, 138, core.10, I2).
 
 - **WHEN** a version of two artifacts is published with a target and a keeper bound
 - **THEN** the fake keeper and the fake target record no call, and the fake store records three names made, the two artifacts' and the version's
+
+### Requirement: The index carries the publisher's layout policy
+Where the publishing repository's file writes a policy for layouts at
+the landed revision, a publish SHALL sign it as a layout-policy claim about
+the index, in the identity of the party running the publish and naming
+that revision, and attach it to the index after the index is put and
+before any artifact's name or the version's name is made (113, 8, 138,
+core.8, core.9). Where the file writes none, or the revision holds no
+policy file, it SHALL attach none. A publish whose index already carries
+that claim SHALL attach nothing more.
+
+#### Scenario: A publish under a policy for layouts
+- **WHEN** a revision whose policy file declares a policy for layouts is published
+- **THEN** the index carries one layout-policy claim by the publishing host naming the revision and the claims that policy requires, attached before the first artifact's name was made
+
+#### Scenario: A publish with no layout line
+- **WHEN** a revision whose policy file names a gate signer and no `[layout]` is published
+- **THEN** the index carries no layout-policy claim, and the given is left for a consumer to lay beneath itself
