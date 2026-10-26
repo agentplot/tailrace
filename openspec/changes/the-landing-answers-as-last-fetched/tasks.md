@@ -36,7 +36,7 @@ Every command runs inside `devenv shell -- <command>`.
 
 ## 6. The suite holds every landing to it
 
-- [ ] 6.1 Add `reads_a_remote` to `LandingRig` and `a landing read as last fetched` to the landing group below its marker, citing 59, 61, 77 and 78, and update `unreachable`'s doc (design D7); the fake rig in `crates/tailrace-conformance/src/fakes.rs` reads a remote and cuts itself off with `FakeLanding::unreachable`, and the group passes over it: `moon run conformance:test`
+- [x] 6.1 Add `reads_a_remote` to `LandingRig` and `a landing read as last fetched` to the landing group below its marker, citing 59, 61, 77 and 78, and update `unreachable`'s doc (design D7); the fake rig in `crates/tailrace-conformance/src/fakes.rs` reads a remote and cuts itself off with `FakeLanding::unreachable`, and the group passes over it: `moon run conformance:test`
 - [ ] 6.2 Add the publish group's refusal from a copy and publish from a copy, citing 14, 59 and 77, and the status group's landing read as last fetched, citing 36, 60 and 77, each below its group's marker, over the fake world; bring `core/cache.rs`, `core/gate.rs`, `seams/host.rs` and `crates/tailrace-conformance/tests/` to the new answers; the coverage check passes with the register and the statement's list unchanged: `moon run conformance:test`
 
 ## 7. Status shows how the landing was read

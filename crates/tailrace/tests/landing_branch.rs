@@ -47,6 +47,10 @@ impl LandingRig for BranchRig {
         false
     }
 
+    fn reads_a_remote(&self) -> bool {
+        false
+    }
+
     /// A commit on `main`; a plain branch records no verdicts, so the
     /// suite hands it none.
     fn landed(&self, verdicts: &[Recorded]) -> Revision {
@@ -84,16 +88,29 @@ fn the_landing_group_over_a_branch() {
         Box::new(BranchRig::new())
     });
     assert_eq!(report.profile, "branch");
-    assert!(
-        report
-            .not_applicable
-            .iter()
-            .any(|n| n.scenario == "verdicts as the landing recorded them"),
+    let skipped: Vec<(&str, &str)> = report
+        .not_applicable
+        .iter()
+        .map(|n| (n.scenario, n.why.as_str()))
+        .collect();
+    assert_eq!(
+        skipped,
+        [
+            (
+                "verdicts as the landing recorded them",
+                "the landing records no verdicts"
+            ),
+            (
+                "two signers, each by its own name",
+                "the landing records no verdicts"
+            ),
+            (
+                "a landing read as last fetched",
+                "the landing reads no remote: the repository is the landing itself"
+            ),
+        ],
         "{report:?}"
     );
-    for skipped in &report.not_applicable {
-        assert_eq!(skipped.why, "the landing records no verdicts", "{report:?}");
-    }
     report.assert();
 }
 

@@ -76,6 +76,11 @@ impl LandingRig for SluiceRig {
         true
     }
 
+    /// sluice's records of `main` are on the remote.
+    fn reads_a_remote(&self) -> bool {
+        true
+    }
+
     /// One submission landed, and each signer's results recorded in one
     /// run record of the combination that landed it.
     fn landed(&self, verdicts: &[Recorded]) -> Revision {
