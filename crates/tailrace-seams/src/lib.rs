@@ -5,7 +5,7 @@
 //! | seam | trait | statement |
 //! |---|---|---|
 //! | the store | [`Store`] | B.1, 66 to 73 |
-//! | the build | [`Build`] | B.2, 74 to 76 |
+//! | the build | [`Build`] | B.2, 74 to 76, 139 |
 //! | the landing | [`Landing`] | B.3, 77, 78 |
 //! | the signer | [`Signer`] | B.4, 79 to 81 |
 //! | the policy | [`Policy`] | B.5, 82, 83, 131 |
@@ -136,6 +136,9 @@ mod tests {
         }
         fn report(&self, _: &Revision, _: &OutputName) -> Answer<Report> {
             nothing(Seam::Build, "report")
+        }
+        fn left(&self, _: &str) -> Answer<Vec<Left>> {
+            nothing(Seam::Build, "left")
         }
     }
 
@@ -273,6 +276,7 @@ mod tests {
             asked(store.read(&d)),
             asked(build.ensure(&rev, &[OutputName::new("site")])),
             asked(build.report(&rev, &OutputName::new("site"))),
+            asked(build.left("checkout")),
             asked(landing.landed(&Branch::new("main"), &rev)),
             asked(landing.verdicts_of(&rev)),
             asked(signer.sign(&claim, &SignerId::new("host"))),
@@ -330,7 +334,7 @@ mod tests {
                 "read"
             ]
         );
-        assert_eq!(named(Seam::Build), ["ensure", "report"]);
+        assert_eq!(named(Seam::Build), ["ensure", "report", "left"]);
         assert_eq!(named(Seam::Landing), ["landed", "verdicts-of"]);
         assert_eq!(named(Seam::Signer), ["sign", "verify"]);
         assert_eq!(named(Seam::Policy), ["policy-for", "channels"]);

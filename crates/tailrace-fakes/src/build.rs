@@ -1,10 +1,11 @@
-//! The fake build (B.2): what each revision left of each output, as a
-//! test scripts it; an output it was not told of is unmade.
+//! The fake build (B.2): what each revision left of each output, and
+//! what each checkout's run left, as a test scripts it; an output it was
+//! not told of is unmade, and a checkout it was not told of ran nothing.
 
 use std::collections::BTreeMap;
 
 use serde_json::json;
-use tailrace_seams::{Answer, Build, Not, OutputName, Report, Revision, Seam, Why};
+use tailrace_seams::{Answer, Build, Left, Not, OutputName, Report, Revision, Seam, Why};
 
 use crate::Fake;
 
@@ -13,12 +14,15 @@ use crate::Fake;
 pub enum BuildOp {
     Ensure,
     Report,
+    Left,
 }
 
-/// What each revision left of each output.
+/// What each revision left of each output, and what each checkout's run
+/// left.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BuildState {
     made: BTreeMap<(Revision, OutputName), Report>,
+    left: BTreeMap<String, Vec<Left>>,
 }
 
 /// A build in memory, which builds nothing.
@@ -41,6 +45,13 @@ impl FakeBuild {
         self.state()
             .made
             .insert((revision.clone(), output.clone()), report);
+    }
+
+    /// The checkout at `at` holding `lefts`, in the order given: each
+    /// build identity its run left, with its tasks, its outcome, a failed
+    /// one among them, and its files (139).
+    pub fn left_in(&self, at: &str, lefts: Vec<Left>) {
+        self.state().left.insert(at.to_string(), lefts);
     }
 }
 
@@ -74,6 +85,13 @@ impl Build for FakeBuild {
                 .get(&(revision.clone(), output.clone()))
                 .cloned()
                 .ok_or_else(|| Not::absent(source, what))
+        })
+    }
+
+    fn left(&self, at: &str) -> Answer<Vec<Left>> {
+        let given = json!({ "at": at });
+        self.ask(BuildOp::Left, given, format!("what {at} left"), |s, _| {
+            Ok(s.left.get(at).cloned().unwrap_or_default())
         })
     }
 }
@@ -137,6 +155,35 @@ mod tests {
         );
     }
 
+    fn left(build: &str, outcome: Outcome) -> Left {
+        Left {
+            build: BuildId::new(build),
+            tasks: vec![format!("{build}:task")],
+            outcome,
+            files: vec![format!("/work/{build}/out")],
+        }
+    }
+
+    #[test]
+    fn a_checkout_scripted_with_two_builds() {
+        let build = FakeBuild::new();
+        let lefts = vec![left("b7e1", Outcome::Pass), left("c001", Outcome::Fail)];
+        build.left_in("/work", lefts.clone());
+        assert_eq!(build.left("/work"), Ok(lefts));
+        let calls = build.calls();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].op, BuildOp::Left);
+        assert_eq!(calls[0].given, json!({ "at": "/work" }));
+    }
+
+    #[test]
+    fn a_checkout_scripted_with_nothing() {
+        let build = FakeBuild::new();
+        build.left_in("/work", vec![left("b7e1", Outcome::Pass)]);
+        assert_eq!(build.left("/elsewhere"), Ok(vec![]));
+        assert_eq!(build.calls()[0].given, json!({ "at": "/elsewhere" }));
+    }
+
     #[test]
     fn every_operation_can_be_faulted_and_is_recorded() {
         let build = FakeBuild::new();
@@ -158,9 +205,18 @@ mod tests {
             build.report(&rev, &OutputName::new("site")),
             Err(Not::Unreadable(u)) if u.said.as_deref() == Some("runner gone")
         ));
+        build.fault(
+            BuildOp::Left,
+            Fault::Unreadable("runner gone".into()),
+            Times::Once,
+        );
+        assert!(matches!(
+            build.left("/work"),
+            Err(Not::Unreadable(u)) if u.said.as_deref() == Some("runner gone")
+        ));
         assert_eq!(
             build.calls().iter().map(|c| c.op).collect::<Vec<_>>(),
-            [BuildOp::Ensure, BuildOp::Report]
+            [BuildOp::Ensure, BuildOp::Report, BuildOp::Left]
         );
     }
 }

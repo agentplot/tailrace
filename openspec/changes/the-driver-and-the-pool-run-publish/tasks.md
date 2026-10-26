@@ -2,9 +2,9 @@
 
 ## 1. The build answers what a checkout left
 
-- [ ] 1.1 Add `Left` and `Build::left(&self, at: &str)` to `crates/tailrace-seams/src/build.rs`, exported from its `lib.rs`, with a JSON round-trip test beside `Report`'s (design D1); verify with `moon run tailrace-seams:test`.
-- [ ] 1.2 Add `BuildOp::Left` and `left_in(at, lefts)` to the fake build, answering an empty list for an unscripted checkout and recording each asking with its checkout (seam-fakes spec); verify with the fakes' tests under `moon run tailrace-fakes:test`.
-- [ ] 1.3 Implement `left` for moon in `profiles/build/moon/`: the run report's tasks with a hash whose archive the outputs directory holds, grouped by hash, with declared files present, an empty list with no run report, running no task (moon-build spec, design D1); verify with unit tests in the moon profile for a passed and a failed task, a task with no outputs, no run report and a removed archive, under `moon run tailrace:test`.
+- [x] 1.1 Add `Left` and `Build::left(&self, at: &str)` to `crates/tailrace-seams/src/build.rs`, exported from its `lib.rs`, with a JSON round-trip test beside `Report`'s (design D1); verify with `moon run tailrace-seams:test`.
+- [x] 1.2 Add `BuildOp::Left` and `left_in(at, lefts)` to the fake build, answering an empty list for an unscripted checkout and recording each asking with its checkout (seam-fakes spec); verify with the fakes' tests under `moon run tailrace-fakes:test`.
+- [x] 1.3 Implement `left` for moon in `profiles/build/moon/`: the run report's tasks with a hash whose archive the outputs directory holds, grouped by hash, with declared files present, an empty list with no run report, running no task (moon-build spec, design D1); verify with unit tests in the moon profile for a passed and a failed task, a task with no outputs, no run report and a removed archive, under `moon run tailrace:test`.
 - [ ] 1.4 Add the build group's scenarios "what an ensure left" and "a checkout that ran nothing" below its marker, citing 74 and 75, with `BuildRig::ran_in` and `fresh_checkout` for the fake rig and the moon rig (conformance-suite spec, design D1); verify with `moon run tailrace-conformance:test` and the moon rig's run in `moon run tailrace:tools`.
 
 ## 2. A check job pushes before the landing
