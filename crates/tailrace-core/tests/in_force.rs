@@ -10,8 +10,8 @@ use tailrace_core::{answer_json, in_force, ChannelInForce, InForce, InForceAsk};
 use tailrace_fakes::{FakePolicy, LandingOp, PolicyOp, PROFILE};
 use tailrace_seams::{
     Answer, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
-    EnvironmentName, Moves, Not, Policy, Required, RequiredClaim, Revision, Seam, Seams, Source,
-    Why,
+    EnvironmentName, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam,
+    Seams, Source, Why,
 };
 use world::World;
 
@@ -163,7 +163,7 @@ impl Policy for OneUnreadable {
         self.inner.policy_for(revision, audience)
     }
 
-    fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>> {
+    fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         self.inner.channels(revision)
     }
 }

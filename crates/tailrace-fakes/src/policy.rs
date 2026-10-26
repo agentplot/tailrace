@@ -8,7 +8,8 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 use tailrace_seams::{
-    Answer, Audience, ChannelId, DeclaredChannel, Moves, Not, Policy, Required, Revision, Seam,
+    Answer, Audience, ChannelId, DeclaredChannel, Moves, Not, Policy, PolicyChannels, Required,
+    Revision, Seam,
 };
 
 use crate::Fake;
@@ -99,21 +100,21 @@ impl Policy for FakePolicy {
     /// each publish where the test scripted it so, and by a promotion
     /// alone otherwise, taking prereleases as scripted. A binding is
     /// answered as scripted, never checked.
-    fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>> {
+    fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         let given = json!({ "revision": revision });
         self.ask(PolicyOp::Channels, given, "the channels", |s, _| {
-            let mut held: BTreeMap<&ChannelId, &Required> = BTreeMap::new();
+            let mut scripted: BTreeMap<&ChannelId, &Required> = BTreeMap::new();
             for (audience, required) in &s.every {
                 if let Audience::Channel(channel) = audience {
-                    held.insert(channel, required);
+                    scripted.insert(channel, required);
                 }
             }
             for ((at, audience), required) in &s.at {
                 if let (true, Audience::Channel(channel)) = (at == revision, audience) {
-                    held.insert(channel, required);
+                    scripted.insert(channel, required);
                 }
             }
-            Ok(held
+            let in_force = scripted
                 .into_iter()
                 .map(|(channel, required)| {
                     let follows = s
@@ -132,7 +133,11 @@ impl Policy for FakePolicy {
                         moves,
                     }
                 })
-                .collect())
+                .collect();
+            Ok(PolicyChannels {
+                in_force,
+                held: vec![],
+            })
         })
     }
 }
@@ -246,6 +251,11 @@ mod tests {
         DeclaredChannel { channel, moves }
     }
 
+    /// The channels in force `policy` answers at `at`.
+    fn listed(policy: &FakePolicy, at: &Revision) -> Answer<Vec<DeclaredChannel>> {
+        policy.channels(at).map(|channels| channels.in_force)
+    }
+
     /// Moving on each publish with releases alone.
     const RELEASES: Moves = Moves::EachPublish { prereleases: false };
 
@@ -274,7 +284,7 @@ mod tests {
         policy.follows(&beta, false);
 
         assert_eq!(
-            policy.channels(&at),
+            listed(&policy, &at),
             Ok(vec![
                 declared(beta.clone(), RELEASES),
                 declared(edge, Moves::Promotion),
@@ -282,7 +292,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            policy.channels(&other),
+            listed(&policy, &other),
             Ok(vec![
                 declared(beta, RELEASES),
                 declared(stable, bound("beta")),
@@ -304,14 +314,14 @@ mod tests {
         policy.follows(&beta, false);
         policy.follows_at(&at, &edge, false);
         assert_eq!(
-            policy.channels(&at),
+            listed(&policy, &at),
             Ok(vec![
                 declared(beta.clone(), RELEASES),
                 declared(edge.clone(), RELEASES),
             ])
         );
         assert_eq!(
-            policy.channels(&other),
+            listed(&policy, &other),
             Ok(vec![
                 declared(beta, RELEASES),
                 declared(edge, Moves::Promotion),
@@ -328,7 +338,7 @@ mod tests {
         policy.follows(&beta, false);
         policy.follows(&nightly, true);
         assert_eq!(
-            policy.channels(&Revision::new("4f2a9c1")),
+            listed(&policy, &Revision::new("4f2a9c1")),
             Ok(vec![
                 declared(beta, RELEASES),
                 declared(nightly, Moves::EachPublish { prereleases: true }),
@@ -344,7 +354,7 @@ mod tests {
         policy.require(Audience::Channel(libs.clone()), channel(None));
         policy.follows(&webs, false);
         assert_eq!(
-            policy.channels(&Revision::new("4f2a9c1")),
+            listed(&policy, &Revision::new("4f2a9c1")),
             Ok(vec![
                 declared(libs, Moves::Promotion),
                 declared(webs, RELEASES),
@@ -361,11 +371,11 @@ mod tests {
         policy.require_at(&new, stable, channel(Some("beta")));
         policy.require_at(&new, Audience::Channel(id(None, "edge")), channel(None));
         assert_eq!(
-            policy.channels(&old),
+            listed(&policy, &old),
             Ok(vec![declared(id(None, "stable"), Moves::Promotion)])
         );
         assert_eq!(
-            policy.channels(&new),
+            listed(&policy, &new),
             Ok(vec![
                 declared(id(None, "edge"), Moves::Promotion),
                 declared(id(None, "stable"), bound("beta")),
@@ -381,7 +391,7 @@ mod tests {
             Required::Acceptance { claims: vec![] },
         );
         policy.follows(&id(None, "beta"), false);
-        assert_eq!(policy.channels(&Revision::new("4f2a9c1")), Ok(vec![]));
+        assert_eq!(listed(&policy, &Revision::new("4f2a9c1")), Ok(vec![]));
     }
 
     #[test]
@@ -396,10 +406,10 @@ mod tests {
         );
         let rev = Revision::new("4f2a9c1");
         assert!(matches!(
-            policy.channels(&rev),
+            listed(&policy, &rev),
             Err(Not::Unreadable(u)) if u.said.as_deref() == Some("no such revision")
         ));
-        assert_eq!(policy.channels(&rev).map(|c| c.len()), Ok(1));
+        assert_eq!(listed(&policy, &rev).map(|c| c.len()), Ok(1));
         let calls = policy.calls();
         assert_eq!(calls.len(), 2);
         assert!(calls.iter().all(|c| c.op == PolicyOp::Channels));

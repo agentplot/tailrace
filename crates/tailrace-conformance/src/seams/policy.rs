@@ -265,7 +265,7 @@ fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
             channels[1].clone(),
         ],
     );
-    let listed = ok(rig.policy().channels(&at), "channels");
+    let listed = ok(rig.policy().channels(&at), "channels").in_force;
     assert_eq!(
         listed,
         with_given(rig, &components, &channels),
@@ -291,7 +291,7 @@ fn each_way_a_channel_moves(rig: &dyn PolicyRig) {
         declared("next", None, bound("edge")),
     ];
     let at = rig.declaring(&[], &channels);
-    let listed = ok(rig.policy().channels(&at), "channels");
+    let listed = ok(rig.policy().channels(&at), "channels").in_force;
     assert_eq!(
         listed,
         with_given(rig, &[], &channels),
@@ -334,7 +334,7 @@ fn one_component_has_every_channel(rig: &dyn PolicyRig) {
             declared("next", component, bound("edge")),
         ];
         let at = rig.declaring(&components, &channels);
-        let listed = ok(rig.policy().channels(&at), "channels");
+        let listed = ok(rig.policy().channels(&at), "channels").in_force;
         assert_eq!(
             listed,
             with_given(rig, &components, &channels),
@@ -355,7 +355,7 @@ fn a_policy_declaring_no_channel(rig: &dyn PolicyRig) {
         Required::Acceptance { claims: claims() },
     )]);
     assert_eq!(
-        ok(rig.policy().channels(&at), "channels"),
+        ok(rig.policy().channels(&at), "channels").in_force,
         rig.given(&[]),
         "a policy declaring no channel answered other channels than its profile gives"
     );

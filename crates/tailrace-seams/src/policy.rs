@@ -121,6 +121,31 @@ impl DeclaredChannel {
     }
 }
 
+/// C.10: a channel the policy gives and holds off until the repository
+/// switches it on, with how it would move once switched on and `switch`,
+/// the line that switches it on, in the profile's own words, which the
+/// core and every surface carry and never parse.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldChannel {
+    #[serde(flatten)]
+    pub channel: DeclaredChannel,
+    pub switch: String,
+}
+
+/// 131, C.10: the channels answer: the channels in force, and apart from
+/// them the givens held off, so a surface shows both from one answer and
+/// no reader takes a held given for a channel in force.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PolicyChannels {
+    /// 131: every channel in force, once each, ordered by name and then
+    /// component, each with how it moves.
+    pub in_force: Vec<DeclaredChannel>,
+    /// C.10: every given the repository has not switched on, once each,
+    /// ordered by name and then component, each with how it would move
+    /// and the line that switches it on; never a channel in force.
+    pub held: Vec<HeldChannel>,
+}
+
 pub trait Policy {
     /// 82: the claims `audience` requires, read from the repository at
     /// `revision`, a landed revision of the branch the policy governs
@@ -132,8 +157,11 @@ pub trait Policy {
     /// once each, ordered by name and then component, each with its
     /// component (125) and how it moves (37, 83, 95); in the one
     /// component of a repository that declares one or none (123), and an
-    /// empty list, never absent, where it lists no channel.
-    fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>>;
+    /// empty list, never absent, where it lists no channel. Apart from
+    /// them, every given it holds off that the repository has not
+    /// switched on, with the line that switches it on, an empty list
+    /// where it holds none (C.10); one answer, so the two never disagree.
+    fn channels(&self, revision: &Revision) -> Answer<PolicyChannels>;
 }
 
 #[cfg(test)]
@@ -295,5 +323,59 @@ mod tests {
             })
         );
         assert_eq!(edge.bound_to(), None);
+    }
+
+    #[test]
+    fn the_channels_answer_carries_the_held_givens_apart_from_the_channels_in_force() {
+        let answer = PolicyChannels {
+            in_force: vec![DeclaredChannel {
+                channel: ChannelId::new(None, ChannelName::new("beta")),
+                moves: Moves::EachPublish { prereleases: false },
+            }],
+            held: vec![
+                HeldChannel {
+                    channel: DeclaredChannel {
+                        channel: ChannelId::new(None, ChannelName::new("alpha")),
+                        moves: Moves::EachPublish { prereleases: true },
+                    },
+                    switch: "[channels.alpha]".into(),
+                },
+                HeldChannel {
+                    channel: DeclaredChannel {
+                        channel: lib("lts"),
+                        moves: Moves::Bound {
+                            to: ChannelName::new("stable"),
+                        },
+                    },
+                    switch: "[channels.lib.lts]".into(),
+                },
+            ],
+        };
+        assert_eq!(
+            serde_json::to_value(&answer).unwrap(),
+            serde_json::json!({
+                "in_force": [{
+                    "channel": { "component": null, "name": "beta" },
+                    "moves": { "by": "each_publish", "prereleases": false },
+                }],
+                "held": [
+                    {
+                        "channel": { "component": null, "name": "alpha" },
+                        "moves": { "by": "each_publish", "prereleases": true },
+                        "switch": "[channels.alpha]",
+                    },
+                    {
+                        "channel": { "component": "lib", "name": "lts" },
+                        "moves": { "by": "bound", "to": "stable" },
+                        "switch": "[channels.lib.lts]",
+                    },
+                ],
+            })
+        );
+        for held in answer.held.clone() {
+            round_trip(held);
+        }
+        round_trip(answer);
+        round_trip(PolicyChannels::default());
     }
 }

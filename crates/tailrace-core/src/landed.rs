@@ -4,8 +4,8 @@
 //! the landing read it.
 
 use tailrace_seams::{
-    Answer, Audience, Branch, DeclaredChannel, IsLanded, Landing, Not, Policy, Read, Required,
-    Revision, Seam, Source, Why,
+    Answer, Audience, Branch, DeclaredChannel, IsLanded, Landing, Not, Policy, PolicyChannels,
+    Read, Required, Revision, Seam, Source, Why,
 };
 
 /// The profile a refusal the core makes from a seam's own answer names:
@@ -85,10 +85,17 @@ pub fn policy_at(policy: &dyn Policy, landed: &Landed, audience: &Audience) -> A
     policy.policy_for(&landed.revision, audience)
 }
 
-/// 65, 131: the channels the policy declares at the landed revision, as
-/// the policy seam answers them.
-pub fn channels_at(policy: &dyn Policy, landed: &Landed) -> Answer<Vec<DeclaredChannel>> {
+/// 65, 131, C.10: the whole channels answer at the landed revision, the
+/// channels in force and the givens held off apart from them, as the
+/// policy seam answers it.
+pub fn policy_channels_at(policy: &dyn Policy, landed: &Landed) -> Answer<PolicyChannels> {
     policy.channels(&landed.revision)
+}
+
+/// 65, 131: the channels in force at the landed revision, as the policy
+/// seam answers them; never a given held off.
+pub fn channels_at(policy: &dyn Policy, landed: &Landed) -> Answer<Vec<DeclaredChannel>> {
+    policy_channels_at(policy, landed).map(|channels| channels.in_force)
 }
 
 #[cfg(test)]

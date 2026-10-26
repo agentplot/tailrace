@@ -115,7 +115,8 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use tailrace_seams::{
     Answer, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
-    Moves, NamedSigner, Not, Policy, Required, RequiredClaim, Revision, Seam, SignerId, Source,
+    Moves, NamedSigner, Not, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam,
+    SignerId, Source,
 };
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
@@ -1177,7 +1178,7 @@ impl Policy for PolicyFile {
     /// of the one component, where the revision holds no file; and
     /// unreadable naming the file and the revision, with the words of the
     /// first table that breaks 125, 37 or C.10, where one does.
-    fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>> {
+    fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         let read = self.read(revision)?;
         let file = match &read {
             Some(Read { file, .. }) => file,
@@ -1185,13 +1186,16 @@ impl Policy for PolicyFile {
         };
         let resolved = resolve(&in_force(file, self.givens()?))
             .map_err(|said| self.unreadable(revision, said))?;
-        Ok(resolved
-            .into_iter()
-            .map(|(channel, entry)| DeclaredChannel {
-                channel,
-                moves: entry.moves,
-            })
-            .collect())
+        Ok(PolicyChannels {
+            in_force: resolved
+                .into_iter()
+                .map(|(channel, entry)| DeclaredChannel {
+                    channel,
+                    moves: entry.moves,
+                })
+                .collect(),
+            held: vec![],
+        })
     }
 }
 
