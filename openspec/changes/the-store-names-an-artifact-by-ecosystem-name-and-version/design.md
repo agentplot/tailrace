@@ -64,7 +64,8 @@ requires (140) is built by the-projection-answers-what-an-artifact-requires;
 cache entries leave the declared repository for `cache/<build>`; 138's
 scenario is this unit's; and batch 29's ruling on store naming, which
 amends C.1 (f90f5fd) so a component's version tags live in its own
-repository beside its channels, the tag moving there in this unit.
+repository beside its channels, the tag moving there in this unit, and
+proposal 155, which brings this unit's intent to that ruling.
 
 This change's code starts once two things are on its branch:
 
