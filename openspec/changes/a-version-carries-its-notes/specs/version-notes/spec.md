@@ -71,12 +71,14 @@ The notes SHALL be attached one provenance claim signed in the identity
 of the party running the publish, about the notes' digest, naming the
 revision, the component, the version, the last release tag and each
 commit the notes were rendered from, and no build identity, since no
-build made them (8, 11, 13, core.8, core.9).
+build made them, and carrying no build verdict: the publisher's
+provenance alone is what a rendered artifact needs (8, 11, 13, 25, 28,
+134, core.8, core.9).
 
 #### Scenario: The notes' claim
 
 - **WHEN** a version is published
-- **THEN** claims-of the notes' digest answers one provenance claim signed by the host's signer, naming the revision and every commit the notes hold, and naming no build identity
+- **THEN** claims-of the notes' digest answers one provenance claim signed by the host's signer, naming the revision and every commit the notes hold, naming no build identity, and carrying no landing verdict
 
 #### Scenario: No identity at hand
 

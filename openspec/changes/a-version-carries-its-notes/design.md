@@ -17,15 +17,18 @@ and the store; `verify` resolves a version's name and tells every claim
 on the index and its artifacts.
 
 The statement is `agentplot/blueprints:design/tailrace/requirements.md`
-at 80ab275: 134 (a version carries its notes), with 6, 17, 18, 21, 22,
+at b720017: 134 (a version carries its notes, and a rendered artifact
+needs the publisher's provenance alone, since 2b8fc53), with 6, 17, 18, 21, 22,
 58, 60, 61, 63, 132 and section 9 (the version rule is git-cliff). The
 conformance suite's statement list is read at 5b00e15, whose clauses end
 at 125, so no scenario may cite 134 yet.
 
-Bolt tailrace-the-gate-and-the-channels is not on this bolt. Its gate
-(`gate.rs` there) judges every artifact an index names against every
-required claim, and its status nests this bolt's record part, `Status`,
-inside a wider `Overview` that the host's web page renders.
+Bolt tailrace-the-gate-and-the-channels is not on this bolt. Its status
+nests this bolt's record part, `Status`, inside a wider `Overview` that
+the host's web page renders. Its gate (`gate.rs` there) judges every
+artifact an index names; judging each artifact against the claims its
+kind requires (134) is the unit `the-gate-judges-each-artifact-by-its-kind`,
+after this one.
 
 ## Goals / Non-Goals
 
@@ -120,9 +123,13 @@ Alternative: a new claim kind, `notes`. Not taken: the policy vocabulary
 (116) names the kinds a signer may claim, and a new kind would leave
 every policy that requires a provenance unable to count the notes.
 Kind `Provenance` says what the statement's glossary says of it, that
-the party produced it from a revision, and the notes count wherever the
-publisher's provenance does. What acceptance requires of the notes is
-the gate's, on the gate-and-channels bolt (named in the final message).
+the party produced it from a revision, and it is the one claim 134 asks
+of a rendered artifact: no build made the notes, so no build verdict is
+asked of them, and the acceptance policy requires of them the
+publisher's provenance alone (25, 28). Its missing build identity is
+what sets the notes' claim apart from an output's. The gate's judging
+of each artifact by its kind is the later unit's; this change asks
+nothing of the gate.
 
 ### D5. Publish: rendered with the version, put before the index
 
@@ -244,10 +251,11 @@ adds 134.
 - [A repeat publish on a host whose tailrace renders differently is
   refused] → Intended (18, 134): the notes are never rewritten; the
   refusal names both digests.
-- [The gate on the gate-and-channels bolt judges the notes against every
-  required claim, and finds a required verdict wanting] → Named as a
-  design question; the notes carry the publisher's provenance so a policy
-  requiring only a provenance counts them.
+- [Until the gate judges each artifact by its kind, a gate that asks
+  every artifact for a build verdict would find the notes wanting] →
+  The gate is not on this bolt; the unit that teaches it the kinds
+  follows this one, and the notes already carry the one claim 134 asks
+  of them.
 - [The unit naming every artifact `artifact/<ecosystem>/<name>@<version>`
   will name the notes too] → Harmless under 138; named for the planner.
 - [A first release's notes hold the component's whole history] →

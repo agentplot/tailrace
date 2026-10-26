@@ -6,8 +6,11 @@ commits a version took. The design makes a version carry its notes:
 the run that derives the version renders them from the same commits,
 with the version rule's own tool, and they travel in the store as an
 artifact of the version, named in its index and claimed like the rest
-(`agentplot/blueprints:design/tailrace/requirements.md` 134 at 80ab275,
-unchanged since ab0dfea, with 6, 17, 18, 21 and 132).
+(`agentplot/blueprints:design/tailrace/requirements.md` 134 at b720017,
+with 6, 17, 18, 21 and 132). Since 2b8fc53, 134 also says what a
+rendered artifact like the notes needs: no build has made it, so no
+build verdict is asked of it, and the publisher's provenance alone is
+what acceptance requires of it (25, 28).
 
 ## What Changes
 
@@ -23,7 +26,8 @@ unchanged since ab0dfea, with 6, 17, 18, 21 and 132).
   name is claimed, the notes are put in the store as an artifact of the
   reserved ecosystem `notes`, named by the component, at the version;
   they get one provenance claim signed as the publisher, naming the
-  revision and the commits they were rendered from, and no build; and
+  revision and the commits they were rendered from, and no build, which
+  is the one claim 134 asks of a rendered artifact; and
   the index names them beside the outputs' artifacts. All of it is held
   before the index is put and the version's name moves (6, 17, 134).
 - **Notes are never written again.** A second publish of a revision
@@ -60,12 +64,11 @@ Out of scope, and what each waits on:
   serving process is on the gate-and-channels bolt; once it is taken in,
   the page renders the status answer, which carries the notes from this
   change.
-- The gate's judgment of the notes artifact (28): the gate is on the
-  gate-and-channels bolt and judges every artifact of an index against
-  every required claim, so a policy requiring a verdict would find the
-  notes, which have no build, wanting. What acceptance requires of a
-  version's notes is a question for the design agent, answered when that
-  bolt is taken in.
+- The gate judging each artifact against the claims its kind requires,
+  a built artifact its verdicts and the publisher's provenance, the
+  notes the publisher's provenance alone (134, 25, 28):
+  `the-gate-judges-each-artifact-by-its-kind`, after this unit. This
+  change gives the notes that provenance and asks the gate nothing.
 - A template the repository's authors choose for their notes: the
   design names none, so the notes take one fixed form here.
 - A conformance scenario citing 134: the suite's statement list stops at
