@@ -3,16 +3,22 @@
 ### Requirement: A host with no bindings file is bound to the given profiles
 
 A host with no bindings file SHALL be bound, for every command that
-reads one, as if its file were empty: the store, the landing, the ledger
-and the signer each bound to its given profile, and nothing answered
-absent for the file or any table of it (118). A host where neither
-`XDG_CONFIG_HOME` nor `HOME` is set SHALL still answer absent naming
-both, since no given path can be placed.
+reads one, status among them, as if its file were empty: the store, the
+landing, the ledger, the signer and what tells the gate each bound to
+its given binding, and nothing answered absent for the file or any table
+of it (118). A host where neither `XDG_CONFIG_HOME` nor `HOME` is set
+SHALL still answer absent naming both, since no given path can be
+placed.
 
 #### Scenario: Publish with nothing written
 
 - **WHEN** `tailrace publish <revision>` runs on a host with no bindings file, in a repository whose branch has landed the revision
-- **THEN** the version is offered into the given layout, signed by the given host key, and the host's record names the store as `layout <path>` with the given layout's full path
+- **THEN** the version is offered into the given layout, signed by the given host key, the host's record names the store as `layout <path>` with the given layout's full path, and the same run tells the host's own gate of the version, the gate signing as the host's name
+
+#### Scenario: Status with nothing written
+
+- **WHEN** `tailrace status` runs on a host with no bindings file
+- **THEN** it reads the landing the repository is set up for, over the given landing remote, and each channel's chain from `refs/tailrace/ledger/...` in the repository's own refs, and makes no layout, no key and no file
 
 #### Scenario: An empty file
 
@@ -26,18 +32,18 @@ both, since no given path can be placed.
 
 ### Requirement: A table the file leaves out is bound to its given profile
 
-Each of `[store]`, `[landing]`, `[ledger]` and `[signing]` the file names
-SHALL bind what it names; each the file leaves out SHALL bind its given
-profile (118). The given store SHALL be an OCI layout at
+Each of `[store]`, `[landing]`, `[ledger]`, `[signing]` and `[gate]` the
+file names SHALL bind what it names, exactly as written; each it leaves
+out SHALL bind its given binding (118): the store an OCI layout at
 `$XDG_DATA_HOME/tailrace/layout`, or `~/.local/share/tailrace/layout`
-where that variable is unset or empty (C.2); the given ledger the git
-ref in the repository the command runs in, with no remote (C.13); the
-given signer the host key of the host-key-signer capability (C.8).
+(C.2); the ledger the git ref in the repository, with no remote (C.13);
+the signer the given host key (C.8); and the gate told by the host's own
+publish, as `[gate] publish = {}` binds it (130).
 
 #### Scenario: A registry and nothing else
 
 - **WHEN** the file names `[store] registry` and no other table
-- **THEN** publish writes into that registry, reads the landing the repository is set up for, signs with the given host key, and a promote appends to `refs/tailrace/ledger/...` in the repository
+- **THEN** publish writes into that registry, reads the landing the repository is set up for, signs with the given host key, tells the host's own gate, and the gate's promotions are appended to `refs/tailrace/ledger/...` in the repository
 
 #### Scenario: A key service and nothing else
 
@@ -54,14 +60,19 @@ given signer the host key of the host-key-signer capability (C.8).
 - **WHEN** the file names no `[ledger]` and `tailrace promote` runs
 - **THEN** the promotion is appended to the channel's git ref in the repository the command runs in, read and written with no remote
 
+#### Scenario: A written landing with no remote
+
+- **WHEN** the file names `[landing] branch = {}` in a checkout whose remote is `origin`
+- **THEN** the landing reads the repository's own branches, and `origin` is not read
+
 ### Requirement: The given landing is sluice where the repository is set up for it
 
 Where the file names no `[landing]`, the landing SHALL be sluice where
 the repository's `HEAD` commit holds sluice's policy file,
 `.config/sluice.toml`, read with git from that commit and never from the
-working tree, and a plain branch otherwise, with no remote either way
-(C.5, C.6). A repository git cannot read SHALL be answered unreadable
-with git's words (58, 59).
+working tree, and a plain branch otherwise, either over the given
+landing remote (C.5, C.6). A repository git cannot read SHALL be
+answered unreadable with git's words (58, 59).
 
 #### Scenario: A repository sluice gates
 
@@ -83,23 +94,60 @@ with git's words (58, 59).
 - **WHEN** the repository's `HEAD` names no commit yet
 - **THEN** the landing is a plain branch, which answers every revision not landed
 
-### Requirement: A laptop with nothing written publishes and verifies
+### Requirement: The given landing remote is the checkout's origin or its one remote
 
-The built binary, run on a host with no bindings file against a
-repository sluice gates and moon builds, SHALL publish a landed revision
-into the given layout with a host key it makes, and SHALL verify that
-version once the repository's policy lists the key's public half as it
-stands in `signing.pub` (S1, 80, 118).
+Where the file names no `[landing]`, the landing's remote SHALL be the
+checkout's `origin`, else its one remote, else none, its own refs then
+read (118). Where it has several remotes and none is `origin`, every
+command SHALL answer unreadable naming the repository, each remote and
+`[landing]` in the bindings file, and SHALL read, offer and write
+nothing (58). The serving address's repository SHALL be named from the
+same remote (114).
+
+#### Scenario: A clone
+
+- **WHEN** the checkout's remotes are `origin` and `upstream` and the file names no `[landing]`
+- **THEN** the landing reads `origin`
+
+#### Scenario: One remote of another name
+
+- **WHEN** the checkout's one remote is `github`
+- **THEN** the landing reads `github`
+
+#### Scenario: No remote
+
+- **WHEN** the checkout has no remote
+- **THEN** the landing reads the repository's own refs
+
+#### Scenario: Several remotes, none origin
+
+- **WHEN** the checkout's remotes are `github` and `gitlab` and the file names no `[landing]`
+- **THEN** publish, verify and status exit 3, naming both remotes and `[landing]` in the bindings file, and no layout or key is made
+
+### Requirement: A laptop with nothing written publishes and moves beta
+
+The built binary, on a host with no bindings file and a repository
+sluice gates and moon builds, SHALL publish a landed revision into the
+given layout with a host key it makes. Once the policy lists the key's
+`signing.pub` line for provenance, names no gate and has a channel
+follow each publish, a later landing's publish SHALL be accepted as one
+host and move that channel through the given ledger in the same run,
+and verify SHALL count its provenance (S1, 80, 95, 108, 118).
 
 #### Scenario: The first publish on a fresh laptop
 
-- **WHEN** a host with a home and no bindings file, no layout and no key publishes a revision sluice landed
-- **THEN** the given layout and the key are made, the answer names the version and its index, and each provenance is signed as the host's name
+- **WHEN** a host with a home and no bindings file, no layout and no key publishes a revision sluice landed, in a repository whose policy does not yet list the host
+- **THEN** the given layout and the key are made, the answer names the version and its index, each provenance is signed as the host's name, and the gate's answer beside it says the version is not accepted, naming why
+
+#### Scenario: beta moves on the next landing
+
+- **WHEN** the repository's policy then lists the host's name with the line `signing.pub` holds, for provenance only, names no gate and has `beta` follow each publish, a later revision that changes the component lands, and the built binary runs `tailrace publish` on the same host
+- **THEN** the same run accepts that version, the acceptance saying one host offered and accepted, `beta`'s chain in `refs/tailrace/ledger/` holds one promotion to its index, nothing is pushed to a remote, and the exit code is 0
 
 #### Scenario: Verify after listing the made key
 
-- **WHEN** the repository's policy then lists the host's name with the line `signing.pub` holds, a later revision that changes the component lands and is published, and the built binary runs `tailrace verify <that version> --json` on the same host
-- **THEN** every provenance is made by the host's name and counts under an acceptance policy requiring provenance from it, read at that version's revision
+- **WHEN** the built binary then runs `tailrace verify <that version> --json` on the same host
+- **THEN** every provenance is made by the host's name and counts under the acceptance policy, read at that version's revision
 
 ## MODIFIED Requirements
 
@@ -115,7 +163,7 @@ nothing: a file that is there is never guessed past.
 #### Scenario: No file
 
 - **WHEN** `tailrace verify <version>` runs on a host with no bindings file
-- **THEN** it is bound to the given layout, the landing the repository is set up for, the git ref ledger and the host key verify-only, and no bindings file is written
+- **THEN** it is bound to the given layout, the landing the repository is set up for over the given landing remote, the git ref ledger and the host key verify-only, and no bindings file is written
 
 #### Scenario: Two landings named
 
@@ -173,7 +221,8 @@ The binding SHALL bind both signer profiles on every host: the one
 so a claim made by either kind of signer is told on any host whatever it
 signs with (80, 92). A host whose file names no `[signing]` SHALL bind
 the given host key first, signing as the host's name, for publish and
-promote, and both profiles verify-only for every other command.
+promote, and both profiles verify-only for every other command, status
+among them.
 
 #### Scenario: A host key host
 
