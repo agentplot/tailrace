@@ -648,12 +648,12 @@ fn the_channels_of_a_revision_not_held_or_a_file_not_read_answer_as_policy_for()
 fn a_hand_declared_channel_moves_as_its_table_says() {
     let repo = Repo::new();
     let at = repo.at(
-        "[channels.edge]\non_each_publish = true\n\n[channels.lts]\nrequire = []\n\n\
+        "[channels.edge]\non_each_publish = true\n\n[channels.rc]\nrequire = []\n\n\
          [channels.next]\nbound_to = \"edge\"\non_each_publish = false\n",
     );
     let mut all = givens(None);
     all.push(declared(id(None, "edge"), Moves::EachPublish));
-    all.push(declared(id(None, "lts"), Moves::Promotion));
+    all.push(declared(id(None, "rc"), Moves::Promotion));
     all.push(declared(id(None, "next"), bound("edge")));
     assert_eq!(repo.policy().channels(&at), Ok(sorted(all)));
 }
@@ -746,12 +746,12 @@ fn a_hand_declared_channels_promoters_are_the_signers_it_names_that_may_promote(
     let repo = Repo::new();
     let at = repo.at(&format!(
         "{}[signers.release]\nssh = \"ssh-ed25519 RRRR\"\nkinds = [\"promotion\"]\n\n\
-         [channels.lts]\nrequire = [{{ kind = \"acceptance\", signers = [\"gate\", \"release\"] }}]\n",
+         [channels.edge]\nrequire = [{{ kind = \"acceptance\", signers = [\"gate\", \"release\"] }}]\n",
         gate_table(false)
     ));
-    let lts = channel_policy(&repo, &at, &id(None, "lts")).unwrap();
+    let edge = channel_policy(&repo, &at, &id(None, "edge")).unwrap();
     assert_eq!(
-        lts.promoted_by()
+        edge.promoted_by()
             .iter()
             .map(|s| s.id.as_str())
             .collect::<Vec<_>>(),
@@ -783,11 +783,11 @@ fn an_unknown_policy_word_is_unreadable_naming_it() {
 #[test]
 fn an_environment_following_a_channel_not_known_is_unreadable_naming_it() {
     let repo = Repo::new();
-    let at = repo.at("[environments.prod]\nchannel = \"lts\"\n");
+    let at = repo.at("[environments.prod]\nchannel = \"edge\"\n");
     let said = unreadable(repo.policy().channels(&at), &at);
     assert_eq!(
         said,
-        "[environments.prod] follows lts, which the file neither declares, gives nor makes"
+        "[environments.prod] follows edge, which the file neither declares, gives nor makes"
     );
 }
 
