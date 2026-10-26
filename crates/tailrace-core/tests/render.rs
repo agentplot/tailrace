@@ -1,6 +1,8 @@
 //! Consumer layouts rendered under a policy, over the fakes (design D2
 //! to D7).
 
+mod common;
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -1076,4 +1078,114 @@ fn a_render_that_fails_leaves_the_record_as_it_was() {
     };
     assert_eq!(kept.rendered_at, Some(1));
     assert!(matches!(&kept.because, Not::Unreadable(u) if u.said.as_deref() == Some("disk full")));
+}
+
+/// `pkg 1.1.0`, which the gate accepted, `lib 2.0.0`, which it did not,
+/// and `left-pad 1.3.0`, which the store does not name, rendered under
+/// acceptance at `when`; the record read back as JSON.
+fn rendered_with_one_of_each(checkout: &Checkout, when: u64) -> serde_json::Value {
+    let pins = [
+        pin("pkg", "1.1.0"),
+        pin("lib", "2.0.0"),
+        pin("left-pad", "1.3.0"),
+    ];
+    render(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.ask(&pins, vec![acceptance()], when),
+    )
+    .unwrap();
+    let text = fs::read_to_string(checkout.layouts.path(&eco())).unwrap();
+    serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn a_layouts_record_is_json_naming_every_version_held_and_refused() {
+    let checkout = Checkout::new();
+    let lib = published(&checkout.fakes.store, "lib", "2.0.0");
+    let record = rendered_with_one_of_each(&checkout, 1_767_225_600);
+    assert_eq!(
+        checkout.layouts.path(&eco()),
+        checkout.layouts.dir().join("eco.json")
+    );
+    let own = json!({ "own": { "revision": "4f2a9c1" } });
+    assert_eq!(
+        record,
+        json!({
+            "ecosystem": "eco",
+            "at": checkout.at(),
+            "rendered_at": 1_767_225_600,
+            "policy": own,
+            "held": [{
+                "name": "pkg",
+                "version": "1.1.0",
+                "index": checkout.pkg.index,
+                "artifact": checkout.pkg.artifact.digest,
+                "policy": own,
+            }],
+            "refused": [{
+                "name": "lib",
+                "version": "2.0.0",
+                "index": lib.index,
+                "wanting": acceptance(),
+                "policy": own,
+            }],
+        })
+    );
+    let entries: Vec<_> = fs::read_dir(checkout.layouts.dir())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(entries, ["eco.json"], "the record left a file beside it");
+}
+
+#[test]
+fn a_deleted_record_is_written_again_the_same_but_for_when() {
+    let checkout = Checkout::new();
+    published(&checkout.fakes.store, "lib", "2.0.0");
+    let mut first = rendered_with_one_of_each(&checkout, 1);
+    fs::remove_file(checkout.layouts.path(&eco())).unwrap();
+    let mut again = rendered_with_one_of_each(&checkout, 2);
+    assert_eq!(
+        (first["rendered_at"].take(), again["rendered_at"].take()),
+        (json!(1), json!(2))
+    );
+    assert_eq!(again, first);
+    let renders = checkout.renders();
+    assert_eq!(renders[0], renders[1], "the layout holds other versions");
+}
+
+#[test]
+fn a_record_that_is_no_record_is_unreadable_naming_the_file_with_the_parsers_words() {
+    let checkout = Checkout::new();
+    let path = checkout.layouts.path(&eco());
+    fs::create_dir_all(checkout.layouts.dir()).unwrap();
+    fs::write(&path, "{ not json").unwrap();
+    let words = serde_json::from_str::<serde_json::Value>("{ not json")
+        .unwrap_err()
+        .to_string();
+    match checkout.layouts.read(&eco()) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Host);
+            assert_eq!(u.what, path.display().to_string());
+            assert_eq!(u.said, Some(words));
+        }
+        other => panic!("a broken record answered {other:?}"),
+    }
+    match Layouts::open(checkout.layouts.dir().join("none")).read(&eco()) {
+        Err(Not::Absent(a)) => assert!(a.what.ends_with("eco.json"), "{a:?}"),
+        other => panic!("no record answered {other:?}"),
+    }
+}
+
+#[test]
+fn the_record_is_kept_under_the_checkouts_own_git_directory() {
+    let fixture = common::Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("README", "a repository")]);
+    let history = repo.history();
+    assert_eq!(
+        Layouts::at(&history).dir(),
+        history.git_dir().join("tailrace").join("layouts")
+    );
 }
