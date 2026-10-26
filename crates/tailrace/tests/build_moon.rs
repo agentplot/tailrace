@@ -13,7 +13,7 @@ use scratch::{moon_hash, moon_workspace, policy_file, Repo, Scratch, Task};
 use tailrace::profiles::build::moon::Moon;
 use tailrace_conformance::seams::build::{self, BuildRig, Made};
 use tailrace_conformance::{run, Rig};
-use tailrace_seams::{Build, Not, Outcome, OutputName, Revision, Seam, Why};
+use tailrace_seams::{Build, Left, Not, Outcome, OutputName, Revision, Seam, Why};
 
 /// A scratch repository, a second clone of it, and moon over each, run
 /// through a link the rig can take away.
@@ -126,6 +126,17 @@ impl BuildRig for MoonRig {
             .spawn()
             .unwrap_err()
             .to_string()
+    }
+
+    fn ran_in(&self, revision: &Revision) -> String {
+        self.checkout(revision).display().to_string()
+    }
+
+    /// An empty directory in the scratch directory.
+    fn fresh_checkout(&self) -> String {
+        let at = self.scratch.path().join("fresh");
+        fs::create_dir_all(&at).unwrap();
+        at.display().to_string()
     }
 }
 
@@ -386,4 +397,75 @@ fn moon_not_there() {
             other => panic!("answered {other:?} with moon gone"),
         }
     }
+}
+
+#[test]
+fn what_a_run_that_passed_one_task_and_failed_another_left() {
+    let rig = MoonRig::new();
+    let revision = rig.commit(
+        &[
+            Task::new("web", "build", "site.txt", true, 0),
+            Task::new("app", "test", "checks.txt", true, 1),
+        ],
+        &[("site", "web:build"), ("checks", "app:test")],
+    );
+    let asked = [output("site"), output("checks")];
+    assert_eq!(rig.build.ensure(&revision, &asked), Ok(()));
+    let site = rig.build.report(&revision, &output("site")).unwrap();
+    let checks = rig.build.report(&revision, &output("checks")).unwrap();
+    assert_eq!(
+        rig.build.left(&rig.ran_in(&revision)),
+        Ok(vec![Left {
+            build: site.build,
+            tasks: vec!["web:build".into()],
+            outcome: Outcome::Pass,
+            files: site.files,
+        }]),
+        "moon archived {} of the failed task",
+        checks.build
+    );
+}
+
+#[test]
+fn what_a_task_with_no_declared_outputs_left() {
+    let rig = MoonRig::new();
+    let revision = rig.commit(
+        &[
+            Task::new("web", "build", "site.txt", true, 0),
+            Task::without_output("app", "lint", 0),
+        ],
+        &[("site", "web:build"), ("lint", "app:lint")],
+    );
+    // The lint names no files, so ensure answers it unmade; its task ran.
+    let _ = rig
+        .build
+        .ensure(&revision, &[output("site"), output("lint")]);
+    let left = rig.build.left(&rig.ran_in(&revision)).unwrap();
+    let lint = moon_hash(&rig.second.path, "app:lint");
+    let found = left
+        .iter()
+        .find(|l| l.build.as_str() == lint)
+        .unwrap_or_else(|| panic!("left names no build of app:lint, {lint}: {left:?}"));
+    assert_eq!(found.tasks, ["app:lint"]);
+    assert_eq!(found.outcome, Outcome::Pass);
+    assert!(found.files.is_empty(), "{found:?}");
+}
+
+#[test]
+fn left_runs_no_task() {
+    let rig = MoonRig::new();
+    let revision = rig.commit(
+        &[Task::new("web", "build", "site.txt", true, 0)],
+        &[("site", "web:build")],
+    );
+    assert_eq!(rig.build.ensure(&revision, &[output("site")]), Ok(()));
+    let report = rig.checkout(&revision).join(".moon/cache/runReport.json");
+    let before = fs::read(&report).unwrap();
+    let site = rig.checkout(&revision).join("web/dist/site.txt");
+    fs::remove_file(&site).unwrap();
+    let left = rig.build.left(&rig.ran_in(&revision)).unwrap();
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert!(left[0].files.is_empty(), "{left:?}");
+    assert!(!site.exists(), "left ran the task");
+    assert_eq!(fs::read(&report).unwrap(), before, "left ran moon");
 }
