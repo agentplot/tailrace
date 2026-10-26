@@ -14,8 +14,9 @@ names the profiles a host binds.
 
 - **One binary.** `tailrace` runs where the agents run: a laptop, an
   agent host, a build machine. There is no server of tailrace's own to
-  keep up, apart from `tailrace serve` on localhost for the ecosystems
-  that read over HTTP.
+  keep up: `tailrace serve` answers on localhost, started by the first
+  asker that finds none and ended when idle, for the status pages and
+  the ecosystems that read over HTTP.
 - **A store you own.** An OCI registry you already have, Amazon ECR,
   GitHub's registry, Harbor, zot or the reference distribution, or an OCI
   image layout in a directory on disk, read and written with no server.
@@ -81,7 +82,13 @@ key = "~/.config/tailrace/signing"
   read it.
   With no file they answer absent, naming the file's path; a file that
   is not well formed is unreadable in the parser's own words. `tailrace
-  status` reads no bindings file and answers from the host's record.
+  status` reads `[landing]`, and `[ledger]` and `[store]` where the file
+  names them, and needs no `[signing]`; on a host with no file it binds
+  the plain branch, or sluice where the repository holds
+  `.config/sluice.toml`, and the git ref ledger, each on `origin` where
+  the repository has it, and writes nothing to bind them (118). A file
+  it cannot read is its channels' answer, and the host's record still
+  answers beside it.
 - Only publish and push make the layout, the first time, where the path
   is missing or an empty directory; push needs no `[signing]`, since it
   signs nothing. verify, sync and rebuild never make or write one.
@@ -121,6 +128,30 @@ key = "~/.config/tailrace/signing"
   host's: moon is the build, and the policy file names each output's task
   and the projection that packs it. A `[build]` or `[projections]` table
   is refused, naming it.
+
+## The host's serving process
+
+One `tailrace serve` answers a host, at `http://127.0.0.1:7420` (114).
+No one is told to start it: `tailrace status --page` finds it, or
+starts it detached from the asker's terminal where none answers, and it
+ends once nothing has asked it for ten minutes. A host may also run
+`tailrace serve` as a service of its own; a second one finds the first
+holding the lock, says where it answers, and ends.
+
+What it keeps is in the host's state directory, `~/.local/state/tailrace`,
+or `tailrace` under `$XDG_STATE_HOME` where it is set:
+
+- `repositories`, the repositories a checkout named: a TOML table per
+  repository, keyed by its owner and name, naming the checkout that last
+  named it, written by `tailrace status --page` and read on each
+  request. A repository no checkout named answers absent, and a
+  checkout that is gone is its row's unreadable answer, naming the path.
+  Deleted, it is written again by the next `--page` in each checkout.
+- `serve.lock`, which the serving process holds for as long as it runs,
+  so the host has one.
+
+The process's working directory is the state directory, never a
+checkout, and no request writes a file of the record or the repository.
 
 ## The policy's signers and audiences
 

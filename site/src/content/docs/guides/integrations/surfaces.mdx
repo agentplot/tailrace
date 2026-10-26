@@ -49,12 +49,39 @@ shown (58, 59). `tailrace status --json` prints the same answer as one
 document, and asking writes nothing and reaches no store, signer or
 target (60).
 
+## The pages
+
+The host's one serving process answers at `http://127.0.0.1:7420`, an
+address no setting moves (114). `http://127.0.0.1:7420/` shows every
+repository the host knows together, one row each: every channel's head
+version, and how many of its environments run what they should, are
+behind, wait on a person or cannot be read; `/status.json` is the same
+answer for a program. `http://127.0.0.1:7420/<owner>/<name>/status`
+shows one repository whole, its channels and their chains, its
+environments and what this host published, and
+`/<owner>/<name>/status.json` is exactly what `tailrace status --json`
+prints in its checkout. The owner and name are the last two parts of
+the address of the repository's landing's remote (49). Each page is
+rendered from the one core on each request, never by a timer, and
+writes nothing (57, 60, 132).
+
+The environments' part, and each row's four counts, say they are not
+yet read: what an environment should run and runs is read from a
+target, and no target is read yet (98).
+
+`tailrace status --page`, run in a checkout, names its repository to
+the host, finds the serving process or starts it where none answers,
+and prints the repository's own page's address; the root is one link
+away. A repository no checkout on the host has named answers absent,
+saying so.
+
 ## Members
 
 | surface | what it is | status |
 |---|---|---|
-| the command line | `push`, `sync`, `rebuild`, `publish`, `verify`, `status` and `promote`, each with a machine-readable answer | built |
-| the command line, to come | `attest` and `serve`, each with a machine-readable answer | designed |
+| the command line | `push`, `sync`, `rebuild`, `publish`, `verify`, `status`, `promote` and `serve`, each with a machine-readable answer | built |
+| the pages | every repository the host knows at `http://127.0.0.1:7420/`, and each at `http://127.0.0.1:7420/<owner>/<name>/status`, each with its JSON beside it, served by the host's one `tailrace serve` | built |
+| the command line, to come | `attest`, with a machine-readable answer | designed |
 | Claude Code | a plugin whose skill and command read status and verdicts in a session, and refuse the ecosystem's own publish command where tailrace is bound | designed |
 | herdr | a pane beside the agents showing each channel's head, each environment's state and what waits on a promotion | designed |
 | Flywheel, through millpond | a promotion waiting on approval, or an environment that failed to converge, handed to millpond, the inbox, as a capture | designed |
