@@ -682,8 +682,8 @@ The scenarios cite 50 and 58 until the suite's statement list holds 137.
 - **THEN** the no-lockfile scenario passes for each, and the lockfile scenario passes over the fake set with pins and is not applicable to the three profiles
 
 ### Requirement: The layouts over the fakes
-The layouts' group SHALL hold the core to 47, 50, 51, 61, 62, 63, 99 and
-113 over the fakes, below its marker, playing S4, with a scenario for
+The layouts' group SHALL hold the core to 47, 50, 51, 61, 62, 63, 99,
+113 and 118 over the fakes, below its marker, playing S4, with a scenario for
 each requirement of consumer layouts. 47, 51, 99 and 113 SHALL leave the
 register in the commit whose scenario first cites them.
 
@@ -698,6 +698,14 @@ register in the commit whose scenario first cites them.
 #### Scenario: The publisher's above the consumer's given over the fakes
 - **WHEN** the fake policy answers a given policy for layouts and a pinned version's index carries a trusted signer's layout-policy claim
 - **THEN** the version is judged under the publisher's policy, and where the index carries none, under the consumer's given
+
+#### Scenario: A consumer's file reads under its own signers alone over the fakes
+- **WHEN** the fake policy answers a given policy for layouts whose file names `gate` for acceptance and `curator` for layout policies, the host trusts `box`, and three pinned versions carry an acceptance by `box`, an acceptance by `gate` with a layout-policy claim by `box`, and a layout-policy claim by `curator` requiring provenance by the host or `box` with a provenance by the host
+- **THEN** the first is refused naming acceptance checked against `gate` alone, the second is held under the consumer's given, and the third is judged under the publisher's policy and refused naming provenance checked against `box` alone
+
+#### Scenario: A claim the file names no signer for read through the host's trust over the fakes
+- **WHEN** the fake policy answers a given policy requiring acceptance naming no signer, whose file names `laptop` for provenance alone, the host trusts its own signer and `gate`, and one pinned version carries an acceptance by `laptop` and another an acceptance by the host's own signer
+- **THEN** the first is refused naming acceptance checked against the host's own signer and `gate`, never `laptop`, and the second is held under the consumer's given
 
 #### Scenario: A version refused over the fakes
 - **WHEN** a pinned version's index lacks the acceptance claim the consumer's policy requires

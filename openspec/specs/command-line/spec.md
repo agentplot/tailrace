@@ -98,7 +98,8 @@ a broken file's unreadable answer in their own form, as text or with
 the entries and whose policy judges the layouts, by default the newest
 revision of the branch the checkout descends from, `--branch` (by
 default `main`) and `--json`; it SHALL be bound by the host's bindings
-file as verify is, with the signers the file trusts, never making the
+file as verify is, trusting the host's own signer and the signers the
+file trusts, never making the
 store it names, and SHALL answer,
 as one answer of the core, each build identity as rendered, absent, or
 the refusal or unreadable answer its render gave, and each layout as

@@ -108,11 +108,12 @@ group asks for (93, core.33).
 ### Requirement: The given policy for a layout admits what the gate accepted
 
 A file with no `[layout]` SHALL answer for a layout, marked as given,
-one required claim:
-acceptance, by every signer its `[signers]` lets claim acceptance, in
-the file's order; where it names none that may and exactly one that may
-claim provenance, by that one, as the one host 108 admits; and
-otherwise by no signer, so the given admits no version (C.10, 108).
+one required claim: acceptance, by every signer its `[signers]` lets
+claim acceptance, in the file's order, and by no signer where it names
+none that may (C.10). The one host 108 admits as the gate SHALL be the
+gate for publishing, not reading: the given SHALL never name a signer
+the file lets claim provenance alone, and its reader reads a claim it
+names no signer for through its host's trusted signers (118).
 
 #### Scenario: A gate named
 
@@ -122,12 +123,12 @@ otherwise by no signer, so the given admits no version (C.10, 108).
 #### Scenario: One publisher and no gate
 
 - **WHEN** the file names one signer, `laptop`, with `kinds = ["provenance"]`, and no `[layout]`
-- **THEN** the policy for a layout requires acceptance by `laptop`
+- **THEN** the policy for a layout requires acceptance naming no signer, marked as given, and never names `laptop` for it
 
 #### Scenario: Several publishers and no gate
 
 - **WHEN** the file names two signers that may claim provenance, none that may claim acceptance, and no `[layout]`
-- **THEN** the policy for a layout requires acceptance by no signer, never absent and never unreadable
+- **THEN** the policy for a layout requires acceptance naming no signer, marked as given, never absent and never unreadable
 
 ### Requirement: The given names no signer, and a written line stands alone
 
@@ -139,3 +140,16 @@ written, not marked as given, with nothing of the given laid beneath it.
 
 - **WHEN** the file's `[layout]` requires provenance from `laptop`
 - **THEN** the policy for a layout requires that provenance alone, and no acceptance, and is not marked as given
+
+### Requirement: The policy for a layout carries the file's signers
+
+The policy for a layout, given or written, SHALL carry every signer
+`[signers]` names, in the file's order, each with what it may claim, so
+a consumer reads each claim through its file's signers alone where the
+file names one for it, and through its host's trusted signers only
+where the file names none (C.10, 118).
+
+#### Scenario: The signers carried
+
+- **WHEN** the file names `[signers.gate]` with `kinds = ["acceptance"]` and `[signers.curator]` with `kinds = ["layout_policy"]`, with or without a `[layout]`
+- **THEN** the policy for a layout carries `gate` then `curator`, each with its verifier and the kinds the file lets it claim

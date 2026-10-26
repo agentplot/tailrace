@@ -174,30 +174,60 @@ policy lets that signer claim it (80, 9, 61).
 - **WHEN** the layout is copied to another directory, the repository cloned beside it, and the built binary runs `tailrace verify <version> --json` there under a bindings file naming the copy, sluice with the clone's remote, and no `[signing]` table
 - **THEN** every provenance on the index's artifacts is made by the publishing host and counts under an acceptance policy requiring provenance from it, and each of sluice's verdicts is reported as carried in the provenance that holds it
 
-### Requirement: The file names the signers the host trusts
+### Requirement: The host trusts its own signer
 
-The file SHALL name the signers the host trusts, one `[trust.<signer>]`
-table each, holding exactly one key whose string value is the text the
-signer's profile verifies it by, in the policy file's `[signers]` form
-and with no `kinds` or `checks` (section 2, 118, C.10), and never a
-credential (64, core.21). A file with no `[trust]` SHALL trust no
-signer. The binding SHALL carry the trusted signers to sync alone.
+For reading, the host SHALL trust its own signer, the one `[signing]`
+names, verified by its key's public half, the file beside the key that
+ssh-keygen names `<key>.pub`, read when sync binds and never the key
+itself, so a host consumes what it published itself (118, C.10). The
+binding SHALL carry the trusted signers to sync alone, the host's own
+before those `[trust]` names; a file naming no `[signing]` and no
+`[trust]` SHALL trust no signer.
 
-#### Scenario: A signer trusted
+#### Scenario: The host's own signer trusted
 
-- **WHEN** the file names `[trust.gate]` with `ssh = "ssh-ed25519 AAAA… gate@box"`
-- **THEN** the binding trusts one signer, `gate`, verified by that key
+- **WHEN** the file names `[signing]` for the signer `laptop` with a key whose public half lies beside it, and `[trust.gate]`
+- **THEN** a sync's binding trusts `laptop`, verified by that public half, then `gate`, neither with a claim of its own, and the key itself was not read
 
 #### Scenario: No trust named
 
 - **WHEN** the file names `[store]`, `[landing]` and `[signing]` and no `[trust]`
-- **THEN** the binding trusts no signer, and publish and verify answer as before
+- **THEN** a sync's binding trusts the host's own signer alone, and publish and verify answer as before
+
+#### Scenario: Neither signing nor trust named
+
+- **WHEN** the file names `[store]` and `[landing]`, no `[signing]` and no `[trust]`
+- **THEN** a sync's binding trusts no signer
+
+### Requirement: The file names the other signers the host trusts
+
+The file SHALL name the other signers the host trusts, one
+`[trust.<signer>]` table each, holding exactly one key whose string
+value is the text the signer's profile verifies it by, in the policy
+file's `[signers]` form and with no `kinds` or `checks` (section 2,
+118, C.10), and never a credential (64, core.21). No trusted signer
+SHALL carry a claim of its own to make: its reader allows it the one
+claim it reads through it (C.10).
+
+#### Scenario: A signer trusted
+
+- **WHEN** the file names `[trust.gate]` with `ssh = "ssh-ed25519 AAAA… gate@box"`
+- **THEN** the binding trusts `gate`, verified by that key, with no claim of its own
 
 ### Requirement: A broken trust table is unreadable
 A trust table naming no key, two keys, or a value that is not a string
-SHALL be unreadable naming the file and the table (58, 59).
+SHALL be unreadable naming the file and the table; a public half beside
+the `[signing]` key that is missing or holds no OpenSSH public key line
+SHALL be unreadable naming its file, in the operating system's or the
+parser's words; and sync SHALL then read and write nothing (58, 59,
+core.19).
 
 #### Scenario: A trust table with two keys
 
 - **WHEN** `[trust.gate]` names both `ssh` and `kms`
 - **THEN** sync answers unreadable naming the file and `[trust.gate]`, and nothing is read or written
+
+#### Scenario: No public half beside the signing key
+
+- **WHEN** `[signing]` names a key with no `<key>.pub` beside it, and sync runs
+- **THEN** sync answers unreadable naming the public half's file, and nothing is read or written
