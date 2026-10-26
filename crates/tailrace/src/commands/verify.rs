@@ -1,5 +1,6 @@
 //! `tailrace verify <version>`: which signer the policy names made each
-//! attestation on a version, and whether each counts (80, 81, 116).
+//! attestation on a version, and whether each counts (80, 81, 116), and
+//! the notes it carries (134).
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -117,6 +118,19 @@ fn text(out: &mut dyn Write, answer: &Answer<Verified>) -> io::Result<()> {
             "  {kind}{check} on {}{carried}: {made}; {counts}",
             told.on
         )?;
+    }
+    match &verified.notes {
+        Some(Ok(notes)) => {
+            writeln!(out, "notes {}", notes.digest)?;
+            for line in notes.text.lines() {
+                writeln!(out, "{}", format!("  {line}").trim_end())?;
+            }
+        }
+        Some(Err(not)) => {
+            writeln!(out, "notes:")?;
+            render::not(out, "  ", not)?;
+        }
+        None => {}
     }
     Ok(())
 }

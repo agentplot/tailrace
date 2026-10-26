@@ -22,7 +22,7 @@
 
 ## 5. Verify shows the notes
 
-- [ ] 5.1 Add `notes: Option<Answer<VerifiedNotes>>` to `Verified`, read from the index's `notes` artifact through `store.read`, unreadable naming the digest when not UTF-8; print it after the claims in `crates/tailrace/src/commands/verify.rs` (D10). Verify: `crates/tailrace-core/tests/verify.rs` tests for both scenarios of "Verify shows the notes the index names" and for bytes that are not text, and the existing "Verify writes nothing" test passing with the notes read.
+- [x] 5.1 Add `notes: Option<Answer<VerifiedNotes>>` to `Verified`, read from the index's `notes` artifact through `store.read`, unreadable naming the digest when not UTF-8; print it after the claims in `crates/tailrace/src/commands/verify.rs` (D10). Verify: `crates/tailrace-core/tests/verify.rs` tests for both scenarios of "Verify shows the notes the index names" and for bytes that are not text, and the existing "Verify writes nothing" test passing with the notes read.
 
 ## 6. The suite, the site and the gate
 

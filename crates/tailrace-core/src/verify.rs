@@ -1,16 +1,19 @@
 //! `tailrace verify`: which signer the policy names made each
 //! attestation attached to a version's index and artifacts, and each
 //! verdict a provenance carries, and whether each counts (3, 9, 80, 81,
-//! 116, 117, rules core.4, core.7; design D10). It reaches no verdict of
-//! the gate's, and writes nothing.
+//! 116, 117, rules core.4, core.7; design D10), and the notes the index
+//! names, read from the store (134). It reaches no verdict of the gate's,
+//! and writes nothing.
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use tailrace_seams::{
     Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, ComponentName, Digest, Envelope,
     Held, Manifest, Name, NamedSigner, Not, Revision, Seam, Seams, SignerId, Source, Version, Why,
 };
 
-use crate::{policy_at, Declared, History, Landed, Provenance, BOUND, LOCAL, POLICY_FILE};
+use crate::{
+    answer_json, policy_at, Declared, History, Landed, Provenance, BOUND, LOCAL, NOTES, POLICY_FILE,
+};
 
 /// What verify is asked: the version, of the one component named or the
 /// only one declared, on the branch, under the policy for an audience.
@@ -35,6 +38,26 @@ pub struct Verified {
     pub artifacts: Vec<Artifact>,
     pub audience: Audience,
     pub claims: Vec<Told>,
+    /// The notes the index names, in the one answer form (57); none for
+    /// an index that names none (134).
+    #[serde(serialize_with = "notes_json", skip_serializing_if = "Option::is_none")]
+    pub notes: Option<Answer<VerifiedNotes>>,
+}
+
+/// 134: a version's notes as verify shows them: the digest of their
+/// artifact, which the index names, and their text as the store holds it
+/// (design D10).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct VerifiedNotes {
+    pub digest: Digest,
+    pub text: String,
+}
+
+fn notes_json<S: Serializer>(
+    notes: &Option<Answer<VerifiedNotes>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    notes.as_ref().map(answer_json).serialize(serializer)
 }
 
 /// One attestation told: the digest it is attached to, its envelope's
@@ -172,6 +195,13 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
         }
     }
 
+    // 7: the notes the index names, their claims told with the rest.
+    let notes = meta
+        .artifacts()
+        .iter()
+        .find(|a| a.meta.ecosystem().as_str() == NOTES)
+        .map(|a| notes_at(seams, &a.digest));
+
     Ok(Verified {
         component: component.name.clone(),
         version: ask.version.clone(),
@@ -181,6 +211,38 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
         artifacts: meta.artifacts().to_vec(),
         audience: ask.audience.clone(),
         claims,
+        notes,
+    })
+}
+
+/// 134: the notes whose artifact is `digest`, its one layer read from the
+/// store as text; unreadable naming the digest when the store holds no
+/// artifact of one layer there, or bytes that are not text (58).
+fn notes_at(seams: &Seams, digest: &Digest) -> Answer<VerifiedNotes> {
+    let store = Source::new(Seam::Store, BOUND);
+    let what = format!("the notes {digest}");
+    let layer = match seams.store.read(digest)? {
+        Held::Manifest(Manifest::Artifact { layers, .. }) if layers.len() == 1 => layers[0].clone(),
+        _ => {
+            return Err(Not::unreadable(
+                &store,
+                what,
+                Some(format!("{digest} holds no artifact of one layer")),
+            ))
+        }
+    };
+    let Held::Bytes(bytes) = seams.store.read(&layer)? else {
+        return Err(Not::unreadable(
+            &store,
+            what,
+            Some(format!("{layer} holds no bytes")),
+        ));
+    };
+    let text = String::from_utf8(bytes)
+        .map_err(|e| Not::unreadable(&store, what, Some(format!("{layer} is not text: {e}"))))?;
+    Ok(VerifiedNotes {
+        digest: digest.clone(),
+        text,
     })
 }
 

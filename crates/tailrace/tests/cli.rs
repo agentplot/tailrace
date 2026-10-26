@@ -746,6 +746,40 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
     assert_eq!(entry["index"], index.as_str());
 }
 
+// Requirement: Verify shows the notes the index names
+
+#[test]
+fn verify_prints_the_notes_after_the_claims() {
+    let host = Host::new();
+    let (code, published) = host.run(&["publish", "HEAD", "--json"]);
+    assert_eq!(code, 0, "{published}");
+    let published: Value = serde_json::from_str(&published).unwrap();
+    let notes = &published["value"]["components"][0]["value"]["notes"];
+    let text = notes["text"].as_str().expect("the notes' text");
+
+    let (code, printed) = host.run(&["verify", "0.1.0"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| *l == format!("notes {}", notes["digest"].as_str().unwrap()))
+        .expect(&printed);
+    assert!(
+        lines[1..at].iter().all(|l| l.starts_with("  ")) && at > 1,
+        "the notes are not after the claims: {printed}"
+    );
+    let shown: Vec<String> = text
+        .lines()
+        .map(|l| format!("  {l}").trim_end().to_string())
+        .collect();
+    assert_eq!(lines[at + 1..], shown, "{printed}");
+
+    let (code, json) = host.run(&["verify", "0.1.0", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(json["value"]["notes"]["value"]["text"], text);
+}
+
 // Requirement: Status shows each version's notes from git
 
 #[test]
