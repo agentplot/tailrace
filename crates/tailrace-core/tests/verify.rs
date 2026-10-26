@@ -9,7 +9,7 @@ use std::fs;
 use std::rc::Rc;
 
 use serde_json::json;
-use tailrace_core::{verify, Published, Told, Verified, VerifyAsk};
+use tailrace_core::{verify, Published, Told, Verified, VerifyAsk, NOTES};
 use tailrace_fakes::{Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
     Answer, Audience, ChannelName, Check, Claim, ClaimKind, ComponentName, Envelope, NamedSigner,
@@ -107,13 +107,17 @@ fn a_published_version_names_its_index_and_every_artifact() {
     assert_eq!(verified.tag, "lib-v0.2.0");
     assert_eq!(verified.revision, world.head);
     assert_eq!(
-        verified
-            .artifacts
+        verified.artifacts[..2]
             .iter()
             .map(|a| &a.digest)
             .collect::<Vec<_>>(),
         artifacts.iter().map(|a| &a.digest).collect::<Vec<_>>()
     );
+    let [.., notes] = verified.artifacts.as_slice() else {
+        unreachable!()
+    };
+    assert_eq!(verified.artifacts.len(), 3);
+    assert_eq!(notes.meta.ecosystem().as_str(), NOTES);
 }
 
 #[test]
@@ -230,13 +234,17 @@ fn a_provenance_and_its_carried_verdicts_are_told_by_their_signers() {
     };
     let verified = verified(&world, &ask("0.2.0")).unwrap();
     let provenances = provenances(&verified);
-    assert_eq!(provenances.len(), 2);
+    assert_eq!(provenances.len(), 3, "two outputs' and the notes'");
     for (told, artifact) in provenances.iter().zip(artifacts) {
         assert_eq!(told.on, artifact.digest);
         assert_eq!(told.envelope, artifact.claims[0].envelope);
         assert_eq!(told.made_by, Some(SignerId::new(HOST)));
         assert!(told.counts && !told.expired);
     }
+    let notes = &provenances[2];
+    assert_eq!(notes.on, verified.artifacts[2].digest);
+    assert_eq!(notes.made_by, Some(SignerId::new(HOST)));
+    assert!(notes.counts && !notes.expired);
     let carried = carried(&verified);
     assert_eq!(carried.len(), 4);
     for told in &carried {

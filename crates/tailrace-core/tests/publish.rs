@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use tailrace_core::{
-    answer_json, layout_policy_body, publish, Ask, Kept, Provenance, Published, BOUND,
+    answer_json, layout_policy_body, publish, Ask, Kept, Provenance, Published, BOUND, NOTES,
 };
 use tailrace_fakes::{
     BuildOp, FakeProjection, FakeStore, Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times,
@@ -642,7 +642,11 @@ fn every_envelope_signed_is_held_beside_its_subject_and_nowhere_else() {
         .filter(|c| c.op == SignerOp::Sign)
         .map(|c| serde_json::from_value(c.answer.unwrap()).unwrap())
         .collect();
-    assert_eq!(signed.len(), 2);
+    assert_eq!(
+        signed.len(),
+        3,
+        "two outputs' provenance and the notes' claim"
+    );
     for envelope in &signed {
         let subject = Claim::from_envelope(envelope).unwrap().subject;
         assert!(world
@@ -678,27 +682,41 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
 
 // Requirement: The index is offered last, then the version is named
 
+/// What a store call put: the ecosystem of an artifact's manifest,
+/// `index` for an index's, and nothing for any other call.
+fn manifest_of(call: &tailrace_fakes::Call<StoreOp>) -> Option<String> {
+    let manifest = call.given.get("manifest")?;
+    match manifest.get("artifact") {
+        Some(artifact) => artifact["meta"]["ecosystem"].as_str().map(str::to_string),
+        None => Some("index".into()),
+    }
+}
+
 #[test]
 fn the_artifacts_and_their_attachments_come_before_the_index_and_the_name_after() {
     let world = World::new();
     world.publish_one(&world.ask_for("lib")).unwrap();
     let calls = world.fakes.store.calls();
-    let order: Vec<(StoreOp, bool)> = calls
+    let order: Vec<(StoreOp, Option<String>)> = calls
         .iter()
         .filter(|c| c.op != StoreOp::Resolve)
-        .map(|c| (c.op, c.given["manifest"].get("index").is_some()))
+        .map(|c| (c.op, manifest_of(c)))
         .collect();
+    let put = |ecosystem: &str| (StoreOp::PutArtifact, Some(ecosystem.to_string()));
     assert_eq!(
         order,
         [
-            (StoreOp::PutBytes, false),
-            (StoreOp::PutArtifact, false),
-            (StoreOp::PutBytes, false),
-            (StoreOp::PutArtifact, false),
-            (StoreOp::Attach, false),
-            (StoreOp::Attach, false),
-            (StoreOp::PutArtifact, true),
-            (StoreOp::Name, false),
+            (StoreOp::PutBytes, None),
+            put("eco-a"),
+            (StoreOp::PutBytes, None),
+            put("eco-b"),
+            (StoreOp::PutBytes, None),
+            put("notes"),
+            (StoreOp::Attach, None),
+            (StoreOp::Attach, None),
+            (StoreOp::Attach, None),
+            put("index"),
+            (StoreOp::Name, None),
         ]
     );
 }
@@ -1077,4 +1095,186 @@ fn a_policy_for_layouts_that_cannot_be_read_stops_the_publish_before_the_name() 
         "{answer:?}"
     );
     assert!(world.fakes.store.resolve(&Name::new("lib-v0.2.0")).is_err());
+}
+
+// Requirement: The notes are an artifact of the version named in its index
+
+/// The notes `world`'s first publish of `lib` renders: its one feature
+/// since `lib-v0.1.0`.
+fn lib_notes(world: &World) -> String {
+    format!(
+        "## 0.2.0\n\nSince lib-v0.1.0.\n\n### Features\n\n- lib grows ({})\n",
+        &world.head.as_str()[..7]
+    )
+}
+
+/// The artifact of ecosystem `notes` the index `published` names.
+fn notes_artifact(world: &World, published: &Published) -> tailrace_seams::Artifact {
+    let (_, index) = version_of(published);
+    let Held::Manifest(Manifest::Index(meta)) = &world.fakes.store.contents().held[index] else {
+        panic!("no index under {index}")
+    };
+    let notes: Vec<_> = meta
+        .artifacts()
+        .iter()
+        .filter(|a| a.meta.ecosystem() == &eco(NOTES))
+        .cloned()
+        .collect();
+    let [notes] = <[_; 1]>::try_from(notes).unwrap();
+    notes
+}
+
+#[test]
+fn the_index_names_the_two_outputs_and_the_notes_last() {
+    let world = World::new();
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&published);
+    let held = world.fakes.store.contents().held;
+    let Held::Manifest(Manifest::Index(meta)) = &held[index] else {
+        panic!("no index under {index}")
+    };
+    let ecosystems: Vec<&str> = meta
+        .artifacts()
+        .iter()
+        .map(|a| a.meta.ecosystem().as_str())
+        .collect();
+    assert_eq!(ecosystems, ["eco-a", "eco-b", "notes"]);
+
+    let notes = notes_artifact(&world, &published);
+    assert_eq!(notes.meta.name(), &EcosystemName::new("lib"));
+    assert_eq!(notes.meta.version(), &Version::new("0.2.0"));
+    let Held::Manifest(Manifest::Artifact { layers, .. }) = &held[&notes.digest] else {
+        panic!("no artifact under {}", notes.digest)
+    };
+    let text = lib_notes(&world);
+    assert_eq!(layers, &[Digest::of(text.as_bytes())]);
+    assert_eq!(held[&layers[0]], Held::Bytes(text.into_bytes()));
+}
+
+#[test]
+fn a_name_held_by_another_revision_puts_nothing_of_the_notes() {
+    let world = World::new();
+    // The name is held at a revision of another branch, which the head
+    // does not reach.
+    world
+        .repo
+        .git(&["checkout", "-q", "-b", "side", world.start.as_str()]);
+    let side = world.repo.touch("fix: elsewhere", &["crates/lib"]);
+    world.repo.git(&["checkout", "-q", "main"]);
+    world.repo.tag("lib-v0.2.0", &side);
+    let r = refused(world.publish_one(&world.ask_for("lib")));
+    assert!(matches!(r.why, Why::NameHeld { .. }), "{r:?}");
+    assert_eq!(puts(&world), [], "the store was offered something");
+    assert!(!world
+        .fakes
+        .store
+        .calls()
+        .iter()
+        .any(|c| manifest_of(c).as_deref() == Some(NOTES)));
+    nothing_offered(&world);
+}
+
+/// A store that puts as its fake does, and fails every index put.
+struct NoIndex(FakeStore);
+
+impl Store for NoIndex {
+    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
+        self.0.put_bytes(bytes)
+    }
+    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
+        if let Manifest::Index(_) = manifest {
+            return Err(Not::unreadable(
+                &Source::new(Seam::Store, "fake"),
+                "the put of the index",
+                Some("connection refused".into()),
+            ));
+        }
+        self.0.put_artifact(manifest)
+    }
+    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
+        self.0.attach(subject, attestation)
+    }
+    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
+        self.0.claims_of(digest)
+    }
+    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        self.0.name(name, to, expected)
+    }
+    fn resolve(&self, name: &Name) -> Answer<Digest> {
+        self.0.resolve(name)
+    }
+    fn read(&self, digest: &Digest) -> Answer<Held> {
+        self.0.read(digest)
+    }
+}
+
+#[test]
+fn a_publish_stopped_after_the_notes_keeps_no_notes_as_a_version() {
+    let world = World::new();
+    let history = world.history();
+    let mut seams = world.fakes.seams();
+    seams.store = Box::new(NoIndex(world.fakes.store.clone()));
+    let publish = publish(&seams, &history, &Kept::at(&history), &world.ask_for("lib")).unwrap();
+    let Err(Not::Unreadable(u)) = &publish.components[0].1 else {
+        panic!("{publish:?}")
+    };
+    assert_eq!(u.said.as_deref(), Some("connection refused"));
+    let held = world.fakes.store.contents().held;
+    assert!(held.values().any(|h| matches!(
+        h,
+        Held::Manifest(Manifest::Artifact { meta, .. }) if meta.ecosystem() == &eco(NOTES)
+    )));
+    assert!(indexes(&world).is_empty());
+    assert!(matches!(
+        world.fakes.store.resolve(&Name::new("lib-v0.2.0")),
+        Err(Not::Absent(_))
+    ));
+}
+
+// Requirement: The notes carry the publisher's own claim
+
+#[test]
+fn the_notes_carry_one_provenance_of_the_hosts_naming_every_commit_and_no_build() {
+    let world = World::new();
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let notes = notes_artifact(&world, &published);
+    let envelopes = world.fakes.store.claims_of(&notes.digest).unwrap();
+    let [envelope] = <[_; 1]>::try_from(envelopes).unwrap();
+    assert_eq!(envelope.sole().unwrap().signer.as_str(), HOST);
+    let claim = Claim::from_envelope(&envelope).unwrap();
+    assert_eq!(claim.kind, ClaimKind::Provenance);
+    assert_eq!(claim.subject, notes.digest);
+    assert_eq!(claim.revision, world.head);
+    assert_eq!(claim.build, None);
+    assert_eq!(
+        claim.body,
+        serde_json::json!({
+            "notes": {
+                "component": "lib",
+                "version": "0.2.0",
+                "last": "lib-v0.1.0",
+                "commits": [world.head.as_str()],
+            }
+        })
+    );
+    assert_eq!(Provenance::of(&claim), None);
+}
+
+#[test]
+fn no_identity_at_hand_puts_no_index_naming_the_notes() {
+    let world = World::new();
+    let history = world.history();
+    let ask = Ask {
+        signer: SignerId::new("nobody"),
+        ..world.ask_for("lib")
+    };
+    let publish = publish(&world.fakes.seams(), &history, &Kept::at(&history), &ask).unwrap();
+    let Err(Not::Absent(a)) = &publish.components[0].1 else {
+        panic!("signed with no identity: {publish:?}")
+    };
+    assert_eq!(a.source.seam, Seam::Signer);
+    assert!(a.what.contains("nobody"), "{}", a.what);
+    assert!(indexes(&world).is_empty());
+    assert!(world.fakes.store.contents().attached.is_empty());
+    assert!(world.fakes.store.contents().names.is_empty());
 }
