@@ -10,10 +10,10 @@ vouches for. And a repository whose checks run on sluice's Actions pool
 has no host that keeps what its checks built: each job's runner is gone
 when the job ends, so nothing is left for `tailrace push` to send after
 the landing. The statement settles both (135, 139; rulings of
-`madswan-design`, agentplot/blueprints 8e649e5): a pool's check job
-pushes what its own run left before the landing is decided, and a
-publish takes the outputs from the store's cache entries that the
-landing's verdicts name, refusing when any is missing.
+`madswan-design`, agentplot/blueprints 8e649e5; C.1 at 2b8fc53): a
+pool's check job pushes what its own run left before the landing is
+decided, and a publish takes the outputs from the store's cache entries
+that the landing's verdicts name, refusing when any is missing.
 
 ## What Changes
 
@@ -55,16 +55,18 @@ landing's verdicts name, refusing when any is missing.
   the store, and carries a workflow of its own that runs `tailrace
   publish` on each push to its landed branch. The guide shows both
   workflows to copy, and the credential's scope as an ECR policy on the
-  cache repository alone (135, 96, core.14). There is no setup command:
-  the guide shows the workflow and the repository copies it.
+  cache entries' repositories alone, `cache/*`, which the operator makes
+  before the first push (135, 96, C.1, core.14). There is no setup
+  command: the guide shows the workflow and the repository copies it.
 
 Out of scope, and what each waits on:
 
-- Cache entries in a repository of their own, which the cache-only
-  credential's scope rests on: the store-naming unit, which maps
-  `cache/<identity>` to a repository of the registry (C.1). Until it
-  lands every name lives in one repository and no role can be scoped to
-  the cache alone; the guide shows the scope as the statement has it.
+- Cache entries in repositories of their own, which the cache-only
+  credential's scope rests on: the store-naming unit, which puts them
+  under `cache/<build>` (`cache/moon`), apart from every component's
+  repository (C.1). Until it lands the registry profile keeps every name
+  in the one repository its binding names, so no key can be scoped to
+  the cache alone; the guide shows the scope as C.1 has it and says so.
 - Room for the repository's own steps in sluice's run job, and where that
   job leaves the checkout it ran the checks in: sluice's Actions pool
   (`actions-pool`, in flight in agentplot/sluice), which design is asking

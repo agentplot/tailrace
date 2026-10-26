@@ -2,9 +2,9 @@
 
 ## Context
 
-The statement this rests on, at agentplot/blueprints 8e649e5: 15, 16,
-52 to 54, 58, 74 to 76, 96, 118, 130, 135, 139, C.3, C.5, C.6, C.16,
-and the madswan-design rulings given with the unit: `left` is the
+The statement this rests on, at agentplot/blueprints b720017: 15, 16,
+52 to 54, 58, 74 to 76, 96, 118, 130, 135, 139, C.1, C.3, C.5, C.6,
+C.16, and the madswan-design rulings given with the unit (8e649e5): `left` is the
 build's (139), not a projection's; the pool job's push is a step of the
 repository's own workflow after the queue's run step, with a credential
 that writes cache entries and nothing else (135, core.14); and there is
@@ -270,11 +270,15 @@ For the second, the page shows:
    (sluice's pool keeps it out of the job that runs checks), so the
    credential is an access key, not a role assumed by OIDC.
 2. The policy that key's IAM user holds: the push actions above on the
-   cache repository's ARN alone, `repository/<name>/cache`, and
+   cache entries' repositories alone, `repository/cache/*`, and
    `ecr:GetAuthorizationToken` on `*`; so a check that reads the key can
    write cache entries and offer, accept or move nothing (96, S9,
-   core.14). It says the cache's own repository comes with the store's
-   naming of `cache/` (C.1).
+   core.14). The operator makes the repository `cache/moon` once before
+   the first push, as C.1 says of a registry that makes repositories on
+   push only by a template, so the key needs no `ecr:CreateRepository`.
+   The page says the scope holds once the store names cache entries
+   under `cache/<build>` apart from every component (C.1); until then
+   the registry profile keeps every name in its one bound repository.
 3. `.github/workflows/tailrace.yml`, the repository's own: `on: push` to
    the landed branch; `concurrency` one at a time, never cancelling;
    `permissions: contents: write` for the version's tag (22) and
@@ -310,9 +314,10 @@ says publish reads the landing's outputs from the store.
 - [The pool's step depends on sluice's template keeping room for it and
   saying where its checkout is] → Named out of scope; the guide's step
   names the checkout sluice's run step made.
-- [The cache-only scope needs cache entries in a repository of their
-  own] → The store-naming unit; until then the guide's scope is the
-  statement's, and no role narrower than the whole store exists.
+- [The cache-only scope needs cache entries in repositories of their
+  own, `cache/<build>` (C.1)] → The store-naming unit; until then the
+  guide's scope is the statement's and says so, and no key narrower than
+  the whole bound repository exists.
 
 ## Migration Plan
 
