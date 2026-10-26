@@ -14,9 +14,13 @@ use std::path::{Path, PathBuf};
 
 use scratch::{on_path, Repo, Scratch};
 use tailrace::profiles::projection::cargo::{CargoProjection, ECOSYSTEM};
+use tailrace::profiles::store::layout::Layout;
+use tailrace_conformance::seams::projection::{self, ProjectionRig};
+use tailrace_conformance::{run, Rig, Scenario};
 use tailrace_fakes::FakeStore;
 use tailrace_seams::{
-    ArtifactMeta, BuildId, Ecosystem, EcosystemName, Output, OutputName, Projection, Store, Version,
+    Artifact, ArtifactMeta, BuildId, Ecosystem, EcosystemName, Manifest, Output, OutputName,
+    Projection, Store, Version,
 };
 
 /// The family crate the workspace holds.
@@ -113,6 +117,107 @@ fn crate_manifest(bytes: &[u8]) -> String {
         }
     }
     panic!("the crate holds no Cargo.toml")
+}
+
+/// The workspace, a layout store beside it, and the projection of the
+/// workspace reading crates from the store.
+struct CargoRig {
+    workspace: Workspace,
+    layout: Layout,
+    projection: CargoProjection,
+}
+
+impl CargoRig {
+    fn new() -> CargoRig {
+        let workspace = Workspace::new();
+        let layout = Layout::create(workspace.scratch.path().join("layout")).unwrap();
+        let projection = workspace.projection(Box::new(layout.clone()));
+        CargoRig {
+            workspace,
+            layout,
+            projection,
+        }
+    }
+}
+
+impl Rig for CargoRig {
+    fn profile(&self) -> String {
+        ECOSYSTEM.into()
+    }
+}
+
+impl ProjectionRig for CargoRig {
+    fn projection(&self) -> &dyn Projection {
+        &self.projection
+    }
+
+    fn output(&self) -> Output {
+        self.workspace.output()
+    }
+
+    /// The crate packed at `1.0.0`, `1.1.0` and on, each put in the layout
+    /// store as a publish puts an artifact: its bytes, then a manifest
+    /// naming them as its one layer.
+    fn artifacts(&self, n: usize) -> Vec<Artifact> {
+        (0..n)
+            .map(|i| {
+                let version = Version::new(format!("1.{i}.0"));
+                let packed = self
+                    .projection
+                    .pack(&self.output(), &BuildId::new("b7e1"), Some(&version))
+                    .unwrap();
+                let meta = packed.meta.unwrap();
+                let layer = self.layout.put_bytes(&packed.bytes).unwrap().digest;
+                let digest = self
+                    .layout
+                    .put_artifact(&Manifest::Artifact {
+                        meta: meta.clone(),
+                        layers: vec![layer],
+                    })
+                    .unwrap()
+                    .digest;
+                Artifact { digest, meta }
+            })
+            .collect()
+    }
+
+    fn serves(&self) -> bool {
+        false
+    }
+
+    fn caches(&self) -> bool {
+        false
+    }
+
+    /// The cargo the projection runs removed, and the operating system's
+    /// words for running it.
+    fn unreachable(&self) -> String {
+        let cargo = &self.workspace.cargo;
+        fs::remove_file(cargo).unwrap();
+        std::process::Command::new(cargo)
+            .spawn()
+            .unwrap_err()
+            .to_string()
+    }
+}
+
+/// The group's scenarios named `names`.
+fn scenarios(names: &[&str]) -> Vec<Scenario<dyn ProjectionRig>> {
+    projection::scenarios()
+        .into_iter()
+        .filter(|s| names.contains(&s.name))
+        .collect()
+}
+
+#[test]
+fn a_cargo_that_cannot_be_run_is_unreadable_in_the_operating_systems_words() {
+    let report = run(
+        projection::GROUP,
+        &scenarios(&["a projection that cannot be reached"]),
+        &|| Box::new(CargoRig::new()),
+    );
+    assert_eq!((report.profile.as_str(), report.ran), (ECOSYSTEM, 1));
+    report.assert();
 }
 
 // Requirement: A pack leaves the checkout as it was and refuses what it

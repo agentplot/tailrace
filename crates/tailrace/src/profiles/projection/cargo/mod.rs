@@ -5,6 +5,9 @@
 //! It reaches the store only through the store seam it is handed (rule
 //! core.2), and runs the cargo it is bound to.
 
+mod crate_file;
+#[cfg(test)]
+mod fixture;
 mod pack;
 
 use std::path::{Path, PathBuf};

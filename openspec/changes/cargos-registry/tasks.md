@@ -7,7 +7,7 @@
 
 - [x] 2.1 Find the output's one `[package]` manifest and refuse none or several naming the output and its files (design D1). Verify: unit tests for none, two, and one
 - [x] 2.2 Read the package's name and workspace root with `cargo metadata`; write the version into `package.version` or `workspace.package.version` with `toml_edit`; run `cargo package --no-verify --allow-dirty --manifest-path <it> --target-dir <temp>`; restore the manifest's bytes on every path; answer the crate's bytes, `cargo` metadata and `same_again` true (design D2, D3). Verify: a tools-layer test in `tests/cargo_projection.rs` packs a workspace-inherited crate in a scratch git repository and checks the manifest bytes are unchanged and the crate's manifest names the version
-- [ ] 2.3 Refuse a crate whose own manifest names another version, naming both; answer unreadable with cargo's or the operating system's words when cargo fails or cannot start. Verify: unit test of the check on an in-memory crate; the conformance group's unreachable scenario
+- [x] 2.3 Refuse a crate whose own manifest names another version, naming both; answer unreadable with cargo's or the operating system's words when cargo fails or cannot start. Verify: unit test of the check on an in-memory crate; the conformance group's unreachable scenario
 - [ ] 2.4 Answer absent naming cache entries for a pack with no version and a render of cache entries, reading nothing. Verify: unit test, and the group's "a projection that packs no cache entries"
 
 ## 3. Pinned

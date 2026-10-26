@@ -2,8 +2,9 @@
 //! found among its files, its package's name and workspace read with
 //! `cargo metadata`, the version written into the one value that holds
 //! it, the crate packed by `cargo package` into a temporary target
-//! directory, and the manifest's bytes written back whatever cargo
-//! answered.
+//! directory, the manifest's bytes written back whatever cargo answered,
+//! and the crate refused where its own manifest names another version,
+//! since every pack of a revision edits one checkout.
 
 use std::ffi::OsStr;
 use std::fs;
@@ -13,7 +14,7 @@ use serde::Deserialize;
 use tailrace_seams::{Answer, Not, Output, Version, Why};
 use toml_edit::{DocumentMut, Item};
 
-use super::CargoProjection;
+use super::{crate_file, CargoProjection};
 use crate::profiles::run::GIT_REPOSITORY_ENV;
 
 /// What the manifest of a package is called.
@@ -85,7 +86,9 @@ impl CargoProjection {
             Err(e) => Err(unreadable(&holder, e.to_string())),
         };
         restore()?;
-        Ok((package.name, crate_file?))
+        let bytes = crate_file?;
+        names_package(&bytes, manifest, &package.name, version)?;
+        Ok((package.name, bytes))
     }
 
     /// The name of the package whose manifest is `manifest`, and the root
@@ -156,6 +159,29 @@ impl CargoProjection {
             )),
         }
     }
+}
+
+/// Refused naming both where the crate `bytes`, packed of the package at
+/// `manifest`, names another package or version than `name` and
+/// `version` (design D2), as when two packs edit one checkout at once;
+/// unreadable where its manifest cannot be read, with the reader's words.
+fn names_package(bytes: &[u8], manifest: &Path, name: &str, version: &Version) -> Answer<()> {
+    let what = || format!("the crate cargo packed of {}", manifest.display());
+    let found = crate_file::manifest(bytes)
+        .map_err(|said| Not::unreadable(&CargoProjection::source(), what(), Some(said)))?;
+    if found.name == name && found.version == version.as_str() {
+        return Ok(());
+    }
+    Err(Not::refused(
+        &CargoProjection::source(),
+        Why::Said,
+        Some(format!(
+            "{} names {} {}, and the version given is {name} {version}",
+            what(),
+            found.name,
+            found.version
+        )),
+    ))
 }
 
 /// What `cargo metadata` answers that pack reads.
@@ -469,6 +495,39 @@ mod tests {
                 u.said.as_deref(),
                 Some("the manifest names no workspace.package.version")
             ),
+            other => panic!("answered {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_crate_naming_another_version_is_refused_naming_both() {
+        let manifest = Path::new("/checkout/fam/Cargo.toml");
+        let bytes = super::super::fixture::crate_of(
+            "fam",
+            "1.4.1",
+            "[package]\nname = \"fam\"\nversion = \"1.4.1\"\n",
+        );
+        assert_eq!(
+            names_package(&bytes, manifest, "fam", &Version::new("1.4.1")),
+            Ok(())
+        );
+        match names_package(&bytes, manifest, "fam", &Version::new("1.4.0")) {
+            Err(Not::Refused(r)) => {
+                assert_eq!(r.source, CargoProjection::source());
+                assert_eq!(
+                    r.said.as_deref(),
+                    Some(
+                        "the crate cargo packed of /checkout/fam/Cargo.toml names fam 1.4.1, \
+                         and the version given is fam 1.4.0"
+                    )
+                );
+            }
+            other => panic!("answered {other:?}"),
+        }
+        match names_package(b"no crate", manifest, "fam", &Version::new("1.4.0")) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.what, "the crate cargo packed of /checkout/fam/Cargo.toml")
+            }
             other => panic!("answered {other:?}"),
         }
     }
