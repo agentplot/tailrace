@@ -42,7 +42,7 @@ Every command runs inside `devenv shell -- <command>`.
 ## 7. Status shows how the landing was read
 
 - [x] 7.1 In `crates/tailrace/src/commands/status.rs`, print the landing's read under the branch and revision, `landing: as last fetched <UTC>` with the words indented beneath, nothing for a landing read from itself, and carry it in `--json` (design D6); a test in `crates/tailrace/tests/cli.rs` over the fakes for the channel-status delta's first scenario, status exiting 0: `moon run cli:test`
-- [ ] 7.2 In `crates/tailrace/src/commands/serve/page.rs`, render the same on the repository's page; a test in `crates/tailrace/tests/serve.rs` that the page and its JSON carry the read as the command line does: `moon run cli:test`
+- [x] 7.2 In `crates/tailrace/src/commands/serve/page.rs`, render the same on the repository's page; a test in `crates/tailrace/tests/serve.rs` that the page and its JSON carry the read as the command line does: `moon run cli:test`
 - [ ] 7.3 A test in `crates/tailrace/tests/status_across_machines.rs` of a machine cut off from the one remote holding its branch and its ledger, the landing over a plain branch bound to it: every channel shown from the ledger's kept chain, the landing and each chain saying when, `--json` and the page the same answer: `moon run cli:test`
 - [ ] 7.4 Bring `crates/tailrace/src/bindings/tests.rs` and every other test of `crates/tailrace/tests/` that calls the landing to the new answers: `moon run cli:test`
 
