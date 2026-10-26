@@ -12,10 +12,14 @@ naming no `[signing]` signs nothing. The ledger's unit (ADR 0016) added
 path of its own (`unfiled`), with `origin` as the remote of both its
 landing and its ledger.
 
-Clause 118, as the statement now reads (blueprints ab0dfea, 85bbf54), binds a
-host with no file to the layout under the user's data directory (C.2),
-a host key made on first use (C.8), the branch or sluice where the
-repository is set up for it (C.6, C.5), and the git ref (C.13). Its
+Clause 118, as the statement now reads (blueprints ab0dfea, 85bbf54,
+b64d367), binds a host with no file to the layout under the user's data
+directory (C.2), a host key made on first use (C.8), the branch or
+sluice where the repository is set up for it (C.6, C.5), and the git
+ref (C.13) on the landing's own remote, pushed to and fetched from it
+as the branch is, so two machines of one repository read one ledger
+with nothing written, a repository with no remote keeping its ledger
+where it keeps its branch. Its
 landing remote is the checkout's `origin`, or its one remote where it
 has no `origin`, and unreadable naming them where it has several and
 the file names none. Its publish tells the gate as its next step, and
@@ -125,10 +129,20 @@ needs passed in:
   missing path both mean a branch; a repository git cannot open is
   unreadable with git's words. The check runs through `profiles::run`'s
   `Tool`, as every git call of the landings does.
-- `profiles::ledger`: `GitRef::new(repository, None)`. The given ledger
-  reads and writes the repository's own refs and pushes nowhere: 118
-  names a remote for the landing alone, and keeps a shared ledger for
-  the file.
+- `profiles::ledger`: `given(repository, remote)`, the git ref,
+  `GitRef::new(repository, remote)`, where `remote` is the landing's
+  remote as the host binds it: a written `[landing]`'s `remote`, or
+  D5's where the file names no `[landing]`. With a remote, the git ref
+  profile does what it already does for `[ledger] git_ref = { remote }`:
+  each read fetches the channel's chain into the repository's copy
+  first, each append is a push that only fast-forwards, and a remote
+  that does not answer leaves the chain answered from the copy as last
+  fetched, saying when (C.13, 60). With none, the repository's own refs
+  are the ledger and nothing is pushed, the ledger kept where the
+  branch is. So `bind` reads the landing's remote before it binds a
+  given ledger, and the given ledger never names a remote the landing
+  does not. A written `[ledger]` binds what it names, its `remote` or
+  none, exactly as written.
 - `profiles::signer`: for publish and promote, the host key at
   `<config>/tailrace/signing`, `<config>` being the bindings file's own
   directory's parent (the file is `<config>/tailrace/config.toml`), bound
@@ -137,6 +151,11 @@ needs passed in:
 - what tells the gate: `Teller::of` already binds `Teller::Publish`
   where the file holds no `[gate]`, so an empty `Bindings` binds it with
   no change there (D6).
+
+Rejected for the ledger: the git ref with no remote. Two machines of
+one repository would each keep a chain of their own, a second
+machine's status would show none of the first's promotions, and 118
+asks for one ledger read by both with nothing written.
 
 `Table::given` carries the bindings file's path and is marked given, so
 an answer about a given table names it as given: `<file>, [store]
@@ -291,8 +310,12 @@ signer but every profile verify-only; nothing made (60, core.32). The
 status-only path for a host with no file goes: `unfiled`, `origin`,
 `NoLedger`, `NoStore` where a file names no `[store]`, and the
 families' `unfiled` functions. So status on a host with no file reads
-the landing D5 gives and the ledger in the repository's own refs, the
-chain the given gate appends to.
+the landing D5 gives and the ledger on that same remote, fetched into
+the repository's copy, the chain the given gate appends to; the fetch
+writes the copy and nothing else (131). status-on-any-machine's
+two-machine test, whose second machine has no file and one remote
+`origin`, binds through this path to the ledger on `origin`, as it
+did through the path this one replaces, and stands as written.
 
 `landing_remote` (114), which names the repository for the serving
 address, answers from the same rule: a written `[landing]`'s remote, or
@@ -305,7 +328,7 @@ profiles" (0018 is status-on-any-machine's, 0019 and 0020 the units'
 before this one), records D1 to D7: a missing file and a missing table
 bind the given bindings, how the landing and its remote are chosen,
 where the given key and its name come from, why `HEAD` and not the
-working tree, why the given ledger has no remote, and the given gate in
+working tree, why the given ledger is on the landing's remote, and the given gate in
 the policy file's answer, citing C.10. It amends ADR 0013's decisions
 for a missing file, a missing table and a host with no `[signing]`;
 0013's status line names it.
@@ -325,6 +348,17 @@ for a missing file, a missing table and a host with no `[signing]`;
   set up binds a plain branch.** → Every revision on such a branch was
   landed without sluice, so a plain branch is what it is; a file's
   `[landing]` says otherwise where the person wants it.
+- **A host with nothing written pushes its ledger to the landing's
+  remote.** → 118 asks for it. The push carries only
+  `refs/tailrace/ledger/...`, fast-forward only, with the host's own git
+  credentials at the moment of use, as the branch's push does
+  (core.21); a remote that refuses it is answered with git's words and
+  never retried (core.6). A team that wants the chain elsewhere names
+  `[ledger]`.
+- **The given ledger on a host that only reads.** → Status and verify
+  fetch the chain into the repository's copy and write nothing else
+  (131, core.32); a remote that does not answer leaves the chain as last
+  fetched, saying when.
 - **A checkout with several remotes and no `origin` is unreadable for
   every command with no file.** → 118 asks for that answer; it names the
   remotes and `[landing] remote`, the one line that fixes it.
@@ -346,8 +380,11 @@ for a missing file, a missing table and a host with no `[signing]`;
 None for a host whose file names every table: it binds as before. A
 host whose file left `[signing]` out now signs with a made key instead
 of being refused, one whose file left `[store]` or `[landing]` out now
-binds the given ones instead of being answered absent, and a host whose
-file holds no `[gate]` tells its own gate; each is what 118 asks. A
+binds the given ones instead of being answered absent, one whose file
+names a `[landing]` with a `remote` and no `[ledger]` now keeps its
+ledger on that remote, its first append pushing the chain the
+repository holds, and a host whose file holds no `[gate]` tells its own
+gate; each is what 118 asks. A
 repository whose policy names no gate and whose host publishes now has
 its versions accepted as one host where before they were refused as
 offered by the gate, where its policy file names one signer for
@@ -357,9 +394,7 @@ provenance and none for acceptance.
 
 - The given key's path and the given signer's name are this change's
   choices; the statement says only "a host key made on first use".
-- The given ledger's remote: 118 names the landing's remote alone, and
-  this change gives the ledger none.
 - A policy file naming several signers for provenance and none for
   acceptance: this change names no gate there (D7).
 
-All three go to the design agent with the commit.
+Both go to the design agent with the commit.

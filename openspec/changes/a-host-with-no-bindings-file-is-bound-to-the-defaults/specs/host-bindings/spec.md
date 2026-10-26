@@ -18,7 +18,12 @@ placed.
 #### Scenario: Status with nothing written
 
 - **WHEN** `tailrace status` runs on a host with no bindings file
-- **THEN** it reads the landing the repository is set up for, over the given landing remote, and each channel's chain from `refs/tailrace/ledger/...` in the repository's own refs, and makes no layout, no key and no file
+- **THEN** it reads the landing the repository is set up for, over the given landing remote, and each channel's chain from `refs/tailrace/ledger/...` fetched from that same remote into the repository's copy, and makes no layout, no key and no file, writing nothing but the fetched refs
+
+#### Scenario: Two machines of one repository with nothing written
+
+- **WHEN** one machine with no bindings file, in a clone whose one remote is `origin`, publishes a version its policy accepts as one host, and a second machine with no bindings file, in another clone of `origin` that never published, runs `tailrace status`
+- **THEN** the second machine shows `beta` at the version the first moved it to, with the same chain
 
 #### Scenario: An empty file
 
@@ -34,16 +39,17 @@ placed.
 
 Each of `[store]`, `[landing]`, `[ledger]`, `[signing]` and `[gate]` the
 file names SHALL bind what it names, exactly as written; each it leaves
-out SHALL bind its given binding (118): the store an OCI layout at
+out SHALL bind its given binding (118): the store the layout at
 `$XDG_DATA_HOME/tailrace/layout`, or `~/.local/share/tailrace/layout`
-(C.2); the ledger the git ref in the repository, with no remote (C.13);
-the signer the given host key (C.8); and the gate told by the host's own
-publish, as `[gate] publish = {}` binds it (130).
+(C.2); the ledger the git ref on the landing's remote, written or
+given, or the repository's own refs where it has none (C.13); the
+signer the given host key (C.8); the gate told by the host's own
+publish (130).
 
 #### Scenario: A registry and nothing else
 
 - **WHEN** the file names `[store] registry` and no other table
-- **THEN** publish writes into that registry, reads the landing the repository is set up for, signs with the given host key, tells the host's own gate, and the gate's promotions are appended to `refs/tailrace/ledger/...` in the repository
+- **THEN** publish writes into that registry, reads the landing the repository is set up for, signs with the given host key, tells the host's own gate, and the gate's promotions are appended to `refs/tailrace/ledger/...` on the given landing remote
 
 #### Scenario: A key service and nothing else
 
@@ -57,13 +63,23 @@ publish, as `[gate] publish = {}` binds it (130).
 
 #### Scenario: A promote with no ledger table
 
-- **WHEN** the file names no `[ledger]` and `tailrace promote` runs
-- **THEN** the promotion is appended to the channel's git ref in the repository the command runs in, read and written with no remote
+- **WHEN** the file names no `[ledger]` and `tailrace promote` runs in a checkout whose one remote is `origin`
+- **THEN** the channel's chain is fetched from `origin` and the promotion is pushed to the channel's git ref there, fast-forward only
+
+#### Scenario: A checkout with no remote and no ledger table
+
+- **WHEN** the file names no `[ledger]` and `tailrace promote` runs in a checkout with no remote
+- **THEN** the promotion is appended to the channel's git ref in the repository the command runs in, and nothing is pushed
 
 #### Scenario: A written landing with no remote
 
-- **WHEN** the file names `[landing] branch = {}` in a checkout whose remote is `origin`
-- **THEN** the landing reads the repository's own branches, and `origin` is not read
+- **WHEN** the file names `[landing] branch = {}` and no `[ledger]`, in a checkout whose remote is `origin`
+- **THEN** the landing reads the repository's own branches, the ledger is the repository's own refs, and `origin` is not read
+
+#### Scenario: A written landing's remote carries the given ledger
+
+- **WHEN** the file names a `[landing]` whose `remote` is `upstream`, and no `[ledger]`
+- **THEN** each channel's chain is fetched from and pushed to `upstream`, never `origin`
 
 ### Requirement: The given landing is sluice where the repository is set up for it
 
@@ -130,9 +146,9 @@ The built binary, on a host with no bindings file, SHALL publish a
 landed revision into the given layout with a host key it makes. Once
 the policy lists the key's `signing.pub` line for provenance only and
 writes no channel, a later landing's publish SHALL be accepted as one
-host and move the given `beta` through the given ledger in the same
-run, and verify SHALL count its provenance (S1, 80, 95, 108, 118,
-C.10).
+host and move the given `beta` through the given ledger, on the
+repository's remote, in the same run, and verify SHALL count its
+provenance (S1, 80, 95, 108, 118, C.10).
 
 #### Scenario: The first publish on a fresh laptop
 
@@ -142,7 +158,7 @@ C.10).
 #### Scenario: beta moves on the next landing
 
 - **WHEN** the repository's policy then lists the host's name with the line `signing.pub` holds, for provenance only, names no other signer and writes no channel, a later revision that changes the component lands, and the built binary runs `tailrace publish` on the same host
-- **THEN** the same run accepts that version, the acceptance saying one host offered and accepted, `beta`'s chain in `refs/tailrace/ledger/` holds one promotion to its index, nothing is pushed to a remote, and the exit code is 0
+- **THEN** the same run accepts that version, the acceptance saying one host offered and accepted, `beta`'s chain in `refs/tailrace/ledger/` holds one promotion to its index, the repository's remote holds the same chain, and the exit code is 0
 
 #### Scenario: Verify after listing the made key
 
@@ -163,7 +179,7 @@ nothing: a file that is there is never guessed past.
 #### Scenario: No file
 
 - **WHEN** `tailrace verify <version>` runs on a host with no bindings file
-- **THEN** it is bound to the given layout, the landing the repository is set up for over the given landing remote, the git ref ledger and the host key verify-only, and no bindings file is written
+- **THEN** it is bound to the given layout, the landing the repository is set up for over the given landing remote, the git ref ledger on that remote and the host key verify-only, and no bindings file is written
 
 #### Scenario: Two landings named
 
@@ -253,8 +269,9 @@ none is named (C.13); or `store`, holding the chain in the store the
 host binds, through a binding of its own that never makes the store
 (C.14). `[ledger]` naming no profile, two, or an option its profile does
 not read SHALL be unreadable naming the table. A file that names no
-`[ledger]` SHALL bind the git ref with no remote; the binding SHALL hold
-no target.
+`[ledger]` SHALL bind the git ref on the remote the landing is bound
+to, written or given, or with no remote where the landing has none
+(118); the binding SHALL hold no target.
 
 #### Scenario: A git ref ledger with a remote
 
@@ -278,5 +295,5 @@ no target.
 
 #### Scenario: No ledger table
 
-- **WHEN** the file names no `[ledger]` and `tailrace promote` runs
-- **THEN** the promotion is appended to `refs/tailrace/ledger/<channel>` in the repository the command runs in, and nothing is pushed to a remote
+- **WHEN** the file names no `[ledger]` and `tailrace promote` runs, the landing bound to the remote `origin`
+- **THEN** the promotion is pushed to `refs/tailrace/ledger/<channel>` on `origin`, after the chain is fetched from it

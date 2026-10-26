@@ -97,7 +97,8 @@ where more than one is declared), `--branch` (by default `main`) and
 and promote the version the channel's head moved from. It SHALL be
 bound by the host's bindings file, its `[signing]` and `[ledger]` or,
 for each it leaves out or where there is no file, the given host key
-and the git ref in the repository (118), never making the store it is
+and the git ref on the landing's remote, or in the repository where the
+landing has none (118), never making the store it is
 bound to. It SHALL print the channel, the version and index moved to
 and from, the promotion claim's digest and its predecessor's, and how
 the store followed, with the store's own answer beside where it was not
@@ -120,5 +121,5 @@ written (33, 57).
 
 #### Scenario: A promote with no ledger or signing written
 
-- **WHEN** `tailrace promote` runs on a host whose file names no `[signing]` and no `[ledger]`
-- **THEN** the promotion is signed by the given host key as the host's name and appended to `refs/tailrace/ledger/<channel>` in the repository the command runs in, and nothing is pushed to a remote
+- **WHEN** `tailrace promote` runs on a host whose file names no `[signing]`, no `[landing]` and no `[ledger]`, in a checkout whose one remote is `origin`
+- **THEN** the promotion is signed by the given host key as the host's name and pushed to `refs/tailrace/ledger/<channel>` on `origin`

@@ -9,11 +9,13 @@ the table it left out. So a person on a laptop has to write a file
 before anything works, and so does every plugin that runs a command for
 them; and even with a file, a laptop's publish cannot move `beta` unless
 the policy names the laptop as its own gate. The statement says
-otherwise (118, as amended at blueprints ab0dfea and 85bbf54; C.10 at
-061bfa8): a host with no such file is bound to a layout under the
-user's own data directory, a host key made on first use, the branch or
-sluice, and the git ref; its landing remote is the checkout's `origin`,
-or its one remote; its publish tells its own gate; and where the policy
+otherwise (118, as amended at blueprints ab0dfea, 85bbf54 and b64d367;
+C.10 at 061bfa8): a host with no such file is bound to a layout under
+the user's own data directory, a host key made on first use, the branch
+or sluice, and the git ref on the landing's own remote, so two machines
+of one repository read one ledger with nothing written; its landing
+remote is the checkout's `origin`, or its one remote; its publish tells
+its own gate; and where the policy
 file names no signer that may claim acceptance, the policy answers the
 host's own signer as the one host 108 admits, so `beta` moves on a
 laptop with nothing written. The file is for pointing a host at a
@@ -35,9 +37,12 @@ true.
     it has no `origin`; the repository's own refs where it has no remote
     at all; and unreadable, naming every remote it has, where it has
     several and none is `origin` (118);
-  - the ledger: the git ref, `refs/tailrace/ledger/...`, in the
-    repository the command runs in, read and written with no remote, so
-    nothing is pushed anywhere (C.13);
+  - the ledger: the git ref, `refs/tailrace/ledger/...`, on the
+    landing's own remote, fetched from it before each read and pushed to
+    it on each append as the branch is, so a second machine of the same
+    repository reads the chain the first appended; where the landing has
+    no remote, the repository's own refs, where it keeps its branch, and
+    nothing is pushed (C.13);
   - the signer: a host key at `signing` beside where the bindings file
     would be, `$XDG_CONFIG_HOME/tailrace/signing` or
     `~/.config/tailrace/signing`, made the first time a claim is signed
@@ -48,7 +53,8 @@ true.
   `[store]`, `[landing]`, `[ledger]`, `[signing]` and `[gate]` the file
   names binds what it names, exactly as written, a `[landing]` without a
   `remote` still reading the repository's own refs; each it leaves out
-  binds the given binding above. An empty file binds them all. A broken
+  binds the given binding above, a `[ledger]` left out following
+  whatever remote the landing is bound to, written or given. An empty file binds them all. A broken
   file, or a table that names no profile or two, is still unreadable
   naming it (58, 59, core.19): nothing about a file that is there is
   guessed.
@@ -114,8 +120,9 @@ Out of scope:
   made and that their policy must list it before its claims count. The
   site's signer page says how. A later change can add that line to the
   answer if the user wants it.
-- A registry, a key service or a shared ledger as a default. The
-  statement keeps those for the file.
+- A registry, a key service, or a ledger held anywhere but the
+  landing's remote, as a default. The statement keeps those for the
+  file.
 
 ## Capabilities
 
@@ -128,8 +135,9 @@ None.
 - `host-bindings`: a missing file and a missing table bind the given
   bindings instead of answering absent; the landing is chosen by
   whether the repository is set up for sluice and reads the checkout's
-  one remote or `origin`; status and the serving name are bound the
-  same way; a laptop with nothing written publishes and moves `beta`.
+  one remote or `origin`; the given ledger is kept on the landing's
+  remote; status and the serving name are bound the same way; a laptop
+  with nothing written publishes and moves `beta`.
 - `host-key-signer`: the host's given key is made on first use, with its
   public half beside it, and its signer's name is the host's.
 - `policy-file`: where `[signers]` names no signer that may claim
@@ -146,7 +154,8 @@ None.
   the second, status-only binding of a host with no file goes.
 - `crates/tailrace/src/profiles/{store,landing,ledger,signer}/mod.rs`:
   each family gives its given binding, so the bindings module still
-  names no tool (core.1); the landing family gives the given remote.
+  names no tool (core.1); the landing family gives the given remote,
+  and the ledger family's given git ref takes the landing's remote.
 - `crates/tailrace/src/profiles/signer/host_key/`: a host key that makes
   its key on first sign.
 - `crates/tailrace/src/profiles/policy/file/`: the given gate, where
