@@ -71,8 +71,10 @@ provenance signed in the publisher's own identity, carrying the landing's
 verdicts for that build exactly as the landing made them, and puts the
 version's index last, once every artifact and its claims are held. Each
 version carries its notes: git-cliff, the version rule's own tool,
-renders the commits the version was derived from, and the notes are an
-artifact the index names, with one provenance of the publisher's.
+renders the commits the version was derived from under the repository's
+own `cliff.toml` at that revision, or git-cliff's default where it keeps
+none, since tailrace imposes no template, and the notes are an artifact
+the index names, with one provenance of the publisher's.
 `tailrace publish`, `tailrace status` and `tailrace verify` show them
 beside the version. A publish accepts nothing and moves no channel;
 acceptance is the gate's. `tailrace verify` reads a version's
