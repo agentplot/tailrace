@@ -1,18 +1,24 @@
 //! Consumer layouts rendered under a policy, over the fakes (design D2
 //! to D7).
 
+use std::fs;
+use std::path::PathBuf;
+
 use serde_json::json;
+use tailrace_core::render::Kept;
 use tailrace_core::{
-    artifact_name, judge, layout_policy_body, locate, own_policy, policy_for, Carried, Landed,
-    Located, Own, PolicyOf, Provenance, ARTIFACT,
+    artifact_name, judge, layout_policy_body, locate, own_policy, place, policy_for, refresh,
+    render, Carried, HeldEntry, HeldPin, Landed, Layouts, Located, Own, PinAnswer, PolicyOf,
+    Provenance, Refresh, RenderAsk, Under, ARTIFACT,
 };
-use tailrace_fakes::{Fakes, Fault, PolicyOp, StoreOp, Times};
+use tailrace_fakes::{FakeProjection, Fakes, Fault, PolicyOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName,
     Digest, Ecosystem, EcosystemName, Envelope, IndexMeta, Manifest, Name, NamedSigner, Not,
     Outcome, OutputName, Pinned, Required, RequiredClaim, Revision, Seam, Signer, SignerId, Store,
     Verdict, Version, Why,
 };
+use tempfile::TempDir;
 
 const ECO: &str = "eco";
 
@@ -757,4 +763,317 @@ fn a_signer_that_cannot_say_is_the_outer_answer() {
         judge(&fakes.seams(), &[acceptance()], &located, &[gates], &[]),
         Err(Not::Unreadable(u)) if u.said.as_deref() == Some("key service down")
     ));
+}
+
+/// A checkout's working tree and its record, each in a temporary
+/// directory, over fakes binding the ecosystem's projection, with
+/// `pkg 1.1.0` published and accepted by the gate.
+struct Checkout {
+    fakes: Fakes,
+    projection: FakeProjection,
+    _dir: TempDir,
+    tree: PathBuf,
+    layouts: Layouts,
+    pkg: Located,
+}
+
+impl Checkout {
+    fn new() -> Checkout {
+        let mut fakes = Fakes::new();
+        let projection = fakes.projection(&eco());
+        let dir = TempDir::new().unwrap();
+        let tree = dir.path().join("checkout");
+        fs::create_dir_all(&tree).unwrap();
+        let layouts = Layouts::open(dir.path().join("git").join("tailrace").join("layouts"));
+        let pkg = published(&fakes.store, "pkg", "1.1.0");
+        let gates = signed(&pkg.index, ClaimKind::Acceptance, json!(null), GATE);
+        fakes.store.attach(&pkg.index, &gates).unwrap();
+        Checkout {
+            fakes,
+            projection,
+            _dir: dir,
+            tree,
+            layouts,
+            pkg,
+        }
+    }
+
+    /// The layout of `pins` asked under the consumer's own policy
+    /// requiring `claims`, at `when`.
+    fn ask(&self, pins: &[Pinned], claims: Vec<RequiredClaim>, when: u64) -> RenderAsk {
+        RenderAsk {
+            ecosystem: eco(),
+            pins: pins.to_vec(),
+            own: Some(Own {
+                revision: Revision::new("4f2a9c1"),
+                claims,
+            }),
+            trusted: vec![],
+            tree: self.tree.clone(),
+            when,
+        }
+    }
+
+    fn at(&self) -> String {
+        place(&self.tree, &eco()).display().to_string()
+    }
+
+    /// The artifacts each render of the projection was given, by
+    /// version, one list per render.
+    fn renders(&self) -> Vec<Vec<String>> {
+        self.projection
+            .renders()
+            .into_iter()
+            .map(|(at, artifacts)| {
+                assert_eq!(at, self.at(), "a render at another place");
+                artifacts
+                    .iter()
+                    .map(|a| format!("{} {}", a.meta.name(), a.meta.version()))
+                    .collect()
+            })
+            .collect()
+    }
+}
+
+fn own() -> Option<PolicyOf> {
+    Some(PolicyOf::Own {
+        revision: Revision::new("4f2a9c1"),
+    })
+}
+
+#[test]
+fn a_layout_holds_what_the_policy_admits_at_its_place_ignored_by_git() {
+    let checkout = Checkout::new();
+    let pins = [pin("pkg", "1.1.0")];
+    let refreshed = render(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.ask(&pins, vec![acceptance()], 1_767_225_600),
+    )
+    .unwrap();
+    assert_eq!(
+        refreshed.at,
+        checkout
+            .tree
+            .join(".tailrace/layouts/eco")
+            .display()
+            .to_string()
+    );
+    assert_eq!(refreshed.rendered_at, 1_767_225_600);
+    assert_eq!(
+        refreshed.policy,
+        Under::Own {
+            revision: Revision::new("4f2a9c1")
+        }
+    );
+    assert_eq!(
+        refreshed.pins,
+        [PinAnswer {
+            pin: pin("pkg", "1.1.0"),
+            policy: own(),
+            answer: Ok(HeldPin {
+                index: checkout.pkg.index.clone(),
+                artifact: checkout.pkg.artifact.digest.clone(),
+                expired: vec![],
+            }),
+        }]
+    );
+    assert_eq!(checkout.renders(), [vec!["pkg 1.1.0".to_string()]]);
+    assert_eq!(
+        fs::read_to_string(checkout.tree.join(".tailrace/.gitignore")).unwrap(),
+        "*\n"
+    );
+}
+
+#[test]
+fn a_third_party_pin_is_absent_and_the_rest_is_rendered() {
+    let checkout = Checkout::new();
+    let pins = [pin("left-pad", "1.3.0"), pin("pkg", "1.1.0")];
+    let refreshed = render(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.ask(&pins, vec![acceptance()], 1),
+    )
+    .unwrap();
+    match &refreshed.pins[0].answer {
+        Err(Not::Absent(a)) => assert_eq!(a.what, "name artifact/eco/left-pad@1.3.0"),
+        other => panic!("the third-party pin answered {other:?}"),
+    }
+    assert_eq!(refreshed.pins[0].policy, None);
+    assert!(refreshed.pins[1].answer.is_ok(), "{refreshed:?}");
+    assert_eq!(checkout.renders(), [vec!["pkg 1.1.0".to_string()]]);
+    let asked: Vec<String> = checkout
+        .fakes
+        .store
+        .calls()
+        .into_iter()
+        .filter(|c| c.op == StoreOp::Resolve)
+        .map(|c| c.given["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        asked,
+        ["artifact/eco/left-pad@1.3.0", "artifact/eco/pkg@1.1.0"]
+    );
+}
+
+#[test]
+fn a_version_refused_now_leaves_the_layout() {
+    let checkout = Checkout::new();
+    let seams = checkout.fakes.seams();
+    let pins = [pin("pkg", "1.1.0")];
+    render(
+        &seams,
+        &checkout.layouts,
+        &checkout.ask(&pins, vec![acceptance()], 1),
+    )
+    .unwrap();
+    let again = render(
+        &seams,
+        &checkout.layouts,
+        &checkout.ask(&pins, vec![acceptance(), provenance()], 2),
+    )
+    .unwrap();
+    match &again.pins[0].answer {
+        Err(Not::Refused(r)) => assert_eq!(
+            r.why,
+            Why::Wanting {
+                version: checkout.pkg.artifact.meta.clone(),
+                index: checkout.pkg.index.clone(),
+                wanting: provenance(),
+                checked: vec![SignerId::new(HOST)],
+            }
+        ),
+        other => panic!("the version answered {other:?}"),
+    }
+    assert_eq!(again.pins[0].policy, own());
+    assert_eq!(
+        checkout.renders(),
+        [vec!["pkg 1.1.0".to_string()], vec![]],
+        "the refused version stayed in the layout"
+    );
+}
+
+#[test]
+fn a_store_that_cannot_be_reached_leaves_the_layout_as_it_was() {
+    let checkout = Checkout::new();
+    let seams = checkout.fakes.seams();
+    let pins = [pin("pkg", "1.1.0")];
+    let first = refresh(
+        &seams,
+        &checkout.layouts,
+        &checkout.ask(&pins, vec![acceptance()], 1_767_225_600),
+    );
+    assert!(matches!(first, Ok(Refresh::Refreshed(_))), "{first:?}");
+    let record = fs::read(checkout.layouts.path(&eco())).unwrap();
+
+    checkout.fakes.store.fault(
+        StoreOp::Resolve,
+        Fault::Unreadable("connection refused".into()),
+        Times::UntilHealed,
+    );
+    let second = refresh(
+        &seams,
+        &checkout.layouts,
+        &checkout.ask(&pins, vec![acceptance()], 1_767_312_000),
+    )
+    .unwrap();
+    let Refresh::Kept(Kept {
+        at,
+        holds,
+        rendered_at,
+        policy,
+        because,
+    }) = second
+    else {
+        panic!("an unreachable store refreshed the layout: {second:?}")
+    };
+    assert_eq!(at, checkout.at());
+    assert_eq!(
+        holds,
+        [HeldEntry {
+            name: EcosystemName::new("pkg"),
+            version: Version::new("1.1.0"),
+            index: checkout.pkg.index.clone(),
+            artifact: checkout.pkg.artifact.digest.clone(),
+            policy: own().unwrap(),
+        }]
+    );
+    assert_eq!(rendered_at, Some(1_767_225_600));
+    assert_eq!(
+        policy,
+        Some(Under::Own {
+            revision: Revision::new("4f2a9c1")
+        })
+    );
+    assert!(
+        matches!(&because, Not::Unreadable(u) if u.said.as_deref() == Some("connection refused")),
+        "{because:?}"
+    );
+    assert_eq!(checkout.renders().len(), 1, "the projection rendered again");
+    assert_eq!(
+        fs::read(checkout.layouts.path(&eco())).unwrap(),
+        record,
+        "the record was written again"
+    );
+}
+
+#[test]
+fn a_layout_never_rendered_and_unreachable_holds_nothing() {
+    let checkout = Checkout::new();
+    checkout.fakes.store.fault(
+        StoreOp::Resolve,
+        Fault::Unreadable("connection refused".into()),
+        Times::UntilHealed,
+    );
+    let answer = refresh(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.ask(&[pin("pkg", "1.1.0")], vec![acceptance()], 1),
+    )
+    .unwrap();
+    let Refresh::Kept(kept) = answer else {
+        panic!("an unreachable store refreshed the layout: {answer:?}")
+    };
+    assert_eq!(
+        (kept.holds, kept.rendered_at, kept.policy),
+        (vec![], None, None)
+    );
+    assert!(matches!(kept.because, Not::Unreadable(_)));
+    assert!(
+        checkout
+            .projection
+            .calls()
+            .iter()
+            .all(|c| c.op != ProjectionOp::Render),
+        "the projection was asked to render"
+    );
+    assert!(!checkout.layouts.path(&eco()).exists());
+    assert!(
+        !checkout.tree.join(".tailrace").exists(),
+        "a write was made"
+    );
+}
+
+#[test]
+fn a_render_that_fails_leaves_the_record_as_it_was() {
+    let checkout = Checkout::new();
+    let seams = checkout.fakes.seams();
+    let pins = [pin("pkg", "1.1.0")];
+    refresh(
+        &seams,
+        &checkout.layouts,
+        &checkout.ask(&pins, vec![acceptance()], 1),
+    )
+    .unwrap();
+    checkout.projection.fault(
+        ProjectionOp::Render,
+        Fault::Unreadable("disk full".into()),
+        Times::Once,
+    );
+    let answer = refresh(&seams, &checkout.layouts, &checkout.ask(&pins, vec![], 2)).unwrap();
+    let Refresh::Kept(kept) = answer else {
+        panic!("a failed render refreshed the layout: {answer:?}")
+    };
+    assert_eq!(kept.rendered_at, Some(1));
+    assert!(matches!(&kept.because, Not::Unreadable(u) if u.said.as_deref() == Some("disk full")));
 }
