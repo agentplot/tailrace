@@ -13,11 +13,13 @@
 //! cache entries answer absent naming them, and read and write nothing
 //! (84, 85). Its render of artifacts and serve are not built and answer
 //! absent. An image has no lockfile, so pinned answers absent naming the
-//! lockfile for every checkout, and reads nothing (137).
+//! lockfile for every checkout, and reads nothing (137). An image has no
+//! manifest either, so requires and satisfying answer none, an empty
+//! list, and read nothing (140).
 
 use tailrace_seams::{
-    no_cache_entries, no_lockfile, Answer, BuildId, Contents, Layout, Not, Output, Packed, Pinned,
-    Projection, Rendered, Seam, Serving, Source, Version, Why,
+    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Not, Output,
+    Packed, Pinned, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Version, Why,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -234,6 +236,18 @@ impl Projection for ImageProjection {
     fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
         Err(no_lockfile(&ImageProjection::source()))
     }
+
+    /// 140: none for every artifact, since an image has no manifest; it
+    /// reads nothing.
+    fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
+        Ok(Vec::new())
+    }
+
+    /// 140: none for any range and any versions, since an image has no
+    /// manifest to require a range.
+    fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
+        Ok(Vec::new())
+    }
 }
 
 #[cfg(test)]
@@ -402,6 +416,30 @@ mod tests {
         assert!(Path::new(&output.files[0]).exists());
         let held: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
         assert_eq!(held.len(), 1, "pinned wrote into the checkout");
+    }
+
+    #[test]
+    fn what_an_artifact_requires_and_which_versions_satisfy_a_range_are_none() {
+        let dir = TempDir::new().unwrap();
+        let output = api(dir.path(), &fixture::archive());
+        let held = Artifact {
+            digest: Digest::of(&fixture::archive()),
+            meta: ArtifactMeta::new(
+                Ecosystem::new("image"),
+                EcosystemName::new("api"),
+                Version::new("0.3.0"),
+            )
+            .unwrap(),
+        };
+        assert_eq!(ImageProjection.requires(&held), Ok(vec![]));
+        let versions = [Version::new("0.3.0"), Version::new("0.10.0")];
+        assert_eq!(
+            ImageProjection.satisfying(&Range::new("^0.3"), &versions),
+            Ok(vec![])
+        );
+        assert_eq!(fs::read(&output.files[0]).unwrap(), fixture::archive());
+        let held: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(held.len(), 1, "requires or satisfying wrote");
     }
 
     #[test]

@@ -14,9 +14,9 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
     Digest, Ecosystem, EcosystemName, Envelope, Environment, EnvironmentName, Keeper, Landing,
-    NamedSigner, Outcome, Output, OutputName, Pinned, Policy, Projection, Report, Required,
-    Revision, Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version,
-    IN_TOTO,
+    NamedSigner, Outcome, Output, OutputName, Pinned, Policy, Projection, Range, Report, Required,
+    Requirement, Revision, Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified,
+    Version, IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
@@ -508,6 +508,40 @@ impl ProjectionRig for FakeProjectionRig {
         (at.into(), pins)
     }
 
+    fn has_manifest(&self) -> bool {
+        true
+    }
+
+    /// The second of [`ProjectionRig::artifacts`], its manifest set to
+    /// require a scoped name with a caret range and a plain name with a
+    /// range carrying a prerelease, as a manifest spells them.
+    fn held(&self) -> (Artifact, Vec<Requirement>) {
+        let held = self.artifacts(2).remove(1);
+        let requirements = vec![
+            Requirement {
+                name: EcosystemName::new("@scope/lib"),
+                range: Range::new("^1.2.0"),
+            },
+            Requirement {
+                name: EcosystemName::new("left-pad"),
+                range: Range::new(">=1.2.0-rc.1 <2"),
+            },
+        ];
+        self.projection.manifest(&held.digest, &requirements);
+        (held, requirements)
+    }
+
+    /// `^1.2` over versions listed out of order, which Semantic
+    /// Versioning orders `1.10.0` above `1.9.0` and spelling below it.
+    fn ranged(&self) -> (Range, Vec<Version>, Vec<Version>) {
+        let versions = |spelled: &[&str]| spelled.iter().map(|v| Version::new(*v)).collect();
+        (
+            Range::new("^1.2"),
+            versions(&["1.9.0", "2.0.0", "1.10.0", "1.2.0", "1.1.9"]),
+            versions(&["1.10.0", "1.9.0", "1.2.0"]),
+        )
+    }
+
     fn unreachable(&self) -> String {
         let projection = &self.projection;
         unreachable(
@@ -517,6 +551,8 @@ impl ProjectionRig for FakeProjectionRig {
                 ProjectionOp::Render,
                 ProjectionOp::Serve,
                 ProjectionOp::Pinned,
+                ProjectionOp::Requires,
+                ProjectionOp::Satisfying,
             ],
         )
     }

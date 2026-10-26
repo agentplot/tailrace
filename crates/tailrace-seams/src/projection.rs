@@ -1,6 +1,8 @@
 //! B.6 A projection: an artifact, or a cache entry, in one ecosystem's
-//! own form, as that ecosystem's clients read it, and the versions a
-//! checkout's lockfile pins in it (84 to 87, 137).
+//! own form, as that ecosystem's clients read it, the versions a
+//! checkout's lockfile pins in it (84 to 87, 137), and what a held
+//! version's manifest requires and which versions satisfy a range, by
+//! the ecosystem's own rules (140).
 
 use serde::{Deserialize, Serialize};
 
@@ -73,6 +75,20 @@ pub struct Pinned {
     pub version: Version,
 }
 
+text! {
+    /// 140: a range of versions, as the manifest that requires it spells
+    /// it.
+    Range
+}
+
+/// 140: a name of the ecosystem a held version's manifest requires, and
+/// the range it requires of it, each as the manifest spells it.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct Requirement {
+    pub name: EcosystemName,
+    pub range: Range,
+}
+
 /// 84, 85: what a projection that packs no cache entries answers for
 /// one: absent, never refused or unreadable (58).
 pub fn no_cache_entries(source: &Source) -> Not {
@@ -115,6 +131,25 @@ pub trait Projection {
     /// checkout alone: the store, the policy and a version's claims are
     /// the core's (rule core.2).
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>>;
+
+    /// 140: every name of the ecosystem the manifest of `held`, an
+    /// artifact a layout holds, requires, with the range it requires of
+    /// it, as the manifest spells them, in the order it gives them.
+    /// Which of those names the family publishes is the store's listing
+    /// to say, not the projection's. A projection with a manifest reads
+    /// the artifact's bytes through the store seam it was bound with,
+    /// never from a layout (48, rule core.2). An ecosystem with no
+    /// manifest answers none, an empty list, reading nothing, and never
+    /// absent.
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>>;
+
+    /// 140: those of `versions` that satisfy `range` by the ecosystem's
+    /// own rules, newest first by the ecosystem's own ordering, never by
+    /// spelling or by the order given (23), so the core learns both
+    /// which satisfy and which is newest from this one answer. An
+    /// ecosystem with no manifest answers none, an empty list, and never
+    /// absent.
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>>;
 }
 
 #[cfg(test)]
@@ -179,6 +214,19 @@ mod tests {
         assert_eq!(json["name"], "@scope/pkg", "{json}");
         assert_eq!(json["version"], "1.0.0-rc.1+build.7", "{json}");
         round_trip(vec![pin.clone(), pin]);
+    }
+
+    #[test]
+    fn a_requirement_round_trips_as_the_manifest_spells_it() {
+        let requirement = Requirement {
+            name: EcosystemName::new("@scope/pkg"),
+            range: Range::new(">=1.2.0-rc.1 <2"),
+        };
+        round_trip(requirement.clone());
+        let json = serde_json::to_value(&requirement).unwrap();
+        assert_eq!(json["name"], "@scope/pkg", "{json}");
+        assert_eq!(json["range"], ">=1.2.0-rc.1 <2", "{json}");
+        round_trip(vec![requirement.clone(), requirement]);
     }
 
     #[test]

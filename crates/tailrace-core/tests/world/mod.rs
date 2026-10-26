@@ -10,10 +10,10 @@ use serde_json::json;
 use tailrace_core::{publish, Ask, Entry, History, Kept, Publish, Published, NOTES, POLICY_FILE};
 use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
-    Answer, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem,
-    Envelope, Held, IndexMeta, Layout, Manifest, Name, Outcome, Output, OutputName, Packed, Pinned,
-    Projection, Put, Rendered, Report, Revision, Seam, Serving, SignerId, Source, Store, Verdict,
-    Version,
+    Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest,
+    Ecosystem, Envelope, Held, IndexMeta, Layout, Manifest, Name, Outcome, Output, OutputName,
+    Packed, Pinned, Projection, Put, Range, Rendered, Report, Requirement, Revision, Seam, Serving,
+    SignerId, Source, Store, Verdict, Version,
 };
 
 use crate::common::{Fixture, Repo, CLIFF_TOML};
@@ -236,6 +236,14 @@ impl<T, F: Fn() -> T> Projection for Watched<T, F> {
 
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
         self.inner.pinned(checkout)
+    }
+
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        self.inner.requires(held)
+    }
+
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        self.inner.satisfying(range, versions)
     }
 }
 

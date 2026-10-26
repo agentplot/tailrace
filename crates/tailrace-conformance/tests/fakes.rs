@@ -112,10 +112,13 @@ fn the_fake_projection_keeps_a_projections_contract() {
     report.assert();
     assert_eq!(
         inapplicable(&report),
-        [(
-            "a projection that packs no cache entries",
-            "the projection packs cache entries"
-        )],
+        [
+            (
+                "a projection that packs no cache entries",
+                "the projection packs cache entries"
+            ),
+            ("no manifest, none", "the ecosystem has a manifest")
+        ],
         "{report}"
     );
 }
@@ -136,7 +139,8 @@ fn a_fake_projection_packing_no_cache_entries_keeps_a_projections_contract() {
             (
                 "a layout of the build identities given",
                 "the projection packs no cache entries"
-            )
+            ),
+            ("no manifest, none", "the ecosystem has a manifest")
         ],
         "{report}"
     );

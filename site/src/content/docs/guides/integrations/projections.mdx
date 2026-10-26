@@ -13,7 +13,7 @@ at once, by the repository's authors (92).
 
 ## The contract
 
-The seam is four operations (84 to 86, 137). **pack** takes an output at a
+The seam is six operations (84 to 86, 137, 140). **pack** takes an output at a
 build identity and, where the bytes are an artifact's, the version, and
 answers the ecosystem's own bytes for it and the metadata the ecosystem
 gives them. A cache entry packs with no version, and its bytes carry no
@@ -24,7 +24,14 @@ build identities, it holds. **serve** takes a consumer layout and answers
 the ecosystem's own clients over the protocol they read, for an ecosystem
 whose clients read no files. **pinned** takes a checkout and answers the
 names and versions its lockfile pins, as the lockfile spells them, or
-absent where it holds no lockfile of the ecosystem. The same outputs and the same version, or
+absent where it holds no lockfile of the ecosystem. **requires** takes the
+artifact of a version a layout holds and answers the names of the
+ecosystem its manifest requires, each with the range it requires, as the
+manifest spells them. **satisfying** takes a range and some versions and
+answers those that satisfy the range, newest first by the ecosystem's own
+ordering, never by spelling or by the order given (23). An ecosystem with
+no manifest, a file, an image or moon's cache, answers both with none, an
+empty list, and never absent. The same outputs and the same version, or
 the same build identity, pack to the same bytes, or the projection says
 it cannot promise so (87). A projection that packs no cache entries
 answers absent for one, as the file and image projections do. A layout
