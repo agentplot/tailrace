@@ -234,6 +234,15 @@ fn offered(world: &FakeWorld) -> Published {
     offered_under(world, acceptance())
 }
 
+/// Told by `published`, a publish's answer naming the index it offered
+/// (95).
+fn told(published: &Published) -> ToldBy {
+    let (_, index) = version_of(published);
+    ToldBy::Publish {
+        index: index.clone(),
+    }
+}
+
 fn revision_of(published: &Published) -> Revision {
     match published {
         Published::Version { revision, .. } => revision.clone(),
@@ -402,7 +411,7 @@ fn a_version_accepted_and_beta_moved(world: &FakeWorld) {
     let (acceptance, already, _, channels) = accepted(accept(
         &seams,
         &world.history(),
-        &world.gate_ask(VERSION, ToldBy::Publish, GATE),
+        &world.gate_ask(VERSION, told(&published), GATE),
     ));
     assert!(!already, "a version never judged was accepted already");
 
@@ -478,7 +487,7 @@ fn a_verdict_from_a_signer_the_policy_does_not_name(world: &FakeWorld) {
     let written = world.writes().len();
 
     let (artifact, wanting, why) =
-        refused(world.judge(&world.gate_ask(VERSION, ToldBy::Publish, GATE), &[GATE]));
+        refused(world.judge(&world.gate_ask(VERSION, told(&published), GATE), &[GATE]));
     assert_eq!(
         artifact,
         artifacts(&published)[0].0,
@@ -525,7 +534,7 @@ fn a_thiefs_acceptance(world: &FakeWorld) {
     );
 
     // The thief holds the build host's key alone.
-    let (_, _, why) = refused(world.judge(&world.gate_ask(VERSION, ToldBy::Publish, HOST), &[]));
+    let (_, _, why) = refused(world.judge(&world.gate_ask(VERSION, told(&published), HOST), &[]));
     assert_eq!(
         why,
         WhyWanting::OfferedByGate {
@@ -569,7 +578,7 @@ fn a_build_host_running_the_gate(world: &FakeWorld) {
     let published = offered(world);
     let written = world.writes().len();
     let (artifact, wanting, why) =
-        refused(world.judge(&world.gate_ask(VERSION, ToldBy::Publish, HOST), &[]));
+        refused(world.judge(&world.gate_ask(VERSION, told(&published), HOST), &[]));
     assert_eq!(artifact, artifacts(&published)[0].0);
     assert_eq!(wanting.kind, ClaimKind::Provenance);
     assert_eq!(
@@ -587,7 +596,7 @@ fn a_host_with_no_gate_key(world: &FakeWorld) {
     let published = offered(world);
     let (_, index) = version_of(&published);
     let written = world.writes().len();
-    let answer = world.judge(&world.gate_ask(VERSION, ToldBy::Publish, GATE), &[]);
+    let answer = world.judge(&world.gate_ask(VERSION, told(&published), GATE), &[]);
     let Err(Not::Absent(a)) = &answer else {
         panic!("a host with no gate key answered {answer:?}")
     };
@@ -673,7 +682,7 @@ fn one_artifact_wanting_refuses_the_version(world: &FakeWorld) {
         .expect("the server was offered");
 
     let (artifact, wanting, why) =
-        refused(world.judge(&world.gate_ask(VERSION, ToldBy::Publish, GATE), &[GATE]));
+        refused(world.judge(&world.gate_ask(VERSION, told(&published), GATE), &[GATE]));
     assert_eq!(artifact, server, "the refusal names another artifact");
     assert_eq!(wanting, test_from_the_landing());
     assert_eq!(why, WhyWanting::Missing);
@@ -700,7 +709,7 @@ fn judged_by_the_claims_the_landing_and_the_policy_alone(world: &FakeWorld) {
     let answer = accept(
         &seams,
         &world.history(),
-        &world.gate_ask(VERSION, ToldBy::Publish, GATE),
+        &world.gate_ask(VERSION, told(&published), GATE),
     );
     let Err(Not::Refused(r)) = &answer else {
         panic!("a version whose revision did not land answered {answer:?}")
