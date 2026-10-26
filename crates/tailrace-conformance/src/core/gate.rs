@@ -252,9 +252,9 @@ fn require(world: &FakeWorld, required: Required) {
     policy.follows(&beta(), false);
 }
 
-/// The policy file landed, each output built and
-/// given `verdicts` at that revision, `required` for acceptance, and the
-/// revision published.
+/// The policy file landed, each output built and given `verdicts` at
+/// that revision, the cache entries they pass on pushed, `required` for
+/// acceptance, and the revision published.
 fn offered_with(
     world: &FakeWorld,
     required: Required,
@@ -263,6 +263,7 @@ fn offered_with(
     let revision = world.land_policy(POLICY);
     let verdicts = verdicts(&revision);
     world.land(&revision, &verdicts);
+    world.pushed(&verdicts);
     world.outputs(
         &revision,
         &[("site", Outcome::Pass), ("server", Outcome::Pass)],

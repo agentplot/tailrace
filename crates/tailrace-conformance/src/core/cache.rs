@@ -17,7 +17,7 @@ use tailrace_seams::{
     Revision, Serving, SignerId, Store, Verdict, Version, Why,
 };
 
-use crate::core::publish::{one, passing, version_of};
+use crate::core::publish::{landed, one, passing, version_of};
 use crate::world::{build_of, FakeWorld, Write, FILE, HOST, LANDING};
 use crate::{ok, Scenario};
 
@@ -108,7 +108,7 @@ fn output(name: &str, revision: &Revision) -> Output {
 /// `revision` landed with passing verdicts on both outputs, and each
 /// output's cache entry written at its build identity; the entries.
 fn written(world: &FakeWorld, revision: &Revision) -> Vec<CacheEntry> {
-    passing(world, revision);
+    landed(world, revision);
     OUTPUTS
         .iter()
         .map(|o| {
@@ -175,7 +175,7 @@ fn second_host(world: &FakeWorld) -> FakeWorld {
 fn written_on_one_host_read_on_another(world: &FakeWorld) {
     let entries = written(world, &world.start);
     let second = second_host(world);
-    passing(&second, &world.start);
+    landed(&second, &world.start);
     let answer = synced(&second, &world.start);
 
     let expected: Vec<Vec<(String, String)>> = entries
@@ -213,7 +213,7 @@ fn an_entry_held_already(world: &FakeWorld) {
     let entries = written(world, &world.start);
     let names = world.fakes.store.contents().names;
     let second = second_host(world);
-    passing(&second, &world.start);
+    landed(&second, &world.start);
     for projection in second.fakes.projections.values() {
         projection.unsteady();
     }
@@ -450,10 +450,10 @@ fn a_removed_entry_builds_again(world: &FakeWorld) {
     }
 }
 
-/// `revision` landed with the verdicts `passing` records, both passing,
+/// `revision` landed with the verdicts `landed` records, both passing,
 /// and a third failing on a build identity of its own; every verdict.
 fn landed_with_a_failure(world: &FakeWorld, revision: &Revision) -> Vec<Verdict> {
-    let mut verdicts = passing(world, revision);
+    let mut verdicts = landed(world, revision);
     let failed = world.verdict(
         revision,
         "lint",
@@ -539,7 +539,7 @@ fn a_landings_archives_pushed_and_synced_on_another_host(world: &FakeWorld) {
 }
 
 fn a_push_of_a_revision_not_landed(world: &FakeWorld) {
-    passing(world, &world.start);
+    landed(world, &world.start);
     let asked = world.asked();
     let answer = push(&world.seams(), &push_ask(world, &world.head));
     match answer {
@@ -561,7 +561,7 @@ fn a_push_of_a_revision_not_landed(world: &FakeWorld) {
 }
 
 fn a_push_repeated_writes_nothing(world: &FakeWorld) {
-    passing(world, &world.start);
+    landed(world, &world.start);
     let first = pushed(world, &world.start);
     let held = world.fakes.store.contents();
     let second = pushed(world, &world.start);
@@ -588,7 +588,7 @@ fn a_push_repeated_writes_nothing(world: &FakeWorld) {
 }
 
 fn an_archive_not_on_the_pushing_host(world: &FakeWorld) {
-    passing(world, &world.start);
+    landed(world, &world.start);
     let (gone, kept) = (
         build_of("site", &world.start),
         build_of("server", &world.start),
@@ -622,7 +622,7 @@ fn an_archive_not_on_the_pushing_host(world: &FakeWorld) {
 }
 
 fn a_push_offers_and_keeps_nothing(world: &FakeWorld) {
-    passing(world, &world.start);
+    landed(world, &world.start);
     let kept = world.kept();
     ok(
         kept.write(&Entry {

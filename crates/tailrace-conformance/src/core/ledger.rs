@@ -270,7 +270,7 @@ fn chain_of(world: &FakeWorld, channel: &ChannelId) -> Vec<Promotion> {
 }
 
 /// A keeper that records, when it is asked to append, how many writes the
-/// store had been asked by then.
+/// store had been asked by then, the world's own among them.
 struct Watching {
     inner: FakeKeeper,
     store: FakeStore,
@@ -324,7 +324,8 @@ fn s6_a_version_promoted_to_stable(world: &FakeWorld) {
     };
     let at = at.get().expect("the ledger was asked to append");
     assert_eq!(
-        at, before,
+        at,
+        before + world.seeded(),
         "the store was written before the ledger held the move"
     );
     let writes = world.writes().split_off(before);
