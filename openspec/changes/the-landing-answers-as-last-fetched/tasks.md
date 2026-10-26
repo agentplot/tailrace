@@ -18,7 +18,7 @@ Every command runs inside `devenv shell -- <command>`.
 ## 3. The core: a landed revision says how it was read
 
 - [x] 3.1 In `crates/tailrace-core/src/landed.rs`, give `Landed` its `read` and `read()`, and make `Landed::check` answer a yes from either read, `NotLanded` for a no from the landing itself and `NotLandedAsFetched` with the remote's words for a no from the copy (design D5); unit tests for all three: `moon run core:test`
-- [ ] 3.2 In `publish.rs`, take `.verdicts` from verdicts-of's answer; tests in `crates/tailrace-core/tests/publish.rs` for the publishing delta's two new scenarios, no seam but the landing asked on the refusal and the published answer equal to a world's whose landing answers from itself: `moon run core:test`
+- [x] 3.2 In `publish.rs`, take `.verdicts` from verdicts-of's answer; tests in `crates/tailrace-core/tests/publish.rs` for the publishing delta's two new scenarios, no seam but the landing asked on the refusal and the published answer equal to a world's whose landing answers from itself: `moon run core:test`
 - [ ] 3.3 In `status.rs`, give `Channels` its `landing: Read` from the landed head (design D6); tests in `crates/tailrace-core/tests/status.rs` for the channel-status delta's scenarios over the fakes, the channels shown and the read carried, and the head refused from a copy as the channels' part's refusal with the record's part answering: `moon run core:test`
 - [x] 3.4 Bring every other test of `crates/tailrace-core/tests/` that calls the landing or matches `NotLanded` to the new answers: `moon run core:test`
 
