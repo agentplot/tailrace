@@ -9,23 +9,27 @@ repository, with the ecosystem's own bytes, their metadata only where a
 version was given, and whether the same outputs and version, or the same
 build identity, pack to the same bytes (84, 87, 100, 110, 123); render,
 given artifacts and their metadata or cache entries by build identity,
-with a consumer layout and the versions or build identities it holds,
-and given besides a range and the artifacts of its name, holding the
-newest of them within the range by the ecosystem's own rules or none
-(85, 137, 23); serve, given a layout, one request of the ecosystem's
-own client with the base address it is served at, and a way to ask the core for a
+with a consumer layout and the versions or build identities it holds
+(85); serve, given a layout, one request of the ecosystem's own client
+with the base address it is served at, and a way to ask the core for a
 version the layout lacks, with the response to that request in the
 client's own protocol, or absent naming serving, for every request, from
-a projection whose ecosystem's clients read files (86, 115); and pinned,
+a projection whose ecosystem's clients read files (86, 115); pinned,
 given a checkout, with the ecosystem names and versions its lockfile
 pins as the lockfile spells them, and, for a name its manifest declares
-and no lockfile pins, the manifest's range as the manifest spells it, or
-absent where the checkout holds no lockfile of that ecosystem (137). A
-projection SHALL never reach the store but through the store it is handed, nor the policy or a version's
-claims at all, nor match a component's paths itself: a version a served
-layout lacks is asked of the core, which judges it, and whether the
-component's paths hold a path is asked of the core through pack's input
-(core.2).
+and no lockfile pins yet, the manifest's range as the manifest spells
+it, or absent where the checkout holds no lockfile of that ecosystem and
+its manifest declares no such range (137); requires, given a held
+version's artifact, with the family's names and ranges its manifest
+requires of the ecosystem, as the manifest spells them (140); and
+within, given a range and versions, with those that satisfy the range
+by the ecosystem's own rules, newest first by its own ordering (140,
+23). A projection whose ecosystem has no manifest SHALL answer requires
+and within with none. A projection SHALL never reach the store but
+through the store it is handed, nor the policy or a version's claims at
+all, nor match a component's paths itself: a version a served layout
+lacks is asked of the core, which judges it, and whether the component's
+paths hold a path is asked of the core through pack's input (core.2).
 
 #### Scenario: A projection that cannot promise the same bytes
 - **WHEN** pack answers bytes it cannot promise to make again
@@ -55,9 +59,9 @@ component's paths hold a path is asked of the core through pack's input
 - **WHEN** a pin, an ecosystem name and a version, and a range, an ecosystem name and a range's text, are each written in its machine-readable form and read back
 - **THEN** each is the same as written
 
-#### Scenario: A projection with no ranges asked to render one
-- **WHEN** the file, image or moon cache projection is asked to render artifacts with a range
-- **THEN** the answer is refused naming that its ecosystem declares no range, and nothing is written
+#### Scenario: A projection with no manifest asked what a version requires
+- **WHEN** the file, image or moon cache projection is asked what a held artifact requires, or which versions are within a range
+- **THEN** each answers none, and reads and writes nothing
 
 #### Scenario: An output packed with its component
 - **WHEN** pack is given an output with the version, the component the output belongs to, the component's declared outputs and a way to ask whether the component's paths hold a path
