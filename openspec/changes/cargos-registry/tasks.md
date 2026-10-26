@@ -1,6 +1,6 @@
 ## 1. Dependencies and binding
 
-- [ ] 1.1 Append `flate2`, `tar` and `toml_edit` to `[workspace.dependencies]` in `Cargo.toml` and to `crates/tailrace/Cargo.toml`, changing no existing line; `Cargo.lock` follows. Verify: `moon run ':#check-fast'` passes
+- [x] 1.1 Append `flate2`, `tar` and `toml_edit` to `[workspace.dependencies]` in `Cargo.toml` and to `crates/tailrace/Cargo.toml`, changing no existing line; `Cargo.lock` follows. Verify: `moon run ':#check-fast'` passes
 - [ ] 1.2 Add `profiles/projection/cargo/mod.rs` with `ECOSYSTEM = "cargo"`, a `CargoProjection` holding the checkout root, a store and the cargo program (a constructor taking the program for tests), and bind it in `profiles::projection::bound`, the bindings binding a second store for it (design D6). Verify: `bindings/tests.rs` asserts `cargo` is among the bound projections, in `check-fast`
 
 ## 2. Pack
