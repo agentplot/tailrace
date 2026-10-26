@@ -13,8 +13,10 @@
 //! by the host's bindings file (118) and the repository's policy file
 //! ([`bindings`]): on a host with no bindings file they answer absent
 //! naming it, and a broken one unreadable, each in its own form and with
-//! its own exit; `status` needs no seam, reads no bindings file and
-//! answers from the host's record (60).
+//! its own exit. `status` is bound to the landing, the policy and the
+//! ledger alone, and on a host with no bindings file as 118 binds such a
+//! host; a binding it cannot make is its channels' answer, and the
+//! host's record answers beside it (60).
 
 use std::io::Write;
 use std::path::Path;
@@ -60,7 +62,9 @@ pub enum Command {
     /// Tell which signer the policy names made each attestation on a
     /// version, and whether each counts.
     Verify(commands::verify::VerifyArgs),
-    /// The versions this host published, from its own record.
+    /// Where each channel is and the promotions that put it there, from
+    /// the ledger, beside the versions this host published, from its own
+    /// record.
     Status(commands::status::StatusArgs),
     /// Render the cache entries a landed revision's passing verdicts name
     /// into this checkout, where its tools read them.
@@ -79,23 +83,25 @@ pub enum Command {
 
 /// What a host binds (92): the seams; the store as the host's bindings
 /// name it, which the host's record keeps of each version (61, 118);
-/// and the identity of the party running tailrace, which signs what it
+/// the identity of the party running tailrace, which signs what it
 /// observed (11, 79), `None` on a host that binds no key and only
-/// verifies.
+/// verifies; and what tells the host's gate of a version a publish
+/// offered, which only publish reads (130).
 pub struct Binding {
     pub seams: Seams,
     pub store: Source,
     pub signer: Option<SignerId>,
+    pub gate: bindings::Teller,
 }
 
 /// `cli` asked in the repository at `at`, over the binding the host's
 /// file made or why it made none, its answer written to `out`; answers
-/// the exit code. A command that needs no seam reads neither.
+/// the exit code.
 pub fn run(cli: &Cli, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write) -> i32 {
     match &cli.command {
         Command::Publish(args) => commands::publish::run(args, binding, at, out),
         Command::Verify(args) => commands::verify::run(args, binding, at, out),
-        Command::Status(args) => commands::status::run(args, at, out),
+        Command::Status(args) => commands::status::run(args, binding, at, out),
         Command::Sync(args) => commands::sync::run(args, binding, at, out),
         Command::Push(args) => commands::push::run(args, binding, at, out),
         Command::Rebuild(args) => commands::rebuild::run(args, binding, at, out),
