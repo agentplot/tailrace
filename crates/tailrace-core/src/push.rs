@@ -9,7 +9,14 @@
 //! names, unmoved and with nothing retried (rule core.6), and one whose
 //! archive is not on this host is absent and refuses nothing (54).
 //!
-//! The push offers nothing: it puts no manifest, attaches no claim,
+//! `tailrace push --left` is the push before a landing, run in the
+//! checkout a check job's run left, as a pool's run job does on a runner
+//! that keeps nothing: it asks the build what that checkout's run left
+//! and writes the cache entry of each build identity that passed, asking
+//! nothing of the landing, which has decided nothing yet (52, 135, 139).
+//! Each build identity is answered on its own, as after a landing.
+//!
+//! Neither push offers anything: it puts no manifest, attaches no claim,
 //! signs nothing, asks no policy and moves no name but each entry's own
 //! (53, 100). It keeps nothing either: which entries a landing became is
 //! what its verdicts and the store answer, so no file of the host's
@@ -41,21 +48,52 @@ pub struct Push {
     pub entries: Vec<(BuildId, Answer<cache::Written>)>,
 }
 
+/// Each build identity's answer as a program reads it, the build
+/// identity beside it.
+fn entries_json(entries: &[(BuildId, Answer<cache::Written>)]) -> Vec<Value> {
+    entries
+        .iter()
+        .map(|(build, answer)| {
+            let mut value = answer_json(answer);
+            value["build"] = json!(build);
+            value
+        })
+        .collect()
+}
+
 impl Serialize for Push {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let entries: Vec<Value> = self
-            .entries
-            .iter()
-            .map(|(build, answer)| {
-                let mut value = answer_json(answer);
-                value["build"] = json!(build);
-                value
-            })
-            .collect();
         json!({
             "branch": self.branch,
             "revision": self.revision,
-            "entries": entries,
+            "entries": entries_json(&self.entries),
+        })
+        .serialize(serializer)
+    }
+}
+
+/// What a push before a landing is asked: the checkout whose run it
+/// writes, as the build is given it (139).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LeftAsk {
+    pub at: String,
+}
+
+/// 57: what a push before a landing answers, per build identity that
+/// passed of those the checkout's run left.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PushedLeft {
+    pub at: String,
+    /// Each build identity that passed, once, in the order the build
+    /// names them, with what its write answered.
+    pub entries: Vec<(BuildId, Answer<cache::Written>)>,
+}
+
+impl Serialize for PushedLeft {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        json!({
+            "at": self.at,
+            "entries": entries_json(&self.entries),
         })
         .serialize(serializer)
     }
@@ -90,6 +128,36 @@ pub fn push(seams: &Seams, ask: &PushAsk) -> Answer<Push> {
     Ok(Push {
         branch: ask.branch.clone(),
         revision: ask.revision.clone(),
+        entries,
+    })
+}
+
+/// 52, 135, 139: the cache entry of each build identity the checkout at
+/// `ask.at` left with a pass, as the build answers what its run left,
+/// written by [`cache::write`] once each in the order the build names
+/// them, packed as an output named for its first task with the files the
+/// build says are there. A build identity that did not pass is not
+/// written. Nothing is asked of the landing, so it runs before the
+/// landing is decided; one build identity's answer never stops the next.
+pub fn push_left(seams: &Seams, ask: &LeftAsk) -> Answer<PushedLeft> {
+    let mut entries: Vec<(BuildId, Answer<cache::Written>)> = Vec::new();
+    for left in seams.build.left(&ask.at)? {
+        if left.outcome != Outcome::Pass || entries.iter().any(|(b, _)| *b == left.build) {
+            continue;
+        }
+        let task = left
+            .tasks
+            .first()
+            .map_or(left.build.as_str(), String::as_str);
+        let output = Output {
+            name: OutputName::new(task),
+            files: left.files,
+        };
+        let answer = cache::write(seams, &output, &left.build);
+        entries.push((left.build, answer));
+    }
+    Ok(PushedLeft {
+        at: ask.at.clone(),
         entries,
     })
 }
