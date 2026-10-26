@@ -149,9 +149,9 @@ fn the_claims_an_audience_requires(rig: &dyn PolicyRig) {
 }
 
 fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
-    let (stable, beta) = (
-        ChannelId::new(None, ChannelName::new("stable")),
-        ChannelName::new("beta"),
+    let (next, edge) = (
+        ChannelId::new(None, ChannelName::new("next")),
+        ChannelName::new("edge"),
     );
     let at = rig.at(&[
         (
@@ -159,10 +159,10 @@ fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
             Required::Acceptance { claims: claims() },
         ),
         (
-            Audience::Channel(stable.clone()),
+            Audience::Channel(next.clone()),
             Required::Channel {
                 claims: claims(),
-                bound_to: Some(beta.clone()),
+                bound_to: Some(edge.clone()),
                 promoted_by: vec![],
                 approvers: vec![],
             },
@@ -179,12 +179,12 @@ fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
     );
     assert_eq!(acceptance.bound_to(), None, "acceptance names a channel");
     let bound = ok(
-        policy.policy_for(&at, &Audience::Channel(stable)),
+        policy.policy_for(&at, &Audience::Channel(next)),
         "policy-for a bound channel",
     );
     assert_eq!(
         bound.bound_to(),
-        Some(&beta),
+        Some(&edge),
         "the bound channel's policy answered {bound:?}"
     );
 }

@@ -45,9 +45,11 @@
 //! [channels.cli.alpha]
 //!
 //! # A line under web's given stable: a rebuild after the gate's
-//! # acceptance, stable still bound to beta.
+//! # acceptance, stable still bound to beta, and only box may ask for it
+//! # to move.
 //! [channels.web.stable]
 //! require = [{ kind = "rebuild", signers = ["box"] }]
+//! approvers = ["box"]
 //!
 //! # prod waits on a person: its own channel, prod, bound to stable.
 //! [environments.web.prod]
@@ -66,17 +68,22 @@
 //! force (C.10): `[channels.<name>]` of the fragment lies beneath the
 //! repository's `[channels.<name>]`, or each component's
 //! `[channels.<component>.<name>]`, a key the repository writes replacing
-//! the fragment's, `on_each_publish` and `bound_to` together, and a table
-//! the repository writes being on unless it writes `on = false`. So an
-//! empty `[channels.alpha]` switches on a channel the fragment holds off,
-//! and the same line rebinds, switches off or adds claims to a given. No
-//! source of this profile names a channel.
+//! the fragment's, `on_each_publish` and `bound_to` together and with
+//! them the fragment's `prereleases` unless the repository writes its
+//! own. `held = true` is the fragment's mark alone: a channel it marks is
+//! in force only where the repository writes its table, so an empty
+//! `[channels.alpha]` switches it on, and the same line rebinds a given or
+//! adds claims to it. Writing the table is the one switch: `held` or `on`
+//! written in the repository's file is unreadable, and nothing turns a
+//! given the fragment does not hold off. No source of this profile names
+//! a channel.
 //!
 //! The channels are resolved from the table in force in one pass, shared
 //! by the channels listed and one channel's policy so the two never
 //! disagree (83, 131): each table moves on each accepted publish with
-//! `on_each_publish = true`, bound with `bound_to`, and by a promotion
-//! alone otherwise (37, 95); an environment whose `policy` is `manual`,
+//! `on_each_publish = true`, taking prereleases too where it names
+//! `prereleases = true`, bound with `bound_to`, and by a promotion alone
+//! otherwise (37, 95, C.10); an environment whose `policy` is `manual`,
 //! or that names `after`, is given a channel named for it, bound to the
 //! channel it names or to the one the environments it comes after follow
 //! (41, 97, C.10), and a table under it is a line that adds claims and
@@ -90,7 +97,11 @@
 //! its line's claims, and names those signers, the gate, as the ones
 //! whose promotion of it counts, whatever the line names (32, C.10); a
 //! channel declared by hand is promoted by the signers its `require`
-//! names that may claim a promotion.
+//! names that may claim a promotion. A channel's table may name
+//! `approvers`, signers `[signers]` holds, the only ones that may then ask
+//! for it to move; where none is named any asker the gate verifies may
+//! (32, 129, C.10). They never join who signs. A repository never writes
+//! them on a channel an environment makes (C.10).
 //!
 //! Every operation begins by reading the fragment and resolving the
 //! revision in the repository, so a fragment or a repository that cannot
@@ -122,8 +133,27 @@ const GIVENS: &str = include_str!("givens.toml");
 /// The fragment, as an answer that cannot read it names it.
 const GIVENS_NAME: &str = "the givens' fragment givens.toml";
 
-/// The keys of a channel's table this profile reads (37, 83, 95, C.10).
-const CHANNEL_KEYS: [&str; 4] = ["require", "bound_to", "on_each_publish", "on"];
+/// The keys a table of the givens' fragment may name (37, 83, 95, C.10).
+const GIVEN_KEYS: [&str; 6] = [
+    "require",
+    "bound_to",
+    "on_each_publish",
+    "prereleases",
+    "approvers",
+    "held",
+];
+
+/// The keys that mark a table as a channel's own: what this profile
+/// reads of one, and `on`, read only to refuse it (C.10).
+const CHANNEL_KEYS: [&str; 7] = [
+    "require",
+    "bound_to",
+    "on_each_publish",
+    "prereleases",
+    "approvers",
+    "held",
+    "on",
+];
 
 /// The policy seam bound to the policy file of the repository at a path,
 /// with the givens' fragment laid beneath it.
@@ -173,14 +203,18 @@ struct AudienceTable {
 }
 
 /// A channel's table in force: the claims it requires, in order, none
-/// where it names none, how it moves (37, 95), and whether it is on
-/// (C.10). Its other keys are its readers'.
+/// where it names none, how it moves (37, 95), whether it takes
+/// prereleases and who may ask for it (C.10); `held` and `on` are read
+/// only to refuse them. Its other keys are its readers'.
 #[derive(Clone, Deserialize)]
 struct ChannelTable {
     #[serde(default)]
     require: Vec<Entry>,
     bound_to: Option<ChannelName>,
     on_each_publish: Option<bool>,
+    prereleases: Option<bool>,
+    approvers: Option<Vec<SignerId>>,
+    held: Option<bool>,
     on: Option<bool>,
 }
 
@@ -213,11 +247,16 @@ struct Entry {
 
 /// D4, C.10: the table in force, the repository's file as written with
 /// the fragment's channels laid beneath its own, which [`resolve`] alone
-/// reads.
+/// reads: the channels' tables, the name of every channel the fragment
+/// holds and of those it holds off, and each channel held off that the
+/// repository has not written, with its table header and the fragment's
+/// table.
 struct InForce<'a> {
     file: &'a File,
     channels: toml::Table,
     givens: BTreeSet<String>,
+    held: BTreeSet<String>,
+    off: Vec<(ChannelId, String, toml::Table)>,
 }
 
 /// Where a channel comes from: held by the givens, made by an
@@ -230,13 +269,15 @@ enum Origin {
 }
 
 /// A channel as the table in force resolves it: how it moves, where it
-/// comes from, the table that says so, and the claims written for it, by
-/// its own table or a line under it.
+/// comes from, the table that says so, the claims written for it, by its
+/// own table or a line under it, and who may ask for it, none where any
+/// asker may.
 struct Resolved {
     moves: Moves,
     origin: Origin,
     table: String,
     require: Vec<Entry>,
+    approvers: Vec<SignerId>,
 }
 
 fn source() -> Source {
@@ -373,7 +414,7 @@ fn table_name(section: &str, component: &Option<ComponentName>, name: &str) -> S
 }
 
 /// The words that a channel `name` is no channel in `component`, for the
-/// table `table` naming it as `what`: switched off where `off`.
+/// table `table` naming it as `what`: held off by the givens where `off`.
 fn unknown(
     table: &str,
     what: &str,
@@ -383,10 +424,10 @@ fn unknown(
 ) -> String {
     match (component, off) {
         (None, true) => format!(
-            "{table} {what} {name}, which is switched off, and a channel switched off is no channel (C.10)"
+            "{table} {what} {name}, which the givens hold off until [channels.{name}] is written, and a channel held off is no channel (C.10)"
         ),
         (Some(component), true) => format!(
-            "{table} {what} {name}, which is switched off in {component}, and a channel switched off is no channel (C.10)"
+            "{table} {what} {name}, which the givens hold off in {component} until [channels.{component}.{name}] is written, and a channel held off is no channel (C.10)"
         ),
         (None, false) => {
             format!("{table} {what} {name}, which the file neither declares, gives nor makes")
@@ -494,8 +535,9 @@ fn tables<T: serde::de::DeserializeOwned>(
 
 impl Givens {
     /// C.10: `text` read as the givens' fragment: only channels' tables,
-    /// `[channels.<name>]`, each naming only the keys a channel's table
-    /// names; otherwise the parser's words or the table that breaks it.
+    /// `[channels.<name>]`, each naming only the keys a given's table
+    /// names, `held` among them; otherwise the parser's words or the
+    /// table that breaks it.
     fn read(text: &str) -> Result<Givens, String> {
         let mut top: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
         if let Some(key) = top.keys().find(|key| *key != "channels") {
@@ -512,10 +554,10 @@ impl Givens {
             let table = value
                 .as_table()
                 .ok_or_else(|| format!("the givens' [channels.{name}] is not a table"))?;
-            if let Some(key) = table.keys().find(|k| !CHANNEL_KEYS.contains(&k.as_str())) {
+            if let Some(key) = table.keys().find(|k| !GIVEN_KEYS.contains(&k.as_str())) {
                 return Err(format!(
                     "the givens' [channels.{name}] names {key}, and a given's table names only {}",
-                    CHANNEL_KEYS.join(", ")
+                    GIVEN_KEYS.join(", ")
                 ));
             }
             toml::Value::Table(table.clone())
@@ -523,6 +565,16 @@ impl Givens {
                 .map_err(|e| format!("the givens' [channels.{name}]: {}", e.message()))?;
         }
         Ok(Givens { channels })
+    }
+
+    /// Whether the fragment marks `name` held, so it is in force only
+    /// where the repository writes its table (C.10).
+    fn holds_off(&self, name: &str) -> bool {
+        self.channels
+            .get(name)
+            .and_then(|t| t.get("held"))
+            .and_then(toml::Value::as_bool)
+            == Some(true)
     }
 }
 
@@ -544,18 +596,20 @@ fn scopes(components: &[ComponentName]) -> Vec<Option<ComponentName>> {
 /// C.10: the fragment's table `given` laid beneath the table `written`
 /// the repository writes for the same channel and component: the
 /// fragment's keys where the repository writes none, `on_each_publish`
-/// and `bound_to` replaced together where it writes either (37), and on
-/// unless it writes `on = false`.
+/// and `bound_to` replaced together where it writes either, and with them
+/// the fragment's `prereleases` unless it writes its own (37); the
+/// fragment's `held` mark never in force.
 fn laid(given: &toml::Table, written: Option<&toml::Table>) -> toml::Table {
     let mut table = given.clone();
+    table.remove("held");
     let Some(written) = written else {
         return table;
     };
     if written.contains_key("on_each_publish") || written.contains_key("bound_to") {
         table.remove("on_each_publish");
         table.remove("bound_to");
+        table.remove("prereleases");
     }
-    table.remove("on");
     table.extend(written.clone());
     table
 }
@@ -564,10 +618,13 @@ fn laid(given: &toml::Table, written: Option<&toml::Table>) -> toml::Table {
 /// table of each channel `givens` holds laid beneath the repository's
 /// table of that channel, `[channels.<name>]` where no component is
 /// declared and `[channels.<component>.<name>]` in every component where
-/// some are. A table not of a channel's form is left as written, for the
-/// resolution to name.
+/// some are; a channel the fragment holds off laid only where the
+/// repository writes its table, and kept aside as held otherwise. A table
+/// not of a channel's form is left as written, for the resolution to
+/// name.
 fn in_force<'a>(file: &'a File, givens: &Givens) -> InForce<'a> {
     let mut channels = file.channels.clone();
+    let mut off = Vec::new();
     for scope in scopes(&components(file)) {
         let under = match &scope {
             None => Some(&mut channels),
@@ -589,6 +646,11 @@ fn in_force<'a>(file: &'a File, givens: &Givens) -> InForce<'a> {
                 Some(_) => continue,
             };
             let table = laid(given, written);
+            if written.is_none() && givens.holds_off(name) {
+                let id = ChannelId::new(scope.clone(), ChannelName::new(name));
+                off.push((id, table_name("channels", &scope, name), table));
+                continue;
+            }
             under.insert(name.clone(), toml::Value::Table(table));
         }
     }
@@ -596,17 +658,52 @@ fn in_force<'a>(file: &'a File, givens: &Givens) -> InForce<'a> {
         file,
         channels,
         givens: givens.channels.keys().cloned().collect(),
+        held: givens
+            .channels
+            .keys()
+            .filter(|n| givens.holds_off(n))
+            .cloned()
+            .collect(),
+        off,
     }
+}
+
+/// 37, C.10: how the table `full` in force says its channel moves: on
+/// each accepted publish where it names `on_each_publish = true`, taking
+/// prereleases too where it names `prereleases = true`; bound where it
+/// names `bound_to`; and by a promotion alone otherwise. Both, or
+/// `prereleases` on a channel that does not move on each publish, are the
+/// words that make the file unreadable.
+fn moves_of(full: &str, keys: &ChannelTable) -> Result<Moves, String> {
+    let moves = match (keys.on_each_publish, &keys.bound_to) {
+        (Some(true), Some(bound)) => {
+            return Err(format!(
+                "{full} follows each publish and is bound to {bound}, and a bound channel takes no version from a publish (37)"
+            ))
+        }
+        (Some(true), None) => Moves::EachPublish {
+            prereleases: keys.prereleases == Some(true),
+        },
+        (_, Some(bound)) => Moves::Bound { to: bound.clone() },
+        (_, None) => Moves::Promotion,
+    };
+    if keys.prereleases.is_some() && !matches!(moves, Moves::EachPublish { .. }) {
+        return Err(format!(
+            "{full} names prereleases, and only a channel that moves on each publish takes prereleases: this one takes no version from a publish (37, C.10)"
+        ));
+    }
+    Ok(moves)
 }
 
 /// 125, 131, C.10: every channel of the table in force, by its identity,
 /// in one pass shared by the channels listed and one channel's policy
 /// (83), in D4's six steps: the components; the channels' tables; how
-/// each table moves, one switched off no channel; the environments and
-/// the channels their words make; a table under a made channel read as a
+/// each table moves and who may ask for it; the environments and the
+/// channels their words make; a table under a made channel read as a
 /// line under it; and every binding, and every environment's channel,
-/// within its component and in no cycle. The first that breaks is the
-/// words that make the file unreadable, naming its table.
+/// within its component and in no cycle. A channel held off is no
+/// channel. The first that breaks is the words that make the file
+/// unreadable, naming its table.
 fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
     // 1: the components, or none.
     let components = components(table.file);
@@ -621,19 +718,47 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
         &components,
     )?;
 
-    // 3: each table in force moves as it says (37, 95).
+    // 3: each table in force moves as it says (37, 95), names no key
+    // that would switch a channel on or off, and names as approvers only
+    // signers the file holds (C.10).
+    let stays: Vec<&str> = table
+        .givens
+        .iter()
+        .filter(|n| !table.held.contains(*n))
+        .map(String::as_str)
+        .collect();
     let mut tables_of: Vec<(ChannelId, String, ChannelTable, Moves)> = Vec::new();
     for (component, name, full, keys) in written {
-        let moves = match (keys.on_each_publish, &keys.bound_to) {
-            (Some(true), Some(bound)) => {
+        let key = match (keys.held, keys.on) {
+            (Some(_), _) => Some("held"),
+            (None, Some(_)) => Some("on"),
+            (None, None) => None,
+        };
+        if let Some(key) = key {
+            return Err(format!(
+                "{full} names {key}, and writing a channel's table is the one switch that turns it on: no key turns a channel on or off, and nothing turns {} off (C.10)",
+                stays.join(" or ")
+            ));
+        }
+        let moves = moves_of(&full, &keys)?;
+        match &keys.approvers {
+            Some(approvers) if approvers.is_empty() => {
                 return Err(format!(
-                    "{full} follows each publish and is bound to {bound}, and a bound channel takes no version from a publish (37)"
+                    "{full} names no approver, and an empty approvers would read as naming no one; leave it out for any asker the gate verifies (C.10)"
                 ))
             }
-            (Some(true), None) => Moves::EachPublish { prereleases: false },
-            (_, Some(bound)) => Moves::Bound { to: bound.clone() },
-            (_, None) => Moves::Promotion,
-        };
+            Some(approvers) => {
+                if let Some(unknown) = approvers
+                    .iter()
+                    .find(|a| !table.file.signers.contains_key(a.as_str()))
+                {
+                    return Err(format!(
+                        "{full} names the approver {unknown}, which [signers] does not name"
+                    ));
+                }
+            }
+            None => {}
+        }
         tables_of.push((
             ChannelId::new(component, ChannelName::new(&name)),
             full,
@@ -682,7 +807,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
             };
             if table.givens.contains(*name) {
                 return Err(format!(
-                    "{env_table} makes a channel named {name}, which the givens hold, on or off (C.10)"
+                    "{env_table} makes a channel named {name}, which the givens hold, held off or not (C.10)"
                 ));
             }
             made.insert(
@@ -693,27 +818,28 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
     }
 
     // 5: a table under a made channel is a line under it, which never
-    // changes how it moves; every other is the channel it says, or no
-    // channel where it is switched off.
+    // changes how it moves and names no approvers, its environment's
+    // words saying both; every other is the channel it says.
     let mut resolved: BTreeMap<ChannelId, Resolved> = BTreeMap::new();
-    let mut off: BTreeSet<ChannelId> = BTreeSet::new();
+    let off: BTreeSet<ChannelId> = table.off.iter().map(|(id, ..)| id.clone()).collect();
     let mut lines: BTreeMap<ChannelId, (String, Vec<Entry>)> = BTreeMap::new();
     for (id, full, keys, moves) in tables_of {
         if let Some((_, to)) = made.get(&id) {
             let restates = keys.bound_to.as_ref().is_none_or(|b| b == to)
-                && keys.on_each_publish != Some(true)
-                && keys.on != Some(false);
+                && keys.on_each_publish != Some(true);
             if !restates {
                 return Err(format!(
                     "{full} would change how {} moves, and {} is bound to {to} by its environment's words: a line under a channel an environment makes never changes how it moves (C.10)",
                     id.name, id.name
                 ));
             }
+            if keys.approvers.is_some() {
+                return Err(format!(
+                    "{full} names approvers, and who may ask for {}, a channel its environment makes, is written on the environment and never on the channel it makes (C.10)",
+                    id.name
+                ));
+            }
             lines.insert(id, (full, keys.require));
-            continue;
-        }
-        if keys.on == Some(false) {
-            off.insert(id);
             continue;
         }
         let origin = if table.givens.contains(id.name.as_str()) {
@@ -728,6 +854,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
                 origin,
                 table: full,
                 require: keys.require,
+                approvers: keys.approvers.unwrap_or_default(),
             },
         );
     }
@@ -740,12 +867,13 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
                 origin: Origin::Made,
                 table,
                 require,
+                approvers: Vec::new(),
             },
         );
     }
 
     // 6: every binding, and every environment's channel, names a channel
-    // of its component that is on (37, 125), and no binding is a cycle.
+    // of its component in force (37, 125), and no binding is a cycle.
     let known = |id: &ChannelId| resolved.contains_key(id);
     for (env_table, scope, channel) in &follows {
         let id = ChannelId::new(scope.clone(), channel.clone());
@@ -902,7 +1030,8 @@ fn may_claim<'a>(
 /// given or made, the gate's acceptance by every signer that may claim
 /// acceptance, then its line's claims, promoted by those same signers;
 /// for one declared by hand, its table's claims, promoted by the signers
-/// they name that may claim a promotion.
+/// they name that may claim a promotion; and for either, the approvers
+/// its table names, each as `[signers]` names it.
 fn channel_policy(
     resolved: &Resolved,
     signers: &BTreeMap<String, NamedSigner>,
@@ -924,6 +1053,16 @@ fn channel_policy(
             (claims, promoters)
         }
     };
+    let mut approvers = Vec::new();
+    for id in &resolved.approvers {
+        let named = signers.get(id.as_str()).ok_or_else(|| {
+            format!(
+                "{} names the approver {id}, which [signers] does not name",
+                resolved.table
+            )
+        })?;
+        approvers.push(named.clone());
+    }
     Ok(Required::Channel {
         claims,
         bound_to: match &resolved.moves {
@@ -931,7 +1070,7 @@ fn channel_policy(
             Moves::EachPublish { .. } | Moves::Promotion => None,
         },
         promoted_by,
-        approvers: vec![],
+        approvers,
     })
 }
 

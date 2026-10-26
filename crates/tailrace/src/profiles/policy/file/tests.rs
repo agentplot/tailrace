@@ -677,6 +677,18 @@ fn a_hand_declared_channel_moves_as_its_table_says() {
 }
 
 #[test]
+fn a_hand_declared_channel_takes_prereleases_where_its_table_says_so() {
+    let repo = Repo::new();
+    let at = repo.at("[channels.edge]\non_each_publish = true\nprereleases = true\n");
+    let mut all = givens(None);
+    all.push(declared(
+        id(None, "edge"),
+        Moves::EachPublish { prereleases: true },
+    ));
+    assert_eq!(repo.policy().channels(&at), Ok(sorted(all)));
+}
+
+#[test]
 fn a_following_channel_that_is_bound_is_unreadable_naming_it() {
     let repo = Repo::new();
     let at = repo.at("[channels.edge]\non_each_publish = true\nbound_to = \"beta\"\n");
@@ -778,7 +790,7 @@ fn stable_is_rebound_to_alpha_by_the_same_line() {
     assert_eq!(
         repo.policy().channels(&at),
         Ok(vec![
-            declared(id(None, "alpha"), Moves::EachPublish { prereleases: false }),
+            declared(id(None, "alpha"), Moves::EachPublish { prereleases: true }),
             declared(id(None, "beta"), Moves::EachPublish { prereleases: false }),
             declared(id(None, "stable"), bound("alpha")),
         ])
@@ -810,14 +822,63 @@ fn beta_is_made_a_promotion_alone_by_the_same_line() {
 }
 
 #[test]
-fn beta_switched_off_leaves_stable_bound_to_no_channel() {
+fn beta_takes_prereleases_by_the_same_line_and_stable_stays_bound_to_it() {
     let repo = Repo::new();
-    let at = repo.at("[channels.beta]\non = false\n");
-    let said = both_unreadable(&repo, &at, &id(None, "stable"));
+    let at = repo.at("[channels.beta]\nprereleases = true\n");
     assert_eq!(
-        said,
-        "[channels.stable] is bound to beta, which is switched off, and a channel switched off is no channel (C.10)"
+        repo.policy().channels(&at),
+        Ok(vec![
+            declared(id(None, "beta"), Moves::EachPublish { prereleases: true }),
+            declared(id(None, "stable"), bound("beta")),
+        ])
     );
+}
+
+#[test]
+fn a_key_that_would_switch_a_given_on_or_off_is_unreadable_naming_it() {
+    let repo = Repo::new();
+    for (text, table, key) in [
+        ("[channels.beta]\non = false\n", "[channels.beta]", "on"),
+        (
+            "[channels.stable]\nheld = true\n",
+            "[channels.stable]",
+            "held",
+        ),
+        ("[channels.alpha]\non = true\n", "[channels.alpha]", "on"),
+    ] {
+        let at = repo.at(text);
+        let said = both_unreadable(&repo, &at, &id(None, "stable"));
+        assert_eq!(
+            said,
+            format!(
+                "{table} names {key}, and writing a channel's table is the one switch that turns it on: no key turns a channel on or off, and nothing turns beta or stable off (C.10)"
+            )
+        );
+    }
+}
+
+#[test]
+fn prereleases_on_a_channel_that_does_not_follow_each_publish_is_unreadable_naming_it() {
+    let repo = Repo::new();
+    for (text, table) in [
+        (
+            "[channels.stable]\nprereleases = true\n",
+            "[channels.stable]",
+        ),
+        (
+            "[channels.edge]\nrequire = []\nprereleases = false\n",
+            "[channels.edge]",
+        ),
+    ] {
+        let at = repo.at(text);
+        let said = both_unreadable(&repo, &at, &id(None, "beta"));
+        assert_eq!(
+            said,
+            format!(
+                "{table} names prereleases, and only a channel that moves on each publish takes prereleases: this one takes no version from a publish (37, C.10)"
+            )
+        );
+    }
 }
 
 #[test]
@@ -909,6 +970,99 @@ fn a_hand_declared_channels_promoters_are_the_signers_it_names_that_may_promote(
             .map(|s| s.id.as_str())
             .collect::<Vec<_>>(),
         ["release"]
+    );
+}
+
+// Requirement: approvers names who may ask
+
+/// Two signers that may claim acceptance, `ci` and `desk`.
+fn askers_table() -> &'static str {
+    "[signers.ci]\nssh = \"ssh-ed25519 CCCC\"\nkinds = [\"acceptance\"]\n\n\
+     [signers.desk]\nssh = \"ssh-ed25519 DDDD\"\nkinds = [\"acceptance\"]\n\n"
+}
+
+fn asker(id: &str, key: &str) -> NamedSigner {
+    NamedSigner {
+        id: SignerId::new(id),
+        verified_by: format!("ssh-ed25519 {key}"),
+        kinds: vec![ClaimKind::Acceptance],
+        checks: vec![],
+    }
+}
+
+#[test]
+fn approvers_under_a_given_name_who_may_ask_and_never_who_signs() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[channels.stable]\napprovers = [\"ci\"]\n",
+        askers_table()
+    ));
+    let stable = channel_policy(&repo, &at, &id(None, "stable")).unwrap();
+    assert_eq!(stable.approvers(), &[asker("ci", "CCCC")]);
+    assert_eq!(
+        stable.promoted_by(),
+        &[asker("ci", "CCCC"), asker("desk", "DDDD")],
+        "the promoters are the gate's signers"
+    );
+    let beta = channel_policy(&repo, &at, &id(None, "beta")).unwrap();
+    assert_eq!(
+        beta.approvers(),
+        &[],
+        "a channel naming none is any asker's"
+    );
+    assert_eq!(repo.policy().channels(&at), Ok(givens(None)));
+}
+
+#[test]
+fn approvers_under_a_hand_declared_channel_are_read() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[channels.rc]\nrequire = []\napprovers = [\"desk\", \"ci\"]\n",
+        askers_table()
+    ));
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "rc")).map(|r| r.approvers().to_vec()),
+        Ok(vec![asker("desk", "DDDD"), asker("ci", "CCCC")])
+    );
+}
+
+#[test]
+fn an_approver_the_signers_table_lacks_is_unreadable_naming_it() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[channels.stable]\napprovers = [\"nobody\"]\n",
+        askers_table()
+    ));
+    let said = both_unreadable(&repo, &at, &id(None, "stable"));
+    assert_eq!(
+        said,
+        "[channels.stable] names the approver nobody, which [signers] does not name"
+    );
+}
+
+#[test]
+fn an_empty_approvers_list_is_unreadable_naming_its_table() {
+    let repo = Repo::new();
+    let at = repo.at("[channels.stable]\napprovers = []\n");
+    let said = both_unreadable(&repo, &at, &id(None, "stable"));
+    assert_eq!(
+        said,
+        "[channels.stable] names no approver, and an empty approvers would read as naming no one; leave it out for any asker the gate verifies (C.10)"
+    );
+}
+
+#[test]
+fn approvers_under_a_channel_an_environment_makes_are_unreadable_naming_its_table() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[environments.prod]\nchannel = \"stable\"\npolicy = \"manual\"\n\n\
+         [channels.prod]\napprovers = [\"ci\"]\n",
+        askers_table()
+    ));
+    let said = both_unreadable(&repo, &at, &id(None, "prod"));
+    assert_eq!(
+        said,
+        "[channels.prod] names approvers, and who may ask for prod, a channel its environment makes, is written on the environment and never on the channel it makes (C.10)"
     );
 }
 
@@ -1053,7 +1207,7 @@ fn a_manual_environment_named_beta_is_unreadable_naming_it() {
     let said = unreadable(repo.policy().channels(&at), &at);
     assert_eq!(
         said,
-        "[environments.beta] makes a channel named beta, which the givens hold, on or off (C.10)"
+        "[environments.beta] makes a channel named beta, which the givens hold, held off or not (C.10)"
     );
 }
 
@@ -1064,7 +1218,7 @@ fn a_manual_environment_named_for_a_held_given_is_unreadable_naming_it() {
     let said = both_unreadable(&repo, &at, &id(None, "lts"));
     assert_eq!(
         said,
-        "[environments.lts] makes a channel named lts, which the givens hold, on or off (C.10)"
+        "[environments.lts] makes a channel named lts, which the givens hold, held off or not (C.10)"
     );
 }
 
@@ -1110,23 +1264,27 @@ fn a_line_under_prod_that_rebinds_it_is_unreadable_naming_it() {
 // Requirement: The table in force lays the fragment beneath the file
 
 #[test]
-fn the_shipped_fragment_holds_beta_and_stable_on_and_alpha_and_lts_off() {
+fn the_shipped_fragment_declares_beta_and_stable_and_holds_alpha_and_lts() {
     let givens = Givens::read(GIVENS).expect("the shipped fragment parses");
-    let on: Vec<(&str, bool)> = givens
+    let read: Vec<(&str, bool, Moves)> = givens
         .channels
         .iter()
         .map(|(name, table)| {
-            let on = table.get("on").and_then(toml::Value::as_bool);
-            (name.as_str(), on.unwrap_or(true))
+            let full = format!("[channels.{name}]");
+            let keys: ChannelTable = toml::Value::Table(laid(table.as_table().unwrap(), None))
+                .try_into()
+                .unwrap();
+            let moves = moves_of(&full, &keys).unwrap();
+            (name.as_str(), givens.holds_off(name), moves)
         })
         .collect();
     assert_eq!(
-        on,
+        read,
         [
-            ("alpha", false),
-            ("beta", true),
-            ("lts", false),
-            ("stable", true)
+            ("alpha", true, Moves::EachPublish { prereleases: true }),
+            ("beta", false, Moves::EachPublish { prereleases: false }),
+            ("lts", true, bound("stable")),
+            ("stable", false, bound("beta")),
         ]
     );
 }
@@ -1226,7 +1384,7 @@ fn alpha_is_switched_on_by_an_empty_table() {
     let mut all = givens(None);
     all.push(declared(
         id(None, "alpha"),
-        Moves::EachPublish { prereleases: false },
+        Moves::EachPublish { prereleases: true },
     ));
     assert_eq!(repo.policy().channels(&at), Ok(sorted(all)));
     assert_eq!(
@@ -1259,7 +1417,7 @@ fn a_channel_held_off_is_no_channel() {
     let said = both_unreadable(&repo, &at, &id(None, "alpha"));
     assert_eq!(
         said,
-        "[environments.prod] follows alpha, which is switched off, and a channel switched off is no channel (C.10)"
+        "[environments.prod] follows alpha, which the givens hold off until [channels.alpha] is written, and a channel held off is no channel (C.10)"
     );
     let at = repo.at(&signers());
     assert_eq!(repo.policy().channels(&at), Ok(givens(None)));

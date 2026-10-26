@@ -2,10 +2,13 @@
 # form, for a repository that declares no component, laid beneath the
 # repository's `.config/tailrace.toml` for every component it declares.
 # A key the repository writes under one of these channels replaces the
-# key here; a table it writes is on unless it writes `on = false`.
+# key here. `held = true` is this fragment's mark alone: a channel so
+# marked is held off until the repository writes its table, empty or
+# with lines, which is the one switch; no key turns a channel on or off,
+# and nothing turns beta or stable off.
 
 # C.10: every component has beta, moved by the gate on each accepted
-# publish (95).
+# publish, taking releases alone (95).
 [channels.beta]
 on_each_publish = true
 
@@ -13,14 +16,15 @@ on_each_publish = true
 [channels.stable]
 bound_to = "beta"
 
-# C.10: alpha, held until a line switches it on. It moves on each
-# accepted publish as beta does, until a ruling says how a channel leaves
-# prereleases out.
+# C.10: alpha, held until its table is written, follows every accepted
+# version, prereleases too.
 [channels.alpha]
-on = false
+held = true
 on_each_publish = true
+prereleases = true
 
-# C.10: lts, held until a line switches it on, promoted from stable.
+# C.10: lts, held until its table is written, promoted from stable. It
+# names no rule, so no publish and no report moves it: only an asking.
 [channels.lts]
-on = false
+held = true
 bound_to = "stable"
