@@ -200,6 +200,39 @@ fn a_relative_path_is_unreadable_naming_its_key() {
 }
 
 #[test]
+fn a_given_tables_answers_name_the_file_and_the_table_as_given() {
+    let host = Host::new();
+    let file = host.file();
+    let given = Table::given(&file, "store", "layout", "data/tailrace/layout".into());
+    match given.path() {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::host(&file));
+            assert_eq!(
+                u.what,
+                format!("{}, [store] layout (given)", file.display())
+            );
+            assert_eq!(
+                u.said.as_deref(),
+                Some(
+                    "data/tailrace/layout is a relative path; a path here is absolute or begins ~/"
+                )
+            );
+        }
+        other => panic!("a relative given layout answered {other:?}"),
+    }
+    let given = Table::given(&file, "store", "layout", "/data/tailrace/layout".into());
+    assert_eq!(given.path(), Ok(PathBuf::from("/data/tailrace/layout")));
+    assert_eq!(
+        given.unreadable("said"),
+        Not::unreadable(
+            &Source::host(&file),
+            format!("{}, [store] layout (given)", file.display()),
+            Some("said".into())
+        )
+    );
+}
+
+#[test]
 fn what_the_repository_binds_and_no_table_of_the_file_are_unreadable_naming_the_table() {
     let host = Host::new();
     for (table, said) in [

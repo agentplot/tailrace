@@ -101,7 +101,9 @@ pub struct Bindings {
     pub signing: Option<Signing>,
 }
 
-/// A seam's table: the one key naming its profile, and that key's value.
+/// A seam's table: the one key naming its profile, and that key's value,
+/// as the file names it or, where the file names no such table, as its
+/// seam's profile family gives it (118).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Table {
     file: PathBuf,
@@ -109,6 +111,7 @@ pub struct Table {
     name: &'static str,
     key: String,
     value: toml::Value,
+    given: bool,
 }
 
 /// The host and the bindings file, as every answer of the file names it.
@@ -149,6 +152,21 @@ pub(crate) fn path_of(file: &Path, home: Option<&Path>, at: &str, text: &str) ->
 }
 
 impl Table {
+    /// The table `[name]` the file at `file` leaves out, made by its
+    /// seam's profile family as the binding it gives in its place (118):
+    /// `key` naming its profile and `value` that key's value, a path in
+    /// it absolute. Its answers name the file and the table as given.
+    pub fn given(file: &Path, name: &'static str, key: &str, value: toml::Value) -> Table {
+        Table {
+            file: file.to_path_buf(),
+            home: None,
+            name,
+            key: key.to_string(),
+            value,
+            given: true,
+        }
+    }
+
     /// The key naming the seam's profile.
     pub fn key(&self) -> &str {
         &self.key
@@ -159,9 +177,11 @@ impl Table {
         &self.value
     }
 
-    /// Where the table is: `[store] layout`.
+    /// Where the table is: `[store] layout`, or `[store] layout (given)`
+    /// where the file leaves it out.
     fn at(&self) -> String {
-        format!("[{}] {}", self.name, self.key)
+        let given = if self.given { " (given)" } else { "" };
+        format!("[{}] {}{given}", self.name, self.key)
     }
 
     /// The value as a path, absolute or `~/` expanded against the home
@@ -300,6 +320,7 @@ fn seam(
             name,
             key: key.to_string(),
             value: table[key.as_str()].clone(),
+            given: false,
         }),
         [] => Err(unreadable(
             file,
