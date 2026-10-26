@@ -13,7 +13,7 @@
 - [ ] 2.2 Add the cache group's scenarios for the push before a landing below the push's, citing 52, 53 and 54: pushed in one world and published in a second whose build holds nothing, and a failed identity not written (conformance-suite spec); verify with `moon run tailrace-conformance:test` and the coverage check, `moon run tailrace-conformance:coverage`.
 - [x] 2.3 Add `For::Left` and `NoLanding` to `crates/tailrace/src/bindings/mod.rs`, so a file naming only `[store]` binds for `push --left` and every other command still answers absent naming `[landing]` (host-bindings spec, design D3); verify with cases in `bindings/tests.rs` under `moon run tailrace:test`.
 - [x] 2.4 Add `--left` to `commands/push.rs`, conflicting with the revision and `--branch`, rendering text and JSON as `tailrace push` does, and wire it in `lib.rs` and `main.rs` (command-line spec, design D2); verify with `crates/tailrace/tests/cli.rs` cases for the JSON over the fakes and a revision beside `--left` exiting 2, under `moon run tailrace:test`.
-- [ ] 2.5 Say on the surfaces page that the command line has `push --left`, and on the builds page's moon row that `left` reads moon's run report and outputs directory; verify with `moon run site:build`.
+- [x] 2.5 Say on the surfaces page that the command line has `push --left`, and on the builds page's moon row that `left` reads moon's run report and outputs directory; verify with `moon run site:build`.
 
 ## 3. Publish takes the outputs from the store
 
