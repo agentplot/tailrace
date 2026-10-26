@@ -190,7 +190,17 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
     let host = Host::new();
     let (code, printed) = host.run(&["publish", "HEAD", "--json"]);
     assert_eq!(code, 0, "{printed}");
-    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let mut printed: Value = serde_json::from_str(&printed).unwrap();
+    // The one thing beside the core's answer: nothing tells the gate.
+    let gate = printed["value"]["components"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("gate")
+        .expect("the offered version names what tells the gate");
+    let Teller::Nothing(nothing) = host.binding().gate else {
+        unreachable!()
+    };
+    assert_eq!(gate, answer_json::<()>(&Err(nothing)));
 
     let history = History::open(&host.repo).unwrap();
     let core = publish(
