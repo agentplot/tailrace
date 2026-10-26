@@ -109,13 +109,17 @@ Out of scope, and what each waits on:
   bolt's process it extends (114, 115, core.36).
 - Writing the `artifact/<ecosystem>/<name>@<version>` pointer at publish
   (138): the store-naming unit. Until it lands, the listing finds only
-  names a test or a store already holds.
+  names a test or a store already holds. The store's listing itself,
+  which render under a policy leaves to that unit, is this change's,
+  since a Cargo pack is refused by what the listing answers (C.11); the
+  store-naming unit writes its pointers beside it.
 - A name the checkout's manifest declares and no lockfile pins yet
-  (137): pinned answers the lockfile's pins alone, as npm's does. The
-  listing this change adds is what the core would resolve such a range
-  by (138), but the pin on the seam carries no range and the core's
-  render chooses no newest version; render under a policy, or a unit
-  after it, carries that.
+  (137): pinned answers the lockfile's pins alone, as npm's does. Render
+  under a policy leaves the range to the ecosystems' units, and this
+  unit's sources (84, 85, 87, C.11) do not carry it: the pin on the seam
+  carries no range and the core's render chooses no newest version. The
+  listing this change adds is what such a range would resolve by (138);
+  the planner places the rest.
 - A conformance scenario of the store's listing: the suite's statement
   list stops at blueprints `5b00e15`, before 138, so no scenario can
   cite it; the commit adopting the statement past it adds one. Each
