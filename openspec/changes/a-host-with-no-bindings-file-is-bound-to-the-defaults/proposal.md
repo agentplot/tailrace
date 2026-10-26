@@ -209,6 +209,10 @@ crates/tailrace/tests/laptop.rs
 crates/tailrace/tests/one_host.rs
 crates/tailrace/tests/policy_file.rs
 crates/tailrace/tests/publish_tells_the_gate.rs
+crates/tailrace/tests/status_across_machines.rs
+crates/tailrace-core/src/gate.rs
+crates/tailrace-core/tests/gate.rs
+crates/tailrace-conformance/src/core/gate.rs
 crates/tailrace/Cargo.toml
 Cargo.toml
 Cargo.lock
