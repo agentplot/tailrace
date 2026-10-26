@@ -1,10 +1,14 @@
 //! The landing's group: 77 and 78 (B.3). The rig stages what a landing
 //! records of each verdict, and the landing makes the rest: the signed
 //! claim is the landing's to make and tailrace's only to carry, so the
-//! suite makes none (12, rule core.8; design D3a).
+//! suite makes none (12, rule core.8; design D3a). A landing that reads
+//! a remote is held to answering as last fetched where it does not
+//! answer (77).
+
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tailrace_seams::{
-    Branch, BuildId, Check, Landing, Outcome, Revision, Seam, SignerId, Verdict, IN_TOTO,
+    Branch, BuildId, Check, Landing, Outcome, Read, Revision, Seam, SignerId, Verdict, IN_TOTO,
 };
 
 use crate::seams::unreadable;
@@ -33,6 +37,12 @@ pub trait LandingRig: Rig {
     /// (C.6).
     fn records_verdicts(&self) -> bool;
 
+    /// Whether the landing reads a remote, and so keeps a copy of it to
+    /// answer from where the remote does not; a landing with no remote
+    /// bound reads the repository, which is the landing itself (C.5,
+    /// C.6).
+    fn reads_a_remote(&self) -> bool;
+
     /// A new revision the branch has landed, the landing recording
     /// `verdicts` for it as it records any verdict. The suite hands it
     /// verdicts only where the rig records them.
@@ -41,8 +51,10 @@ pub trait LandingRig: Rig {
     /// A revision the branch has not landed.
     fn not_landed(&self) -> Revision;
 
-    /// The landing made unreachable, every operation answering
-    /// unreadable, and the words it answers with.
+    /// The landing made unreachable, and the words it answers with: a
+    /// landing never read answers every operation unreadable with them,
+    /// and one read before answers from its copy as last fetched, saying
+    /// so with them (77).
     fn unreachable(&self) -> String;
 }
 
@@ -78,6 +90,12 @@ pub fn scenarios() -> Vec<Scenario<dyn LandingRig>> {
             plays: None,
             cites: &[104],
             run: two_signers_each_by_its_own_name,
+        },
+        Scenario {
+            name: "a landing read as last fetched",
+            plays: None,
+            cites: &[59, 61, 77, 78],
+            run: a_landing_read_as_last_fetched,
         },
     ]
 }
@@ -242,4 +260,94 @@ fn two_signers_each_by_its_own_name(rig: &dyn LandingRig) {
             want.signer
         );
     }
+}
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// That `read` is from the copy as last fetched, at a time no earlier
+/// than `since`, with `words` unchanged.
+fn as_fetched(read: &Read, since: u64, words: &str, asked: &str) {
+    match read {
+        Read::Kept { at, said } => {
+            assert!(
+                *at >= since,
+                "{asked} was fetched at {at}, before it was first read at {since}"
+            );
+            assert_eq!(
+                said, words,
+                "{asked} did not carry the remote's words unchanged"
+            );
+        }
+        Read::Source => panic!("{asked} said it was read from the landing, which was unreachable"),
+    }
+}
+
+/// 77: a landing read once and then made unreachable answers from its
+/// copy as last fetched, as it answered then, saying when and with the
+/// remote's words; a revision landed after the copy was fetched is not
+/// landed from it, never landed and never refused (58, 59, 61, 78).
+fn a_landing_read_as_last_fetched(rig: &dyn LandingRig) {
+    if !rig.reads_a_remote() {
+        not_applicable("the landing reads no remote: the repository is the landing itself");
+    }
+    let branch = rig.branch();
+    let recorded = if rig.records_verdicts() {
+        vec![recorded("test", Outcome::Pass)]
+    } else {
+        vec![]
+    };
+    let first = rig.landed(&recorded);
+    let since = now();
+    let landed = ok(rig.landing().landed(&branch, &first), "landed");
+    let verdicts = ok(rig.landing().verdicts_of(&first), "verdicts-of");
+    assert!(
+        landed.landed,
+        "{branch} has not landed {first}, which it landed"
+    );
+    assert_eq!(
+        (&landed.read, &verdicts.read),
+        (&Read::Source, &Read::Source),
+        "a landing whose remote answers said it read a copy"
+    );
+    let later = rig.landed(&[]);
+    let words = rig.unreachable();
+
+    let landing = rig.landing();
+    let again = ok(
+        landing.landed(&branch, &first),
+        "landed of a landed revision, the landing unreachable",
+    );
+    assert!(
+        again.landed,
+        "{branch} had landed {first} when last fetched, and was answered not landed"
+    );
+    as_fetched(&again.read, since, &words, "landed");
+    let read_again = ok(
+        landing.verdicts_of(&first),
+        "verdicts-of a landed revision, the landing unreachable",
+    );
+    assert_eq!(
+        read_again.verdicts, verdicts.verdicts,
+        "verdicts-of answered otherwise from the copy"
+    );
+    as_fetched(&read_again.read, since, &words, "verdicts-of");
+
+    let after = ok(
+        landing.landed(&branch, &later),
+        "landed of a revision landed after the copy",
+    );
+    assert!(
+        !after.landed,
+        "{later}, landed after the copy was fetched, was answered landed from it"
+    );
+    as_fetched(
+        &after.read,
+        since,
+        &words,
+        "landed of a revision landed after the copy",
+    );
 }

@@ -175,6 +175,7 @@ fn overview_html(body: &mut String, overview: &Overview) {
                 escape(overview.branch.as_str()),
                 escape(channels.revision.as_str())
             );
+            landing_html(body, &channels.landing);
             channels_html(body, channels);
         }
         Err(not) => {
@@ -193,6 +194,21 @@ fn overview_html(body: &mut String, overview: &Overview) {
     );
     body.push_str("<h2>Published from this host</h2>\n");
     published(body, &overview.published);
+}
+
+/// 77: how the landing read the branch's head, as the command line
+/// says it: nothing where it read itself, and where it read the host's
+/// copy, when that was fetched and the remote's words, unchanged, in a
+/// `<pre>` of their own (59; design D6).
+fn landing_html(body: &mut String, read: &Read) {
+    if let Read::Kept { at, said } = read {
+        let _ = writeln!(
+            body,
+            "<p>landing: as last fetched {}</p>\n<pre>{}</pre>",
+            utc(*at),
+            escape(said)
+        );
+    }
 }
 
 /// Each component's channels in a table of its own, in the order the

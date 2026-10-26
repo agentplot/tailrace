@@ -700,6 +700,72 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
     assert!(lines[published + 1].contains("holds no"), "{printed}");
 }
 
+// Requirement: Status says when the landing was fetched
+
+/// What the fake landing's remote says once it is cut off: git's words
+/// over two lines, as a remote that cannot be reached answers.
+const UNREACHABLE: &str = "fatal: unable to access 'https://forge.example/o/r.git/': \
+                           Could not resolve host: forge.example\n\
+                           fatal: Could not read from remote repository.\n";
+
+#[test]
+fn status_says_the_landing_was_read_as_last_fetched_and_shows_every_channel() {
+    let host = Host::new();
+    declared(&host.fakes, "beta");
+    declared(&host.fakes, "stable");
+    chained(&host, "stable", &["0.1.0", "0.2.0"]);
+    let before = now();
+    let (code, first) = host.run(&["status"]);
+    let after = now();
+    assert_eq!(code, 0, "{first}");
+    assert!(
+        !first.contains("landing:"),
+        "a landing read from itself was named: {first}"
+    );
+    host.fakes.landing.unreachable(UNREACHABLE);
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(
+        lines[0].starts_with(&format!("main at {}, as of 20", host.head)),
+        "{printed}"
+    );
+    let at = lines[1]
+        .strip_prefix("  landing: as last fetched ")
+        .unwrap_or_else(|| panic!("the landing's read is not under the branch: {printed}"));
+    let fetched = (before..=after)
+        .map(tailrace::render::utc)
+        .find(|t| t == at);
+    assert!(fetched.is_some(), "fetched at {at}, not when first read");
+    assert!(
+        printed.contains(&format!("{at}\n{UNREACHABLE}")),
+        "the remote's words are not beneath, unchanged: {printed}"
+    );
+    let shown: Vec<&str> = first.lines().filter(|l| l.starts_with("  ")).collect();
+    for line in shown {
+        assert!(printed.contains(line), "{line:?} is not shown: {printed}");
+    }
+    assert!(!printed.contains("refused"), "{printed}");
+
+    let (code, json) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let channels = &json["value"]["channels"];
+    assert_eq!(channels["answer"], "ok", "{json}");
+    let kept = &channels["value"]["landing"]["kept"];
+    assert_eq!(kept["said"], UNREACHABLE, "{json}");
+    assert_eq!(
+        kept["at"].as_u64().map(tailrace::render::utc).as_deref(),
+        Some(at),
+        "{json}"
+    );
+    assert_eq!(
+        channels["value"]["channels"][1]["at"]["value"]["head"]["to"]["version"],
+        "0.2.0"
+    );
+}
+
 #[test]
 fn status_prints_an_empty_channel_read_from_the_copy_as_last_read_with_its_words() {
     let host = Host::new();

@@ -398,6 +398,44 @@ fn the_page_names_every_channel_version_and_promotion_and_escapes_the_words() {
 }
 
 #[test]
+fn the_page_and_its_json_say_the_landing_was_read_as_last_fetched_as_the_command_line_does() {
+    let world = World::new();
+    let repository = world.named();
+    world.promote("stable", &["0.1.0"]);
+    let (address, _) = serving(&world.host, Duration::from_secs(60));
+    let (_, first) = json(address, &format!("{}/status.json", repository.path()));
+    assert_eq!(
+        first["value"]["channels"]["value"]["landing"], "source",
+        "{first}"
+    );
+    let (_, page) = get(address, &format!("{}/status", repository.path()));
+    assert!(!page.contains("landing:"), "{page}");
+    fs::remove_dir_all(&world.scratch.remote).unwrap();
+
+    let (status, served) = json(address, &format!("{}/status.json", repository.path()));
+    assert_eq!(status, 200, "{served}");
+    let kept = &served["value"]["channels"]["value"]["landing"]["kept"];
+    let at = kept["at"].as_u64().unwrap_or_else(|| panic!("{served}"));
+    let said = kept["said"].as_str().unwrap();
+    assert!(
+        said.contains("does not appear to be a git repository"),
+        "{said}"
+    );
+    assert_eq!(unasked(served.clone()), unasked(world.status()));
+    let (status, page) = get(address, &format!("{}/status", repository.path()));
+    assert_eq!(status, 200, "{page}");
+    assert!(
+        page.contains(&format!(
+            "<p>landing: as last fetched {}</p>\n<pre>{}</pre>",
+            tailrace::render::utc(at),
+            tailrace::commands::serve::page::escape(said)
+        )),
+        "{page}"
+    );
+    assert!(page.contains("<td>stable</td>"), "{page}");
+}
+
+#[test]
 fn a_promotion_after_one_request_is_shown_by_the_next() {
     let world = World::new();
     world.named();

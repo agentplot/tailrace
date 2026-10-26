@@ -200,6 +200,7 @@ fn text(out: &mut dyn Write, overview: &Overview) -> io::Result<()> {
                 "{} at {}, as of {asked}",
                 overview.branch, channels.revision
             )?;
+            landing(out, &channels.landing)?;
             self::channels(out, channels)?;
         }
         Err(not) => {
@@ -214,6 +215,21 @@ fn text(out: &mut dyn Write, overview: &Overview) -> io::Result<()> {
     writeln!(out)?;
     writeln!(out, "published from this host")?;
     published(out, &overview.published)
+}
+
+/// 77: how the landing read the branch's head, under the branch and the
+/// revision: nothing where it read itself, and where it read the host's
+/// copy, when that was fetched and the remote's words, unchanged, on
+/// lines of their own beneath, as a chain read as last read is printed
+/// (59; design D6).
+fn landing(out: &mut dyn Write, read: &Read) -> io::Result<()> {
+    match read {
+        Read::Source => Ok(()),
+        Read::Kept { at, said } => {
+            writeln!(out, "  landing: as last fetched {}", render::utc(*at))?;
+            words(out, said)
+        }
+    }
 }
 
 /// Each component's channels in a block of its own, in the order the
