@@ -686,8 +686,8 @@ fn now() -> u64 {
 #[test]
 fn a_landing_read_as_last_fetched_shows_every_channel_and_says_when() {
     let world = World::new();
-    declare(&world, &beta(), "lib", None);
-    declare(&world, &stable(), "lib", None);
+    declare(&world, &beta(), None);
+    declare(&world, &stable(), None);
     promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
     let before = now();
     let first = asked(&world, &ask(&world));
@@ -721,7 +721,7 @@ fn a_landing_read_as_last_fetched_shows_every_channel_and_says_when() {
 #[test]
 fn a_head_not_landed_as_last_fetched_refuses_the_channels_and_the_record_still_answers() {
     let world = World::new();
-    declare(&world, &beta(), "lib", None);
+    declare(&world, &beta(), None);
     let before = now();
     let (version, _) = published(&world);
     let after = now();
