@@ -24,8 +24,10 @@ Cargo's own configuration naming it and the lockfile naming no host.
 - **pinned** (137): the names and versions a checkout's `Cargo.lock`
   pins from a registry, spelled as the lockfile spells them, read from
   the file alone; absent where the checkout holds no `Cargo.lock`. The
-  core resolves each through the name the store holds for it (138) and
-  hands render the artifacts it found; the projection resolves nothing.
+  core resolves each through the name the store holds for it (138), a
+  pointer to the version's index, finds the crate in that index by its
+  metadata (ecosystem `cargo` and the pinned name, 4), and hands render
+  the artifacts it found; the projection resolves nothing.
 - **render** (85, 48): a local registry at the place given, holding
   exactly the crates given: each `.crate` file read through the store
   seam and checked against its digest, and an index line per version
@@ -37,8 +39,8 @@ Cargo's own configuration naming it and the lockfile naming no host.
   cache is bound.
 - The conformance suite's whole projection group runs over it, and a
   tools-layer test proves the loop: a consumer's `Cargo.lock` is read for
-  its pins, each pin is resolved through the store's name for it, the
-  crates are rendered, and `cargo build --offline --locked` resolves the
+  its pins, each pin is resolved through the store's name for it to the
+  version's index and the crate found there, the crates are rendered, and `cargo build --offline --locked` resolves the
   family crate from the layout through source replacement, the lockfile's
   checksum matching the crate packed and its source naming the declared
   registry address and no path or host.
@@ -49,17 +51,19 @@ This change comes after two units of bolt 5 and builds on what they land:
   the fakes and the core's render that chooses a layout's versions from
   a lockfile's pins (137); this change implements `pinned` for Cargo.
 - **the store names an artifact by ecosystem, name and version** writes
-  the pointer from an ecosystem, a name and a version to an artifact's
-  digest that a publish leaves (138); the proof resolves its pins through
-  it.
+  the pointer a publish leaves at `artifact/<ecosystem>/<name>@<version>`,
+  naming the digest of the version's index (138); the proof names its
+  crate's index there and resolves its pins through it.
 
 Out of scope, and what each waits on:
 
 - Which versions a layout holds, the policy it is rendered under, the
-  publisher's layout policy carried on the version's index (113), where
-  a lockfile's layout lives, and `tailrace sync` writing it: render under
-  a policy (47, 51, 99, 113).
-- Writing and moving the name pointers (109, 138): the store-naming unit.
+  claims read beside the version's index (the gate's acceptance, 28, and
+  the publisher's layout-policy claim, 113), where a lockfile's layout
+  lives, and `tailrace sync` writing it: render under a policy (47, 51,
+  99, 113).
+- Writing and moving the name pointers (109, 138), and the reserved
+  `artifact/` space no component's tag may enter: the store-naming unit.
 - The registry name and address a family crate's consumers declare, the
   same on every host (49), and a consumer's `.cargo/config.toml`: the
   test declares its own; the convention waits on the design (see design,

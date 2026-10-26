@@ -5,9 +5,13 @@ has pack, render and serve; render under a policy, which this change
 comes after, adds pinned (137) with the fakes and the core's render that
 reads a checkout's pins, resolves each through the name the store holds
 for it, and renders what it found. The store-naming unit, which this
-change also comes after, makes a publish leave that name: a pointer from
-an ecosystem, a name and a version to the artifact's digest (138). The file and image projections pack and
-render nothing; the moon cache renders cache entries by reading bytes
+change also comes after, makes a publish leave that name:
+`artifact/<ecosystem>/<name>@<version>`, a pointer to the digest of the
+version's index, in which the artifact of that ecosystem and name is
+found by its metadata and beside which the claims about the version are
+read (138). The core resolves a pin so; the projection is handed the
+artifacts it found. The file and image projections pack and render
+nothing; the moon cache renders cache entries by reading bytes
 through a store it is handed (`profiles/projection/moon_cache/`). An
 artifact's digest names a manifest (`Manifest::Artifact { meta, layers
 }`), whose layer is the packed bytes. C.11 fixes Cargo's row: pack the
@@ -146,15 +150,19 @@ cargo, so they sit in `tests/cargo_projection.rs` behind the `tools`
 feature, in the `tools` task (check-tools), with a sealed `CARGO_HOME`
 and `HOME` per test.
 
-The proof runs the loop a consumer's build takes: pack a crate, put it
-in a layout store under its digest and name it there as the store-naming
-unit's publish does; render it once so the consumer, depending on it
-through a registry replaced by the layout, writes its `Cargo.lock`
-offline; remove the layout; read the consumer's pins with pinned,
-resolve each through the store's name for it with the store operation
-that unit lands, render what resolved; and run `cargo build --offline
---locked`. It passes only where the crate rendered is the crate whose
-checksum the lockfile recorded, so it proves 87 and 138 together. The
+The proof runs the loop a consumer's build takes: pack a crate, put its
+artifact in a layout store under its digest, put a version's index
+naming it beside an artifact of another ecosystem, and name the index at
+`artifact/cargo/<name>@<version>` as the store-naming unit's publish
+does; render the crate once so the consumer, depending on it through a
+registry replaced by the layout, writes its `Cargo.lock` offline; remove
+the layout; read the consumer's pins with pinned, resolve each with the
+core's resolution those units land (the name to the index, the crate
+found in it by its metadata), render what resolved; and run `cargo build
+--offline --locked`. It passes only where the crate rendered is the
+crate whose checksum the lockfile recorded, so it proves 87 and 138
+together. The claims beside the index are render under a policy's to
+read and prove; the proof renders no policy. The
 registry the test declares is `sparse+https://tailrace.invalid/cargo/`,
 naming no repository, as 138 has a consumer know nothing of the
 publisher's.

@@ -102,12 +102,13 @@ version than its metadata (core.4, core.5).
 
 A consumer whose `.cargo/config.toml` replaces its family registry's
 source with a local registry rendered from its lockfile's pins, each
-resolved through the store's name for it (138), SHALL build against a
+resolved through the store's name for it to the version's index and the
+crate found in that index by its metadata (138), SHALL build against a
 family crate with `cargo build --offline --locked`. Its lockfile SHALL
 name the registry's declared address and no layout path or host (46,
 49). Serve SHALL answer absent, as Cargo reads the layout itself (86).
 
 #### Scenario: cargo build resolves a family crate from the layout
 
-- **WHEN** a consumer's `Cargo.lock` pins a family crate held in the store under its name, and its pins are read, resolved and rendered into the layout its configuration replaces the registry with
+- **WHEN** a consumer's `Cargo.lock` pins a family crate whose version's index the store names at `artifact/cargo/<name>@<version>`, and its pins are read, resolved and rendered into the layout its configuration replaces the registry with
 - **THEN** `cargo build --offline --locked` succeeds, and `Cargo.lock` records the crate's source as the declared registry address with the checksum of the crate rendered
