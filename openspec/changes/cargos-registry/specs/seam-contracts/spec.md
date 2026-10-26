@@ -3,14 +3,14 @@
 ### Requirement: One interface per seam
 Each seam of Part B SHALL be exactly one interface holding that seam's
 operations as the statement names them and no other: the store (66 to
-72, and the listing of the names it holds, 138), the build (74, 75), the
+72, and the listing of the versions a name holds, 138), the build (74, 75), the
 landing (77, 78), the signer (79, 80), the policy (82), a projection (84
 to 86, 137), a target (88 to 91) and the keeper (120, 121). A profile
 implements one interface and nothing of the core (core.2).
 
 #### Scenario: Each seam's operations
 - **WHEN** a reader lists the operations of each seam's interface
-- **THEN** the store has put-bytes, put-artifact, attach, claims-of, name, resolve, read and names; the build has ensure and report; the landing has landed and verdicts-of; the signer has sign and verify; the policy has policy-for; a projection has pack, render, serve and pinned; a target has desired, current, apply and report; the keeper has append and chain; and no interface has any other
+- **THEN** the store has put-bytes, put-artifact, attach, claims-of, name, resolve, read and versions; the build has ensure and report; the landing has landed and verdicts-of; the signer has sign and verify; the policy has policy-for; a projection has pack, render, serve and pinned; a target has desired, current, apply and report; the keeper has append and chain; and no interface has any other
 
 #### Scenario: The seams name no tool
 - **WHEN** the seams' code is searched for the names core.1 rules out
@@ -24,9 +24,10 @@ the bytes already (66, 5); put-artifact with the artifact's digest
 claims-of with every attestation as attached, or absent (69); name
 with the name moved, or refused naming where it is (70); resolve with
 a digest, or absent (71); read with what the digest holds, or
-absent (72); and names, given a prefix, with every name it holds that
-begins with it, in no order a reader relies on, none where it holds
-none, and unreadable where it cannot list (138, 23, 58).
+absent (72); and versions, given an ecosystem and a name, with the
+version of every pointer `artifact/<ecosystem>/<name>@<version>` it
+holds, in no order a reader relies on, none where it holds none, and
+unreadable where it cannot list (138, 23, 58).
 
 #### Scenario: A name moved only from where it is expected
 
@@ -43,19 +44,19 @@ none, and unreadable where it cannot list (138, 23, 58).
 - **WHEN** read is asked for the digest put-artifact answered
 - **THEN** it answers the artifact's metadata and the digests it names
 
-#### Scenario: The names under a prefix
+#### Scenario: The versions a name holds
 
-- **WHEN** a store holding the names `artifact/cargo/fam-a@1.0.0`, `artifact/cargo/fam-a@1.1.0`, `artifact/cargo/fam-ab@1.0.0` and `fam-v1.0.0` is asked for the names under `artifact/cargo/fam-a@`
-- **THEN** it answers the first two and no other, and asked under a prefix no name begins with, it answers none
+- **WHEN** a store holding the names `artifact/cargo/fam-a@1.0.0`, `artifact/cargo/fam-a@1.1.0+build.5`, `artifact/cargo/fam-ab@1.0.0` and `fam-v1.0.0` is asked for the versions of `fam-a` in `cargo`
+- **THEN** it answers `1.0.0` and `1.1.0+build.5` and no other, and asked for a name it holds no pointer of, it answers none
 
 ### Requirement: A projection's contract
 A projection SHALL answer pack, given an output at a build identity and,
-where the bytes are an artifact's, the version, a way to ask whether the
-component's paths hold a path of the repository, and a way to ask the
-artifacts the store holds of a name in the projection's ecosystem, with
-the ecosystem's own bytes, their metadata only where a version was
-given, and whether the same outputs and version, or the same build
-identity, pack to the same bytes (84, 87, 100, 110, 123, 138); render,
+where the bytes are an artifact's, the version, the component the output
+belongs to, the component's declared outputs as the build left them, and
+a way to ask whether the component's paths hold a path of the
+repository, with the ecosystem's own bytes, their metadata only where a
+version was given, and whether the same outputs and version, or the same
+build identity, pack to the same bytes (84, 87, 100, 110, 123); render,
 given artifacts and their metadata or cache entries by build identity,
 with a consumer layout and the versions or build identities it holds
 (85); serve, given a layout, one request of the ecosystem's own client
@@ -67,10 +68,10 @@ given a checkout, with the ecosystem names and versions its lockfile
 pins as the lockfile spells them, or absent where the checkout holds no
 lockfile of that ecosystem (137). A projection SHALL never reach the
 store but through the store it is handed, nor the policy or a version's
-claims at all, nor match a component's paths or resolve a store's names
-itself: a version a served layout lacks is asked of the core, which
-judges it, and a component's paths and the store's artifacts of a name
-are asked of the core through pack's input (core.2).
+claims at all, nor match a component's paths itself: a version a served
+layout lacks is asked of the core, which judges it, and whether the
+component's paths hold a path is asked of the core through pack's input
+(core.2).
 
 #### Scenario: A projection that cannot promise the same bytes
 - **WHEN** pack answers bytes it cannot promise to make again

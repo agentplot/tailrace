@@ -5,45 +5,54 @@
 The Cargo projection SHALL pack an output given a version from the one
 crate file the output's packaging task left: the package that crate
 names, at the place it was packed from, SHALL be packed by `cargo
-package --no-verify` after the version is set on it and on every crate
-of its own component it reaches by path dependency, each such dependency
-rewritten to that version's requirement in the registry `tailrace`, so a
-path dependency on a sibling crate becomes a dependency of the registry
-as Cargo does for any publish (84, 110, C.11). A crate SHALL be of the
-component whose paths hold its manifest, as the core matches them (123).
-It SHALL answer the package's crate with metadata naming the ecosystem
-`cargo`, the package's name and the version, and SHALL never open the
-archive to edit it.
+package --no-verify` without the crate's own lockfile, after the version
+is set on it and on every crate of its own component it reaches by path
+dependency, each such dependency rewritten to that version's requirement
+in the registry `tailrace`, so a path dependency on a sibling crate
+becomes a dependency of the registry as Cargo does for any publish (84,
+110, C.11). A crate SHALL be of the component whose paths hold its
+manifest, as the core matches them (123). A sibling that none of the
+component's declared outputs packs SHALL be refused naming it and the
+component (84). It SHALL answer the package's crate with metadata naming
+the ecosystem `cargo`, the package's name and the version, and
+`same_again` true, and SHALL never open the archive to edit it (87).
 
 #### Scenario: Packed the same again
 
-- **WHEN** one crate output whose dependencies are all of its own component is packed twice at one version
+- **WHEN** one crate output is packed twice at one version
 - **THEN** both packs answer the same bytes and the same metadata, and `same_again` true, the conformance group's "packed the same again" passing
 
 #### Scenario: A sibling becomes a registry dependency
 
 - **WHEN** a crate depending by path on a crate of its own component is packed at a version
-- **THEN** the crate's own manifest names the sibling at that version's requirement in the registry the checkout's cargo configuration names `tailrace`, and no path, and its own lockfile names the sibling at that version with that registry's address
+- **THEN** the crate's own manifest names the sibling at that version's requirement in the registry the checkout's cargo configuration names `tailrace`, and no path, and the crate holds no lockfile
+
+#### Scenario: A sibling no output publishes
+
+- **WHEN** a crate depending by path on a crate of its own component is packed, and none of the component's outputs packs that crate
+- **THEN** the pack is refused naming the sibling and the component, and no cargo package ran
 
 ### Requirement: A crate of another component is depended on as the manifest writes
 
 A path dependency on a crate of another component SHALL be packed as a
 dependency on the version requirement the manifest writes for it, in the
-registry `tailrace`, the crate's own lockfile resolving it from the
-versions the store holds of that crate within the requirement; that
-crate's manifest SHALL never be given this component's version (C.11,
-123, 124). Where the store holds no version within the requirement, the
-pack SHALL be refused naming the crate, the requirement and the versions
-the store holds; a path dependency on a crate of another component that
-writes no version requirement SHALL be refused naming the crate (C.11,
-138). A pack whose crate reaches a crate of another component SHALL
-answer `same_again` false, since its lockfile names the newest version
-the store held within the requirement (87).
+registry `tailrace`, with no version of it picked: the packed crate SHALL
+name the requirement alone, and that crate's manifest SHALL never be
+given this component's version (C.11, 123, 124, 137). Where the store
+holds no version of that crate within the requirement, the pack SHALL be
+refused naming the crate, the requirement and the versions the store
+holds; a path dependency on a crate of another component that writes no
+version requirement SHALL be refused naming the crate (C.11, 138).
 
-#### Scenario: Another component's crate at the version the store holds
+#### Scenario: Another component's crate the store holds within the requirement
 
 - **WHEN** a crate depending by path on a crate of another component with the requirement `0.3` is packed, and the store holds that crate at 0.3.1
-- **THEN** the packed crate's manifest names the dependency at `0.3` in the registry `tailrace` and no path, its lockfile names 0.3.1 with the stored crate's checksum, the other crate's manifest holds its bytes, and the answer's `same_again` is false
+- **THEN** the packed crate's manifest names the dependency at `0.3` in the registry `tailrace` and no path, the other crate's manifest holds its bytes, and the answer's `same_again` is true
+
+#### Scenario: The same bytes whatever the store holds within the requirement
+
+- **WHEN** the same crate is packed again at the same version once the store also holds that crate at 0.3.2
+- **THEN** the pack answers the same bytes as before
 
 #### Scenario: Another component's crate the store holds no version of
 
@@ -58,9 +67,9 @@ manifest names another name or version than the one given SHALL be
 refused naming both. An output with no crate file among its files, or
 several, SHALL be refused naming the output and its files, and a crate
 file that names no place in the repository SHALL be refused naming it.
-A checkout whose cargo configuration names no registry `tailrace` SHALL
-be refused naming it and the files read. Cargo that cannot be run, or
-that fails, SHALL answer unreadable with the operating system's or
+Cargo that cannot be run SHALL answer unreadable with the operating
+system's own words, and cargo that fails, on a checkout whose cargo
+configuration names no registry `tailrace` among others, unreadable with
 cargo's own words (58, 59).
 
 #### Scenario: The checkout is left as it was
