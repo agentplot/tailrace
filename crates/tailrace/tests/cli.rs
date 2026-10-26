@@ -1265,7 +1265,9 @@ fn policy_through_the_command_line_prints_the_givens_beside_a_line_value_for_val
 
     let value = &printed["value"];
     assert_eq!(value["revision"], head.as_str());
-    let channels = value["channels"]["value"].as_array().expect("the channels");
+    let channels = value["channels"]["value"]["in_force"]
+        .as_array()
+        .expect("the channels");
     let beta = &channels[0];
     assert_eq!(
         (&beta["channel"]["name"], &beta["moves"]["by"]),
@@ -1391,7 +1393,7 @@ fn policy_shows_alpha_taking_prereleases_and_stables_approvers_value_for_value()
         },
     );
     assert_eq!(printed, answer_json(&core));
-    let channels = printed["value"]["channels"]["value"]
+    let channels = printed["value"]["channels"]["value"]["in_force"]
         .as_array()
         .expect("the channels");
     assert_eq!(

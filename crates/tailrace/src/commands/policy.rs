@@ -63,7 +63,7 @@ fn text(out: &mut dyn Write, in_force: &InForce) -> io::Result<()> {
     writeln!(out, "channels")?;
     match &in_force.channels {
         Ok(channels) => {
-            for channel in channels {
+            for channel in &channels.in_force {
                 self::channel(out, channel)?;
             }
             Ok(())

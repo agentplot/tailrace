@@ -1,17 +1,17 @@
 //! Spec command-line, the policy in force: what acceptance and a layout
-//! require and every channel the policy lists, asked of the core over the
-//! fakes at the branch's landed head, each part and each channel its own
-//! answer.
+//! require, every channel the policy lists and the givens it holds off,
+//! asked of the core over the fakes at the branch's landed head, each part
+//! and each channel its own answer.
 
 mod common;
 mod world;
 
-use tailrace_core::{answer_json, in_force, ChannelInForce, InForce, InForceAsk};
+use tailrace_core::{answer_json, in_force, ChannelInForce, ChannelsInForce, InForce, InForceAsk};
 use tailrace_fakes::{FakePolicy, LandingOp, PolicyOp, PROFILE};
 use tailrace_seams::{
     Answer, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
-    EnvironmentName, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam,
-    Seams, Source, Why,
+    EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim,
+    Revision, Seam, Seams, Source, Why,
 };
 use world::World;
 
@@ -109,7 +109,7 @@ fn an_absent_layout_is_shown_beside_the_channels() {
     };
     assert!(a.what.contains("layout"), "{a:?}");
     assert_eq!(
-        answer.channels,
+        answer.channels.clone().map(|c| c.in_force),
         Ok(vec![
             listed(
                 of("lib", "beta"),
@@ -136,7 +136,7 @@ fn an_absent_layout_is_shown_beside_the_channels() {
     let value = &json["value"];
     assert_eq!(value["acceptance"]["answer"], "ok", "{json}");
     assert_eq!(value["layout"]["answer"], "absent", "{json}");
-    let first = &value["channels"]["value"][0];
+    let first = &value["channels"]["value"]["in_force"][0];
     assert_eq!(first["channel"]["name"], "beta", "{json}");
     assert_eq!(first["channel"]["component"], "lib", "{json}");
     assert_eq!(first["moves"]["by"], "each_publish", "{json}");
@@ -180,7 +180,7 @@ fn one_channels_policy_unreadable_leaves_the_rest_standing() {
     });
     let answer = asked(&world, &seams).unwrap();
     assert_eq!(answer.acceptance, Ok(acceptance()));
-    let channels = answer.channels.expect("the channels answered");
+    let channels = answer.channels.expect("the channels answered").in_force;
     let policies: Vec<(String, bool)> = channels
         .iter()
         .map(|c| (c.channel.channel.spelled(), c.policy.is_ok()))
@@ -244,4 +244,67 @@ fn the_policy_in_force_asks_the_landing_and_the_policy_alone_and_writes_nothing(
     );
     // Acceptance, a layout, the channels and each of the three channels.
     assert_eq!(asked_of_policy.len(), 6);
+}
+
+#[test]
+fn the_givens_held_off_are_shown_beside_the_channels_from_one_answer() {
+    let world = World::new();
+    declare(&world.fakes.policy);
+    let canary = of("lib", "canary");
+    world.fakes.policy.holds(
+        &canary,
+        Moves::EachPublish { prereleases: true },
+        "[channels.lib.canary]",
+    );
+    let before = world.fakes.policy.calls().len();
+    let answer = asked(&world, &world.fakes.seams()).unwrap();
+    let Ok(ChannelsInForce { in_force, held }) = &answer.channels else {
+        panic!("the channels answered {:?}", answer.channels)
+    };
+    assert_eq!(
+        held,
+        &[HeldChannel {
+            channel: DeclaredChannel {
+                channel: canary.clone(),
+                moves: Moves::EachPublish { prereleases: true },
+            },
+            switch: "[channels.lib.canary]".into(),
+        }]
+    );
+    assert!(
+        !in_force.iter().any(|c| c.channel.channel == canary),
+        "a held given is among the channels in force"
+    );
+    let channels_asked = world.fakes.policy.calls()[before..]
+        .iter()
+        .filter(|c| c.op == PolicyOp::Channels)
+        .count();
+    assert_eq!(channels_asked, 1, "the channels were asked more than once");
+
+    let json = answer_json(&Ok::<_, Not>(answer));
+    let held = &json["value"]["channels"]["value"]["held"][0];
+    assert_eq!(held["channel"]["name"], "canary", "{json}");
+    assert_eq!(held["switch"], "[channels.lib.canary]", "{json}");
+}
+
+#[test]
+fn an_unreadable_channels_answer_leaves_the_acceptance_and_the_layout_shown() {
+    let world = World::new();
+    declare(&world.fakes.policy);
+    world
+        .fakes
+        .policy
+        .require(Audience::Layout, Required::Layout { claims: vec![] });
+    world.fakes.policy.fault(
+        PolicyOp::Channels,
+        tailrace_fakes::Fault::Unreadable("the channels cannot be read".into()),
+        tailrace_fakes::Times::Once,
+    );
+    let answer = asked(&world, &world.fakes.seams()).unwrap();
+    assert_eq!(answer.acceptance, Ok(acceptance()));
+    assert_eq!(answer.layout, Ok(Required::Layout { claims: vec![] }));
+    let Err(Not::Unreadable(u)) = &answer.channels else {
+        panic!("the channels answered {:?}", answer.channels)
+    };
+    assert_eq!(u.said.as_deref(), Some("the channels cannot be read"));
 }
