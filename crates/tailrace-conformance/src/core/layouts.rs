@@ -1,11 +1,12 @@
 //! The layouts' group: a checkout's layouts rendered from the store with
 //! the versions its lockfiles pin, each under a stacked policy, the
-//! consumer's written layout line, else, through the signers the host
-//! trusts, its publisher's, else the given, holding only what the policy
-//! admits, S4 among them; a refusal answered naming the claim found
-//! wanting, a layout that cannot be refreshed answering what it holds,
-//! and the host's record of each layout, rebuilt when deleted (47, 50,
-//! 51, 61 to 63, 99, 113; design D10).
+//! consumer's written layout line, else its publisher's, else the given,
+//! each claim read through the signers the consumer's file names for it,
+//! else through the signers the host trusts, holding only what the
+//! policy admits, S4 among them; a refusal answered naming the claim
+//! found wanting, a layout that cannot be refreshed answering what it
+//! holds, and the host's record of each layout, rebuilt when deleted (47,
+//! 50, 51, 61 to 63, 99, 113, 118; design D10).
 
 use std::fs;
 use std::path::Path;
@@ -93,6 +94,18 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             cites: &[61, 62, 63],
             run: the_record_deleted_and_rebuilt,
         },
+        Scenario {
+            name: "a consumer's file reads under its own signers alone",
+            plays: None,
+            cites: &[47, 113],
+            run: a_consumers_file_reads_under_its_own_signers_alone,
+        },
+        Scenario {
+            name: "a claim the file names no signer for read through the host's trust",
+            plays: None,
+            cites: &[47, 113, 118],
+            run: a_claim_the_file_names_no_signer_for_read_through_the_hosts_trust,
+        },
     ]
 }
 
@@ -127,11 +140,11 @@ fn provenance() -> RequiredClaim {
     }
 }
 
-/// The signers a host trusts, each allowed a layout policy alone.
+/// The signers a host trusts, its own among them, each with no claim of
+/// its own to make: the consumer allows each the claim it reads through
+/// it.
 fn trusts(ids: &[&str]) -> Vec<NamedSigner> {
-    ids.iter()
-        .map(|id| named(id, &[ClaimKind::LayoutPolicy]))
-        .collect()
+    ids.iter().map(|id| named(id, &[])).collect()
 }
 
 /// The world's head landed with no verdict, and the consumer's file
@@ -145,21 +158,29 @@ fn landed(world: &FakeWorld, claims: Option<Vec<RequiredClaim>>) -> Revision {
             Required::Layout {
                 claims,
                 given: false,
+                signers: vec![],
             },
         );
     }
     world.head.clone()
 }
 
-/// The consumer's file at `revision` writing no layout line, so the
-/// policy answers its given, requiring `claims` (C.10).
-fn given_at(world: &FakeWorld, revision: &Revision, claims: Vec<RequiredClaim>) {
+/// The consumer's file at `revision` naming `signers` and writing no
+/// layout line, so the policy answers its given, requiring `claims`
+/// (C.10).
+fn given_at(
+    world: &FakeWorld,
+    revision: &Revision,
+    claims: Vec<RequiredClaim>,
+    signers: Vec<NamedSigner>,
+) {
     world.fakes.policy.require_at(
         revision,
         Audience::Layout,
         Required::Layout {
             claims,
             given: true,
+            signers,
         },
     );
 }
@@ -346,6 +367,7 @@ fn the_consumers_written_line_at_its_landed_revision(world: &FakeWorld) {
         Required::Layout {
             claims: vec![],
             given: false,
+            signers: vec![],
         },
     );
     let revision = landed(world, Some(vec![acceptance()]));
@@ -437,7 +459,7 @@ fn the_publishers_policy_through_the_hosts_trust(world: &FakeWorld) {
 
 fn the_publishers_above_the_consumers_given(world: &FakeWorld) {
     let revision = landed(world, None);
-    given_at(world, &revision, vec![acceptance()]);
+    given_at(world, &revision, vec![acceptance()], acceptance().signers);
     let (published, artifact) = site(world, "1.0.0", false);
     publishers(world, &published, &[provenance()], GATE);
     world.attach(&artifact.digest, ClaimKind::Provenance, json!({}), HOST);
@@ -565,6 +587,7 @@ fn a_version_refused_after_it_was_held(world: &FakeWorld) {
         Required::Layout {
             claims: vec![acceptance(), provenance()],
             given: false,
+            signers: vec![],
         },
     );
     let again = synced(world, &since, 2, &[]);
@@ -655,5 +678,124 @@ fn the_record_deleted_and_rebuilt(world: &FakeWorld) {
     assert_eq!(
         renders[0], renders[1],
         "the layout was rebuilt to other files"
+    );
+}
+
+/// C.10: a consumer whose file names signers reads under its file alone,
+/// the host's trusted signers read for no claim its file names one for.
+fn a_consumers_file_reads_under_its_own_signers_alone(world: &FakeWorld) {
+    let revision = landed(world, None);
+    let gate = named(GATE, &[ClaimKind::Acceptance]);
+    let curator = named("curator", &[ClaimKind::LayoutPolicy]);
+    given_at(
+        world,
+        &revision,
+        vec![acceptance()],
+        vec![gate.clone(), curator.clone()],
+    );
+    let (by_box, _) = site(world, "1.0.0", false);
+    world.attach(&by_box, ClaimKind::Acceptance, Value::Null, "box");
+    let (by_gate, _) = site(world, "1.1.0", true);
+    publishers(world, &by_gate, &[provenance()], "box");
+    let (curated, artifact) = site(world, "1.2.0", false);
+    let host_or_box = RequiredClaim {
+        kind: ClaimKind::Provenance,
+        check: None,
+        signers: vec![
+            named(HOST, &[ClaimKind::Provenance]),
+            named("box", &[ClaimKind::Provenance]),
+        ],
+    };
+    publishers(world, &curated, &[host_or_box], "curator");
+    world.attach(&artifact.digest, ClaimKind::Provenance, json!({}), HOST);
+    world.lockfile(
+        FILE,
+        &[("site", "1.0.0"), ("site", "1.1.0"), ("site", "1.2.0")],
+    );
+    let synced = synced(world, &revision, 1, &trusts(&["box"]));
+    let layout = refreshed(&synced);
+
+    let (claim, checked) = wanting(pin(layout, "1.0.0"));
+    assert_eq!(claim.kind, ClaimKind::Acceptance);
+    assert_eq!(
+        checked,
+        [SignerId::new(GATE)],
+        "acceptance was read through the host's trust beside the gate the file names"
+    );
+    let held = pin(layout, "1.1.0");
+    assert!(
+        held.answer.is_ok(),
+        "the version the file's gate accepted answered {:?}",
+        held.answer
+    );
+    assert_eq!(
+        held.policy,
+        Some(PolicyOf::Given {
+            revision: Some(revision.clone())
+        }),
+        "a layout-policy claim by a signer the file does not name for one counted"
+    );
+    let curated = pin(layout, "1.2.0");
+    assert_eq!(
+        curated.policy,
+        Some(PolicyOf::Publisher {
+            revision: world.start.clone()
+        }),
+        "the layout-policy claim by the signer the file names for one did not count"
+    );
+    let (claim, checked) = wanting(curated);
+    assert_eq!(claim.kind, ClaimKind::Provenance);
+    assert_eq!(
+        checked,
+        [SignerId::new("box")],
+        "provenance, which the file names no signer for, was read through another than the host's trust"
+    );
+}
+
+/// C.10, 118: a claim the consumer's file names no signer for is read
+/// through the host's trusted signers, its own among them, so a host
+/// consumes what it published itself; the one host 108 admits as the
+/// gate is for publishing, not reading.
+fn a_claim_the_file_names_no_signer_for_read_through_the_hosts_trust(world: &FakeWorld) {
+    let revision = landed(world, None);
+    let laptop = named("laptop", &[ClaimKind::Provenance]);
+    given_at(
+        world,
+        &revision,
+        vec![RequiredClaim {
+            kind: ClaimKind::Acceptance,
+            check: None,
+            signers: vec![],
+        }],
+        vec![laptop],
+    );
+    let (by_laptop, _) = site(world, "1.0.0", false);
+    world.attach(&by_laptop, ClaimKind::Acceptance, Value::Null, "laptop");
+    let (by_host, _) = site(world, "1.1.0", false);
+    world.attach(&by_host, ClaimKind::Acceptance, Value::Null, HOST);
+    world.lockfile(FILE, &[("site", "1.0.0"), ("site", "1.1.0")]);
+    let synced = synced(world, &revision, 1, &trusts(&[HOST, GATE]));
+    let layout = refreshed(&synced);
+
+    let (claim, checked) = wanting(pin(layout, "1.0.0"));
+    assert_eq!(
+        (claim.kind, checked),
+        (
+            ClaimKind::Acceptance,
+            vec![SignerId::new(HOST), SignerId::new(GATE)]
+        ),
+        "acceptance was read through the file's one publisher as the gate, not the host's trust"
+    );
+    let held = pin(layout, "1.1.0");
+    assert!(
+        held.answer.is_ok(),
+        "the version the host accepted itself answered {:?}",
+        held.answer
+    );
+    assert_eq!(
+        held.policy,
+        Some(PolicyOf::Given {
+            revision: Some(revision)
+        })
     );
 }

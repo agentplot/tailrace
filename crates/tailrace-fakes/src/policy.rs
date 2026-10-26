@@ -126,6 +126,7 @@ mod tests {
             Required::Layout {
                 claims: vec![],
                 given: false,
+                signers: vec![],
             },
         );
         policy.require_at(
@@ -134,6 +135,7 @@ mod tests {
             Required::Layout {
                 claims: vec![claim("test")],
                 given: false,
+                signers: vec![],
             },
         );
         assert_eq!(

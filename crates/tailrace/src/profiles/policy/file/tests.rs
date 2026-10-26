@@ -273,23 +273,29 @@ fn no_file_and_no_table_are_absent_naming_the_audience() {
 
 /// The policy for a layout at `text`'s revision, which must be the given
 /// one, marked as given, requiring acceptance alone; answers the signers
-/// it names.
-fn given(text: &str) -> Vec<NamedSigner> {
+/// its acceptance names, and every signer the answer carries.
+fn given_and_carried(text: &str) -> (Vec<NamedSigner>, Vec<NamedSigner>) {
     let repo = Repo::new();
     let at = repo.at(text);
     match repo.policy().policy_for(&at, &Audience::Layout) {
         Ok(Required::Layout {
             claims,
             given: true,
+            signers,
         }) => match <[RequiredClaim; 1]>::try_from(claims) {
             Ok([claim]) => {
                 assert_eq!((claim.kind, claim.check), (ClaimKind::Acceptance, None));
-                claim.signers
+                (claim.signers, signers)
             }
             Err(claims) => panic!("the given requires {claims:?}"),
         },
         other => panic!("the policy for a layout answered {other:?}"),
     }
+}
+
+/// The signers the given's acceptance names at `text`'s revision.
+fn given(text: &str) -> Vec<NamedSigner> {
+    given_and_carried(text).0
 }
 
 /// `[signers.<name>]` of `kinds`, verified by `<name>`'s key.
@@ -329,17 +335,34 @@ fn with_no_layout_line_the_gate_named_is_the_given_layouts_acceptance() {
 }
 
 #[test]
-fn with_one_publisher_and_no_gate_the_given_layout_takes_its_acceptance() {
-    let signers = given(&signer_table("laptop", "[\"provenance\"]"));
+fn with_one_publisher_and_no_gate_the_given_layout_names_no_signer_for_reading() {
+    // C.10: the one host 108 admits as the gate is for publishing, not
+    // reading; the reader reads acceptance through its host's trusted
+    // signers.
+    let (gate, carried) = given_and_carried(&signer_table("laptop", "[\"provenance\"]"));
+    assert_eq!(gate, []);
     assert_eq!(
-        signers,
+        carried,
         [NamedSigner {
             id: SignerId::new("laptop"),
             verified_by: "ssh-ed25519 laptop".into(),
-            kinds: vec![ClaimKind::Provenance, ClaimKind::Acceptance],
+            kinds: vec![ClaimKind::Provenance],
             checks: vec![],
         }]
     );
+}
+
+#[test]
+fn the_given_layout_carries_every_signer_the_file_names_in_its_order() {
+    let (_, carried) = given_and_carried(&format!(
+        "{}{}{}",
+        signer_table("zeta", "[\"acceptance\"]"),
+        signer_table("laptop", "[\"provenance\"]"),
+        signer_table("alpha", "[\"layout_policy\"]"),
+    ));
+    let named: Vec<&str> = carried.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(named, ["zeta", "laptop", "alpha"]);
+    assert_eq!(carried[2].kinds, [ClaimKind::LayoutPolicy]);
 }
 
 #[test]
@@ -369,6 +392,21 @@ fn a_layout_line_written_is_answered_with_nothing_of_the_given_beneath_it() {
                 signers: vec![laptop()],
             }],
             given: false,
+            signers: vec![
+                laptop(),
+                NamedSigner {
+                    id: SignerId::new("box"),
+                    verified_by: "ssh-ed25519 BBBB".into(),
+                    kinds: vec![ClaimKind::Verdict],
+                    checks: vec![Check::new("cli:test"), Check::new("core:test")],
+                },
+                NamedSigner {
+                    id: SignerId::new("gate"),
+                    verified_by: "ssh-ed25519 gate".into(),
+                    kinds: vec![ClaimKind::Acceptance],
+                    checks: vec![],
+                },
+            ],
         })
     );
 }

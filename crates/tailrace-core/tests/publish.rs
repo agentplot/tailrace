@@ -1002,10 +1002,14 @@ fn layout_policies(world: &World, published: &Published) -> Vec<(Envelope, Claim
 /// `world`'s policy for layouts requiring `claims`: a layout line its
 /// file writes, or the given its file answers where it writes none.
 fn layout(world: &World, claims: Vec<RequiredClaim>, given: bool) {
-    world
-        .fakes
-        .policy
-        .require(Audience::Layout, Required::Layout { claims, given });
+    world.fakes.policy.require(
+        Audience::Layout,
+        Required::Layout {
+            claims,
+            given,
+            signers: vec![],
+        },
+    );
 }
 
 #[test]

@@ -38,14 +38,18 @@
 //! A file with no `[layout]` answers for a layout the given policy for
 //! one, marked as given, a version the gate accepted and no other (C.10):
 //! acceptance by every signer `[signers]` lets claim acceptance, in the
-//! file's order; where it names none and exactly one that may claim
-//! provenance, by that one, as the one host 108 admits; otherwise by no
-//! signer, so the given admits no version. The given names no signer of
-//! its own: its gate is read from the file alone (116). The mark lets a
-//! consumer stack its publisher's layout policy above the given (113). A
-//! `[layout]` written is answered as written, not marked, with nothing of
-//! the given beneath it. Only a revision holding no policy file is absent
-//! for a layout (design D11).
+//! file's order, and by no signer where it names none. The given names no
+//! signer of its own: its gate is read from the file alone (116), and the
+//! one host 108 admits as the gate is for publishing, not reading, so a
+//! file naming no signer that may claim acceptance leaves its reader to
+//! read acceptance through its host's trusted signers (C.10, 118). The
+//! mark lets a consumer stack its publisher's layout policy above the
+//! given (113). A `[layout]` written is answered as written, not marked,
+//! with nothing of the given beneath it. Either answer carries every
+//! signer `[signers]` names, in the file's order, so a consumer reads each
+//! claim through its file's signers alone where the file names one for
+//! it (C.10). Only a revision holding no policy file is absent for a
+//! layout (design D11).
 //!
 //! Every operation begins by resolving the revision in the repository,
 //! so a repository that cannot be read answers unreadable with git's
@@ -225,27 +229,21 @@ fn list<T: serde::de::DeserializeOwned>(
     }
 }
 
-/// C.10, 108: the given policy for a layout, standing in for a
-/// `[layout]` the file does not write: acceptance by the gate, every
-/// signer of `signers`, in the file's order, that may claim acceptance;
-/// where none may and exactly one may claim provenance, that one, the
-/// one host 108 admits as the gate, which may then claim acceptance too;
-/// otherwise no signer, since 108 admits no gate, and no version counts
-/// (design D11).
+/// C.10: the given policy for a layout, standing in for a `[layout]` the
+/// file does not write: acceptance by the gate, every signer of
+/// `signers`, in the file's order, that may claim acceptance; no signer
+/// where none may, since the one host 108 admits as the gate is for
+/// publishing, not reading, and a claim the file names no signer for is
+/// read through the reading host's trusted signers (118; design D11).
 fn given_layout(signers: &[NamedSigner]) -> Vec<RequiredClaim> {
-    let may = |kind: ClaimKind| signers.iter().filter(move |s| s.kinds.contains(&kind));
-    let mut gate: Vec<NamedSigner> = may(ClaimKind::Acceptance).cloned().collect();
-    if gate.is_empty() {
-        if let [one] = may(ClaimKind::Provenance).collect::<Vec<_>>().as_slice() {
-            let mut host = (*one).clone();
-            host.kinds.push(ClaimKind::Acceptance);
-            gate.push(host);
-        }
-    }
     vec![RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
-        signers: gate,
+        signers: signers
+            .iter()
+            .filter(|s| s.kinds.contains(&ClaimKind::Acceptance))
+            .cloned()
+            .collect(),
     }]
 }
 
@@ -293,6 +291,7 @@ impl Policy for PolicyFile {
                 return Ok(Required::Layout {
                     claims: given_layout(&signers),
                     given: true,
+                    signers,
                 })
             }
             (None, _) => return Err(absent()),
@@ -324,6 +323,7 @@ impl Policy for PolicyFile {
             Audience::Layout => Required::Layout {
                 claims,
                 given: false,
+                signers,
             },
             Audience::Channel(_) => Required::Channel {
                 claims,

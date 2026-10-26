@@ -6,8 +6,9 @@
 //! default for the newest revision of the branch the checkout descends
 //! from (47 to 54, 99, C.3). Filling the cache reads no policy (53); the
 //! layouts read the consumer's layout line, or, where it writes none, the
-//! publisher's through the signers the host's bindings trust, else the
-//! given (113, C.10). It writes nothing to the store. Text names each layout's place
+//! publisher's, else the given, each claim read through the signers the
+//! consumer's file names for it, else through the host's own signer and
+//! those its bindings trust (113, C.10). It writes nothing to the store. Text names each layout's place
 //! and, per pin, held with its index, refused with the claim found
 //! wanting and the signers checked, and a count of the pins the store
 //! does not name; a layout that cannot be refreshed says what it holds

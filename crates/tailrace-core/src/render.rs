@@ -14,17 +14,31 @@
 //! its file writes a layout line, that line judges every version. Where
 //! it writes none, with a file whose layout policy is the given or with
 //! no policy file, each version is judged under its publisher's, read
-//! from the one layout-policy claim on the version's index that a signer
-//! the host trusts made, each claim it requires counted only through a
-//! signer the host trusts too (C.10, 118); and where no such claim
-//! counts, under the given, acceptance by the gate: the gate the
-//! consumer's file names, or, with no file, the signers the host trusts
-//! (C.10, 116). Every version thus has a policy, so no layout holds a
-//! version judged under none (rule core.17). A version is held only when
-//! each claim the policy requires, in its order, is satisfied by a claim
-//! attached to its index or its artifact that a signer the policy names
-//! made and may make (47, 9, 116, rule core.7); the first that none
-//! satisfies is the refusal, naming it (99; design D4).
+//! from the one layout-policy claim on the version's index that counts,
+//! each claim it requires counted only through a signer the consumer
+//! reads it through too (C.10); and where no such claim counts, under the
+//! given, acceptance by the gate the consumer's file names (116). Every
+//! version thus has a policy, so no layout holds a version judged under
+//! none (rule core.17).
+//!
+//! A consumer reads each claim, the layout-policy claim among them,
+//! through the signers its file names that may make it, since a
+//! repository whose file names signers reads under its file alone; and
+//! only for a claim its file names no signer for, or with no policy file,
+//! through the host's trusted signers: its own signer and the signers its
+//! bindings name, so a host consumes what it published itself (C.10, 118).
+//! The one host 108 admits as the gate is for publishing, not reading. A
+//! version is held only when each claim the policy requires, in its
+//! order, is satisfied by a claim attached to its index or its artifact
+//! that a signer the policy names made and may make (47, 9, 116, rule
+//! core.7); the first that none satisfies is the refusal, naming it (99;
+//! design D4).
+//!
+//! The pins are the lockfile's alone: a name the checkout's manifest
+//! declares and no lockfile pins is no pin, and the layout holds none of
+//! it. A manifest's range resolved to the newest version the policy
+//! admits (137) waits on the store's listing of a name's versions, which
+//! is the store-naming unit's.
 //!
 //! A layout lives at `.tailrace/layouts/<ecosystem>/` under the
 //! checkout's working tree, the same place on every host, and
@@ -44,9 +58,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, BuildId, Claim, ClaimKind, Contents, Digest, Ecosystem,
-    EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned, Policy, Required,
-    RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
+    Answer, Artifact, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents, Digest,
+    Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned, Policy,
+    Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
@@ -128,15 +142,18 @@ pub fn locate(store: &dyn Store, ecosystem: &Ecosystem, pin: &Pinned) -> Pinning
 }
 
 /// 113: the consuming repository's own policy for layouts: the landed
-/// revision it was read at, the claims it requires in its order, and
-/// whether it is the given its file answers where it writes no layout
-/// line (C.10), which lies beneath the publisher's, or a line it writes,
-/// which judges every version.
+/// revision it was read at, the claims it requires in its order, whether
+/// it is the given its file answers where it writes no layout line
+/// (C.10), which lies beneath the publisher's, or a line it writes, which
+/// judges every version; and the signers its file names, each with what
+/// it may claim, through whom alone it reads a claim its file names one
+/// for (C.10).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Own {
     pub revision: Revision,
     pub claims: Vec<RequiredClaim>,
     pub given: bool,
+    pub signers: Vec<NamedSigner>,
 }
 
 /// 113: which policy judged a version, as the answer and the record name
@@ -159,10 +176,21 @@ pub enum PolicyOf {
 /// where it cannot say.
 pub fn own_policy(policy: &dyn Policy, landed: &Landed) -> Answer<Option<Own>> {
     match policy_at(policy, landed, &Audience::Layout) {
+        Ok(Required::Layout {
+            claims,
+            given,
+            signers,
+        }) => Ok(Some(Own {
+            revision: landed.revision().clone(),
+            claims,
+            given,
+            signers,
+        })),
         Ok(required) => Ok(Some(Own {
             revision: landed.revision().clone(),
             claims: required.claims().to_vec(),
-            given: matches!(required, Required::Layout { given: true, .. }),
+            given: false,
+            signers: Vec::new(),
         })),
         Err(Not::Absent(_)) => Ok(None),
         Err(not) => Err(not),
@@ -180,80 +208,139 @@ struct LayoutPolicyBody {
     claims: Vec<RequiredClaim>,
 }
 
-/// C.10, rule core.7: `claims`, a publisher's policy, each narrowed to
-/// the signers it names that the host trusts, each verified by the key
-/// the host trusts it by and allowed what the policy lets it claim. A
-/// claim none of whose signers the host trusts names none, and so is
-/// found wanting.
-fn through_trusted(trusted: &[NamedSigner], claims: Vec<RequiredClaim>) -> Vec<RequiredClaim> {
-    claims
-        .into_iter()
-        .map(|claim| RequiredClaim {
-            signers: claim
-                .signers
-                .into_iter()
-                .filter_map(|named| {
-                    let trust = trusted.iter().find(|t| t.id == named.id)?;
-                    Some(NamedSigner {
-                        verified_by: trust.verified_by.clone(),
-                        ..named
-                    })
-                })
-                .collect(),
-            ..claim
+/// C.10, 118: the signers a consumer reads a claim of `kind`, for
+/// `check` where it is a verdict, through: those `own`'s file names that
+/// may make it, where it names one, since a repository whose file names
+/// signers reads under its file alone; otherwise `trusted`, the host's
+/// own signer and the signers its bindings name, each allowed that claim
+/// alone, as for a consumer with no policy file. The one host 108 admits
+/// as the gate is for publishing, not reading.
+pub fn readers(
+    own: Option<&Own>,
+    trusted: &[NamedSigner],
+    kind: ClaimKind,
+    check: Option<&Check>,
+) -> Vec<NamedSigner> {
+    let may = |s: &&NamedSigner| {
+        s.kinds.contains(&kind)
+            && (kind != ClaimKind::Verdict || check.is_some_and(|c| s.checks.contains(c)))
+    };
+    let named: Vec<NamedSigner> = own
+        .map_or(&[][..], |own| own.signers.as_slice())
+        .iter()
+        .filter(may)
+        .cloned()
+        .collect();
+    if !named.is_empty() {
+        return named;
+    }
+    trusted
+        .iter()
+        .map(|t| NamedSigner {
+            kinds: vec![kind],
+            checks: check.into_iter().cloned().collect(),
+            ..t.clone()
         })
         .collect()
 }
 
-/// C.10, 118: the given for a consumer with no policy file, which names
-/// no signer: acceptance by the signers the host trusts, each verified by
-/// the host's key for it and allowed acceptance.
-fn given_through_trusted(trusted: &[NamedSigner]) -> Vec<RequiredClaim> {
-    vec![RequiredClaim {
-        kind: ClaimKind::Acceptance,
-        check: None,
-        signers: trusted
-            .iter()
-            .map(|t| NamedSigner {
-                kinds: vec![ClaimKind::Acceptance],
-                checks: Vec::new(),
-                ..t.clone()
-            })
-            .collect(),
-    }]
+/// C.10: `claims`, of the consumer's own file, each naming no signer
+/// read through the signers the consumer reads its claim through
+/// ([`readers`]); each naming signers kept as its file names them.
+fn read_through(
+    own: Option<&Own>,
+    trusted: &[NamedSigner],
+    claims: Vec<RequiredClaim>,
+) -> Vec<RequiredClaim> {
+    claims
+        .into_iter()
+        .map(|claim| {
+            if !claim.signers.is_empty() {
+                return claim;
+            }
+            RequiredClaim {
+                signers: readers(own, trusted, claim.kind, claim.check.as_ref()),
+                ..claim
+            }
+        })
+        .collect()
 }
 
-/// C.10, rule core.17: the given policy for a layout and its claims: the
-/// consumer file's given, `own`, as the policy answered it, its gate the
-/// file's and not narrowed to the host's trusted signers (116); or, with
-/// no policy file, acceptance by `trusted`, the signers the host trusts.
+/// C.10, rule core.7: `claims`, a publisher's policy, each narrowed to
+/// the signers it names that the consumer reads its claim through
+/// ([`readers`]), each verified by the key the consumer reads it by and
+/// allowed what the publisher's policy lets it claim; a claim naming no
+/// signer read through the consumer's. A claim none of whose signers the
+/// consumer reads it through names none, and so is found wanting.
+fn narrowed(
+    own: Option<&Own>,
+    trusted: &[NamedSigner],
+    claims: Vec<RequiredClaim>,
+) -> Vec<RequiredClaim> {
+    claims
+        .into_iter()
+        .map(|claim| {
+            let readers = readers(own, trusted, claim.kind, claim.check.as_ref());
+            if claim.signers.is_empty() {
+                return RequiredClaim {
+                    signers: readers,
+                    ..claim
+                };
+            }
+            RequiredClaim {
+                signers: claim
+                    .signers
+                    .into_iter()
+                    .filter_map(|named| {
+                        let reader = readers.iter().find(|r| r.id == named.id)?;
+                        Some(NamedSigner {
+                            verified_by: reader.verified_by.clone(),
+                            ..named
+                        })
+                    })
+                    .collect(),
+                ..claim
+            }
+        })
+        .collect()
+}
+
+/// C.10, rule core.17: the given policy for a layout and its claims:
+/// acceptance by the gate, as the consumer's file, `own`, gives it, its
+/// gate the file's (116); where the file names no signer that may claim
+/// acceptance, or with no policy file, read through the host's trusted
+/// signers ([`read_through`]).
 fn given(own: Option<&Own>, trusted: &[NamedSigner]) -> (PolicyOf, Vec<RequiredClaim>) {
-    match own {
-        Some(own) => (
-            PolicyOf::Given {
-                revision: Some(own.revision.clone()),
-            },
-            own.claims.clone(),
-        ),
+    let (revision, claims) = match own {
+        Some(own) => (Some(own.revision.clone()), own.claims.clone()),
         None => (
-            PolicyOf::Given { revision: None },
-            given_through_trusted(trusted),
+            None,
+            vec![RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: Vec::new(),
+            }],
         ),
-    }
+    };
+    (
+        PolicyOf::Given { revision },
+        read_through(own, trusted, claims),
+    )
 }
 
 /// 113, rule core.17: the policy `version`, whose index is `index`, is
 /// judged under, and the claims it requires, as a stack (design D3): the
 /// consumer's `own` layout line where its file writes one; otherwise its
 /// publisher's, the one layout-policy claim about the index among
-/// `on_index`, the index's attestations, that verify's telling says one
-/// of `trusted`, the signers the host trusts, made, its claims each
-/// counted only through a signer the host trusts too (C.10, 118, rule
-/// core.7); and where none counts, the given beneath both. A
-/// layout-policy claim by any other signer stays attached and does not
-/// count (9). Two of different content are unreadable naming both, and
-/// neither is chosen, as a fork is never chosen between (rule core.34).
-/// A signer that cannot say is the outer answer.
+/// `on_index`, the index's attestations, that verify's telling says a
+/// signer the consumer reads a layout-policy claim through made, its
+/// claims each counted only through a signer the consumer reads it
+/// through too ([`readers`]: its file's signers for it, else `trusted`,
+/// the host's; C.10, 118, rule core.7); and where none counts, the given
+/// beneath both. A layout-policy claim by any other signer stays attached
+/// and does not count (9). Two of different content are unreadable
+/// naming both, and neither is chosen, as a fork is never chosen between
+/// (rule core.34). A signer that cannot say is the outer answer.
 pub fn policy_for(
     seams: &Seams,
     own: Option<&Own>,
@@ -261,12 +348,14 @@ pub fn policy_for(
     index: &Digest,
     on_index: &[Envelope],
 ) -> Pinning<(PolicyOf, Vec<RequiredClaim>)> {
-    if let Some(own) = own.filter(|own| !own.given) {
+    if let Some(written) = own.filter(|own| !own.given) {
         let policy = PolicyOf::Own {
-            revision: own.revision.clone(),
+            revision: written.revision.clone(),
         };
-        return Ok(Ok((policy, own.claims.clone())));
+        let claims = read_through(own, trusted, written.claims.clone());
+        return Ok(Ok((policy, claims)));
     }
+    let counted_by = readers(own, trusted, ClaimKind::LayoutPolicy, None);
     let mut found: Vec<(Digest, Claim)> = Vec::new();
     for envelope in on_index {
         let Some(claim) = Claim::from_envelope(envelope) else {
@@ -277,7 +366,7 @@ pub fn policy_for(
         }
         let told = tell(
             seams,
-            trusted,
+            &counted_by,
             index,
             envelope,
             Some(claim.kind),
@@ -308,7 +397,7 @@ pub fn policy_for(
             let policy = PolicyOf::Publisher {
                 revision: claim.revision.clone(),
             };
-            Ok(Ok((policy, through_trusted(trusted, body.claims))))
+            Ok(Ok((policy, narrowed(own, trusted, body.claims))))
         }
         several => {
             let claims: Vec<String> = several.iter().map(|(d, _)| d.to_string()).collect();
@@ -460,9 +549,10 @@ impl Under {
 /// What render is asked: the layout's ecosystem; the pins its projection
 /// read in the checkout; the consumer's own policy for layouts, its
 /// layout line or its file's given, none where it has no policy file;
-/// the signers the host trusts, through whom alone a publisher's policy
-/// counts, and who stand as the gate of a consumer with no policy file
-/// (C.10, 118); the checkout's working tree;
+/// the signers the host trusts, its own and those its bindings name,
+/// through whom the consumer reads every claim its file names no signer
+/// for, and every claim where it has no policy file (C.10, 118); the
+/// checkout's working tree;
 /// and when, in seconds since the Unix epoch by the asker's clock, since
 /// the core reads none.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -854,7 +944,8 @@ pub fn refresh(seams: &Seams, layouts: &Layouts, ask: &RenderAsk) -> Answer<Refr
 /// cache entries and whose policy judges the layouts, the branch that
 /// landed it, the checkout's working tree, when, in seconds since the Unix
 /// epoch by the asker's clock, since the core reads none, and the signers
-/// the host trusts (C.10, 118; design D5).
+/// the host trusts, its own and those its bindings name (C.10, 118;
+/// design D5).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckoutAsk {
     pub branch: Branch,

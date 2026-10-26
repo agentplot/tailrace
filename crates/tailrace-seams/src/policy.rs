@@ -30,7 +30,11 @@ pub struct RequiredClaim {
 /// channel names the channel it is bound to where it is bound (37). The
 /// policy for a layout says whether it is the given laid beneath a file
 /// that writes none (C.10), so a consumer stacks the publisher's policy
-/// above the given and never above its own line (113).
+/// above the given and never above its own line (113); and it carries
+/// the signers the file names, each with what it may claim, so a
+/// consumer reads every claim through its file's signers alone where the
+/// file names one for it, and through its host's trusted signers only
+/// where the file names none (C.10, 118).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Required {
@@ -45,6 +49,8 @@ pub enum Required {
         claims: Vec<RequiredClaim>,
         #[serde(default, skip_serializing_if = "is_false")]
         given: bool,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        signers: Vec<NamedSigner>,
     },
 }
 
@@ -129,6 +135,7 @@ mod tests {
         round_trip(Required::Layout {
             claims: vec![],
             given: false,
+            signers: vec![],
         });
     }
 
@@ -137,24 +144,29 @@ mod tests {
         let given = Required::Layout {
             claims: claims(),
             given: true,
+            signers: claims().remove(0).signers,
         };
         round_trip(given.clone());
         let json = serde_json::to_value(&given).unwrap();
         assert_eq!(json["layout"]["given"], true, "{json}");
+        assert_eq!(json["layout"]["signers"][0]["id"], "landing", "{json}");
 
         let written = Required::Layout {
             claims: claims(),
             given: false,
+            signers: vec![],
         };
         round_trip(written.clone());
         let json = serde_json::to_value(&written).unwrap();
         assert!(json["layout"].get("given").is_none(), "{json}");
+        assert!(json["layout"].get("signers").is_none(), "{json}");
         let read: Required = serde_json::from_value(json!({ "layout": { "claims": [] } })).unwrap();
         assert_eq!(
             read,
             Required::Layout {
                 claims: vec![],
-                given: false
+                given: false,
+                signers: vec![],
             }
         );
     }
