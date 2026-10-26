@@ -13,8 +13,13 @@
 //! by the host's bindings file (118) and the repository's policy file
 //! ([`bindings`]): on a host with no bindings file they answer absent
 //! naming it, and a broken one unreadable, each in its own form and with
-//! its own exit; `status` needs no seam, reads no bindings file and
-//! answers from the host's record (60).
+//! its own exit. `status` is bound to the landing, the policy and the
+//! ledger alone, and on a host with no bindings file as 118 binds such a
+//! host; a binding it cannot make is its channels' answer, and the
+//! host's record answers beside it (60). `tailrace serve` is the host's
+//! one serving process, tailrace's second surface: it binds nothing
+//! itself, and answers each request from the one core over the binding
+//! of the checkout that named the repository (57, 114, 132).
 
 use std::io::Write;
 use std::path::Path;
@@ -60,7 +65,9 @@ pub enum Command {
     /// Tell which signer the policy names made each attestation on a
     /// version, and whether each counts.
     Verify(commands::verify::VerifyArgs),
-    /// The versions this host published, from its own record.
+    /// Where each channel is and the promotions that put it there, from
+    /// the ledger, beside the versions this host published, from its own
+    /// record.
     Status(commands::status::StatusArgs),
     /// Render the cache entries a landed revision's passing verdicts name
     /// into this checkout, where its tools read them.
@@ -75,6 +82,9 @@ pub enum Command {
     /// channel's policy and held by the ledger before the store follows,
     /// or back to the version it moved from.
     Promote(commands::promote::PromoteArgs),
+    /// The host's one serving process: every repository a checkout named,
+    /// each as a page and as JSON, at the core's address, until idle.
+    Serve(commands::serve::ServeArgs),
 }
 
 /// What a host binds (92): the seams; the store as the host's bindings
@@ -90,16 +100,17 @@ pub struct Binding {
 
 /// `cli` asked in the repository at `at`, over the binding the host's
 /// file made or why it made none, its answer written to `out`; answers
-/// the exit code. A command that needs no seam reads neither.
+/// the exit code.
 pub fn run(cli: &Cli, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write) -> i32 {
     match &cli.command {
         Command::Publish(args) => commands::publish::run(args, binding, at, out),
         Command::Verify(args) => commands::verify::run(args, binding, at, out),
-        Command::Status(args) => commands::status::run(args, at, out),
+        Command::Status(args) => commands::status::run(args, binding, at, out),
         Command::Sync(args) => commands::sync::run(args, binding, at, out),
         Command::Push(args) => commands::push::run(args, binding, at, out),
         Command::Rebuild(args) => commands::rebuild::run(args, binding, at, out),
         Command::Promote(args) => commands::promote::run(args, binding, at, out),
+        Command::Serve(args) => commands::serve::run(args, out),
     }
 }
 
