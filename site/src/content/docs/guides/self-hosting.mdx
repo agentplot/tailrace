@@ -418,14 +418,18 @@ Beside that policy, the laptop's bindings file needs no `[gate]` for
 publish = {}
 ```
 
-`beta` then moves on each publish, in the same run: `tailrace publish`
-offers the version, the gate accepts it as the laptop's `[signing]`
-signer, and the promotion is held in the ledger `[ledger]` names before
-`beta`'s name moves. The answer shows the acceptance and `beta`'s move
-beside the version, and the publish exits as a refusal where the gate
-refused the version or held `beta`, so a landing step that runs it fails
-when `beta` did not move. With no `[ledger]`, the version is accepted and
-`beta`'s answer is absent naming it.
+`beta` then moves on each release a publish offers, in the same run:
+`tailrace publish` offers the version, the gate accepts it as the
+laptop's `[signing]` signer, and the promotion, the gate's own act, is
+held in the ledger `[ledger]` names before `beta`'s name moves. A
+prerelease is accepted the same way and moves only the channels that
+take prereleases, `alpha` once its table is written, leaving `beta`
+where it was (C.10). The answer shows the acceptance and each channel's
+move beside the version, and the publish exits as a refusal where the
+gate refused the version or held a channel it moves, so a landing step
+that runs it fails when `beta` did not move to a release. With no
+`[ledger]`, the version is accepted and each channel's answer is absent
+naming it.
 
 ### Promoting
 

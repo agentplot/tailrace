@@ -10,7 +10,7 @@ decision-makers:
 # The host names what tells its gate, and its publish step tells its own
 
 Deciders: proposed by the-publishs-host-tells-the-gate unit of phase 1's bolt 4, which lets a laptop that is both the offerer and the gate move `beta` on every landing in the one run of `tailrace publish` (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4), for the user to accept with the change.
-Sources: statement clauses 20, 58, 59, 95, 108, 118, 130, C.16; ADRs 0013, 0016; rules core.1, core.4, core.10, core.14, core.19; the change's design, D1 to D3.
+Sources: statement clauses 20, 58, 59, 95, 108, 118, 130, C.10, C.16; ADRs 0013, 0016, 0019; rules core.1, core.4, core.10, core.14, core.19; the change's design, D1 to D3.
 
 ## Context and problem statement
 
@@ -53,7 +53,7 @@ The gate's judgment is option 1 (core.4). `ToldBy::Publish` carries the index di
 
 ### Consequences
 
-- On a host whose file binds `[gate] publish = {}`, or holds no `[gate]`, and whose policy lets its signer claim both provenance and acceptance, one `tailrace publish` offers, accepts and moves `beta`, and the answer says so beside each version; its exit is the worst of the publish's and the gate's, a refusal or a channel held counting as refused, so a landing step that runs it fails when `beta` did not move.
+- On a host whose file binds `[gate] publish = {}`, or holds no `[gate]`, and whose policy lets its signer claim both provenance and acceptance, one `tailrace publish` offers, accepts and moves each channel that follows each publish and takes the version, `beta` for a release and, for a prerelease, only the channels that take prereleases (C.10), and the answer says so beside each version; its exit is the worst of the publish's and the gate's, a refusal or a channel held counting as refused, so a landing step that runs it fails when `beta` did not move to a release.
 - A host that only offers, its gate elsewhere, names its `job`: its publish then offers as it did and says what tells the gate, asking the gate nothing. Without one, its publish asks its own gate, which refuses the version where the policy does not let the host's signer accept, and the version stays offered (20).
 - What runs a publish after a landing, the job a separated gate runs, the events that wake it and a command that runs the gate on request are named and not built; each waits on a unit the planner names.
 - A host with no bindings file is left to the change that binds 118's defaults, this teller among them, `a-host-with-no-bindings-file-is-bound-to-the-defaults`; until then its publish is absent naming the file.
