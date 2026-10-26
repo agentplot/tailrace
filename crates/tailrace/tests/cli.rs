@@ -15,7 +15,7 @@ use tailrace_core::{
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName,
-    Digest, Ecosystem, EcosystemName, IndexMeta, Manifest, NamedSigner, Outcome, Output,
+    Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, NamedSigner, Outcome, Output,
     OutputName, Pinned, Report, Required, RequiredClaim, Revision, Seam, Signer, SignerId, Source,
     Store, Verdict, Version,
 };
@@ -199,6 +199,65 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
         printed["value"]["components"][0]["value"]["version"],
         "0.1.0"
     );
+}
+
+// Requirement: A publish answers what a program reads
+
+#[test]
+fn publish_prints_the_notes_beneath_the_versions_line_and_names_them_in_its_json() {
+    let host = Host::new();
+    let (code, printed) = host.run(&["publish", "HEAD"]);
+    assert_eq!(code, 0, "{printed}");
+    let (code, json) = host.run(&["publish", "HEAD", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let notes = &json["value"]["components"][0]["value"]["notes"];
+    let text = notes["text"].as_str().expect("the notes' text");
+    let short = &host.head.as_str()[..7];
+    assert_eq!(
+        text,
+        format!("## 0.1.0\n\n### Features\n\n- the site ({short})\n")
+    );
+
+    let Held::Bytes(bytes) = host
+        .fakes
+        .store
+        .read(&Digest::parse(notes["bytes"].as_str().unwrap()).unwrap())
+        .unwrap()
+    else {
+        panic!("no bytes under {}", notes["bytes"])
+    };
+    assert_eq!(bytes, text.as_bytes());
+    let envelope = notes["claims"][0]["envelope"].as_str().unwrap();
+    let digest = Digest::parse(notes["digest"].as_str().unwrap()).unwrap();
+    let attached = host.fakes.store.claims_of(&digest).unwrap();
+    assert_eq!(
+        attached
+            .iter()
+            .map(|e| e.digest().as_str().to_string())
+            .collect::<Vec<_>>(),
+        [envelope]
+    );
+
+    let lines: Vec<&str> = printed.lines().collect();
+    let version = lines
+        .iter()
+        .position(|l| l.starts_with("repository 0.1.0 (v0.1.0)"))
+        .expect(&printed);
+    let at = lines
+        .iter()
+        .position(|l| *l == format!("  notes {digest}"))
+        .expect(&printed);
+    assert!(version < at, "{printed}");
+    assert_eq!(
+        lines[at + 1],
+        format!("    provenance by host, envelope {envelope}")
+    );
+    let shown: Vec<String> = text
+        .lines()
+        .map(|l| format!("    {l}").trim_end().to_string())
+        .collect();
+    assert_eq!(lines[at + 2..], shown, "{printed}");
 }
 
 // Requirement: Sync fills the checkout's cache from a landed revision

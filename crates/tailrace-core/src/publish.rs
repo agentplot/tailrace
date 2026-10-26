@@ -59,6 +59,10 @@ pub enum Published {
         branch: Branch,
         index: Digest,
         artifacts: Vec<PublishedArtifact>,
+        /// The notes the index names; none for an index offered before
+        /// notes were carried (134).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        notes: Option<PublishedNotes>,
         store: Source,
     },
     /// No commit since the component's last release tag touched it, and
@@ -82,6 +86,17 @@ pub struct PublishedArtifact {
     pub output: OutputName,
     pub build: BuildId,
     pub same_again: bool,
+    pub claims: Vec<Attached>,
+}
+
+/// 134: a version's notes as a publish answers them: their artifact's
+/// digest, their bytes' digest, their text, and every claim this host
+/// attached to them (design D5).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PublishedNotes {
+    pub digest: Digest,
+    pub bytes: Digest,
+    pub text: String,
     pub claims: Vec<Attached>,
 }
 
@@ -373,11 +388,18 @@ impl<'a> Run<'a> {
             });
         }
 
-        let (artifacts, (notes, _)) = match held {
+        let (artifacts, (notes, answered)) = match held {
             Some((index, artifacts)) => {
-                let (artifacts, _notes) =
+                let (artifacts, notes) =
                     self.again(versioned, &outputs, &packed, &rendered, &artifacts)?;
-                return self.record(versioned, component, &claimed.revision, index, artifacts);
+                return self.record(
+                    versioned,
+                    component,
+                    &claimed.revision,
+                    index,
+                    artifacts,
+                    notes,
+                );
             }
             None => self.offer(versioned, &outputs, &packed, &rendered, &claimed.revision)?,
         };
@@ -403,7 +425,14 @@ impl<'a> Run<'a> {
         self.layout_policy(&index)?;
         self.seams.store.name(&name, &index, None)?;
         let artifacts = artifacts.into_iter().map(|(_, a)| a).collect();
-        self.record(versioned, component, &claimed.revision, index, artifacts)
+        self.record(
+            versioned,
+            component,
+            &claimed.revision,
+            index,
+            artifacts,
+            Some(answered),
+        )
     }
 
     /// The index a held name names and each artifact it names, with the
@@ -444,7 +473,7 @@ impl<'a> Run<'a> {
         packed: &[PackedArtifact],
         rendered: &Rendered,
         held: &[(Artifact, Vec<Digest>)],
-    ) -> Answer<(Vec<PublishedArtifact>, Option<(Digest, Vec<Attached>)>)> {
+    ) -> Answer<(Vec<PublishedArtifact>, Option<PublishedNotes>)> {
         let mut same = Vec::new();
         for (output, packed) in outputs.iter().zip(packed) {
             let now = Digest::of(&packed.bytes);
@@ -500,10 +529,12 @@ impl<'a> Run<'a> {
             artifacts.push(answered(output, packed, digest, bytes, claims));
         }
         let notes = match notes {
-            Some(digest) => {
-                let claims = self.ours(&digest)?;
-                Some((digest, claims))
-            }
+            Some(digest) => Some(PublishedNotes {
+                claims: self.ours(&digest)?,
+                digest,
+                bytes: now,
+                text: rendered.text.clone(),
+            }),
             None => None,
         };
         Ok((artifacts, notes))
@@ -571,7 +602,7 @@ impl<'a> Run<'a> {
             put.push(self.put(&packed.bytes, &packed.meta)?);
         }
         let meta = notes_meta(versioned)?;
-        let (notes, _) = self.put(rendered.bytes(), &meta)?;
+        let (notes, notes_bytes) = self.put(rendered.bytes(), &meta)?;
 
         let signer = self
             .seams
@@ -636,10 +667,15 @@ impl<'a> Run<'a> {
             artifacts,
             (
                 Artifact {
-                    digest: notes,
+                    digest: notes.clone(),
                     meta,
                 },
-                claims,
+                PublishedNotes {
+                    digest: notes,
+                    bytes: notes_bytes,
+                    text: rendered.text.clone(),
+                    claims,
+                },
             ),
         ))
     }
@@ -654,6 +690,7 @@ impl<'a> Run<'a> {
         revision: &Revision,
         index: Digest,
         artifacts: Vec<PublishedArtifact>,
+        notes: Option<PublishedNotes>,
     ) -> Answer<Published> {
         let store = self.ask.store.clone();
         self.kept.write(&Entry {
@@ -673,16 +710,17 @@ impl<'a> Run<'a> {
             branch: self.ask.branch.clone(),
             index,
             artifacts,
+            notes,
             store,
         })
     }
 }
 
 /// What a first publish offered: each output's artifact with its
-/// answer, and the notes' artifact with the claims attached to it.
+/// answer, and the notes' artifact with theirs.
 type Offered = (
     Vec<(Artifact, PublishedArtifact)>,
-    (Artifact, Vec<Attached>),
+    (Artifact, PublishedNotes),
 );
 
 /// The notes' metadata: the ecosystem reserved for them, named by the

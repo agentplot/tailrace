@@ -70,6 +70,7 @@ fn text(out: &mut dyn Write, answer: &Answer<Publish>) -> io::Result<()> {
                 revision,
                 index,
                 artifacts,
+                notes,
                 ..
             }) => {
                 writeln!(
@@ -92,6 +93,19 @@ fn text(out: &mut dyn Write, answer: &Answer<Publish>) -> io::Result<()> {
                             "    {} by {}, envelope {}",
                             claim.kind, claim.signer, claim.envelope
                         )?;
+                    }
+                }
+                if let Some(notes) = notes {
+                    writeln!(out, "  notes {}", notes.digest)?;
+                    for claim in &notes.claims {
+                        writeln!(
+                            out,
+                            "    {} by {}, envelope {}",
+                            claim.kind, claim.signer, claim.envelope
+                        )?;
+                    }
+                    for line in notes.text.lines() {
+                        writeln!(out, "{}", format!("    {line}").trim_end())?;
                     }
                 }
             }

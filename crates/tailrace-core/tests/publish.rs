@@ -899,6 +899,26 @@ fn the_answer_names_every_digest_the_store_holds() {
         let attached = &contents.attached[&held.digest];
         assert_eq!(claims[0]["envelope"], attached[0].digest().as_str());
     }
+
+    let notes = &value["notes"];
+    let held = meta.artifacts().last().unwrap();
+    assert_eq!(held.meta.ecosystem().as_str(), NOTES);
+    assert_eq!(notes["digest"], held.digest.as_str());
+    let Held::Manifest(Manifest::Artifact { layers, .. }) = &contents.held[&held.digest] else {
+        panic!("no artifact under {}", held.digest)
+    };
+    assert_eq!(notes["bytes"], layers[0].as_str());
+    let Held::Bytes(bytes) = &contents.held[&layers[0]] else {
+        panic!("no bytes under {}", layers[0])
+    };
+    assert_eq!(notes["text"].as_str().unwrap().as_bytes(), bytes.as_slice());
+    let claims = notes["claims"].as_array().unwrap();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0]["kind"], "provenance");
+    assert_eq!(claims[0]["signer"], HOST);
+    assert_eq!(claims[0]["on"], held.digest.as_str());
+    let attached = &contents.attached[&held.digest];
+    assert_eq!(claims[0]["envelope"], attached[0].digest().as_str());
 }
 
 #[test]
@@ -1300,6 +1320,12 @@ fn the_same_notes_again_put_and_attach_nothing() {
     );
     assert_eq!(world.fakes.store.contents(), store);
     assert_eq!(notes_artifact(&world, &second), notes);
+    let notes_of = |p: &Published| match p {
+        Published::Version { notes, .. } => notes.clone().unwrap(),
+        Published::Unchanged { .. } => panic!("unchanged: {p:?}"),
+    };
+    assert_eq!(notes_of(&second), notes_of(&first));
+    assert_eq!(notes_of(&second).digest, notes.digest);
 }
 
 #[test]
@@ -1432,6 +1458,12 @@ fn a_version_published_before_notes_is_published_again_with_none_added() {
 
     let second = world.publish_one(&world.ask_for("lib")).unwrap();
     assert_eq!(version_of(&second), version_of(&first));
+    assert!(
+        matches!(&second, Published::Version { notes: None, .. }),
+        "{second:?}"
+    );
+    let json = serde_json::to_value(&second).unwrap();
+    assert!(json.get("notes").is_none(), "{json}");
     let again = world.fakes.store.calls()[calls_before..].to_vec();
     assert!(
         again
