@@ -197,7 +197,7 @@ fn asked_to_sign_as_another_reads_no_key() {
 }
 
 #[test]
-fn a_missing_key_file_is_no_identity_at_hand() {
+fn a_named_key_files_absence_is_no_identity_at_hand() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("host");
     let what = absent(sign(&host(&path)));
@@ -302,7 +302,7 @@ fn the_key_replaced_between_two_signatures_signs_the_second() {
 }
 
 #[test]
-fn the_key_file_removed_after_a_signature_is_no_identity_at_hand() {
+fn a_named_key_file_removed_after_a_signature_is_no_identity_at_hand() {
     let dir = TempDir::new().unwrap();
     let path = written(dir.path(), "host", &new_key());
     let host = host(&path);
@@ -313,6 +313,29 @@ fn the_key_file_removed_after_a_signature_is_no_identity_at_hand() {
         what,
         format!("identity host: no key file at {}", path.display())
     );
+    assert!(!path.exists(), "a named key's sign made a key");
+}
+
+#[test]
+fn the_given_key_file_removed_after_a_signature_is_made_again() {
+    let dir = TempDir::new().unwrap();
+    let host = HostKey::given(SignerId::new("laptop"), dir.path().join("signing"));
+    let first = host.sign(&claim(), &SignerId::new("laptop")).unwrap();
+    let path = dir.path().join("signing");
+    let old = PrivateKey::read_openssh_file(&path).unwrap();
+    fs::remove_file(&path).unwrap();
+    fs::remove_file(public_half(&path)).unwrap();
+    let second = host.sign(&claim(), &SignerId::new("laptop")).unwrap();
+    let new = PrivateKey::read_openssh_file(&path).unwrap();
+    assert_ne!(new.public_key().key_data(), old.public_key().key_data());
+    for (key, envelope) in [(&old, &first), (&new, &second)] {
+        let signed = pae(&envelope.payload_type, &envelope.payload);
+        assert_eq!(
+            key.public_key()
+                .verify(NAMESPACE, &signed, &ssh_sig(envelope)),
+            Ok(())
+        );
+    }
 }
 
 /// Whether `bytes` holds `part` anywhere.
