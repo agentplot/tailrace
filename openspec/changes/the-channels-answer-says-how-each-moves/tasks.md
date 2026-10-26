@@ -72,4 +72,4 @@ verification is the moon task named, which the gate runs under
 
 ## 8. The gate
 
-- [ ] 8.1 Run the fast layer, `moon run ':#check-fast'`, and verify every task passes, format and lint among them
+- [x] 8.1 Run the fast layer, `moon run ':#check-fast'`, and verify every task passes, format and lint among them
