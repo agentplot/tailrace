@@ -10,7 +10,7 @@ one commit.
 
 ## 1. The bolt
 
-- [ ] 1.1 Take `bolt/tailrace-the-gate-and-the-channels` into this branch (it holds `the-ledger-and-promotion`, which this unit builds on; design, Context), committing the merge by itself; verify with `moon run ':#check-fast'` passing before anything of this unit is changed
+- [x] 1.1 Take `bolt/tailrace-the-gate-and-the-channels` into this branch (it holds `the-ledger-and-promotion`, which this unit builds on; design, Context), committing the merge by itself; verify with `moon run ':#check-fast'` passing before anything of this unit is changed
 
 ## 2. The seam
 
