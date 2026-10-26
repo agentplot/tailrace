@@ -53,7 +53,7 @@ tasks it names, all of which `check-fast` runs.
 
 ## 3. The site
 
-- [ ] 3.1 In `site/src/content/docs/guides/integrations/projections.mdx`, make the seam's paragraph say six operations (84 to 86, 137, 140), adding:
+- [x] 3.1 In `site/src/content/docs/guides/integrations/projections.mdx`, make the seam's paragraph say six operations (84 to 86, 137, 140), adding:
   - **requires**: given a held version's artifact, the names of the ecosystem and the ranges its manifest requires, as spelled;
   - **satisfying**: given a range and versions, those that satisfy it, newest first by the ecosystem's own ordering;
   - that an ecosystem with no manifest, a file, an image or a cache, answers none.
