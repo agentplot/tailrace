@@ -2,9 +2,10 @@
 //! component it publishes, in the statement's order: landed, declared,
 //! ensured, judged, claimed, packed, put, attested, indexed, named,
 //! recorded, answered (14 to 22, rules core.10 to core.13; design D1).
-//! Where the repository has a policy for layouts at the landed revision,
-//! the index carries it as the publisher's layout-policy claim, attached
-//! before the version is named (113, 8).
+//! Where the repository's file writes a policy for layouts at the landed
+//! revision, the index carries it as the publisher's layout-policy claim,
+//! attached before the version is named (113, 8); the given is never
+//! carried, and a consumer lays it beneath itself (C.10).
 //! A publish offers and does nothing more: it never accepts, promotes,
 //! moves a channel or reaches a target (20, rule core.10).
 
@@ -221,13 +222,15 @@ impl<'a> Run<'a> {
             .clone()
     }
 
-    /// 113, 8: the repository's policy for layouts at the landed revision,
-    /// its `[layout]` or the given, signed as the party running the
-    /// publish about `index`, naming the revision and no build identity,
-    /// and attached to it (rules core.8, core.9; design D8). A revision
-    /// with no policy file attaches nothing; one the policy cannot read
-    /// stops the publish before the name moves. An index already carrying
-    /// a layout-policy claim of the same body has nothing signed (18).
+    /// 113, 8: the layout line the repository's file writes at the landed
+    /// revision, signed as the party running the publish about `index`,
+    /// naming the revision and no build identity, and attached to it
+    /// (rules core.8, core.9; design D8). The given, which a file with no
+    /// layout line answers, and a revision with no policy file attach
+    /// nothing: a consumer lays the given beneath itself (C.10). A policy
+    /// that cannot be read stops the publish before the name moves. An
+    /// index already carrying a layout-policy claim of the same body has
+    /// nothing signed (18).
     fn layout_policy(&mut self, index: &Digest) -> Answer<()> {
         let (seams, landed) = (self.seams, self.landed);
         let required = self
@@ -235,8 +238,8 @@ impl<'a> Run<'a> {
             .get_or_insert_with(|| policy_at(seams.policy.as_ref(), landed, &Audience::Layout))
             .clone();
         let required = match required {
+            Ok(Required::Layout { given: true, .. }) | Err(Not::Absent(_)) => return Ok(()),
             Ok(required) => required,
-            Err(Not::Absent(_)) => return Ok(()),
             Err(not) => return Err(not),
         };
         let body = layout_policy_body(required.claims());

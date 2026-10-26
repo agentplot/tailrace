@@ -942,22 +942,20 @@ fn layout_policies(world: &World, published: &Published) -> Vec<(Envelope, Claim
         .collect()
 }
 
-/// `world`'s policy for layouts requiring `claims`.
-fn layout(world: &World, claims: Vec<RequiredClaim>) {
-    world.fakes.policy.require(
-        Audience::Layout,
-        Required::Layout {
-            claims,
-            given: false,
-        },
-    );
+/// `world`'s policy for layouts requiring `claims`: a layout line its
+/// file writes, or the given its file answers where it writes none.
+fn layout(world: &World, claims: Vec<RequiredClaim>, given: bool) {
+    world
+        .fakes
+        .policy
+        .require(Audience::Layout, Required::Layout { claims, given });
 }
 
 #[test]
 fn a_publish_under_a_layout_line_attaches_its_policy_to_the_index_before_the_name() {
     let world = World::new();
     let claims = vec![required(ClaimKind::Provenance, HOST)];
-    layout(&world, claims.clone());
+    layout(&world, claims.clone(), false);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     let [(envelope, claim)] = <[_; 1]>::try_from(layout_policies(&world, &published)).unwrap();
     let (_, index) = version_of(&published);
@@ -997,13 +995,21 @@ fn a_publish_under_a_layout_line_attaches_its_policy_to_the_index_before_the_nam
 }
 
 #[test]
-fn a_publish_with_no_layout_line_attaches_the_given_acceptance_by_its_gate() {
+fn a_publish_with_no_layout_line_attaches_nothing_of_the_given() {
     let world = World::new();
-    let given = vec![required(ClaimKind::Acceptance, "gate")];
-    layout(&world, given.clone());
+    layout(&world, vec![required(ClaimKind::Acceptance, "gate")], true);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
-    let [(_, claim)] = <[_; 1]>::try_from(layout_policies(&world, &published)).unwrap();
-    assert_eq!(claim.body, layout_policy_body(&given));
+    assert_eq!(layout_policies(&world, &published), []);
+    let (_, index) = version_of(&published);
+    assert_eq!(world.fakes.store.claims_of(index).unwrap(), []);
+    let signed: Vec<_> = world
+        .fakes
+        .signer
+        .calls()
+        .into_iter()
+        .filter(|c| c.op == SignerOp::Sign && c.given["claim"]["kind"] == "layout_policy")
+        .collect();
+    assert_eq!(signed, [], "the given was signed");
 }
 
 #[test]
@@ -1018,7 +1024,7 @@ fn a_publish_with_no_policy_file_attaches_no_layout_policy() {
 #[test]
 fn an_index_put_again_carrying_the_policy_has_nothing_more_signed() {
     let world = World::new();
-    layout(&world, vec![required(ClaimKind::Provenance, HOST)]);
+    layout(&world, vec![required(ClaimKind::Provenance, HOST)], false);
     world.fakes.store.fault(
         StoreOp::Name,
         Fault::Unreadable("connection refused".into()),

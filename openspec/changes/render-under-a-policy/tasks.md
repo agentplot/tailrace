@@ -31,7 +31,7 @@ tasks are verified by the moon tasks named, which `check-fast` runs.
 
 ## 4. The publisher's layout policy at publish
 
-- [ ] 4.1 In `crates/tailrace-core/src/publish.rs`, after the index is put and before the version's name moves, sign and attach the layout-policy claim where the policy answers a written layout line at the landed revision, attaching nothing where it answers the given, where the revision holds no policy file, or where the index already carries one of the same body (design D8); update the module table's row; verify with tests in `crates/tailrace-core/tests/publish.rs` for a `[layout]` written, the given attaching nothing, no policy file, a repeat publish, and the attach coming before the name's move in the fake store's calls, under `moon run core:test`
+- [x] 4.1 In `crates/tailrace-core/src/publish.rs`, after the index is put and before the version's name moves, sign and attach the layout-policy claim where the policy answers a written layout line at the landed revision, attaching nothing where it answers the given, where the revision holds no policy file, or where the index already carries one of the same body (design D8); update the module table's row; verify with tests in `crates/tailrace-core/tests/publish.rs` for a `[layout]` written, the given attaching nothing, no policy file, a repeat publish, and the attach coming before the name's move in the fake store's calls, under `moon run core:test`
 
 ## 5. The conformance suite
 
