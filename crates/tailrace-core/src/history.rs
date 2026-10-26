@@ -237,6 +237,19 @@ impl History {
         }
     }
 
+    /// 114: the address `remote.<remote>.url` names in the repository's
+    /// git configuration, as written, no `insteadOf` applied; none where
+    /// it names no such remote.
+    pub fn remote_url(&self, remote: &str) -> Answer<Option<String>> {
+        let key = format!("remote.{remote}.url");
+        let unreadable = |e: git2::Error| Not::unreadable(&local(), key.clone(), words(&e));
+        match self.git.config().map_err(unreadable)?.get_string(&key) {
+            Ok(url) => Ok(Some(url)),
+            Err(e) if e.code() == ErrorCode::NotFound => Ok(None),
+            Err(e) => Err(unreadable(e)),
+        }
+    }
+
     /// The git command at this repository, with no prompt, so a remote
     /// asks the host's own credential helper and never a terminal (rule
     /// core.21).

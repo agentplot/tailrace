@@ -8,13 +8,14 @@
 //! | module | what it keeps | statement, rules |
 //! |---|---|---|
 //! | [`landed`] | a revision is read only once the landing seam says its branch landed it, and the policy for an audience only at such a revision | 14, 65, 77, 82, 83; core.11, core.22 |
-//! | [`history`] | the files, commits and tags of a landed revision, from the local history and the shared one; a branch's head and the newest revision of it a checkout descends from, a revision resolved to its commit, the working tree's root, and the common directory every worktree shares | 21, 22, 62, 65, 123; core.4 |
+//! | [`history`] | the files, commits and tags of a landed revision, from the local history and the shared one; a remote's address as written; a branch's head and the newest revision of it a checkout descends from, a revision resolved to its commit, the working tree's root, and the common directory every worktree shares | 21, 22, 62, 65, 114, 123; core.4 |
 //! | [`declared`] | the components, the version rule and the projection each output is packed by, read from the policy file at the landed revision | 65, 123, C.10; core.22 |
 //! | [`version`] | a version per component from the history alone, the components a landing touched, and the claim of the version's name | 21 to 24, 124; core.6, core.13, core.37 |
 //! | [`provenance`] | the claim each artifact carries: what the host observed of its build, and the landing's verdicts carried as made | 11 to 13; core.8, core.9 |
 //! | [`publish`](mod@publish) | a landed revision offered as a version per component: judged before the name is claimed, each artifact put and attested, the index last, a repeat ending where the first did, and the answer a program reads | 2, 5, 6, 8, 14 to 20, 57, 74, 75, 78, 84, 111, 124; core.5, core.6, core.10 to core.13, core.27 |
 //! | [`published`] | the host's record of the versions it published, a file per version a reader opens | 61, 62, 64; core.20, core.21 |
-//! | [`status`](mod@status) | which versions this host published, answered from the record alone | 23, 58, 60, 61; core.19, core.32 |
+//! | [`served`] | the one address the host's serving process answers at, the core's and moved by no setting, and a repository's owner and name in its path from its landing's remote | 49, 114; core.36 |
+//! | [`status`](mod@status) | every channel the policy declares at the branch's landed head, at its version or empty with the chain that put it there, read from the ledger alone, beside which versions this host published, answered from the record alone, and the environments, unreadable while no target is read; each part and each channel its own answer; and a repository's row of every channel's head and its environments' counts | 23, 31, 36, 56 to 61, 98, 101, 125, 131, 132; core.19, core.31, core.32 |
 //! | [`record`] | the host's record rebuilt from the store and git: an entry per tag the branch landed whose name the store resolves to its component's index at that version, every read before any write, nothing rewritten or deleted | 22, 58 to 63; core.4, core.19, core.20 |
 //! | [`copy`](mod@copy) | a version copied from one store to another through the store seam, every attestation going with its digest, the index last and the name made from nothing, and no channel | 1 to 3, 6, 8, 103; core.4, core.6, core.12, core.27 |
 //! | [`repair`] | a channel's name moved in the store to the version the ledger's head promotion is about, and a race lost on it reported and repaired from the ledger | 39, 101, 106, 109; core.6 |
@@ -29,8 +30,9 @@
 //! unreadable kept apart, with the source's own words (58, 59, rule
 //! core.19). Deriving and claiming ask nothing of the build seam, so no
 //! build learns its version (24). Publish never accepts, promotes, moves
-//! a channel or reaches a target (20, rule core.10); status is handed no
-//! binding, and status and verify write nothing (60, rule core.32). Every
+//! a channel or reaches a target (20, rule core.10); status asks the
+//! landing, the policy and the ledger alone, and status and verify write
+//! nothing (60, rule core.32). Every
 //! surface renders an answer through [`answer_json`]'s one form (57,
 //! rule core.31).
 
@@ -47,6 +49,7 @@ pub mod published;
 pub mod push;
 pub mod record;
 pub mod repair;
+pub mod served;
 pub mod status;
 pub mod verify;
 pub mod version;
@@ -64,6 +67,7 @@ pub use published::*;
 pub use push::*;
 pub use record::*;
 pub use repair::*;
+pub use served::*;
 pub use status::*;
 pub use verify::*;
 pub use version::*;

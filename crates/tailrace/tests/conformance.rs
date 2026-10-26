@@ -48,12 +48,18 @@ impl Surface for CommandLine {
         };
         let mut out = Vec::new();
         run(&cli, &Ok(binding), &self.world.repo().path, &mut out);
-        serde_json::from_slice(&out).unwrap_or_else(|e| {
+        let printed: Value = serde_json::from_slice(&out).unwrap_or_else(|e| {
             panic!(
                 "{question:?} printed no JSON document ({e}): {}",
                 String::from_utf8_lossy(&out)
             )
-        })
+        });
+        match question {
+            // The record's part of status, every version the host
+            // published.
+            Question::Status => printed["value"]["published"].clone(),
+            _ => printed,
+        }
     }
 }
 

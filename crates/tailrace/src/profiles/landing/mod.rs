@@ -13,6 +13,9 @@ use crate::bindings::Table;
 use branch::PlainBranch;
 use sluice::Sluice;
 
+/// The file a repository set up for sluice holds in its tree.
+pub const SLUICE_FILE: &str = ".config/sluice.toml";
+
 /// What `[landing]`'s profile is given: the remote that holds the
 /// landing's records, or the branches, where one is bound.
 #[derive(Deserialize)]
@@ -35,5 +38,26 @@ pub fn bind(table: &Table, repository: &Path) -> Answer<Box<dyn Landing>> {
             Ok(Box::new(PlainBranch::new(repository, options.remote)))
         }
         _ => Err(table.unknown(&["sluice", "branch"])),
+    }
+}
+
+/// The remote `[landing]`'s profile is given, none where it names none;
+/// unreadable as [`bind`] answers it.
+pub fn remote(table: &Table) -> Answer<Option<String>> {
+    match table.key() {
+        "sluice" | "branch" => Ok(table.options::<Options>()?.remote),
+        _ => Err(table.unknown(&["sluice", "branch"])),
+    }
+}
+
+/// 118: the landing of a host with no bindings file, over the repository
+/// at `repository` and `remote`: sluice where the repository's tree holds
+/// [`SLUICE_FILE`], so it is set up for it (C.5), and the plain branch
+/// otherwise (C.6).
+pub fn unfiled(repository: &Path, remote: Option<String>) -> Box<dyn Landing> {
+    if repository.join(SLUICE_FILE).is_file() {
+        Box::new(Sluice::new(repository, remote))
+    } else {
+        Box::new(PlainBranch::new(repository, remote))
     }
 }

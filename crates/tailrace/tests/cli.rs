@@ -390,14 +390,20 @@ fn the_built_binary_on_a_host_with_no_bindings_file_pushes_nothing() {
 fn rebuild_after_the_record_is_deleted_writes_its_entry_and_status_answers_as_before() {
     let host = Host::new();
     assert_eq!(host.run(&["publish", "HEAD"]).0, 0);
-    let (code, before) = host.run(&["status", "--json"]);
-    assert_eq!(code, 0, "{before}");
+    let published = || {
+        let (code, printed) = host.run(&["status", "--json"]);
+        assert_eq!(code, 0, "{printed}");
+        let json: Value = serde_json::from_str(&printed).unwrap();
+        json["value"]["published"].clone()
+    };
+    let before = published();
+    assert_eq!(before["answer"], "ok", "{before}");
     let history = History::open(&host.repo).unwrap();
     let record = Kept::at(&history).dir().to_path_buf();
     fs::remove_dir_all(&record).unwrap();
     assert_eq!(
-        host.run(&["status", "--json"]).0,
-        4,
+        published()["answer"],
+        "absent",
         "the record was not deleted"
     );
 
@@ -413,9 +419,11 @@ fn rebuild_after_the_record_is_deleted_writes_its_entry_and_status_answers_as_be
     assert_eq!(entries[0]["entry"]["tag"], "v0.1.0");
     assert_eq!(entries[0]["entry"]["revision"], host.head.as_str());
 
-    let (code, after) = host.run(&["status", "--json"]);
-    assert_eq!(code, 0, "{after}");
-    assert_eq!(after, before, "status answers otherwise after the rebuild");
+    assert_eq!(
+        published(),
+        before,
+        "status answers otherwise after the rebuild"
+    );
 
     let (code, printed) = host.run(&["rebuild"]);
     assert_eq!(code, 0, "{printed}");
@@ -513,11 +521,235 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let json: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json["answer"], "ok");
-    let entry = &json["value"]["components"][0]["versions"][0];
+    let published = &json["value"]["published"];
+    assert_eq!(published["answer"], "ok", "{json}");
+    let entry = &published["value"]["components"][0]["versions"][0];
     assert_eq!(entry["component"], "repository");
     assert_eq!(entry["version"], "0.1.0");
     assert_eq!(entry["revision"], host.head.as_str());
     assert_eq!(entry["index"], index.as_str());
+    assert!(
+        json["value"]["channels"]["answer"].is_string(),
+        "no channels' part: {json}"
+    );
+    assert_eq!(json["value"]["environments"]["answer"], "unreadable");
+}
+
+/// The moment now, in seconds since the Unix epoch.
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+/// `channel` declared over `fakes`' policy in the one component, bound
+/// to nothing.
+fn declared(fakes: &Fakes, channel: &str) {
+    fakes.policy.require(
+        Audience::Channel(ChannelName::new(channel)),
+        Required::Channel {
+            claims: vec![],
+            bound_to: None,
+        },
+    );
+}
+
+/// `channel` promoted over `fakes`' keeper to each version in turn, each
+/// from the one before, signed by the host as the fake signer signs.
+fn chained(host: &Host, channel: &str, versions: &[&str]) {
+    let channel = ChannelName::new(channel);
+    let moved = |v: &str| tailrace_seams::Moved {
+        version: Version::new(v),
+        index: Digest::of(format!("{v}'s index").as_bytes()),
+    };
+    let mut predecessor: Option<Digest> = None;
+    for (i, version) in versions.iter().enumerate() {
+        let promotion = Promotion {
+            channel: channel.clone(),
+            component: ComponentName::new("repository"),
+            to: moved(version),
+            from: i.checked_sub(1).map(|j| moved(versions[j])),
+            predecessor: predecessor.clone(),
+            asked_by: SignerId::new("host"),
+            policy: tailrace_seams::Satisfied {
+                revision: host.head.clone(),
+                claims: vec![],
+            },
+            at: 1_793_000_000 + i as u64,
+        };
+        let envelope = host
+            .fakes
+            .signer
+            .sign(&promotion.claim(host.head.clone()), &SignerId::new("host"))
+            .unwrap();
+        let digest = tailrace_seams::Keeper::append(
+            &host.fakes.keeper,
+            &channel,
+            &envelope,
+            predecessor.as_ref(),
+        )
+        .unwrap();
+        predecessor = Some(digest);
+    }
+}
+
+#[test]
+fn status_through_the_command_line_prints_the_cores_overview_value_for_value() {
+    let host = Host::new();
+    assert_eq!(host.run(&["publish", "HEAD"]).0, 0);
+    declared(&host.fakes, "beta");
+    declared(&host.fakes, "stable");
+    chained(&host, "stable", &["0.1.0", "0.2.0"]);
+    let before = now();
+    let (code, printed) = host.run(&["status", "--json"]);
+    let after = now();
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let asked_at = printed["value"]["asked_at"].as_u64().expect("asked_at");
+    assert!(
+        (before..=after).contains(&asked_at),
+        "asked at {asked_at}, not between {before} and {after}"
+    );
+
+    let history = History::open(&host.repo).unwrap();
+    let core = tailrace_core::overview(
+        &host.fakes.seams(),
+        &history,
+        &Kept::at(&history),
+        &tailrace_core::OverviewAsk {
+            branch: Branch::new("main"),
+            component: None,
+            revision: None,
+            at: asked_at,
+        },
+    );
+    assert_eq!(printed, answer_json(&Ok::<_, tailrace_seams::Not>(core)));
+    let channels = &printed["value"]["channels"]["value"]["channels"];
+    assert_eq!(channels[1]["at"]["value"]["head"]["to"]["version"], "0.2.0");
+    assert_eq!(printed["value"]["published"]["answer"], "ok");
+}
+
+#[test]
+fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apart() {
+    let host = Host::new();
+    for channel in ["edge", "preview", "stable"] {
+        declared(&host.fakes, channel);
+    }
+    chained(&host, "stable", &["0.1.0", "0.2.0"]);
+    // The first chain asked, edge's, cannot be read.
+    host.fakes.keeper.fault(
+        tailrace_fakes::KeeperOp::Chain,
+        Fault::Unreadable("fatal: unable to access".into()),
+        Times::Once,
+    );
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(
+        lines[0].starts_with(&format!("main at {}, as of 20", host.head)),
+        "{printed}"
+    );
+    let at = |starts: &str| {
+        lines
+            .iter()
+            .position(|l| l.starts_with(starts))
+            .unwrap_or_else(|| panic!("no line starts {starts:?}: {printed}"))
+    };
+    assert_eq!(lines[at("repository")], "repository");
+    let edge = at("  edge ");
+    assert!(lines[edge].contains("could not read"), "{printed}");
+    assert_eq!(lines[edge + 1], "fatal: unable to access", "{printed}");
+    assert!(lines[at("  preview ")].ends_with("empty"), "{printed}");
+    let stable = at("  stable ");
+    assert!(
+        lines[stable].contains(&format!(
+            "0.2.0 ({})",
+            Digest::of("0.2.0's index".as_bytes())
+        )),
+        "{printed}"
+    );
+    assert!(
+        lines[stable + 1]
+            .trim_start()
+            .starts_with("0.2.0 from 0.1.0, asked by host, 2026-10-26T07:33:21Z, claim sha256:"),
+        "{printed}"
+    );
+    assert!(
+        lines[stable + 2]
+            .trim_start()
+            .starts_with("0.1.0, the first, asked by host, 2026-10-26T07:33:20Z, claim sha256:"),
+        "{printed}"
+    );
+    let environments = at("environments");
+    assert!(
+        lines[environments + 1].contains("no target is read"),
+        "{printed}"
+    );
+    let published = at("published from this host");
+    assert!(lines[published + 1].contains("holds no"), "{printed}");
+}
+
+#[test]
+fn a_broken_bindings_file_is_the_channels_answer_and_the_record_still_answers() {
+    let host = Host::new();
+    let history = History::open(&host.repo).unwrap();
+    Kept::at(&history)
+        .write(&Entry {
+            component: ComponentName::new("repository"),
+            version: Version::new("0.1.0"),
+            tag: "v0.1.0".into(),
+            revision: host.head.clone(),
+            branch: Branch::new("main"),
+            index: Digest::of(b"the index"),
+            store: store(),
+        })
+        .unwrap();
+    host.bind("[landing\n");
+    let out = host.binary(&["status", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let channels = &json["value"]["channels"];
+    assert_eq!(channels["answer"], "unreadable", "{json}");
+    let file = host.bindings_file().display().to_string();
+    assert!(
+        channels["unreadable"]["what"]
+            .as_str()
+            .is_some_and(|w| w.starts_with(&file)),
+        "{json}"
+    );
+    assert!(
+        channels["unreadable"]["said"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty()),
+        "{json}"
+    );
+    assert_eq!(json["value"]["published"]["answer"], "ok", "{json}");
+}
+
+#[test]
+fn status_in_a_directory_that_is_no_repository_exits_3_naming_it() {
+    let host = Host::new();
+    let elsewhere = host.root().join("elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_tailrace"))
+        .args(["status"])
+        .current_dir(&elsewhere)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CEILING_DIRECTORIES", host.root())
+        .env("HOME", host.root().join("home"))
+        .env("XDG_CONFIG_HOME", host.root().join("config"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let printed = String::from_utf8_lossy(&out.stdout);
+    assert!(printed.contains("elsewhere"), "{printed}");
+}
+
+#[test]
+fn a_moment_is_rendered_in_utc() {
+    assert_eq!(tailrace::render::utc(0), "1970-01-01T00:00:00Z");
+    assert_eq!(tailrace::render::utc(1_793_000_000), "2026-10-26T07:33:20Z");
 }
 
 // Requirement: An unbound host answers absent

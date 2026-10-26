@@ -975,3 +975,212 @@ fn a_file_naming_no_gate_binds_as_before_and_says_nothing_tells_the_gate() {
         ))
     );
 }
+
+// Requirement: Status needs only what it asks
+
+/// Every file under `dir` with its contents, to tell nothing was made.
+fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut all = Vec::new();
+    let mut dirs = vec![dir.to_path_buf()];
+    while let Some(at) = dirs.pop() {
+        for entry in fs::read_dir(&at).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                all.push((path.clone(), Vec::new()));
+                dirs.push(path);
+            } else {
+                all.push((path.clone(), fs::read(&path).unwrap()));
+            }
+        }
+    }
+    all.sort();
+    all
+}
+
+fn stable() -> ChannelName {
+    ChannelName::new("stable")
+}
+
+#[test]
+fn a_file_naming_a_landing_alone_binds_status_with_the_chain_and_the_store_absent_naming_them() {
+    let host = Host::new();
+    let repo = repository(&host);
+    host.write("[landing]\nbranch = {}\n");
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status)
+        .unwrap_or_else(|not| panic!("status bound nothing: {not}"));
+    assert_eq!(
+        binding.seams.keeper.chain(&stable()),
+        Err(Not::absent(
+            &Source::new(Seam::Keeper, "unbound"),
+            format!(
+                "binding of the ledger, [ledger] in {}",
+                host.file().display()
+            ),
+        ))
+    );
+    assert_eq!(
+        binding.seams.store.resolve(&Name::new("v0.1.0")),
+        Err(Not::absent(
+            &Source::new(Seam::Store, "unbound"),
+            format!("binding of the store, [store] in {}", host.file().display()),
+        ))
+    );
+    assert_eq!(binding.signer, None);
+    assert!(binding.seams.projections.is_empty() && binding.seams.targets.is_empty());
+
+    host.write("[store]\nlayout = \"/layout\"\n");
+    match bind(&host.file(), Some(&host.home()), &repo, For::Status) {
+        Err(Not::Absent(a)) => assert!(a.what.contains("[landing]"), "{a:?}"),
+        other => panic!("status with no [landing] answered {:?}", other.err()),
+    }
+}
+
+#[test]
+fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making_it() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[ledger]\nstore = {{}}\n",
+        layout.display()
+    ));
+    let missing = bind(&host.file(), Some(&host.home()), &repo, For::Status);
+    assert!(
+        matches!(&missing, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store),
+        "{:?}",
+        missing.err()
+    );
+    assert!(!layout.exists(), "status made {}", layout.display());
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    match chain_of(bind(&host.file(), Some(&host.home()), &repo, For::Status)) {
+        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "store")),
+        other => panic!("a store ledger answered {other:?}"),
+    }
+}
+
+/// A repository in the host's directory with one commit on `main`, its
+/// remote `origin` at `origin` where one is given, and its path and the
+/// commit.
+fn committed(host: &Host, origin: Option<&Path>) -> (PathBuf, tailrace_seams::Revision) {
+    let repo = repository(host);
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(args)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_AUTHOR_NAME", "A. Uthor")
+            .env("GIT_AUTHOR_EMAIL", "author@example.com")
+            .env("GIT_COMMITTER_NAME", "A. Uthor")
+            .env("GIT_COMMITTER_EMAIL", "author@example.com")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
+    };
+    git(&["commit", "-q", "--allow-empty", "-m", "feat: a start"]);
+    if let Some(origin) = origin {
+        git(&["remote", "add", "origin", origin.to_str().unwrap()]);
+    }
+    let head = git(&["rev-parse", "HEAD"]);
+    (repo, tailrace_seams::Revision::new(head))
+}
+
+/// What the landing bound for status answers of `head` on `main`.
+fn landed(binding: &Binding, head: &tailrace_seams::Revision) -> Answer<bool> {
+    binding
+        .seams
+        .landing
+        .landed(&tailrace_seams::Branch::new("main"), head)
+}
+
+// Requirement: Status is bound with nothing written
+
+#[test]
+fn no_file_in_a_clone_with_origin_binds_the_plain_branch_and_the_git_ref_read_from_origin() {
+    let host = Host::new();
+    let gone = host.dir.path().join("gone.git");
+    let (repo, head) = committed(&host, Some(&gone));
+    let before = files(host.dir.path());
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status)
+        .unwrap_or_else(|not| panic!("status bound nothing: {not}"));
+    let named = gone.display().to_string();
+    match landed(&binding, &head) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::new(Seam::Landing, "branch"));
+            assert!(
+                u.said.as_deref().is_some_and(|s| s.contains(&named)),
+                "{u:?}"
+            );
+        }
+        other => panic!("the landing answered {other:?}, not from origin"),
+    }
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::new(Seam::Keeper, "git_ref"));
+            assert!(
+                u.said.as_deref().is_some_and(|s| s.contains(&named)),
+                "{u:?}"
+            );
+        }
+        other => panic!("the ledger answered {other:?}, not from origin"),
+    }
+    assert!(matches!(
+        binding.seams.store.resolve(&Name::new("v0.1.0")),
+        Err(Not::Absent(a)) if a.source == Source::new(Seam::Store, "unbound")
+    ));
+    assert_eq!(binding.signer, None);
+    assert_eq!(files(host.dir.path()), before, "binding status made a file");
+}
+
+#[test]
+fn no_file_in_a_tree_holding_sluices_file_binds_sluice() {
+    let host = Host::new();
+    let gone = host.dir.path().join("gone.git");
+    let (repo, head) = committed(&host, Some(&gone));
+    let file = repo.join(profiles::landing::SLUICE_FILE);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, "").unwrap();
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status).unwrap();
+    match landed(&binding, &head) {
+        Err(Not::Unreadable(u)) => assert_eq!(u.source, Source::new(Seam::Landing, "sluice")),
+        other => panic!("the landing answered {other:?}, not sluice's"),
+    }
+}
+
+#[test]
+fn no_file_and_no_origin_binds_the_branch_and_the_git_ref_with_no_remote() {
+    let host = Host::new();
+    let (repo, head) = committed(&host, None);
+    let before = files(host.dir.path());
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status).unwrap();
+    assert_eq!(landed(&binding, &head), Ok(true));
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
+        other => panic!("the ledger answered {other:?}"),
+    }
+    assert_eq!(files(host.dir.path()), before, "binding status made a file");
+}
+
+#[test]
+fn the_landings_remote_is_the_files_or_origin_with_no_file_or_none() {
+    let host = Host::new();
+    let gone = host.dir.path().join("gone.git");
+    let (repo, _) = committed(&host, Some(&gone));
+    let remote = || landing_remote(&host.file(), Some(&host.home()), &repo);
+    assert_eq!(remote(), Ok(Some(ORIGIN.to_string())));
+    host.write("[landing]\nbranch = { remote = \"upstream\" }\n");
+    assert_eq!(remote(), Ok(Some("upstream".to_string())));
+    host.write("[landing]\nsluice = {}\n");
+    assert_eq!(remote(), Ok(None));
+    host.write("[landing]\nqueue = {}\n");
+    assert!(matches!(remote(), Err(Not::Unreadable(_))));
+
+    let bare = Host::new();
+    let (repo, _) = committed(&bare, None);
+    assert_eq!(
+        landing_remote(&bare.file(), Some(&bare.home()), &repo),
+        Ok(None)
+    );
+}
