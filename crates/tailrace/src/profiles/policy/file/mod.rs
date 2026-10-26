@@ -619,10 +619,10 @@ fn after(
         if next == name {
             return Err(format!("{table} comes after itself through after"));
         }
-        if !seen.insert(next) {
+        // A name no environment bears is its own table's to answer.
+        let (true, Some((_, other))) = (seen.insert(next), of.get(next)) else {
             continue;
-        }
-        let (_, other) = of.get(next).ok_or_else(|| named(next))?;
+        };
         walk.extend(other.after.iter().map(String::as_str));
     }
     let mut channels: Vec<(String, ChannelName)> = Vec::new();
