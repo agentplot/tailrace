@@ -1,10 +1,13 @@
-//! Spec channel-status, two machines and one answer, S10 and S12, and
-//! spec host-bindings, status with nothing written, over real profiles:
-//! a bare remote; machine A, a clone bound by a file of its own to a
-//! plain branch landing, an OCI layout, a host key and the git ref ledger
-//! on `origin`, which promotes through `tailrace::run`; and machine B, a
+//! Spec channel-status, two machines and one answer, and S12, and spec
+//! host-bindings, status with nothing written, over real profiles: a
+//! bare remote; machine A, a clone bound by a file of its own to a plain
+//! branch landing, an OCI layout, a host key and the git ref ledger on
+//! `origin`, which promotes through `tailrace::run`; and machine B, a
 //! second clone on a host with no bindings file, bound as 118 binds such
-//! a host. Needs git alone, so it is in the fast layer.
+//! a host. A machine cut off from its remote is not asked here: its
+//! landing answers unreadable until the landing reads the host's copy of
+//! the branch as last fetched (77, C.5, C.6), and a chain as last read is
+//! proven over the fakes. Needs git alone, so it is in the fast layer.
 
 mod scratch;
 
