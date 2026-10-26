@@ -10,7 +10,8 @@ branch, component, output, build identity, version, ecosystem and
 ecosystem name, artifact metadata and index metadata (4, 6), cache
 entry (52), claim and signed envelope (7, 8), verdict (78), signer,
 audience and the policy's requirements (82), the channel a policy
-declares with how it moves (131), environment and channel. A channel
+declares with how it moves (131), a given channel held off with the
+line that would switch it on (C.10), environment and channel. A channel
 SHALL be its component and its name together, its component none where
 the repository declares no component (125). The name of the one
 component of a repository that declares none (123) SHALL be defined
@@ -57,7 +58,17 @@ publish, with releases alone or prereleases too, by a promotion alone,
 or bound to a channel of the same component (37, 83, 131, C.10); a
 repository that declares one component SHALL
 have every channel in it, and one that declares none SHALL have every
-channel in that one, its channels spelled by name alone (123).
+channel in that one, its channels spelled by name alone (123). The
+policy SHALL answer the givens held off, given a repository at a landed
+revision, with every channel the profile gives but holds until the
+repository switches it on, and the repository has not switched on,
+once each, ordered by name and then by component, each with its
+component, how it would move once switched on, and the line that would
+switch it on, in the profile's own words; an empty list where it holds
+none back; and never a channel the channels answer lists at that
+revision (C.10, as amended at agentplot/blueprints b1267d7). The held
+answer SHALL be unreadable wherever the channels answer is, with the
+same words.
 
 #### Scenario: Acceptance names no channel
 
@@ -78,6 +89,16 @@ channel in that one, its channels spelled by name alone (123).
 
 - **WHEN** policy-for is asked for a channel whose policy names who may ask for it, and for one whose policy names none
 - **THEN** the first names those signers, and the second names none, which is any asker the gate verifies
+
+#### Scenario: A given held off
+
+- **WHEN** the held givens are asked at a revision, and the channels at the same revision
+- **THEN** each held given names its component, how it would move and the line that would switch it on, and no channel is in both answers
+
+#### Scenario: A held given written and read back
+
+- **WHEN** a given held off is written in its machine-readable form and read back
+- **THEN** it is the same value, naming the channel, its component or that the repository declares none, how it would move and its line
 
 ### Requirement: The keeper's contract
 

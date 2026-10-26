@@ -19,7 +19,7 @@ and gives a channel its component wherever it travels, so the gate and
 the ledger learn every channel from that one answer and the core knows
 no channel's name (131, 125, 37, 83, 95, C.10, C.13, C.14, as amended
 at agentplot/blueprints 67f95da, 85bbf54, 7749369, e18ba89, 061bfa8,
-b64d367 and 53f6d44).
+b64d367, 53f6d44 and b1267d7).
 
 ## What Changes
 
@@ -93,8 +93,12 @@ b64d367 and 53f6d44).
   branch's landed head it prints the acceptance and layout policies and
   every channel the channels answer lists, the givens beside the
   repository's own, each with its component, how it moves, whether it
-  takes prereleases, its claims, its promoters and who may ask, asked
-  of the core like every command (core.31).
+  takes prereleases, its claims, its promoters and who may ask; and
+  beneath that table each given held off, with how it would move and
+  the line that would switch it on, so a switched-off `alpha` shows as
+  one line away. It asks the core like every command (core.31), and the
+  held givens come from the policy seam's new held answer, which the
+  file profile reads from the fragment (C.10, as amended at b1267d7).
 - **An environment's words make its channels.** An environment's
   `policy = "manual"` gives it a channel of its own, named for the
   environment and bound to the channel it names; `after = [...]` gives
@@ -126,16 +130,22 @@ b64d367 and 53f6d44).
   its binding and who may sign its promotion the same way (131).
 - **The fakes answer it and the suite holds every profile to it.** The
   fake policy lists the channels scripted for it with how each moves;
-  the fake keeper keeps a chain per component and channel. The policy's
+  the fake keeper keeps a chain per component and channel; the fake
+  policy holds off only what a test scripts. The policy's
   conformance group gains how each channel moves and what a profile
-  gives with nothing declared, and names no channel a profile gives:
-  the policy file's rig reads what it gives from the shipped fragment.
+  gives with nothing declared, and what it holds off kept apart from
+  its channels, and names no channel a profile gives: the policy file's
+  rig reads what it gives and holds from the shipped fragment.
   The keeper's group gains two components' chains of one channel name
   kept apart.
 - **ADR 0019** records the channel's identity and its three spellings,
-  the givens as a fragment beneath the file, switching on and
-  overriding by one line, who signs a given's promotion, the
-  environment's table, and the gate's reading through the seam; the
+  the givens as a fragment beneath the file, switching on by writing a
+  given's table and overriding it by the same line, with no `on` key,
+  as ruled at 53f6d44, who signs a given's promotion, who may ask, the
+  environment's table, the gate's reading through the seam, and the
+  policy command with the givens held off; it puts to the user only
+  what is still this unit's reading, the fragment's `held` mark and a
+  manual environment's approvers under its made channel. The
   self-hosting, ledgers and how-it-works pages say what is built.
 
 Out of scope, and what each waits on:
@@ -181,8 +191,9 @@ Out of scope, and what each waits on:
   given channels as a fragment beneath the file, switched on and
   overridden by one line, the channels an environment's words make, who
   may ask for a channel and who signs a promotion of a given or made
-  channel, as every policy profile answers them and the gate and the
-  ledger read them.
+  channel, and the givens held off with the line that switches each on,
+  as every policy profile answers them and the gate and the ledger read
+  them.
 
 ### Modified Capabilities
 
@@ -192,14 +203,17 @@ Out of scope, and what each waits on:
   policy, keeper and target seams; the channel's store name carries its
   component where components are declared; the policy for a channel
   names who may sign its promotion; an empty chain read as last read
-  says when.
+  says when; the policy answers the givens held off, each with the line
+  that would switch it on.
 - `seam-fakes`: the fake policy scripts how a channel moves,
   prereleases among it, its
-  component carried by the channel itself; the fake keeper keeps a
+  component carried by the channel itself, and the givens it holds off
+  as a test scripts them; the fake keeper keeps a
   chain per component and channel, and an empty chain as last read.
 - `conformance-suite`: the policy's group holds how each channel moves,
   prereleases among it, and what a profile gives with nothing declared,
-  naming no channel a profile gives; the gate's group a prerelease
+  naming no channel a profile gives, and the givens a profile holds off
+  kept apart from its channels; the gate's group a prerelease
   moving only the channels that take prereleases, and the ledger's an
   asker the approvers do not name; the keeper's group holds two components' chains apart,
   and an empty chain as last read saying when.
@@ -209,7 +223,8 @@ Out of scope, and what each waits on:
   holds, and `on_each_publish`, `bound_to`, `prereleases` and
   `approvers` read by the profile.
 - `command-line`: `tailrace policy` shows the policy in force at the
-  branch's landed head.
+  branch's landed head and, beneath it, the givens held off with the
+  line that switches each on.
 - `acceptance`: the gate learns the channels that follow each publish,
   and the signer it accepts as, through the policy seam alone; a
   prerelease moves only those that take prereleases; the gate's move is
@@ -227,13 +242,15 @@ Out of scope, and what each waits on:
 ## Impact
 
 - `crates/tailrace-seams/src/policy.rs` (how a channel moves,
-  prereleases among it, the promotion's signers and approvers), a channel identity type in `artifact.rs`,
+  prereleases among it, the promotion's signers and approvers, and the
+  held givens' answer), a channel identity type in `artifact.rs`,
   `keeper.rs` (append, chain and the store name by identity, an empty
   chain as last read),
   `answer.rs` (the promotion refusals naming the identity, and the
   asker the approvers do not name),
-  `target.rs`, `lib.rs`.
-- `crates/tailrace-fakes/src/policy.rs`, `keeper.rs`, `target.rs`.
+  `target.rs`, `lib.rs` (`Nowhere` answering the held givens).
+- `crates/tailrace-fakes/src/policy.rs` (with the held givens a test
+  scripts), `keeper.rs`, `target.rs`.
 - `crates/tailrace-core/src/gate.rs` (no file parsing, a prerelease
   moving only the channels that take prereleases), `ledger.rs`
   (an empty channel carrying how it was read), `repair.rs`, `verify.rs`,
@@ -245,7 +262,7 @@ Out of scope, and what each waits on:
   `commands/policy.rs` with its binding in `bindings/mod.rs`, `lib.rs`
   and `main.rs`, and their tests.
 - `crates/tailrace-core/src/in_force.rs`, the policy in force asked of
-  the core.
+  the core, with the givens held off, and `landed.rs`'s `held_at`.
 - `crates/tailrace-conformance/src/seams/policy.rs`, `seams/keeper.rs`,
   `core/gate.rs`, `core/ledger.rs`, `fakes.rs`, `world.rs` and the rest
   that name a channel.

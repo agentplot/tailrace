@@ -18,7 +18,10 @@ none (125, 37), listed beside the channels the profile gives with
 nothing declared and like them (131). The group's rig SHALL declare
 components and channels, each with how it moves, at a landed revision
 as well as policies for audiences, and SHALL answer the channels its
-profile gives a set of components with nothing declared. The group
+profile gives a set of components with nothing declared, and the
+channels it holds off. The group SHALL hold a profile's held givens
+apart from its channels, each naming how it would move and the line
+that would switch it on (C.10). The group
 SHALL hold a profile to the three ways a channel moves and SHALL name
 no channel a profile gives, its declared channels bearing names no
 profile gives, so a profile whose givens bear other names passes alike
@@ -59,10 +62,15 @@ profile gives, so a profile whose givens bear other names passes alike
 - **WHEN** the channels are asked at a revision declaring one channel of each way it moves, and a second channel moving on each publish with prereleases
 - **THEN** the answer says each as declared, prereleases of the second alone, and policy-for of each agrees on the channel it is bound to
 
+#### Scenario: The givens held off
+
+- **WHEN** the held givens and the channels are asked at a revision declaring the components `lib` and `web` and the channel `edge` of `lib`
+- **THEN** the held answer is what the rig says its profile holds off for `lib` and `web`, an empty list where it holds none, each with how it would move and a line, and no channel it names is listed by the channels answer
+
 #### Scenario: The channels of a policy that cannot be reached
 
-- **WHEN** the rig makes the policy unreachable and the channels are asked
-- **THEN** the answer is unreadable naming the policy, with its words unchanged, and not an empty list
+- **WHEN** the rig makes the policy unreachable and the channels and the held givens are asked
+- **THEN** both answers are unreadable naming the policy, with its words unchanged, and neither is an empty list
 
 ### Requirement: The keeper's contract
 

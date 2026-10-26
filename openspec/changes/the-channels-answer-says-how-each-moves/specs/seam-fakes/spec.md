@@ -32,6 +32,11 @@ share that state with every copy the test hands to the core.
 - **WHEN** a test scripts the fake policy with `nightly` moving on each publish with prereleases
 - **THEN** channels answers `nightly` moving on each publish with prereleases
 
+#### Scenario: A scripted given held off
+
+- **WHEN** a test scripts the fake policy with `canary` held off, moving on each publish, with the line `[channels.canary]`, and scripts no other
+- **THEN** the held givens answer `canary` with how it would move and its line, channels does not list it, and a fake scripted with none held answers an empty list, with the call recorded and faultable like channels
+
 #### Scenario: The fake keeper's two components
 
 - **WHEN** a test appends a promotion to `beta` of `lib` on the fake keeper

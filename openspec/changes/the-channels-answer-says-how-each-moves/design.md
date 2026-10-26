@@ -36,7 +36,12 @@ a channel moved by an asking is any asker the gate verifies (129),
 unless `approvers` under it names signers, `lts`'s given naming no rule
 so that only an asking moves it.
 
-No `tailrace policy` command exists; C.10 names one.
+The batch 19 rulings at agentplot/blueprints b1267d7 amend C.10 so the
+policy command shows the table in force and, beneath it, each given
+held off with the line that would switch it on, read from the fragment,
+so a reader sees that a switched-off `alpha` is one line away. On the
+branch `tailrace policy` shows the channels in force and nothing held
+off, since no answer of the policy seam carries a held given.
 
 ## Goals / Non-Goals
 
@@ -334,7 +339,8 @@ names `bound_to`, `EachPublish` where the test scripted it with
 otherwise.
 `belongs` and `belongs_at` go: the identity carries the component.
 The fake gives no channel a test did not script; givens are the file
-profile's (C.10). The fake keeper keys its chains by `ChannelId`.
+profile's (C.10). It holds off only what a test scripts with `holds`
+(D13). The fake keeper keys its chains by `ChannelId`.
 
 ### D9. The suite holds every profile to the answer
 
@@ -363,6 +369,7 @@ register changes nothing: 41 and 97 stay pending with the target.
 | stable promoted by the gate's signer | ledger | 32, 9, 125 |
 | a prerelease and the channels that follow | gate | 95, 131 |
 | an asker the approvers do not name | ledger | 32, 33 |
+| the givens held off | policy | C.10 |
 
 The "each way a channel moves" scenario declares a second following
 channel taking prereleases. The approvers scenario cites 32, not 129,
@@ -375,8 +382,16 @@ provider is not what it exercises.
 records D1, D2 (with `prereleases`), D3 (with `approvers`), D4 (the
 fragment and its `held` mark, the table in force, switching on by
 writing the table and overriding by one line, the environment table and
-made-channel names), D5 and D11. It is numbered 0019 because two units in flight on
-this bolt propose an 0018; whichever lands later renumbers.
+made-channel names), D5, D11 and D13. How a held given is switched on
+is the statement's, not this unit's reading (53f6d44): writing its
+table is the switch, there is no `on` key, and nothing turns `beta` or
+`stable` off. So the record's outcome and consequences name no `on` key, its considered
+options keep an `on` key only as an option weighed and rejected, its
+Deciders line puts to the user only what is still this unit's reading,
+the fragment's `held` mark and a manual environment's approvers under
+its made channel, and its policy command shows the givens held off
+with their lines (b1267d7). It is numbered 0019 because two units in
+flight on this bolt propose an 0018; whichever lands later renumbers.
 
 ### D11. `tailrace policy` asks the core for the policy in force
 
@@ -398,16 +413,26 @@ branch and revision, then the acceptance and layout claims, then one
 row per channel, by name then component: the channel spelled, how it
 moves (`each publish`, `each publish, prereleases too`, `promotion`,
 `bound to <channel>`), its claims by kind, its promoters, and who may
-ask (`any asker` where it names no approvers). `--json` prints the core's answer. It exits
+ask (`any asker` where it names no approvers). Beneath the channels,
+under `held off`, it prints one row per held given (D13): the channel
+spelled, how it would move, in the same words, and `switch on with
+<line>`; the heading and its rows are printed only where the held
+answer lists any, and an unreadable held answer prints its words there,
+the rest standing. `--json` prints the core's answer. It exits
 0 whenever an answer is made, and the answer's own code where the head
 cannot be resolved or has not landed.
 
-This shows the table in force through the seam's answers, so the
-command reads no file and the core no profile (core.2, core.31).
-Alternative: a policy seam operation answering the merged file in its
-TOML form. Rejected for now: B.5 names no such operation, and it would
-carry the file profile's form across the seam; a held channel not
-switched on is therefore not shown. Named for the design agent.
+`InForce` gains `held: Answer<Vec<HeldChannel>>`, asked of the policy
+seam at the landed head beside the channels and serialized as one
+answer like them, so an unreadable held answer leaves the table in
+force shown (58).
+
+This shows the table in force and what is held off through the seam's
+answers, so the command reads no file and the core no profile (core.2,
+core.31). Alternative: a policy seam operation answering the merged
+file in its TOML form. Rejected: B.5 names no such operation, and it
+would carry the whole of the file profile's form across the seam, where
+the held answer carries one line of it, opaque to the core.
 
 ### D12. An empty channel as last read says when
 
@@ -443,6 +468,65 @@ read, so the time is lost.
 Alternative: answer an empty chain `Chain { claims: [] }` from the
 source too, and retire the absence. Rejected: 121 answers "that none is
 held", and every caller of `chain` reads that as absent today.
+
+### D13. The policy answers the givens held off
+
+C.10, as amended at b1267d7, has the policy command show each given
+held off with the line that would switch it on, read from the fragment.
+The fragment is the policy profile's, and the command calls the core,
+which reaches the profile through the policy seam alone (core.2,
+core.31); so the seam answers it, as a third operation beside
+`policy_for` and `channels`:
+
+```rust
+pub struct HeldChannel { pub channel: DeclaredChannel, pub switch: String }
+
+/// C.10: every given the policy at `revision` holds that the
+/// repository has not switched on, once each, ordered by name and then
+/// component, each with how it would move and the line that switches it
+/// on; an empty list where none is held.
+fn held(&self, revision: &Revision) -> Answer<Vec<HeldChannel>>;
+```
+
+`HeldChannel` is defined in `crates/tailrace-seams/src/policy.rs` and
+serializes as the declared channel flattened with `"switch":
+"[channels.alpha]"`. `switch` is the profile's own words, which the
+core and the command carry and never parse; the trait has no default,
+so every profile says what it holds.
+
+- **The file profile** answers it from the same `in_force` as the
+  channels: for every channel the fragment marks `held` and every
+  component (the one component where none is declared) whose table the
+  repository does not write, the channel with the fragment's table read
+  as step 3 of the resolution reads one (how it would move, its
+  `prereleases`), and `switch` the table's header in the file's form,
+  `[channels.<name>]` or `[channels.<component>.<name>]`. Wherever the
+  resolution is unreadable, the held answer is unreadable with the same
+  words, so the two never disagree. A held given never appears in the
+  channels answer, and a switched-on one never in the held.
+- **The fake policy** answers what a test scripts with `holds(&ChannelId,
+  moves, switch)`, an empty list where none is scripted, recorded and
+  faultable like `channels`. `Nowhere` answers the seam's absence as it
+  does for the other two, and every wrapping `Policy` in the workspace
+  (`Watched` in the suite and the core's tests, `OneUnreadable`)
+  delegates it.
+- **The suite**: `PolicyRig::held(components) -> Vec<HeldChannel>`
+  answers what the profile holds off with nothing declared, none for
+  the fake; for the file, read by the rig from the shipped `givens.toml`
+  per component, naming no channel in its Rust. "the givens held off"
+  below the policy group's marker, citing C.10, holds the answer to the
+  rig's word and no channel it names to the channels answer; the
+  unreachable policy's scenario asks both.
+- **The core**: `landed.rs` gains `held_at` beside `channels_at`, and
+  `in_force` asks it (D11). Nothing else in the core reads it: the gate
+  and the ledger move only what the channels answer lists.
+
+Alternatives: the channels answer carrying held givens marked held.
+Rejected: 131 answers the channels the policy declares, and the gate,
+the ledger and status would each have to leave the held ones out. The
+command reading the fragment itself: rejected, since a surface would
+then read a profile's data (core.31) and a profile with other givens
+would be shown the file's.
 
 ## Risks / Trade-offs
 
@@ -480,11 +564,18 @@ held", and every caller of `chain` reads that as absent today.
   own table.
 - [A repository may now rebind a given, and so make a cycle of
   bindings] → a cycle is unreadable naming a table in it.
-- [102 says a repository may declare no channel, and the givens are
-  declared by the fragment with nothing that turns `beta` or `stable`
-  off, so no repository declares none] → the channels answer carries
-  the givens as declared, as batch 18 rules; 102's first clause is named
-  for the design agent.
+- [102 says a repository may declare no channel, which a reviewer may
+  read as the givens answered not declared] → the givens are declared,
+  by the fragment (ruled at b64d367): a repository that declares no
+  channel in 102's sense writes no channel line, its versions offered
+  and accepted as 102 says, and the channels answer and the policy for
+  each given carry `beta` and `stable` as declared, never "not
+  declared"; spec `channel-movement` says so with a scenario.
+- [B.5 names `policy-for` and `channels`, and no operation for the held
+  givens the policy command now shows] → `held` is added to the policy
+  seam as D13 gives it, the narrowest answer that lets the command show
+  them without a surface reading a profile's data; named for the design
+  agent, as an operation B.5 may name.
 - [Several provenance signers and no accepting one, which C.10 now
   refuses in words] → that refusal belongs with the host-as-gate
   default, `a-host-with-no-bindings-file-is-bound-to-the-defaults`'s;
