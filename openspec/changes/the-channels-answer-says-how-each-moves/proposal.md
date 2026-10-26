@@ -215,6 +215,7 @@ crates/tailrace-core/src/ledger.rs
 crates/tailrace-core/src/repair.rs
 crates/tailrace-core/src/verify.rs
 crates/tailrace-core/src/landed.rs
+crates/tailrace-core/src/status.rs
 crates/tailrace-core/src/in_force.rs
 crates/tailrace-core/src/lib.rs
 crates/tailrace-core/tests/**
