@@ -27,7 +27,7 @@
 
 ## 4. The self-hosting guide
 
-- [ ] 4.1 Add "After a landing" to `site/src/content/docs/guides/self-hosting.mdx` as design D7 lays out: which of the two ways applies; the driver's push then publish; the pool run job's step with its cache-only key; the IAM policy on the `cache/*` repositories alone, with `cache/moon` made by the operator before the first push; `.github/workflows/tailrace.yml` to copy; the publisher's signer in the policy file; and that the cache entries' own repositories (C.1) and sluice's room for the step come from their units. Verify with `moon run site:build`, and by running each YAML block of the page through actionlint as `treefmt` runs it on a copy, since the page's blocks are no workflow the gate checks.
+- [x] 4.1 Add "After a landing" to `site/src/content/docs/guides/self-hosting.mdx` as design D7 lays out: which of the two ways applies; the driver's push then publish; the pool run job's step with its cache-only key; the IAM policy on the `cache/*` repositories alone, with `cache/moon` made by the operator before the first push; `.github/workflows/tailrace.yml` to copy; the publisher's signer in the policy file; and that the cache entries' own repositories (C.1) and sluice's room for the step come from their units. Verify with `moon run site:build`, and by running each YAML block of the page through actionlint as `treefmt` runs it on a copy, since the page's blocks are no workflow the gate checks.
 
 ## 5. Integration
 
