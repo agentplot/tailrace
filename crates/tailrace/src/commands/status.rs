@@ -60,11 +60,31 @@ pub(crate) fn now() -> u64 {
 }
 
 fn ask(args: &StatusArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Overview> {
+    overview_in(
+        binding,
+        at,
+        &args.branch,
+        args.component.as_deref(),
+        args.revision.as_deref(),
+    )
+}
+
+/// 36, 60: the whole of status in the repository at `at` over `binding`,
+/// or over none where the binding failed, for `branch`, of `component`
+/// and `revision` where they are named, as of now: what the command line
+/// prints and the serving process serves (57, rule core.31).
+pub(crate) fn overview_in(
+    binding: &Answer<Binding>,
+    at: &Path,
+    branch: &str,
+    component: Option<&str>,
+    revision: Option<&str>,
+) -> Answer<Overview> {
     let history = History::open(at)?;
     let ask = OverviewAsk {
-        branch: Branch::new(&args.branch),
-        component: args.component.as_ref().map(ComponentName::new),
-        revision: match &args.revision {
+        branch: Branch::new(branch),
+        component: component.map(ComponentName::new),
+        revision: match revision {
             Some(text) => Some(history.resolve(text)?),
             None => None,
         },
