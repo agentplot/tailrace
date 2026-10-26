@@ -1,5 +1,6 @@
 //! Spec host-record: what this host keeps of the versions it published,
-//! and status answered from it alone.
+//! and status answered from it alone; and spec channel-status: every
+//! channel the policy declares, read from the ledger alone, beside it.
 
 mod common;
 mod world;
@@ -7,8 +8,16 @@ mod world;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tailrace_core::{status, Entry, Filter, History, Kept, Published, StatusAsk, Written};
-use tailrace_seams::{Branch, ComponentName, Digest, Not, Outcome, Revision, Source, Version};
+use tailrace_core::{
+    overview, row, status, Channel, ChannelStatus, Entry, Filter, Head, HeadAt, History, Kept,
+    Overview, OverviewAsk, Published, RepositoryName, StatusAsk, Written,
+};
+use tailrace_fakes::{FakeSigner, Fault, KeeperOp, LandingOp, Times};
+use tailrace_seams::{
+    Audience, Branch, ChannelName, ComponentName, Digest, Envelope, EnvironmentName, Keeper, Moved,
+    Not, Outcome, Promotion, Read, Required, Revision, Satisfied, Seam, Signer, SignerId, Source,
+    Version, Why,
+};
 use world::{World, HOST};
 
 fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
@@ -320,4 +329,524 @@ fn an_entry_that_cannot_be_read_is_unreadable_with_the_parsers_words() {
     let words = serde_json::from_str::<Entry>(text).unwrap_err().to_string();
     assert_eq!(u.said.as_deref(), Some(words.as_str()));
     assert_eq!(u.source, Source::host(kept.dir()));
+}
+
+// Requirement: Status shows every channel the policy declares
+
+/// The moment every promotion here was made at.
+const AT: u64 = 1_793_000_000;
+
+fn beta() -> ChannelName {
+    ChannelName::new("beta")
+}
+
+fn stable() -> ChannelName {
+    ChannelName::new("stable")
+}
+
+/// `channel` declared in `component` at every revision, bound to
+/// `bound_to` where it names one.
+fn declare(world: &World, channel: &ChannelName, component: &str, bound_to: Option<&str>) {
+    world.fakes.policy.require(
+        Audience::Channel(channel.clone()),
+        Required::Channel {
+            claims: vec![],
+            bound_to: bound_to.map(ChannelName::new),
+        },
+    );
+    world
+        .fakes
+        .policy
+        .belongs(channel, &ComponentName::new(component));
+}
+
+fn moved(version: &str) -> Moved {
+    Moved {
+        version: Version::new(version),
+        index: Digest::of(format!("{version}'s index").as_bytes()),
+    }
+}
+
+/// A promotion of `channel` in `lib` to `to`, from `from`, after the
+/// claim `predecessor`, signed by the gate as the fake signer signs.
+fn sealed(
+    world: &World,
+    channel: &ChannelName,
+    to: &str,
+    from: Option<&str>,
+    predecessor: Option<&Digest>,
+    at: u64,
+) -> (Promotion, Envelope) {
+    let promotion = Promotion {
+        channel: channel.clone(),
+        component: ComponentName::new("lib"),
+        to: moved(to),
+        from: from.map(moved),
+        predecessor: predecessor.cloned(),
+        asked_by: SignerId::new("gate"),
+        policy: Satisfied {
+            revision: world.head.clone(),
+            claims: vec![Digest::of(b"acceptance")],
+        },
+        at,
+    };
+    let gate = FakeSigner::new();
+    gate.hold(&SignerId::new("gate"));
+    let envelope = gate
+        .sign(
+            &promotion.claim(world.start.clone()),
+            &SignerId::new("gate"),
+        )
+        .unwrap();
+    (promotion, envelope)
+}
+
+/// `channel` promoted in the fake keeper to each version in turn, each
+/// from the one before: every promotion with its envelope's digest.
+fn promoted(world: &World, channel: &ChannelName, versions: &[&str]) -> Vec<(Digest, Promotion)> {
+    let mut chain: Vec<(Digest, Promotion)> = Vec::new();
+    for (i, version) in versions.iter().enumerate() {
+        let from = i.checked_sub(1).map(|j| versions[j]);
+        let predecessor = chain.last().map(|(d, _)| d.clone());
+        let (promotion, envelope) = sealed(
+            world,
+            channel,
+            version,
+            from,
+            predecessor.as_ref(),
+            AT + i as u64,
+        );
+        let digest = world
+            .fakes
+            .keeper
+            .append(channel, &envelope, predecessor.as_ref())
+            .unwrap();
+        chain.push((digest, promotion));
+    }
+    chain
+}
+
+fn ask(world: &World) -> OverviewAsk {
+    OverviewAsk {
+        branch: world.main.clone(),
+        component: None,
+        revision: None,
+        at: AT + 100,
+    }
+}
+
+fn asked(world: &World, ask: &OverviewAsk) -> Overview {
+    let history = world.history();
+    overview(&world.fakes.seams(), &history, &Kept::at(&history), ask)
+}
+
+fn channels_of(overview: &Overview) -> &[ChannelStatus] {
+    match &overview.channels {
+        Ok(channels) => &channels.channels,
+        Err(not) => panic!("the channels answered {not:?}"),
+    }
+}
+
+#[test]
+fn every_channel_is_at_its_version_or_empty_with_the_chain_that_put_it_there() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    declare(&world, &stable(), "lib", Some("beta"));
+    let chain = promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
+
+    let answer = asked(&world, &ask(&world));
+    assert_eq!(answer.branch, world.main);
+    assert_eq!(answer.asked_at, AT + 100);
+    assert_eq!(
+        answer.channels.as_ref().map(|c| &c.revision),
+        Ok(&world.head)
+    );
+    let channels = channels_of(&answer);
+    let names: Vec<&str> = channels.iter().map(|c| c.name().as_str()).collect();
+    assert_eq!(names, ["beta", "stable"]);
+    assert_eq!(channels[0].declared.component, ComponentName::new("lib"));
+    assert_eq!(channels[0].at, Ok(Channel::Empty));
+    assert_eq!(channels[1].declared.bound_to, Some(beta()));
+    assert_eq!(
+        channels[1].at,
+        Ok(Channel::At {
+            head: chain[1].1.clone(),
+            chain: chain.clone(),
+            read: Read::Source,
+        })
+    );
+
+    // A host that never published: the record's part is absent, naming
+    // the record, apart from the channels.
+    let Err(Not::Absent(a)) = &answer.published else {
+        panic!("the record answered {:?}", answer.published)
+    };
+    assert_eq!(a.source, Source::host(world.kept().dir()));
+
+    // Each inner answer is in the one form every surface renders (57).
+    let json = serde_json::to_value(&answer).unwrap();
+    assert_eq!(json["asked_at"], AT + 100);
+    assert_eq!(json["channels"]["answer"], "ok", "{json}");
+    let listed = &json["channels"]["value"]["channels"];
+    assert_eq!(listed[0]["name"], "beta", "{json}");
+    assert_eq!(listed[0]["component"], "lib", "{json}");
+    assert_eq!(listed[0]["at"]["answer"], "ok", "{json}");
+    assert_eq!(listed[0]["at"]["value"]["state"], "empty", "{json}");
+    assert_eq!(listed[1]["bound_to"], "beta", "{json}");
+    assert_eq!(listed[1]["at"]["value"]["state"], "at", "{json}");
+    assert_eq!(listed[1]["at"]["value"]["head"]["to"]["version"], "0.2.0");
+    assert_eq!(json["published"]["answer"], "absent", "{json}");
+}
+
+#[test]
+fn a_channel_of_another_component_is_left_out_when_one_is_named() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    declare(&world, &ChannelName::new("preview"), "web", None);
+    let all = asked(&world, &ask(&world));
+    assert_eq!(channels_of(&all).len(), 2);
+    let lib = asked(
+        &world,
+        &OverviewAsk {
+            component: Some(ComponentName::new("lib")),
+            ..ask(&world)
+        },
+    );
+    let names: Vec<&str> = channels_of(&lib)
+        .iter()
+        .map(|c| c.name().as_str())
+        .collect();
+    assert_eq!(names, ["beta"]);
+}
+
+#[test]
+fn a_policy_declaring_no_channel_answers_an_empty_list() {
+    let world = World::new();
+    let answer = asked(&world, &ask(&world));
+    assert_eq!(channels_of(&answer), []);
+}
+
+#[test]
+fn a_head_not_landed_refuses_the_channels_and_the_record_still_answers() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    let (version, _) = published(&world);
+    let unlanded = world.repo.touch("feat: lib grows again", &["crates/lib"]);
+    let answer = asked(&world, &ask(&world));
+    let Err(Not::Refused(r)) = &answer.channels else {
+        panic!("the channels answered {:?}", answer.channels)
+    };
+    assert_eq!(
+        r.why,
+        Why::NotLanded {
+            branch: world.main.clone(),
+            revision: Revision::new(unlanded.as_str()),
+        }
+    );
+    let published = answer.published.as_ref().expect("the record answered");
+    assert_eq!(published.components[0].versions[0].version, version);
+}
+
+// Requirement: Each channel's answer is its own
+
+#[test]
+fn one_chain_unreadable_and_one_forked_are_each_that_channels_own_answer() {
+    let world = World::new();
+    let edge = ChannelName::new("edge");
+    for channel in [beta(), edge.clone(), stable()] {
+        declare(&world, &channel, "lib", None);
+    }
+    promoted(&world, &beta(), &["0.1.0"]);
+    let chain = promoted(&world, &stable(), &["0.1.0"]);
+    let (_, a) = sealed(&world, &edge, "0.1.0", None, None, AT);
+    let (_, b) = sealed(&world, &edge, "0.2.0", None, None, AT + 1);
+    world.fakes.keeper.fork(&edge, &a, &b);
+    world.fakes.keeper.fault(
+        KeeperOp::Chain,
+        Fault::Unreadable("fatal: unable to access".into()),
+        Times::Once,
+    );
+
+    let answer = asked(&world, &ask(&world));
+    let channels = channels_of(&answer);
+    let Err(Not::Unreadable(u)) = &channels[0].at else {
+        panic!("beta answered {:?}", channels[0].at)
+    };
+    assert_eq!(u.source.seam, Seam::Keeper);
+    assert_eq!(u.said.as_deref(), Some("fatal: unable to access"));
+    let Err(Not::Refused(r)) = &channels[1].at else {
+        panic!("edge answered {:?}", channels[1].at)
+    };
+    assert_eq!(
+        r.why,
+        Why::Fork {
+            predecessor: None,
+            claims: vec![a.digest(), b.digest()],
+        }
+    );
+    assert!(
+        matches!(&channels[2].at, Ok(Channel::At { head, .. }) if *head == chain[0].1),
+        "stable answered {:?}",
+        channels[2].at
+    );
+}
+
+// Requirement: Every reader gets one answer as of when it read
+
+#[test]
+fn a_chain_answered_as_last_read_is_shown_with_its_time_and_words() {
+    let world = World::new();
+    declare(&world, &stable(), "lib", None);
+    let chain = promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let first = asked(&world, &ask(&world));
+    world.fakes.keeper.unreachable("fatal: unable to access");
+    let again = asked(&world, &ask(&world));
+    let Ok(Channel::At {
+        head,
+        chain: read,
+        read: Read::Kept { at, said },
+    }) = &channels_of(&again)[0].at
+    else {
+        panic!("stable answered {:?}", channels_of(&again)[0].at)
+    };
+    assert!(*at >= before, "kept at {at}, first read after {before}");
+    assert_eq!(said, "fatal: unable to access");
+    assert_eq!((head, read), (&chain[1].1, &chain));
+    assert!(matches!(
+        &channels_of(&first)[0].at,
+        Ok(Channel::At {
+            read: Read::Source,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_landing_that_cannot_be_read_is_the_channels_unreadable_answer_and_the_rest_still_answers() {
+    let world = World::new();
+    declare(&world, &stable(), "lib", None);
+    published(&world);
+    promoted(&world, &stable(), &["0.1.0"]);
+    let before = asked(&world, &ask(&world));
+    assert_eq!(channels_of(&before).len(), 1);
+    world.fakes.landing.fault(
+        LandingOp::Landed,
+        Fault::Unreadable("fatal: unable to access 'https://example.com/o/r.git/'".into()),
+        Times::Once,
+    );
+    let asked_of_keeper = world.fakes.keeper.calls().len();
+
+    let answer = asked(&world, &ask(&world));
+    let Err(Not::Unreadable(u)) = &answer.channels else {
+        panic!("the channels answered {:?}", answer.channels)
+    };
+    assert_eq!(u.source.seam, Seam::Landing);
+    assert_eq!(
+        u.said.as_deref(),
+        Some("fatal: unable to access 'https://example.com/o/r.git/'")
+    );
+    assert_eq!(answer.published, before.published);
+    assert!(answer.published.is_ok(), "{:?}", answer.published);
+    assert_eq!(answer.environments, before.environments);
+    unread(&answer.environments);
+    assert_eq!(
+        world.fakes.keeper.calls().len(),
+        asked_of_keeper,
+        "the keeper was asked with the landing unread"
+    );
+    let json = serde_json::to_value(&answer).unwrap();
+    assert_eq!(json["channels"]["answer"], "unreadable", "{json}");
+}
+
+// Requirement: Asking reaches no store, signer or target and writes nothing
+
+#[test]
+fn status_asks_no_store_signer_target_or_projection_and_writes_nothing() {
+    let mut world = World::new();
+    let production = world.fakes.target(&EnvironmentName::new("production"));
+    declare(&world, &beta(), "lib", None);
+    declare(&world, &stable(), "lib", None);
+    published(&world);
+    promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let kept = world.kept();
+    let record = files(kept.dir());
+    let calls = || {
+        (
+            world.fakes.store.calls().len(),
+            world.fakes.signer.calls().len(),
+            production.calls().len(),
+            world
+                .fakes
+                .projections
+                .values()
+                .map(|p| p.calls().len())
+                .sum::<usize>(),
+        )
+    };
+    let appends = || {
+        world
+            .fakes
+            .keeper
+            .calls()
+            .iter()
+            .filter(|c| c.op == KeeperOp::Append)
+            .count()
+    };
+    let (before, appended) = (calls(), appends());
+    let answer = asked(&world, &ask(&world));
+    assert_eq!(channels_of(&answer).len(), 2);
+    assert!(answer.published.is_ok(), "{:?}", answer.published);
+    assert_eq!(
+        calls(),
+        before,
+        "status asked the store, a signer, a target or a projection"
+    );
+    assert_eq!(appends(), appended, "status appended to the ledger");
+    assert_eq!(files(kept.dir()), record, "status wrote to the record");
+}
+
+// Requirement: Status names the environments it cannot yet read
+
+/// 98: the environments' part is unreadable from the target seam, saying
+/// no target is read.
+fn unread(answer: &tailrace_seams::Answer<tailrace_core::EnvironmentCounts>) {
+    let Err(Not::Unreadable(u)) = answer else {
+        panic!("the environments answered {answer:?}")
+    };
+    assert_eq!(u.source.seam, Seam::Target);
+    assert!(u.what.contains("environments"), "{u:?}");
+    assert!(u.what.contains("no target is read"), "{u:?}");
+}
+
+#[test]
+fn a_target_bound_and_never_asked_leaves_the_environments_unreadable() {
+    let mut world = World::new();
+    let production = world.fakes.target(&EnvironmentName::new("production"));
+    declare(&world, &stable(), "lib", None);
+    promoted(&world, &stable(), &["0.1.0"]);
+    let answer = asked(&world, &ask(&world));
+    unread(&answer.environments);
+    assert_eq!(channels_of(&answer).len(), 1);
+    assert!(matches!(channels_of(&answer)[0].at, Ok(Channel::At { .. })));
+    assert!(production.calls().is_empty(), "status asked the target");
+    let json = serde_json::to_value(&answer).unwrap();
+    assert_eq!(json["environments"]["answer"], "unreadable", "{json}");
+
+    let history = world.history();
+    let unbound = tailrace_core::overview_unbound(
+        Not::absent(&Source::new(Seam::Host, "bindings"), "the bindings"),
+        &Kept::at(&history),
+        &ask(&world),
+    );
+    unread(&unbound.environments);
+}
+
+// Requirement: A repository's row is made from its status
+
+fn repository() -> RepositoryName {
+    RepositoryName::from_remote("https://example.com/o/r.git").unwrap()
+}
+
+#[test]
+fn a_row_names_every_channels_head_and_the_environments_answer() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    declare(&world, &stable(), "lib", Some("beta"));
+    let chain = promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let answer = asked(&world, &ask(&world));
+    let row = row(&repository(), &answer);
+    assert_eq!(row.repository, repository());
+    assert_eq!(
+        row.heads,
+        Ok(vec![
+            Head {
+                component: ComponentName::new("lib"),
+                channel: beta(),
+                at: Ok(HeadAt::Empty),
+            },
+            Head {
+                component: ComponentName::new("lib"),
+                channel: stable(),
+                at: Ok(HeadAt::At {
+                    version: Version::new("0.2.0"),
+                    index: chain[1].1.to.index.clone(),
+                }),
+            },
+        ])
+    );
+    assert_eq!(row.environments, answer.environments);
+    unread(&row.environments);
+    let json = serde_json::to_value(&row).unwrap();
+    assert_eq!(json["repository"]["owner"], "o", "{json}");
+    assert_eq!(json["heads"]["value"][1]["at"]["value"]["state"], "at");
+    assert_eq!(json["environments"]["answer"], "unreadable", "{json}");
+}
+
+#[test]
+fn a_row_whose_channels_cannot_be_read_carries_that_answer() {
+    let world = World::new();
+    declare(&world, &stable(), "lib", None);
+    world.fakes.policy.fault(
+        tailrace_fakes::PolicyOp::Channels,
+        Fault::Unreadable("policy file: expected `]`".into()),
+        Times::Once,
+    );
+    let answer = asked(&world, &ask(&world));
+    let row = row(&repository(), &answer);
+    let Err(Not::Unreadable(u)) = &row.heads else {
+        panic!("the heads answered {:?}", row.heads)
+    };
+    assert_eq!(u.said.as_deref(), Some("policy file: expected `]`"));
+    assert_eq!(Err(Not::Unreadable(u.clone())), answer.channels);
+}
+
+#[test]
+fn one_channels_unreadable_chain_is_that_heads_own_answer() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    declare(&world, &stable(), "lib", None);
+    promoted(&world, &beta(), &["0.1.0"]);
+    promoted(&world, &stable(), &["0.1.0"]);
+    world.fakes.keeper.fault(
+        KeeperOp::Chain,
+        Fault::Unreadable("fatal: unable to access".into()),
+        Times::Once,
+    );
+    let row = row(&repository(), &asked(&world, &ask(&world)));
+    let heads = row.heads.expect("the heads answered");
+    let Err(Not::Unreadable(u)) = &heads[0].at else {
+        panic!("beta answered {:?}", heads[0].at)
+    };
+    assert_eq!(u.said.as_deref(), Some("fatal: unable to access"));
+    assert!(
+        matches!(&heads[1].at, Ok(HeadAt::At { version, .. }) if version.as_str() == "0.1.0"),
+        "{:?}",
+        heads[1].at
+    );
+}
+
+// Requirement (serving-process): The repository is in the path, by its
+// remote's owner and name
+
+#[test]
+fn a_remotes_address_is_read_as_written_with_no_rewrite_applied() {
+    let world = World::new();
+    let url = "https://example.com/agentplot/tailrace.git";
+    world.repo.git(&["remote", "add", "upstream", url]);
+    world.repo.git(&[
+        "config",
+        "url./srv/elsewhere/.insteadOf",
+        "https://example.com/",
+    ]);
+    let history = world.history();
+    assert_eq!(history.remote_url("upstream"), Ok(Some(url.to_string())));
+    assert_eq!(history.remote_url("nowhere"), Ok(None));
+    assert_eq!(
+        tailrace_core::RepositoryName::from_remote(url).map(|r| r.to_string()),
+        Some("agentplot/tailrace".to_string())
+    );
 }

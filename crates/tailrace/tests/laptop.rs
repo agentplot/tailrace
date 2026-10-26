@@ -329,7 +329,7 @@ fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() 
         .host
         .tailrace(&laptop.scratch.repo, &["status", "--json"]);
     assert_eq!(code, Some(0), "{status}");
-    let entry = &status["value"]["components"][0]["versions"][0];
+    let entry = &status["value"]["published"]["value"]["components"][0]["versions"][0];
     assert_eq!(entry["version"], "0.1.0", "{status}");
     assert_eq!(entry["store"], store, "{status}");
 
