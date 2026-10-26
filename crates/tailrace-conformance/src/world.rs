@@ -571,6 +571,102 @@ impl FakeWorld {
     }
 }
 
+/// The second signer a channel's policy may require a rebuild by, beside
+/// the gate (30).
+pub const REBUILDER: &str = "rebuild";
+
+impl FakeWorld {
+    /// A claim of `kind` about `subject` for `revision`, its body `body`,
+    /// signed as `signer` by a signer of its own and attached to the
+    /// subject; its envelope's digest.
+    pub fn attach_as(
+        &self,
+        signer: &str,
+        subject: &Digest,
+        kind: ClaimKind,
+        revision: &Revision,
+        body: serde_json::Value,
+    ) -> Digest {
+        let id = SignerId::new(signer);
+        let theirs = FakeSigner::new();
+        theirs.hold(&id);
+        let claim = Claim {
+            subject: subject.clone(),
+            kind,
+            revision: revision.clone(),
+            build: None,
+            body,
+        };
+        let envelope = theirs
+            .sign(&claim, &id)
+            .expect("their signer holds their identity");
+        tailrace_seams::Store::attach(&self.fakes.store, subject, &envelope)
+            .expect("the subject is held");
+        envelope.digest()
+    }
+
+    /// The fake policy for `channel`: the gate's acceptance required and,
+    /// where `rebuild`, a rebuild by [`REBUILDER`], the gate named for
+    /// acceptance and promotion and the rebuild signer for rebuilds (82,
+    /// 108); bound to `bound_to` where it names a channel (83).
+    pub fn channel_policy(&self, channel: &str, rebuild: bool, bound_to: Option<&str>) {
+        let named = |id: &str, kinds: &[ClaimKind]| tailrace_seams::NamedSigner {
+            id: SignerId::new(id),
+            verified_by: format!("{id}'s key"),
+            kinds: kinds.to_vec(),
+            checks: vec![],
+        };
+        let mut claims = vec![tailrace_seams::RequiredClaim {
+            kind: ClaimKind::Acceptance,
+            check: None,
+            signers: vec![named(GATE, &[ClaimKind::Acceptance, ClaimKind::Promotion])],
+        }];
+        if rebuild {
+            claims.push(tailrace_seams::RequiredClaim {
+                kind: ClaimKind::Rebuild,
+                check: None,
+                signers: vec![named(REBUILDER, &[ClaimKind::Rebuild])],
+            });
+        }
+        self.fakes.policy.require(
+            Audience::Channel(ChannelName::new(channel)),
+            tailrace_seams::Required::Channel {
+                claims,
+                bound_to: bound_to.map(ChannelName::new),
+            },
+        );
+    }
+
+    /// What a promotion of `channel` to `to` on `main` is asked, the gate
+    /// asking and signing at [`WHEN`].
+    pub fn promote_ask(&self, channel: &str, to: tailrace_core::To) -> tailrace_core::PromoteAsk {
+        tailrace_core::PromoteAsk {
+            branch: self.main.clone(),
+            component: None,
+            channel: ChannelName::new(channel),
+            to,
+            from: None,
+            signer: SignerId::new(GATE),
+            at: WHEN,
+        }
+    }
+
+    /// The fakes as the one binding with a signer holding the gate's
+    /// identity bound first, as on the one host that is the gate (108).
+    pub fn seams_as_gate(&self) -> Seams {
+        let mut seams = self.seams();
+        let gate = FakeSigner::new();
+        gate.hold(&SignerId::new(GATE));
+        seams.signers.insert(0, Box::new(gate));
+        seams
+    }
+
+    /// The promotion `ask` names, over [`FakeWorld::seams_as_gate`].
+    pub fn promote(&self, ask: &tailrace_core::PromoteAsk) -> Answer<tailrace_core::Promoted> {
+        tailrace_core::promote(&self.seams_as_gate(), &self.history(), ask)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tailrace_core::Landed;
