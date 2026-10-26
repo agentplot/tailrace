@@ -99,6 +99,37 @@ fn beta_requires(world: &FakeWorld, more: Vec<RequiredClaim>) {
     requires(world, &beta(), more);
 }
 
+/// `beta` requires the acceptance of a gate other than the host, and is
+/// promoted by it, so the policy names a gate (118).
+fn beta_requires_a_gate_elsewhere(world: &FakeWorld) {
+    let gate = named("gate", &[ClaimKind::Acceptance, ClaimKind::Promotion]);
+    world.fakes.policy.require(
+        Audience::Channel(beta()),
+        Required::Channel {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![gate.clone()],
+            }],
+            bound_to: None,
+            promoted_by: vec![gate],
+        },
+    );
+}
+
+/// `beta` requires no claim and is promoted by the host, so a policy
+/// naming the host for provenance alone names no gate (118).
+fn beta_names_no_gate(world: &FakeWorld) {
+    world.fakes.policy.require(
+        Audience::Channel(beta()),
+        Required::Channel {
+            claims: vec![],
+            bound_to: None,
+            promoted_by: vec![named(HOST, &[ClaimKind::Promotion])],
+        },
+    );
+}
+
 /// `policy` landed, each of `outputs` built and given the landing's
 /// passing `test` at that revision, acceptance requiring `required`, and
 /// `channel` following each publish as the policy seam lists it,
@@ -258,6 +289,7 @@ fn one_host_accepts_and_moves_beta_in_the_same_run() {
 fn the_gate_refusing_what_the_host_offered_leaves_it_offered() {
     let world = FakeWorld::new();
     let revision = following(&world, acceptance(&[ClaimKind::Provenance]));
+    beta_requires_a_gate_elsewhere(&world);
     let (code, printed) = publish_through(
         &world,
         binding(&world, Teller::Publish),
@@ -473,6 +505,27 @@ fn teller_of_a_file_naming_none(world: &FakeWorld) -> Teller {
     }
 }
 
+/// The teller a host with no bindings file binds, read through the
+/// bindings from no file, the given layout under a data directory of its
+/// own, in the world's repository.
+fn teller_of_no_file(world: &FakeWorld) -> Teller {
+    let host = TempDir::new().unwrap();
+    let file = bindings::path(Some(host.path().join("config").as_os_str()), None).unwrap();
+    let data = host.path().join("data");
+    let bound = bindings::bind(
+        &file,
+        Some(&host.path().join("home")),
+        Some(data.as_os_str()),
+        &world.repo().path,
+        For::Publish,
+    );
+    assert!(!file.exists(), "binding wrote a bindings file");
+    match bound {
+        Ok(binding) => binding.gate,
+        Err(not) => panic!("a host with no bindings file bound nothing: {not}"),
+    }
+}
+
 /// What one publish on the one host with `beta` following each publish
 /// came to, over a world of its own, where `teller` tells the gate: the
 /// exit code; the JSON answer, each promotion's envelope taken out of
@@ -530,6 +583,33 @@ fn a_file_with_no_gate_table_tells_the_gate_as_publish_does() {
     assert_eq!(naming_none.2, named.2);
     assert_eq!(naming_none.3.len(), 1, "{:?}", naming_none.3);
     assert_eq!(naming_none.3, named.3);
+}
+
+#[test]
+fn a_host_with_no_file_under_a_policy_naming_no_gate_accepts_as_one_host_and_moves_beta() {
+    let world = FakeWorld::new();
+    let revision = following(&world, acceptance(&[ClaimKind::Provenance]));
+    beta_names_no_gate(&world);
+    let teller = teller_of_no_file(&world);
+    assert_eq!(teller, Teller::Publish);
+    let (code, printed) = publish_through(&world, binding(&world, teller), &revision, &["--json"]);
+    assert_eq!(code, OK, "{printed}");
+    let index = index_of(&world, "v0.2.0");
+
+    let gate = &json(&printed)["value"]["components"][0]["gate"];
+    assert_eq!(gate["told_by"], "publish");
+    assert_eq!(gate["value"]["judged"], "accepted", "{gate}");
+    assert_eq!(gate["value"]["one_host"], true, "{gate}");
+    let acceptances = of_kind(&world, &index, ClaimKind::Acceptance);
+    assert_eq!(acceptances.len(), 1, "{acceptances:?}");
+    assert_eq!(
+        acceptances[0].body["offered"],
+        serde_json::json!({ "by": [HOST], "one_host": true })
+    );
+    let chain = beta_chain(&world);
+    assert_eq!(chain.len(), 1, "beta did not move");
+    let promotion = Promotion::of(&Claim::from_envelope(&chain[0]).unwrap()).unwrap();
+    assert_eq!(promotion.to.index, index);
 }
 
 // Requirement: Publish says when a job tells the gate
