@@ -1,4 +1,5 @@
-//! The fake keeper (B.8): per channel, a chain of promotion claims, each
+//! The fake keeper (B.8): per channel and its component (125), a chain
+//! of promotion claims, each
 //! held with the predecessor it named, and the chain as it last answered
 //! it, which it answers as last read once made unreachable (C.13, C.14).
 
@@ -6,7 +7,7 @@ use std::collections::BTreeMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use tailrace_seams::{Answer, Chain, ChannelName, Digest, Envelope, Keeper, Not, Read, Seam, Why};
+use tailrace_seams::{Answer, Chain, ChannelId, Digest, Envelope, Keeper, Not, Read, Seam, Why};
 
 use crate::Fake;
 
@@ -29,8 +30,8 @@ struct Link {
 /// it answers with once unreachable.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeeperState {
-    chains: BTreeMap<ChannelName, Vec<Link>>,
-    answered: BTreeMap<ChannelName, (Vec<Envelope>, u64)>,
+    chains: BTreeMap<ChannelId, Vec<Link>>,
+    answered: BTreeMap<ChannelId, (Vec<Envelope>, u64)>,
     unreachable: Option<String>,
 }
 
@@ -71,7 +72,7 @@ impl FakeKeeper {
 
     /// 105: `a` and `b` both held in `channel`'s chain naming its head as
     /// their predecessor, a fork that chain then refuses.
-    pub fn fork(&self, channel: &ChannelName, a: &Envelope, b: &Envelope) {
+    pub fn fork(&self, channel: &ChannelId, a: &Envelope, b: &Envelope) {
         let mut state = self.state();
         let chain = state.chains.entry(channel.clone()).or_default();
         let predecessor = chain.last().map(|l| l.promotion.digest());
@@ -85,8 +86,9 @@ impl FakeKeeper {
 
     /// The source holding the ledger no longer answers, for `words`, its
     /// own: a chain answered before is answered as then, [`Read::Kept`]
-    /// with the time of that answer and the words; one never answered,
-    /// and every append, unreadable with them (60, 61).
+    /// with the time of that answer and the words, one answered holding
+    /// none as a chain of no claims; one never answered, and every append,
+    /// unreadable with them (60, 61).
     pub fn unreachable(&self, words: impl Into<String>) {
         self.state().unreachable = Some(words.into());
     }
@@ -95,7 +97,7 @@ impl FakeKeeper {
 impl Keeper for FakeKeeper {
     fn append(
         &self,
-        channel: &ChannelName,
+        channel: &ChannelId,
         promotion: &Envelope,
         predecessor: Option<&Digest>,
     ) -> Answer<Digest> {
@@ -127,7 +129,7 @@ impl Keeper for FakeKeeper {
         )
     }
 
-    fn chain(&self, channel: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, channel: &ChannelId) -> Answer<Chain> {
         let given = json!({ "channel": channel });
         self.ask(
             KeeperOp::Chain,
@@ -152,7 +154,10 @@ impl Keeper for FakeKeeper {
                 }
                 let chain = match s.chains.get(channel) {
                     Some(chain) if !chain.is_empty() => chain,
-                    _ => return Err(Not::absent(source, format!("chain of {channel}"))),
+                    _ => {
+                        s.answered.insert(channel.clone(), (Vec::new(), now()));
+                        return Err(Not::absent(source, format!("chain of {channel}")));
+                    }
                 };
                 if let Some(why) = fork(chain) {
                     return Err(Not::refused(source, why, None));
@@ -170,7 +175,7 @@ impl Keeper for FakeKeeper {
 
 #[cfg(test)]
 mod tests {
-    use tailrace_seams::{Signature, SignerId, Source, IN_TOTO};
+    use tailrace_seams::{ChannelName, ComponentName, Signature, SignerId, Source, IN_TOTO};
 
     use super::*;
     use crate::{Fault, Times};
@@ -191,10 +196,15 @@ mod tests {
         Source::new(Seam::Keeper, "fake")
     }
 
+    /// A channel of `component`, or of none where it names none.
+    fn id(component: Option<&str>, name: &str) -> ChannelId {
+        ChannelId::new(component.map(ComponentName::new), ChannelName::new(name))
+    }
+
     #[test]
     fn a_chain_is_held_in_order_from_the_first() {
         let keeper = FakeKeeper::new();
-        let stable = ChannelName::new("stable");
+        let stable = id(None, "stable");
         assert_eq!(
             keeper.chain(&stable),
             Err(Not::absent(&source(), "chain of stable"))
@@ -211,7 +221,7 @@ mod tests {
     #[test]
     fn a_stale_predecessor_is_refused_naming_the_head() {
         let keeper = FakeKeeper::new();
-        let stable = ChannelName::new("stable");
+        let stable = id(None, "stable");
         let (root, a, b) = (promotion("1.0.0"), promotion("1.1.0"), promotion("1.2.0"));
         keeper.append(&stable, &root, None).unwrap();
         assert_eq!(
@@ -244,7 +254,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            keeper.append(&ChannelName::new("beta"), &b, Some(&root.digest())),
+            keeper.append(&id(None, "beta"), &b, Some(&root.digest())),
             Err(Not::refused(&source(), Why::NotHead { head: None }, None))
         );
     }
@@ -252,7 +262,7 @@ mod tests {
     #[test]
     fn a_fork_is_refused_naming_both() {
         let keeper = FakeKeeper::new();
-        let stable = ChannelName::new("stable");
+        let stable = id(None, "stable");
         let (root, a, b) = (promotion("1.0.0"), promotion("1.1.0"), promotion("1.2.0"));
         keeper.append(&stable, &root, None).unwrap();
         keeper.fork(&stable, &a, &b);
@@ -274,7 +284,7 @@ mod tests {
     #[test]
     fn every_operation_can_be_faulted_and_is_recorded() {
         let keeper = FakeKeeper::new();
-        let stable = ChannelName::new("stable");
+        let stable = id(None, "stable");
         keeper.fault(
             KeeperOp::Append,
             Fault::Refused("ref locked".into()),
@@ -303,7 +313,7 @@ mod tests {
     #[test]
     fn unreachable_after_a_read_answers_the_chain_as_last_read() {
         let keeper = FakeKeeper::new();
-        let (stable, beta) = (ChannelName::new("stable"), ChannelName::new("beta"));
+        let (stable, beta) = (id(None, "stable"), id(None, "beta"));
         let (one, two) = (promotion("1.0.0"), promotion("1.1.0"));
         keeper.append(&stable, &one, None).unwrap();
         keeper.append(&beta, &two, None).unwrap();
@@ -350,6 +360,49 @@ mod tests {
                 KeeperOp::Chain,
                 KeeperOp::Append
             ]
+        );
+    }
+
+    #[test]
+    fn an_empty_chain_read_then_unreachable_is_a_chain_of_no_claims_as_last_read() {
+        let keeper = FakeKeeper::new();
+        let beta = id(None, "beta");
+        let before = now();
+        assert_eq!(
+            keeper.chain(&beta),
+            Err(Not::absent(&source(), "chain of beta"))
+        );
+        let after = now();
+        keeper.unreachable("ref unreadable");
+        let Ok(Chain {
+            claims,
+            read: Read::Kept { at, said },
+        }) = keeper.chain(&beta)
+        else {
+            panic!("an unreachable keeper answered no kept empty chain")
+        };
+        assert_eq!(claims, []);
+        assert!(
+            (before..=after).contains(&at),
+            "{at} is not the empty read's time"
+        );
+        assert_eq!(said, "ref unreadable");
+    }
+
+    #[test]
+    fn two_components_channels_of_one_name_are_two_chains() {
+        let keeper = FakeKeeper::new();
+        let libs = id(Some("lib"), "beta");
+        let one = promotion("lib 1.0.0");
+        assert_eq!(keeper.append(&libs, &one, None), Ok(one.digest()));
+        assert_eq!(keeper.chain(&libs).map(|c| c.claims), Ok(vec![one]));
+        assert_eq!(
+            keeper.chain(&id(Some("web"), "beta")),
+            Err(Not::absent(&source(), "chain of web/beta"))
+        );
+        assert_eq!(
+            keeper.chain(&id(None, "beta")),
+            Err(Not::absent(&source(), "chain of beta"))
         );
     }
 }

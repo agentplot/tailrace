@@ -8,8 +8,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Name, Read, Revision,
-    SignerId, Version,
+    Answer, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Name, Read,
+    Revision, SignerId, Version,
 };
 
 /// A version and the index its name resolved to, which a promotion
@@ -72,11 +72,13 @@ impl Promotion {
     }
 }
 
-/// 3, C.14: the name `channel` takes in the store, `channel/` and the
-/// channel, which no version's name, a component's prefix and a version,
-/// nor a cache entry's, `cache/` and a build identity, can be.
-pub fn channel_name(channel: &ChannelName) -> Name {
-    Name::new(format!("channel/{channel}"))
+/// 3, 125, C.14: the name `channel` takes in the store, `channel/` and
+/// the channel as it is spelled, `channel/<name>` where no component is
+/// declared and `channel/<component>/<name>` where one is, which no
+/// version's name, a component's prefix and a version, nor a cache
+/// entry's, `cache/` and a build identity, can be.
+pub fn channel_name(channel: &ChannelId) -> Name {
+    Name::new(format!("channel/{}", channel.spelled()))
 }
 
 /// 121: a channel's promotion claims in order from the first, and how
@@ -88,7 +90,9 @@ pub struct Chain {
 }
 
 /// 122: a keeper never removes or reorders a claim, and answers the same
-/// chain to every reader for as long as it holds it.
+/// chain to every reader for as long as it holds it. A chain is a
+/// channel's with its component, so two components' channels of one
+/// name are two chains (125).
 pub trait Keeper {
     /// 120: `promotion` held at the head of `channel`'s chain, answering
     /// its envelope's digest, when `predecessor` is the digest of the
@@ -99,18 +103,20 @@ pub trait Keeper {
     /// with its words.
     fn append(
         &self,
-        channel: &ChannelName,
+        channel: &ChannelId,
         promotion: &Envelope,
         predecessor: Option<&Digest>,
     ) -> Answer<Digest>;
 
     /// 121: every promotion claim of `channel` in order from the first;
-    /// absent when none is held, and refused
-    /// [`Why::Fork`](crate::Why::Fork) naming the claims when two name
-    /// one predecessor, never answered by choosing one (105). Where the
-    /// source does not answer, the chain as this host last read it,
-    /// [`Read::Kept`] saying when and with the source's words (60, 61).
-    fn chain(&self, channel: &ChannelName) -> Answer<Chain>;
+    /// absent only where the source itself answers that it holds none,
+    /// and refused [`Why::Fork`](crate::Why::Fork) naming the claims when
+    /// two name one predecessor, never answered by choosing one (105).
+    /// Where the source does not answer, the chain as this host last read
+    /// it, [`Read::Kept`] saying when and with the source's words, a
+    /// channel last read holding none answered as a chain of no claims so
+    /// read, never absent (60, 61).
+    fn chain(&self, channel: &ChannelId) -> Answer<Chain>;
 }
 
 #[cfg(test)]
@@ -195,10 +201,17 @@ mod tests {
     }
 
     #[test]
-    fn stables_name_in_the_store() {
+    fn stables_name_in_the_store_carries_its_component_where_one_is_declared() {
         assert_eq!(
-            channel_name(&ChannelName::new("stable")),
+            channel_name(&ChannelId::new(None, ChannelName::new("stable"))),
             Name::new("channel/stable")
+        );
+        assert_eq!(
+            channel_name(&ChannelId::new(
+                Some(ComponentName::new("lib")),
+                ChannelName::new("stable")
+            )),
+            Name::new("channel/lib/stable")
         );
     }
 

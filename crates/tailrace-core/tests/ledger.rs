@@ -17,10 +17,10 @@ use tailrace_fakes::{
     FakeKeeper, FakeSigner, FakeStore, Fault, KeeperOp, SignerOp, StoreOp, Times,
 };
 use tailrace_seams::{
-    channel_name, Answer, Audience, Branch, Chain, ChannelName, Claim, ClaimKind, ComponentName,
-    Digest, Envelope, Keeper, Moved, NamedSigner, Not, Outcome, OutputName, Promotion, Read,
-    Report, Required, RequiredClaim, Satisfied, Seam, Seams, Signature, Signer, SignerId, Store,
-    Version, Why,
+    channel_name, Answer, Audience, Branch, Chain, ChannelId, ChannelName, Claim, ClaimKind,
+    ComponentName, Digest, Envelope, Keeper, Moved, NamedSigner, Not, Outcome, OutputName,
+    Promotion, Read, Report, Required, RequiredClaim, Satisfied, Seam, Seams, Signature, Signer,
+    SignerId, Store, Version, Why,
 };
 use world::{build_of, version_of, World};
 
@@ -56,7 +56,8 @@ fn gate() -> NamedSigner {
 }
 
 /// `stable` requires the gate's acceptance and a rebuild by the second
-/// signer, bound to `bound_to` where it names one.
+/// signer, is bound to `bound_to` where it names one, and is promoted by
+/// the gate.
 fn stable_policy(bound_to: Option<&str>) -> Required {
     Required::Channel {
         claims: vec![
@@ -67,15 +68,22 @@ fn stable_policy(bound_to: Option<&str>) -> Required {
             ),
         ],
         bound_to: bound_to.map(ChannelName::new),
+        promoted_by: vec![gate()],
+        approvers: vec![],
     }
 }
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+/// The channel `name` of `component`, as the world declares components.
+fn of(component: &str, name: &str) -> ChannelId {
+    ChannelId::new(Some(ComponentName::new(component)), ChannelName::new(name))
 }
 
-fn beta() -> ChannelName {
-    ChannelName::new("beta")
+fn stable() -> ChannelId {
+    of("lib", "stable")
+}
+
+fn beta() -> ChannelId {
+    of("lib", "beta")
 }
 
 /// Two published versions of `lib` and their indexes.
@@ -171,7 +179,7 @@ fn ask(to: To) -> PromoteAsk {
     PromoteAsk {
         branch: Branch::new("main"),
         component: Some(ComponentName::new("lib")),
-        channel: stable(),
+        channel: stable().name,
         to,
         from: None,
         signer: SignerId::new(GATE),
@@ -245,7 +253,7 @@ fn refused(answer: Answer<impl std::fmt::Debug>) -> Why {
 }
 
 /// The promotions of `stable`'s chain, in order.
-fn chain_of(world: &World, channel: &ChannelName) -> Vec<Promotion> {
+fn chain_of(world: &World, channel: &ChannelId) -> Vec<Promotion> {
     world
         .fakes
         .keeper
@@ -301,11 +309,11 @@ fn the_ledgers_append_comes_before_every_store_write() {
     let at = Rc::new(Cell::new(None));
     struct Seen(FakeKeeper, FakeStore, Rc<Cell<Option<usize>>>);
     impl Keeper for Seen {
-        fn append(&self, c: &ChannelName, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
+        fn append(&self, c: &ChannelId, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
             self.2.set(Some(self.1.calls().len()));
             self.0.append(c, p, d)
         }
-        fn chain(&self, c: &ChannelName) -> Answer<Chain> {
+        fn chain(&self, c: &ChannelId) -> Answer<Chain> {
             self.0.chain(c)
         }
     }
@@ -367,7 +375,7 @@ fn the_claim_read_back_names_every_field_of_the_move() {
     assert_eq!(
         Promotion::of(&claim),
         Some(Promotion {
-            channel: stable(),
+            channel: ChannelName::new("stable"),
             component: ComponentName::new("lib"),
             to: Moved {
                 version: Version::new("0.2.0"),
@@ -489,17 +497,13 @@ fn a_host_the_policy_does_not_let_promote_is_refused_before_anything_is_signed()
     world.fakes.policy.require(
         Audience::Channel(stable()),
         Required::Channel {
-            claims: vec![
-                wanted(
-                    ClaimKind::Acceptance,
-                    vec![named(GATE, &[ClaimKind::Acceptance])],
-                ),
-                wanted(
-                    ClaimKind::Promotion,
-                    vec![named("approver", &[ClaimKind::Promotion])],
-                ),
-            ],
+            claims: vec![wanted(
+                ClaimKind::Acceptance,
+                vec![named(GATE, &[ClaimKind::Acceptance])],
+            )],
             bound_to: None,
+            promoted_by: vec![named("approver", &[ClaimKind::Promotion])],
+            approvers: vec![],
         },
     );
     let before = counts(&world);
@@ -512,6 +516,192 @@ fn a_host_the_policy_does_not_let_promote_is_refused_before_anything_is_signed()
         }
     );
     assert_eq!(writes_since(&world, before), Vec::<String>::new());
+}
+
+/// `stable` as the policy gives it with no line written: the gate's
+/// acceptance required, and the gate, named for acceptance alone, its one
+/// promoter (32, C.10); with `line` after the acceptance where one is.
+fn given_stable(line: Vec<RequiredClaim>) -> Required {
+    let gate = named(GATE, &[ClaimKind::Acceptance]);
+    let mut claims = vec![wanted(ClaimKind::Acceptance, vec![gate.clone()])];
+    claims.extend(line);
+    Required::Channel {
+        claims,
+        bound_to: None,
+        promoted_by: vec![gate],
+        approvers: vec![],
+    }
+}
+
+#[test]
+fn a_given_stable_is_promoted_by_a_signer_named_only_for_acceptance() {
+    let Two { world, second, .. } = two();
+    world
+        .fakes
+        .policy
+        .require(Audience::Channel(stable()), given_stable(vec![]));
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let Ok(Promoted::Moved { to, .. }) = &answer else {
+        panic!("the gate did not promote a given stable: {answer:?}")
+    };
+    assert_eq!(to.index, second);
+    let chain = chain_of(&world, &stable());
+    assert_eq!(chain.len(), 1);
+    assert_eq!(chain[0].asked_by, SignerId::new(GATE));
+}
+
+#[test]
+fn a_lines_promotion_signer_is_refused_and_nothing_is_appended() {
+    let Two { world, .. } = two();
+    let laptop = named("laptop", &[ClaimKind::Promotion]);
+    world.fakes.policy.require(
+        Audience::Channel(stable()),
+        given_stable(vec![wanted(
+            ClaimKind::Acceptance,
+            vec![named(GATE, &[ClaimKind::Acceptance]), laptop],
+        )]),
+    );
+    world.fakes.signer.hold(&SignerId::new("laptop"));
+    let before = counts(&world);
+    let answer = promoted(
+        &world,
+        &PromoteAsk {
+            signer: SignerId::new("laptop"),
+            ..ask(to("0.2.0"))
+        },
+    );
+    assert_eq!(
+        refused(answer),
+        Why::Wanting {
+            kind: ClaimKind::Promotion,
+            check: None,
+            signers: vec![SignerId::new(GATE)],
+        }
+    );
+    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert!(matches!(
+        world.fakes.keeper.chain(&stable()),
+        Err(Not::Absent(_))
+    ));
+}
+
+// Requirement: Only an approver asks for a channel that names approvers
+
+/// `stable` as the policy gives it, who may ask for it named by
+/// `approvers`, none meaning any asker the gate verifies (32, C.10).
+fn stable_asked_by(world: &World, approvers: &[&str]) {
+    let required = match given_stable(vec![]) {
+        Required::Channel {
+            claims,
+            bound_to,
+            promoted_by,
+            ..
+        } => Required::Channel {
+            claims,
+            bound_to,
+            promoted_by,
+            approvers: approvers.iter().map(|a| named(a, &[])).collect(),
+        },
+        other => other,
+    };
+    world
+        .fakes
+        .policy
+        .require(Audience::Channel(stable()), required);
+}
+
+#[test]
+fn an_asker_the_approvers_do_not_name_is_refused_naming_both_and_nothing_is_signed_or_appended() {
+    let Two { world, .. } = two();
+    stable_asked_by(&world, &["ci"]);
+    let before = counts(&world);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let why = refused(answer);
+    assert_eq!(
+        why,
+        Why::NotApprover {
+            channel: stable(),
+            asker: SignerId::new(GATE),
+            approvers: vec![SignerId::new("ci")],
+        }
+    );
+    assert_eq!(
+        why.to_string(),
+        "gate may not ask for lib/stable; ask one of ci"
+    );
+    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert!(matches!(
+        world.fakes.keeper.chain(&stable()),
+        Err(Not::Absent(_))
+    ));
+}
+
+#[test]
+fn a_channel_naming_no_approvers_is_promoted_by_the_gates_signer_asking() {
+    let Two { world, second, .. } = two();
+    stable_asked_by(&world, &[]);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let Ok(Promoted::Moved { to, .. }) = &answer else {
+        panic!("a channel naming no approvers was answered {answer:?}")
+    };
+    assert_eq!(to.index, second);
+    assert_eq!(chain_of(&world, &stable())[0].asked_by, SignerId::new(GATE));
+}
+
+#[test]
+fn an_asker_the_approvers_name_promotes_the_channel() {
+    let Two { world, second, .. } = two();
+    stable_asked_by(&world, &["ci", GATE]);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let Ok(Promoted::Moved { to, .. }) = &answer else {
+        panic!("an approver's asking was answered {answer:?}")
+    };
+    assert_eq!(to.index, second);
+}
+
+#[test]
+fn a_channel_of_another_component_is_absent_naming_both_and_nothing_is_read_of_the_version() {
+    let Two { world, .. } = two();
+    world
+        .fakes
+        .policy
+        .require(Audience::Channel(of("web", "edge")), given_stable(vec![]));
+    let before = counts(&world);
+    let resolved = world
+        .fakes
+        .store
+        .calls()
+        .iter()
+        .filter(|c| c.op == StoreOp::Resolve)
+        .count();
+    let answer = promoted(
+        &world,
+        &PromoteAsk {
+            channel: ChannelName::new("edge"),
+            ..ask(to("0.2.0"))
+        },
+    );
+    let Err(Not::Absent(a)) = answer else {
+        panic!("a channel of another component answered {answer:?}")
+    };
+    assert_eq!(a.source.seam, Seam::Policy);
+    assert!(
+        a.what.contains("edge") && a.what.contains("lib"),
+        "{}",
+        a.what
+    );
+    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert_eq!(
+        world
+            .fakes
+            .store
+            .calls()
+            .iter()
+            .filter(|c| c.op == StoreOp::Resolve)
+            .count(),
+        resolved,
+        "the version's name was resolved"
+    );
 }
 
 // Requirement: A channel moves only from where it is
@@ -539,7 +729,7 @@ fn s7_a_promotion_from_a_version_the_channel_has_left_is_refused_naming_where_it
             }),
         }
     );
-    assert!(why.to_string().contains("stable is at 0.2.0"), "{why}");
+    assert!(why.to_string().contains("lib/stable is at 0.2.0"), "{why}");
     assert_eq!(writes_since(&world, before), Vec::<String>::new());
 
     let fresh = two();
@@ -569,11 +759,11 @@ struct Raced {
 }
 
 impl Keeper for Raced {
-    fn append(&self, c: &ChannelName, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
+    fn append(&self, c: &ChannelId, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
         self.appends.set(self.appends.get() + 1);
         self.inner.append(c, p, d)
     }
-    fn chain(&self, c: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, c: &ChannelId) -> Answer<Chain> {
         let answer = self.inner.chain(c);
         if !self.read.replace(true) {
             let head = answer.as_ref().ok().and_then(|ch| ch.claims.last());
@@ -724,7 +914,7 @@ fn back_from_an_empty_chain_or_a_first_move_is_absent_and_nothing_is_written() {
     let Two { world, .. } = two();
     let before = counts(&world);
     let absent = |answer: Answer<Promoted>| match answer {
-        Err(Not::Absent(a)) => assert_eq!(a.what, "a version stable moved from"),
+        Err(Not::Absent(a)) => assert_eq!(a.what, "a version lib/stable moved from"),
         other => panic!("back answered {other:?}"),
     };
     absent(promoted(&world, &ask(To::Back)));
@@ -746,6 +936,8 @@ fn bound() -> Two {
         Required::Channel {
             claims: vec![wanted(ClaimKind::Acceptance, vec![gate()])],
             bound_to: None,
+            promoted_by: vec![gate()],
+            approvers: vec![],
         },
     );
     two.world
@@ -757,7 +949,7 @@ fn bound() -> Two {
 
 fn to_beta(version: &str) -> PromoteAsk {
     PromoteAsk {
-        channel: beta(),
+        channel: beta().name,
         ..ask(to(version))
     }
 }
@@ -786,10 +978,10 @@ fn a_version_the_bound_channel_never_held_is_refused_naming_it() {
 struct BetaKept(FakeKeeper);
 
 impl Keeper for BetaKept {
-    fn append(&self, c: &ChannelName, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
+    fn append(&self, c: &ChannelId, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
         self.0.append(c, p, d)
     }
-    fn chain(&self, c: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, c: &ChannelId) -> Answer<Chain> {
         let chain = self.0.chain(c)?;
         Ok(if *c == beta() {
             Chain {
@@ -829,7 +1021,7 @@ fn the_channels_own_chain_read_as_last_read_is_unreadable_with_its_words() {
     let before = counts(&world);
     match promoted(&world, &ask(to("0.2.0"))) {
         Err(Not::Unreadable(u)) => {
-            assert_eq!(u.what, "the chain of stable");
+            assert_eq!(u.what, "the chain of lib/stable");
             assert_eq!(u.said.as_deref(), Some("ref unreadable"));
         }
         other => panic!("a chain read as last read answered {other:?}"),
@@ -935,13 +1127,44 @@ fn mirror_moves_the_channels_name_back_from_another_writers_index() {
         .any(|c| c.op == KeeperOp::Append));
 }
 
+// Requirement: An empty channel as last read says when
+
+#[test]
+fn an_empty_channel_read_as_last_read_says_when_and_with_the_ledgers_words() {
+    let keeper = FakeKeeper::new();
+    assert_eq!(
+        channel(&keeper, &stable()),
+        Ok(Channel::Empty { read: Read::Source })
+    );
+    keeper.unreachable("fatal: unable to access");
+    let answer = channel(&keeper, &stable());
+    let Ok(Channel::Empty {
+        read: Read::Kept { at, said },
+    }) = &answer
+    else {
+        panic!("an empty channel as last read answered {answer:?}")
+    };
+    assert_eq!(said, "fatal: unable to access");
+    assert_eq!(
+        serde_json::to_value(answer.as_ref().unwrap()).unwrap(),
+        json!({ "state": "empty", "read": { "kept": { "at": at, "said": said } } })
+    );
+    assert_eq!(
+        serde_json::to_value(Channel::Empty { read: Read::Source }).unwrap(),
+        json!({ "state": "empty", "read": "source" })
+    );
+}
+
 // Requirement: A channel is read from the ledger alone
 
 #[test]
 fn a_channel_never_promoted_is_empty_and_the_store_is_asked_nothing() {
     let store = FakeStore::new();
     let keeper = FakeKeeper::new();
-    assert_eq!(channel(&keeper, &stable()), Ok(Channel::Empty));
+    assert_eq!(
+        channel(&keeper, &stable()),
+        Ok(Channel::Empty { read: Read::Source })
+    );
     assert_eq!(store.calls().len(), 0);
 }
 

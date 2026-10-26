@@ -6,9 +6,9 @@
 use tailrace_core::{answer_json, publish, Provenance, Publish, Published};
 use tailrace_fakes::{FakeStore, PROFILE};
 use tailrace_seams::{
-    Answer, Audience, BuildId, ChannelName, Claim, ClaimKind, Digest, Ecosystem, EcosystemName,
-    Envelope, Held, Manifest, Name, Not, Outcome, Put, Required, Revision, Seam, Source, Store,
-    Verdict, Version, Why,
+    Answer, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Digest, Ecosystem,
+    EcosystemName, Envelope, Held, Manifest, Name, Not, Outcome, Put, Required, Revision, Seam,
+    Source, Store, Verdict, Version, Why,
 };
 
 use crate::world::{build_of, FakeWorld, Write, FILE, IMAGE, LANDING};
@@ -749,10 +749,12 @@ fn channels_declared_or_not(world: &FakeWorld) {
         passing(w, &w.head);
     }
     declared.fakes.policy.require(
-        Audience::Channel(ChannelName::new(crate::world::STABLE)),
+        Audience::Channel(ChannelId::new(None, ChannelName::new(crate::world::STABLE))),
         Required::Channel {
             claims: vec![],
             bound_to: None,
+            promoted_by: vec![],
+            approvers: vec![],
         },
     );
     let plain = ok(world.publish(&world.ask(&world.head)), "the publish");

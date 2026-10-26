@@ -10,7 +10,7 @@ use tailrace_core::{
     Channel, ChannelStatus, Channels, EnvironmentCounts, HeadAt, Overview, Repositories,
     RepositoryName, Row, Status,
 };
-use tailrace_seams::{Answer, ComponentName, Digest, Not, Promotion, Read};
+use tailrace_seams::{Answer, ComponentName, Digest, Moves, Not, Promotion, Read};
 
 use crate::commands::status::satisfied;
 use crate::render::utc;
@@ -214,14 +214,12 @@ fn landing_html(body: &mut String, read: &Read) {
 /// Each component's channels in a table of its own, in the order the
 /// policy declares them.
 fn channels_html(body: &mut String, channels: &Channels) {
-    let mut components: Vec<(&ComponentName, Vec<&ChannelStatus>)> = Vec::new();
+    let mut components: Vec<(ComponentName, Vec<&ChannelStatus>)> = Vec::new();
     for channel in &channels.channels {
-        match components
-            .iter_mut()
-            .find(|(c, _)| **c == channel.declared.component)
-        {
+        let component = channel.declared.channel.component_name();
+        match components.iter_mut().find(|(c, _)| *c == component) {
             Some((_, of)) => of.push(channel),
-            None => components.push((&channel.declared.component, vec![channel])),
+            None => components.push((component, vec![channel])),
         }
     }
     if components.is_empty() {
@@ -241,13 +239,12 @@ fn channels_html(body: &mut String, channels: &Channels) {
 }
 
 fn channel_html(body: &mut String, channel: &ChannelStatus) {
-    let bound = channel
-        .declared
-        .bound_to
-        .as_ref()
-        .map_or_else(String::new, |b| escape(b.as_str()));
+    let bound = match &channel.declared.moves {
+        Moves::Bound { to } => escape(to.as_str()),
+        Moves::EachPublish { .. } | Moves::Promotion => String::new(),
+    };
     let at = match &channel.at {
-        Ok(Channel::Empty) => "empty".to_string(),
+        Ok(Channel::Empty { .. }) => "empty".to_string(),
         Ok(Channel::At { head, chain, read }) => {
             let mut at = format!(
                 "{} <code>{}</code>",

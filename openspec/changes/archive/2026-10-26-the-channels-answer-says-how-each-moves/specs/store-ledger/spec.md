@@ -1,0 +1,58 @@
+# Spec Delta
+
+## MODIFIED Requirements
+
+### Requirement: The chain is walked from the channel's name
+
+The store ledger SHALL hold each channel's chain as the promotion claims
+attached to the indexes they move to, through the bound store's seam
+alone (C.14, core.2). Chain SHALL resolve the channel's name in the
+store, spelled with its component where the repository declares
+components (125), take the promotion claims of that channel and
+component attached to the index it names, and walk each back by the
+index it moved from and the digest of the claim it follows, answering
+the claims from the first in order (121). A channel whose name names
+nothing SHALL be absent.
+
+#### Scenario: Three promotions and a move back
+
+- **WHEN** `stable` was promoted to 0.1.0, 0.2.0 and back to 0.1.0, so 0.1.0's index holds two of its claims
+- **THEN** the chain answers all three in order, the last at the head
+
+#### Scenario: A claim the store no longer holds
+
+- **WHEN** a claim the walk names as a predecessor is not attached to the index it moved from
+- **THEN** the chain is unreadable naming the missing claim's digest and the index it was looked for on
+
+#### Scenario: Two components' beta
+
+- **WHEN** `beta` of `lib` and `beta` of `web` are each promoted twice
+- **THEN** the chain of `beta` of `lib` is walked from `channel/lib/beta` and answers its two claims alone, and the same holds of `web`
+
+### Requirement: A store that does not answer is read as last read
+
+Each chain this host reads, an empty one among them, SHALL be kept,
+with when it was read, under the repository's common git directory
+beside the record of published versions (61, 62). Where the store
+cannot be reached, chain SHALL answer the chain as kept, saying when it
+was read and carrying the store's words, an empty chain kept as an
+empty chain with that time and those words (60, as amended at
+agentplot/blueprints b64d367, C.14); with nothing kept, the chain SHALL
+be unreadable with the store's words. Append SHALL be unreadable with
+the store's words. What is kept SHALL hold no credential and nothing
+the store holds that is not the chain (64).
+
+#### Scenario: The store gone after a read
+
+- **WHEN** a host has read `stable`'s chain from the layout, and the layout is then made unreadable
+- **THEN** the chain answers the claims read, the time of the read and the store's words
+
+#### Scenario: An empty channel as last read
+
+- **WHEN** a host has read `beta`'s chain while the layout held no promotion of it, and the layout is then made unreadable
+- **THEN** the chain answers no claims, the time of the read and the store's words, and not absent
+
+#### Scenario: The keeper's group
+
+- **WHEN** the keeper's conformance group runs over the store ledger bound to an OCI layout in a temporary directory
+- **THEN** every scenario passes

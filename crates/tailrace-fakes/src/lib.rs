@@ -9,10 +9,10 @@
 //! | the build | [`FakeBuild`] | what each revision left of each output |
 //! | the landing | [`FakeLanding`] | revisions landed per branch, verdicts per revision |
 //! | the signer | [`FakeSigner`] | the identity at hand, the identities expired |
-//! | the policy | [`FakePolicy`] | what each audience requires, per revision |
+//! | the policy | [`FakePolicy`] | what each audience requires, per revision, and the channels that follow each publish |
 //! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes, whether it packs cache entries, the build identities it holds no archive for |
 //! | a target | [`FakeTarget`] | per environment, its channel's head and what it runs |
-//! | the keeper | [`FakeKeeper`] | per channel, a chain of promotion claims |
+//! | the keeper | [`FakeKeeper`] | per channel and its component, a chain of promotion claims |
 //!
 //! Each fake is a [`Fake`] over its state and the one [`Script`] every
 //! fake shares: every clone is a view of the same state, so a test keeps
@@ -124,9 +124,9 @@ impl Fakes {
 mod tests {
     use serde_json::Value;
     use tailrace_seams::{
-        Artifact, Audience, Branch, BuildId, ChannelName, Claim, ClaimKind, Contents, Environment,
-        IsLanded, Layout, Manifest, Name, NamedSigner, Output, OutputName, Read, Required,
-        Revision, SignerId, Verdicts, Verified, Version,
+        Artifact, Audience, Branch, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
+        Environment, IsLanded, Layout, Manifest, Name, NamedSigner, Output, OutputName, Read,
+        Required, Revision, SignerId, Verdicts, Verified, Version,
     };
 
     use super::*;
@@ -137,7 +137,7 @@ mod tests {
         let (eco_a, eco_b) = (Ecosystem::new("eco-a"), Ecosystem::new("eco-b"));
         let production = Environment {
             name: EnvironmentName::new("production"),
-            channel: ChannelName::new("stable"),
+            channel: ChannelId::new(None, ChannelName::new("stable")),
             waits: false,
         };
         let projection_a = fakes.projection(&eco_a);
@@ -271,7 +271,7 @@ mod tests {
             .unwrap();
         assert_eq!(bound.report(&production).unwrap().digest, index);
 
-        let stable = ChannelName::new("stable");
+        let stable = ChannelId::new(None, ChannelName::new("stable"));
         assert_eq!(
             seams.keeper.append(&stable, &envelope, None),
             Ok(envelope.digest())

@@ -26,8 +26,8 @@ use tailrace::{run, Cli, REVISION};
 use tailrace_core::{answer_json, Entry, History, Kept, OverviewAsk, RepositoryName};
 use tailrace_fakes::FakeSigner;
 use tailrace_seams::{
-    Answer, Branch, ChannelName, ComponentName, Digest, Moved, Not, Promotion, Revision, Satisfied,
-    Seam, Signer, SignerId, Source, Version,
+    Answer, Branch, ChannelId, ChannelName, ComponentName, Digest, Moved, Not, Promotion, Revision,
+    Satisfied, Seam, Signer, SignerId, Source, Version,
 };
 
 /// The host the tests serve: a state directory, a bindings file and a
@@ -150,7 +150,7 @@ impl World {
     /// head it is at, sealed as the fake signer seals; every claim's
     /// digest.
     fn promote(&self, channel: &str, versions: &[&str]) -> Vec<Digest> {
-        let channel = ChannelName::new(channel);
+        let channel = ChannelId::new(None, ChannelName::new(channel));
         let binding = self.host.bind(&self.repo().path).expect("the host binds");
         let keeper = &binding.seams.keeper;
         let gate = FakeSigner::new();
@@ -162,11 +162,11 @@ impl World {
                 tailrace_core::Channel::At { head, chain, .. } => {
                     (Some(head.to.clone()), chain.last().map(|(d, _)| d.clone()))
                 }
-                tailrace_core::Channel::Empty => (None, None),
+                tailrace_core::Channel::Empty { .. } => (None, None),
             };
             let promotion = Promotion {
-                channel: channel.clone(),
-                component: ComponentName::new("repository"),
+                channel: channel.name.clone(),
+                component: channel.component_name(),
                 to: moved(version),
                 from,
                 predecessor: predecessor.clone(),
@@ -333,7 +333,7 @@ fn a_named_repositorys_json_is_its_status_answer_in_its_checkout() {
     let printed = world.status();
     assert_eq!(unasked(served.clone()), unasked(printed));
     let channels = &served["value"]["channels"]["value"]["channels"];
-    assert_eq!(channels[1]["name"], "stable", "{served}");
+    assert_eq!(channels[1]["channel"]["name"], "stable", "{served}");
     assert_eq!(channels[1]["at"]["value"]["head"]["to"]["version"], "0.2.0");
     assert_eq!(served["value"]["published"]["answer"], "ok", "{served}");
 }
@@ -356,7 +356,7 @@ fn the_page_names_every_channel_version_and_promotion_and_escapes_the_words() {
         .as_array()
         .unwrap()
     {
-        let name = channel["name"].as_str().unwrap();
+        let name = channel["channel"]["name"].as_str().unwrap();
         assert!(page.contains(&format!("<td>{name}</td>")), "{name}: {page}");
     }
     for version in ["0.1.0", "0.2.0"] {

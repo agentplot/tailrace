@@ -1,10 +1,13 @@
 //! The keeper's group: 120 to 122, and 34, 35 and 105 as a keeper keeps
-//! them (B.8); and 60 and 61 as C.13 and C.14 keep them, a chain the
-//! keeper cannot reach answered as last read.
+//! them (B.8); 60 and 61 as C.13 and C.14 keep them, a chain the keeper
+//! cannot reach answered as last read, an empty one among them; and 125,
+//! two components' channels of one name kept as two chains.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tailrace_seams::{Chain, ChannelName, Envelope, Keeper, Not, Read, Seam, Why};
+use tailrace_seams::{
+    Chain, ChannelId, ChannelName, ComponentName, Envelope, Keeper, Not, Read, Seam, Why,
+};
 
 use crate::seams::{absent, unreadable};
 use crate::{ok, Rig, Scenario};
@@ -17,15 +20,16 @@ pub trait KeeperRig: Rig {
 
     /// The `n`th promotion claim of `channel`, signed, each `n` another
     /// claim.
-    fn promotion(&self, channel: &ChannelName, n: u32) -> Envelope;
+    fn promotion(&self, channel: &ChannelId, n: u32) -> Envelope;
 
     /// Two promotions held in `channel`'s chain naming one predecessor, a
     /// fork, as the keeper came to hold them.
-    fn fork(&self, channel: &ChannelName) -> [Envelope; 2];
+    fn fork(&self, channel: &ChannelId) -> [Envelope; 2];
 
     /// The keeper made unreachable, and the words it answers with: every
     /// append, and the chain of a channel it never answered, unreadable
-    /// with them, and a chain it answered before as last read (60, 61).
+    /// with them, and a chain it answered before as last read, an empty
+    /// one as a chain of no claims (60, 61).
     fn unreachable(&self) -> String;
 }
 
@@ -68,15 +72,27 @@ pub fn scenarios() -> Vec<Scenario<dyn KeeperRig>> {
             cites: &[60, 61, 121],
             run: a_chain_read_as_last_read,
         },
+        Scenario {
+            name: "two components' channels of one name",
+            plays: None,
+            cites: &[125, 120, 121],
+            run: two_components_channels_of_one_name,
+        },
+        Scenario {
+            name: "an empty chain read as last read",
+            plays: None,
+            cites: &[60, 61],
+            run: an_empty_chain_read_as_last_read,
+        },
     ]
 }
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("stable"))
 }
 
 /// Two promotions of `channel`, the second following the first, appended.
-fn two(rig: &dyn KeeperRig, channel: &ChannelName) -> [Envelope; 2] {
+fn two(rig: &dyn KeeperRig, channel: &ChannelId) -> [Envelope; 2] {
     let keeper = rig.keeper();
     let (first, second) = (rig.promotion(channel, 1), rig.promotion(channel, 2));
     let held = ok(keeper.append(channel, &first, None), "the first append");
@@ -166,7 +182,8 @@ fn a_fork(rig: &dyn KeeperRig) {
 
 fn a_channel_with_no_promotion(rig: &dyn KeeperRig) {
     absent(
-        rig.keeper().chain(&ChannelName::new("never-promoted")),
+        rig.keeper()
+            .chain(&ChannelId::new(None, ChannelName::new("never-promoted"))),
         Seam::Keeper,
         "never-promoted",
         "the chain of a channel never appended to",
@@ -224,5 +241,79 @@ fn a_chain_read_as_last_read(rig: &dyn KeeperRig) {
         Seam::Keeper,
         &words,
         "an append to a chain read as last read",
+    );
+}
+
+/// 60, 61, as C.13 and C.14 keep them: a channel read holding no
+/// promotion, then the keeper unreachable, is a chain of no claims as
+/// last read, saying when and with the keeper's words, never absent.
+fn an_empty_chain_read_as_last_read(rig: &dyn KeeperRig) {
+    let channel = stable();
+    let first = rig.promotion(&channel, 1);
+    let first_read = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    absent(
+        rig.keeper().chain(&channel),
+        Seam::Keeper,
+        "stable",
+        "the chain of a channel with no promotion",
+    );
+    let words = rig.unreachable();
+    match rig.keeper().chain(&channel) {
+        Ok(Chain {
+            claims,
+            read: Read::Kept { at, said },
+        }) => {
+            assert_eq!(claims, [], "an empty chain as last read holds claims");
+            assert!(
+                at >= first_read,
+                "the empty chain was kept at {at}, before it was read at {first_read}"
+            );
+            assert_eq!(
+                said, words,
+                "the empty chain as last read carries other words"
+            );
+        }
+        other => panic!("an empty chain read before the keeper was unreachable answered {other:?}"),
+    }
+    unreadable(
+        rig.keeper().append(&channel, &first, None),
+        Seam::Keeper,
+        &words,
+        "an append to an empty chain read as last read",
+    );
+}
+
+fn two_components_channels_of_one_name(rig: &dyn KeeperRig) {
+    let beta = |component: &str| {
+        ChannelId::new(
+            Some(ComponentName::new(component)),
+            ChannelName::new("beta"),
+        )
+    };
+    let (lib, web) = (beta("lib"), beta("web"));
+    let keeper = rig.keeper();
+    let ours = rig.promotion(&lib, 1);
+    let theirs = rig.promotion(&web, 1);
+    assert_eq!(
+        ok(keeper.append(&lib, &ours, None), "beta of lib's append"),
+        ours.digest(),
+        "beta of lib's first append answered another digest"
+    );
+    assert_eq!(
+        ok(keeper.append(&web, &theirs, None), "beta of web's append"),
+        theirs.digest(),
+        "beta of web's first append was not held beside lib's"
+    );
+    assert_eq!(
+        ok(keeper.chain(&lib), "beta of lib's chain").claims,
+        [ours],
+        "beta of lib's chain holds other claims than its own"
+    );
+    assert_eq!(
+        ok(keeper.chain(&web), "beta of web's chain").claims,
+        [theirs],
+        "beta of web's chain holds other claims than its own"
     );
 }

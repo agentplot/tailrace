@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use tailrace_seams::SignerId;
+use tailrace_seams::{ChannelName, SignerId};
 use tempfile::TempDir;
 
 use super::*;
@@ -486,10 +486,17 @@ fn a_file_naming_no_ledger_binds_one_absent_naming_the_table() {
         ),
     );
     assert_eq!(
-        keeper.append(&ChannelName::new("stable"), &envelope(), None),
+        keeper.append(
+            &ChannelId::new(None, ChannelName::new("stable")),
+            &envelope(),
+            None
+        ),
         Err(absent.clone())
     );
-    assert_eq!(keeper.chain(&ChannelName::new("stable")), Err(absent));
+    assert_eq!(
+        keeper.chain(&ChannelId::new(None, ChannelName::new("stable"))),
+        Err(absent)
+    );
     assert!(binding.seams.targets.is_empty());
     let ecosystems: Vec<&str> = binding
         .seams
@@ -549,7 +556,7 @@ fn chain_of(binding: Answer<Binding>) -> Answer<Chain> {
         .unwrap_or_else(|not| panic!("the file bound nothing: {not}"))
         .seams
         .keeper
-        .chain(&ChannelName::new("stable"))
+        .chain(&ChannelId::new(None, ChannelName::new("stable")))
 }
 
 #[test]
@@ -710,7 +717,10 @@ fn the_store_ledgers_binding_never_makes_the_layout() {
     let publish = bound_with(&host, &repo, &layout, "store = {}", true, For::Publish).unwrap();
     assert!(
         matches!(
-            publish.seams.keeper.chain(&ChannelName::new("stable")),
+            publish
+                .seams
+                .keeper
+                .chain(&ChannelId::new(None, ChannelName::new("stable"))),
             Err(Not::Absent(_))
         ),
         "the store ledger did not read the layout a publish made"
@@ -853,8 +863,8 @@ fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     all
 }
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("stable"))
 }
 
 #[test]
@@ -912,6 +922,45 @@ fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making
         Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "store")),
         other => panic!("a store ledger answered {other:?}"),
     }
+}
+
+#[test]
+fn the_policy_command_binds_no_store_and_no_signer_whatever_the_file_names() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"/keys/laptop\"\n",
+        layout.display()
+    ));
+    let no_store = || {
+        Err(Not::absent(
+            &Source::new(Seam::Store, "unbound"),
+            "binding of the store, which tailrace policy binds none",
+        ))
+    };
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Policy)
+        .unwrap_or_else(|not| panic!("policy bound nothing: {not}"));
+    assert_eq!(
+        binding.seams.store.resolve(&Name::new("v0.1.0")),
+        no_store()
+    );
+    assert_eq!(binding.store, Source::new(Seam::Store, "unbound"));
+    assert_eq!(binding.signer, None);
+    assert!(binding.seams.projections.is_empty() && binding.seams.targets.is_empty());
+    assert!(!layout.exists(), "policy made {}", layout.display());
+
+    fs::remove_file(host.file()).unwrap();
+    let before = files(host.dir.path());
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Policy)
+        .unwrap_or_else(|not| panic!("policy on a host with no file bound nothing: {not}"));
+    assert_eq!(
+        binding.seams.store.resolve(&Name::new("v0.1.0")),
+        no_store()
+    );
+    assert_eq!(binding.signer, None);
+    assert_eq!(files(host.dir.path()), before, "binding policy made a file");
 }
 
 #[test]

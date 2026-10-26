@@ -57,6 +57,8 @@
 //! ledger families bind for a repository with no file, each with the
 //! remote `origin` where the repository names one and none otherwise,
 //! no store and no signer, and nothing made (C.5, C.6, C.13; design D2).
+//! The policy command is bound as status is, with no store whether or
+//! not the file names one (design D11).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -67,7 +69,7 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 use tailrace_core::History;
 use tailrace_seams::{
-    Answer, Chain, ChannelName, Digest, Envelope, Held, Keeper, Manifest, Name, Not, Put, Seam,
+    Answer, Chain, ChannelId, Digest, Envelope, Held, Keeper, Manifest, Name, Not, Put, Seam,
     Seams, Source, Store,
 };
 
@@ -323,8 +325,9 @@ fn seam(
 /// The command a binding is made for: publish or push, which make the
 /// layout the file names the first time; verify, sync or rebuild, which
 /// never make or write one; promote, which needs the host's signer and
-/// its ledger and never makes the layout; or status, which needs the
-/// landing alone and is bound on a host with no file.
+/// its ledger and never makes the layout; status, which needs the
+/// landing alone and is bound on a host with no file; or policy, bound
+/// as status is with no store.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
@@ -334,6 +337,7 @@ pub enum For {
     Rebuild,
     Promote,
     Status,
+    Policy,
 }
 
 /// The remote a host with no bindings file binds, where the repository
@@ -364,11 +368,11 @@ impl NoLedger {
 }
 
 impl Keeper for NoLedger {
-    fn append(&self, _: &ChannelName, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
+    fn append(&self, _: &ChannelId, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
         Err(self.absent())
     }
 
-    fn chain(&self, _: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, _: &ChannelId) -> Answer<Chain> {
         Err(self.absent())
     }
 }
@@ -415,6 +419,13 @@ impl Store for NoStore {
     }
 }
 
+/// The store of the policy command's binding, which binds none (60).
+fn policy_store() -> NoStore {
+    NoStore {
+        what: "binding of the store, which tailrace policy binds none".into(),
+    }
+}
+
 /// How a binding with no store names it, which status keeps nowhere.
 fn unbound_store() -> Source {
     Source::new(Seam::Store, "unbound")
@@ -434,8 +445,8 @@ fn unbound_store() -> Source {
 /// names first, the one publish signs with, and every other bound
 /// profile after it, verify-only (92).
 pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
-    if command == For::Status {
-        return status(file, home, repository);
+    if matches!(command, For::Status | For::Policy) {
+        return status(file, home, repository, command);
     }
     let bindings = read(file, home)?;
     let signing = bindings.signing.as_ref();
@@ -485,11 +496,13 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
 /// from the file at `file` where there is one, needing `[landing]`, the
 /// ledger bound where it names one, the store named as the file names it
 /// and opened only for a ledger held in it, never made, and no signer;
-/// with no file there, as a host with no file is bound.
-fn status(file: &Path, home: Option<&Path>, repository: &Path) -> Answer<Binding> {
+/// with no file there, as a host with no file is bound. The policy
+/// command's is the same with no store, since it asks the landing and the
+/// policy alone (design D11).
+fn status(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
     let bindings = match read(file, home) {
         Ok(bindings) => bindings,
-        Err(Not::Absent(_)) => return unfiled(file, repository),
+        Err(Not::Absent(_)) => return unfiled(file, repository, command),
         Err(not) => return Err(not),
     };
     let landing = bindings
@@ -497,24 +510,25 @@ fn status(file: &Path, home: Option<&Path>, repository: &Path) -> Answer<Binding
         .as_ref()
         .ok_or_else(|| missing(file, "landing"))?;
     let landing = profiles::landing::bind(landing, repository)?;
-    let named = match &bindings.store {
-        Some(store) => profiles::store::named(store)?,
-        None => unbound_store(),
+    let named = match (&bindings.store, command) {
+        (_, For::Policy) | (None, _) => unbound_store(),
+        (Some(store), _) => profiles::store::named(store)?,
     };
     // No part of status reads the store but a ledger held in it, so a
     // store that is not there leaves every other ledger's chains read.
-    let store: Box<dyn Store> = match (&bindings.store, &bindings.ledger) {
-        (Some(store), Some(ledger)) if profiles::ledger::in_store(ledger) => {
+    let store: Box<dyn Store> = match (&bindings.store, &bindings.ledger, command) {
+        (_, _, For::Policy) => Box::new(policy_store()),
+        (Some(store), Some(ledger), _) if profiles::ledger::in_store(ledger) => {
             profiles::store::bind(store, false)?
         }
-        (Some(_), _) => Box::new(NoStore {
+        (Some(_), _, _) => Box::new(NoStore {
             what: format!(
                 "binding of the store, [store] in {}, which status opens only for a ledger \
                  held in it",
                 file.display()
             ),
         }),
-        (None, _) => Box::new(NoStore {
+        (None, _, _) => Box::new(NoStore {
             what: format!("binding of the store, [store] in {}", file.display()),
         }),
     };
@@ -545,16 +559,20 @@ fn status(file: &Path, home: Option<&Path>, repository: &Path) -> Answer<Binding
 /// ledger each family binds for a repository with no file, with the
 /// remote `origin` where the repository names one; no store and no
 /// signer; and nothing made (C.5, C.6, C.13).
-fn unfiled(file: &Path, repository: &Path) -> Answer<Binding> {
+fn unfiled(file: &Path, repository: &Path, command: For) -> Answer<Binding> {
     let remote = origin(repository)?;
+    let store = match command {
+        For::Policy => policy_store(),
+        _ => NoStore {
+            what: format!(
+                "binding of the store, which a host with no bindings file at {} binds none",
+                file.display()
+            ),
+        },
+    };
     Ok(Binding {
         seams: Seams {
-            store: Box::new(NoStore {
-                what: format!(
-                    "binding of the store, which a host with no bindings file at {} binds none",
-                    file.display()
-                ),
-            }),
+            store: Box::new(store),
             build: profiles::build::bind(repository),
             landing: profiles::landing::unfiled(repository, remote.clone()),
             policy: profiles::policy::bind(repository),

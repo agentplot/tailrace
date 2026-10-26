@@ -2,8 +2,8 @@
 //! them (B.5).
 
 use tailrace_seams::{
-    Audience, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel, NamedSigner, Policy,
-    Required, RequiredClaim, Revision, Seam, SignerId, REPOSITORY_COMPONENT,
+    Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
+    HeldChannel, Moves, NamedSigner, Policy, Required, RequiredClaim, Revision, Seam, SignerId,
 };
 
 use crate::seams::{absent, unreadable};
@@ -23,8 +23,19 @@ pub trait PolicyRig: Rig {
 
     /// A landed revision at which the repository declares `components`
     /// (none: the one component of its own) and each of `channels`, in the
-    /// component it names, bound where it is bound and requiring no claim.
+    /// component it names, moving as it says and requiring no claim.
     fn declaring(&self, components: &[ComponentName], channels: &[DeclaredChannel]) -> Revision;
+
+    /// 131: the channels the profile lists for a repository declaring
+    /// `components` with no channel declared, which it lists beside the
+    /// declared like any of them; none where it gives none.
+    fn given(&self, components: &[ComponentName]) -> Vec<DeclaredChannel>;
+
+    /// C.10: the givens the profile holds off for a repository declaring
+    /// `components` with no channel declared, each with how it would move
+    /// and the line that switches it on, in the order the channels answer
+    /// carries them; none where it holds none.
+    fn held(&self, components: &[ComponentName]) -> Vec<HeldChannel>;
 
     /// The policy made unreachable, every operation answering unreadable,
     /// and the words it answers with.
@@ -65,6 +76,12 @@ pub fn scenarios() -> Vec<Scenario<dyn PolicyRig>> {
             run: the_channels_a_policy_declares,
         },
         Scenario {
+            name: "each way a channel moves",
+            plays: None,
+            cites: &[131, 37, 83, 95],
+            run: each_way_a_channel_moves,
+        },
+        Scenario {
             name: "one component has every channel",
             plays: None,
             cites: &[131, 125, 123],
@@ -81,6 +98,12 @@ pub fn scenarios() -> Vec<Scenario<dyn PolicyRig>> {
             plays: None,
             cites: &[131, 58, 59],
             run: the_channels_of_a_policy_that_cannot_be_reached,
+        },
+        Scenario {
+            name: "the givens held off",
+            plays: None,
+            cites: &[131],
+            run: the_givens_held_off,
         },
     ]
 }
@@ -138,17 +161,22 @@ fn the_claims_an_audience_requires(rig: &dyn PolicyRig) {
 }
 
 fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
-    let (stable, beta) = (ChannelName::new("stable"), ChannelName::new("beta"));
+    let (next, edge) = (
+        ChannelId::new(None, ChannelName::new("next")),
+        ChannelName::new("edge"),
+    );
     let at = rig.at(&[
         (
             Audience::Acceptance,
             Required::Acceptance { claims: claims() },
         ),
         (
-            Audience::Channel(stable.clone()),
+            Audience::Channel(next.clone()),
             Required::Channel {
                 claims: claims(),
-                bound_to: Some(beta.clone()),
+                bound_to: Some(edge.clone()),
+                promoted_by: vec![],
+                approvers: vec![],
             },
         ),
     ]);
@@ -163,12 +191,12 @@ fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
     );
     assert_eq!(acceptance.bound_to(), None, "acceptance names a channel");
     let bound = ok(
-        policy.policy_for(&at, &Audience::Channel(stable)),
+        policy.policy_for(&at, &Audience::Channel(next)),
         "policy-for a bound channel",
     );
     assert_eq!(
         bound.bound_to(),
-        Some(&beta),
+        Some(&edge),
         "the bound channel's policy answered {bound:?}"
     );
 }
@@ -202,61 +230,133 @@ fn a_policy_that_cannot_be_reached(rig: &dyn PolicyRig) {
     );
 }
 
-/// `name` of `component`, bound to `bound_to` where it names one.
-fn declared(name: &str, component: &str, bound_to: Option<&str>) -> DeclaredChannel {
+/// `name` of `component`, or of none, moving as `moves` says.
+fn declared(name: &str, component: Option<&str>, moves: Moves) -> DeclaredChannel {
     DeclaredChannel {
-        name: ChannelName::new(name),
-        component: ComponentName::new(component),
-        bound_to: bound_to.map(ChannelName::new),
+        channel: ChannelId::new(component.map(ComponentName::new), ChannelName::new(name)),
+        moves,
     }
 }
 
+fn bound(to: &str) -> Moves {
+    Moves::Bound {
+        to: ChannelName::new(to),
+    }
+}
+
+/// `declared` and what the rig's profile gives `components`, once each
+/// by name and then component, as the channels answer them (131).
+fn with_given(
+    rig: &dyn PolicyRig,
+    components: &[ComponentName],
+    declared: &[DeclaredChannel],
+) -> Vec<DeclaredChannel> {
+    let mut all = rig.given(components);
+    all.extend(declared.iter().cloned());
+    all.sort_by(|a, b| a.channel.cmp(&b.channel));
+    all
+}
+
 fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
+    let components = [ComponentName::new("lib"), ComponentName::new("web")];
     let channels = [
-        declared("beta", "lib", None),
-        declared("edge", "web", None),
-        declared("stable", "lib", Some("beta")),
+        declared("edge", Some("lib"), Moves::Promotion),
+        declared(
+            "nightly",
+            Some("web"),
+            Moves::EachPublish { prereleases: false },
+        ),
+        declared("next", Some("lib"), bound("edge")),
     ];
     // Declared in another order than the answer's, which is by name.
     let at = rig.declaring(
-        &[ComponentName::new("lib"), ComponentName::new("web")],
+        &components,
         &[
             channels[2].clone(),
             channels[0].clone(),
             channels[1].clone(),
         ],
     );
-    let listed = ok(rig.policy().channels(&at), "channels");
+    let listed = ok(rig.policy().channels(&at), "channels").in_force;
     assert_eq!(
-        listed, channels,
-        "the policy answered other channels, components or bindings than it declares, or not by name"
+        listed,
+        with_given(rig, &components, &channels),
+        "the policy answered other channels, components or ways they move than it declares and gives, or not by name and then component"
     );
-    let stable = ok(
+    let next = ok(
         rig.policy()
-            .policy_for(&at, &Audience::Channel(ChannelName::new("stable"))),
+            .policy_for(&at, &Audience::Channel(channels[2].channel.clone())),
         "policy-for a bound channel",
     );
     assert_eq!(
-        stable.bound_to(),
-        Some(&ChannelName::new("beta")),
-        "policy-for and channels disagree on the channel stable is bound to"
+        next.bound_to(),
+        Some(&ChannelName::new("edge")),
+        "policy-for and channels disagree on the channel next is bound to"
     );
 }
 
+fn each_way_a_channel_moves(rig: &dyn PolicyRig) {
+    let channels = [
+        declared("edge", None, Moves::EachPublish { prereleases: false }),
+        declared("nightly", None, Moves::EachPublish { prereleases: true }),
+        declared("rc", None, Moves::Promotion),
+        declared("next", None, bound("edge")),
+    ];
+    let at = rig.declaring(&[], &channels);
+    let listed = ok(rig.policy().channels(&at), "channels").in_force;
+    assert_eq!(
+        listed,
+        with_given(rig, &[], &channels),
+        "the policy answered other ways a channel moves than it declares"
+    );
+    let moves = |name: &str| {
+        listed
+            .iter()
+            .find(|c| c.channel.name.as_str() == name)
+            .map(|c| c.moves.clone())
+    };
+    assert_eq!(
+        (moves("nightly"), moves("edge")),
+        (
+            Some(Moves::EachPublish { prereleases: true }),
+            Some(Moves::EachPublish { prereleases: false })
+        ),
+        "a following channel's prereleases are not answered as declared"
+    );
+    for channel in &channels {
+        let policy = ok(
+            rig.policy()
+                .policy_for(&at, &Audience::Channel(channel.channel.clone())),
+            "policy-for a declared channel",
+        );
+        assert_eq!(
+            policy.bound_to().cloned(),
+            channel.bound_to().map(|c| c.name),
+            "policy-for and channels disagree on what {} is bound to",
+            channel.channel
+        );
+    }
+}
+
 fn one_component_has_every_channel(rig: &dyn PolicyRig) {
-    for (components, component) in [
-        (vec![], REPOSITORY_COMPONENT),
-        (vec![ComponentName::new("lib")], "lib"),
-    ] {
+    for components in [vec![], vec![ComponentName::new("lib")]] {
+        let component = components.first().map(ComponentName::as_str);
         let channels = [
-            declared("beta", component, None),
-            declared("stable", component, None),
+            declared("edge", component, Moves::Promotion),
+            declared("next", component, bound("edge")),
         ];
         let at = rig.declaring(&components, &channels);
+        let listed = ok(rig.policy().channels(&at), "channels").in_force;
         assert_eq!(
-            ok(rig.policy().channels(&at), "channels"),
-            channels,
+            listed,
+            with_given(rig, &components, &channels),
             "a repository declaring {components:?} has a channel outside its one component"
+        );
+        assert!(
+            listed
+                .iter()
+                .all(|c| c.channel.component.as_ref().map(ComponentName::as_str) == component),
+            "a channel listed is of another component than {component:?}: {listed:?}"
         );
     }
 }
@@ -267,9 +367,9 @@ fn a_policy_declaring_no_channel(rig: &dyn PolicyRig) {
         Required::Acceptance { claims: claims() },
     )]);
     assert_eq!(
-        ok(rig.policy().channels(&at), "channels"),
-        [],
-        "a policy declaring no channel answered channels"
+        ok(rig.policy().channels(&at), "channels").in_force,
+        rig.given(&[]),
+        "a policy declaring no channel answered other channels than its profile gives"
     );
 }
 
@@ -280,4 +380,37 @@ fn the_channels_of_a_policy_that_cannot_be_reached(rig: &dyn PolicyRig) {
     )]);
     let words = rig.unreachable();
     unreadable(rig.policy().channels(&at), Seam::Policy, &words, "channels");
+}
+
+/// 131, as C.10 has a profile hold givens off: the channels answer
+/// carries, apart from the channels in force, what the profile holds off,
+/// each with how it would move and the line that switches it on, and no
+/// channel is both.
+fn the_givens_held_off(rig: &dyn PolicyRig) {
+    let components = [ComponentName::new("lib"), ComponentName::new("web")];
+    let at = rig.declaring(
+        &components,
+        &[declared("edge", Some("lib"), Moves::Promotion)],
+    );
+    let answer = ok(rig.policy().channels(&at), "channels");
+    assert_eq!(
+        answer.held,
+        rig.held(&components),
+        "the policy held off other givens, ways they would move or lines than its profile holds off"
+    );
+    for held in &answer.held {
+        assert!(
+            !held.switch.is_empty(),
+            "{} is held off with no line that switches it on",
+            held.channel.channel
+        );
+        assert!(
+            !answer
+                .in_force
+                .iter()
+                .any(|c| c.channel == held.channel.channel),
+            "{} is both held off and in force",
+            held.channel.channel
+        );
+    }
 }

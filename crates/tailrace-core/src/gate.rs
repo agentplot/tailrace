@@ -4,21 +4,24 @@
 //! each channel that follows each publish moved by the gate itself (25
 //! to 30, 94 to 96, 107, 108, rules core.4, core.7, core.14; design D1).
 //! It imports nothing of publish, and publish nothing of it.
+//!
+//! The channels that follow each publish, and the signer the gate
+//! accepts as, are learned through the policy seam alone: its channels
+//! answer and the policy for each channel listed, never a key of the
+//! policy file (131, rules core.1, core.2).
 
-use std::collections::BTreeMap;
-
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    channel_name, Answer, Audience, Branch, ChannelName, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, Held, Manifest, Name, NamedSigner, Not, Outcome, Promotion, Required, RequiredClaim,
-    Revision, Satisfied, Seam, Seams, SignerId, Source, Version,
+    channel_name, Answer, Audience, Branch, ChannelId, Claim, ClaimKind, ComponentName, Digest,
+    Envelope, Held, Manifest, Moves, Name, NamedSigner, Not, Outcome, Promotion, Required,
+    RequiredClaim, Revision, Satisfied, Seam, Seams, SignerId, Source, Version,
 };
 
-use crate::ledger::{held, promotion_of};
+use crate::ledger::{held, may_promote, promotion_of};
 use crate::{
-    answer_json, chosen, follow, policy_at, tell, Declared, Followed, History, Landed, Provenance,
-    BOUND, LOCAL, POLICY_FILE,
+    answer_json, channels_at, chosen, follow, is_prerelease, policy_at, tell, Declared, Followed,
+    History, Landed, Provenance, BOUND, LOCAL,
 };
 
 /// What told the gate of a version (95): a publish's answer, or an asker
@@ -65,7 +68,7 @@ pub enum Judged {
         already: bool,
         one_host: bool,
         #[serde(serialize_with = "each_channel")]
-        channels: Vec<(ChannelName, Answer<Moved>)>,
+        channels: Vec<(ChannelId, Answer<Moved>)>,
     },
     /// `artifact`, the first found wanting in the index's order, lacks
     /// `wanting`, the first required claim in the policy's order it does
@@ -126,10 +129,10 @@ pub enum WhyWanting {
     Unmatched { signer: SignerId },
 }
 
-/// 57: each channel's answer in the one form, naming its channel, as a
-/// publish names each component's.
+/// 57: each channel's answer in the one form, naming its channel with
+/// its component (125), as a publish names each component's.
 fn each_channel<S: Serializer>(
-    channels: &[(ChannelName, Answer<Moved>)],
+    channels: &[(ChannelId, Answer<Moved>)],
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     let answers: Vec<Value> = channels
@@ -176,10 +179,11 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     // 4: the policy for acceptance at the head, never at the version's
     // revision (107).
     let required = required_at(seams, &at_head, &Audience::Acceptance)?;
-    // The channels that follow each publish, read before anything is
-    // written and followed only when a publish told the gate (95).
+    // The channels that follow each publish, read from the policy seam
+    // before anything is written and followed only when a publish told
+    // the gate (95, 131).
     let followed = match ask.told {
-        ToldBy::Publish => following(history, &at_head, &declared, &component.name)?,
+        ToldBy::Publish => following(seams, &at_head, &component.name, &ask.version)?,
         ToldBy::Asked => Vec::new(),
     };
 
@@ -212,7 +216,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     // version accepted, whatever the head's policy now requires (94).
     let mut found = None;
     if judging.holds_acceptance() {
-        if let Some(named) = gate_named(seams, history, &at_head, &required, &ask.gate)? {
+        if let Some(named) = gate_named(seams, &at_head, &required, &ask.gate)? {
             found = judging.already(&named)?;
         }
     }
@@ -273,8 +277,8 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     // the gate, each answered on its own (95, design D7).
     let channels = followed
         .into_iter()
-        .map(|(channel, readable)| {
-            let moved = readable.and_then(|()| judging.promote(&at_head, &channel, ask.when));
+        .map(|channel| {
+            let moved = judging.promote(&at_head, &channel, ask.when);
             (channel, moved)
         })
         .collect();
@@ -292,105 +296,28 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     })
 }
 
-/// The keys of a `[channels.<name>]` table the gate reads; every other
-/// key is left to its reader (design D6).
-#[derive(Deserialize)]
-struct ChannelKeys {
-    #[serde(default)]
-    on_each_publish: bool,
-    component: Option<ComponentName>,
-    bound_to: Option<ChannelName>,
-}
-
-/// The policy file's channel tables, each with where it begins.
-#[derive(Deserialize)]
-struct ChannelTables {
-    #[serde(default)]
-    channels: BTreeMap<ChannelName, toml::Spanned<toml::Value>>,
-}
-
-/// Every `[channels.<name>]` table of the policy file at the landed
-/// revision, in the file's order, each read for the keys the gate reads
-/// or not, in the parser's words; none where there is no file.
-fn channel_tables(
-    history: &History,
-    landed: &Landed,
-) -> Answer<Vec<(ChannelName, Result<ChannelKeys, String>)>> {
-    let what = format!("{POLICY_FILE} at {}", landed.revision());
-    let unreadable = |said: String| Not::unreadable(&Source::history(LOCAL), &what, Some(said));
-    let bytes = match history.blob(landed, POLICY_FILE) {
-        Ok(bytes) => bytes,
-        Err(Not::Absent(_)) => return Ok(Vec::new()),
-        Err(not) => return Err(not),
-    };
-    let text = String::from_utf8(bytes).map_err(|e| unreadable(e.to_string()))?;
-    let file: ChannelTables = toml::from_str(&text).map_err(|e| unreadable(e.to_string()))?;
-    let mut tables: Vec<_> = file.channels.into_iter().collect();
-    tables.sort_by_key(|(_, table)| table.span().start);
-    Ok(tables
-        .into_iter()
-        .map(|(name, table)| {
-            let keys = table.into_inner().try_into().map_err(|e| e.to_string());
-            (name, keys)
-        })
-        .collect())
-}
-
-/// 32, 37, 125: the channels of `component` that follow each publish,
-/// in the policy file's order at the landed revision: each table with
-/// `on_each_publish = true` whose `component` names it, or naming none
-/// where it is the one declared. A following table that names no
-/// component among several, names one not declared, names `bound_to`,
-/// or cannot be read is unreadable naming the table (design D6).
+/// 95, 125, 131: the channels of `component` that the policy's channels
+/// answer at the landed head says move on each publish, each as its
+/// identity, in the answer's order, leaving out those that take releases
+/// alone where `version` is a prerelease (21, C.10); the answer's own
+/// where it cannot be read, so nothing is accepted or moved.
 pub fn following(
-    history: &History,
+    seams: &Seams,
     landed: &Landed,
-    declared: &Declared,
     component: &ComponentName,
-) -> Answer<Vec<(ChannelName, Answer<()>)>> {
-    let mut following = Vec::new();
-    for (name, keys) in channel_tables(history, landed)? {
-        let what = format!(
-            "[channels.{name}] in {POLICY_FILE} at {}",
-            landed.revision()
-        );
-        let unreadable =
-            |said: String| Err(Not::unreadable(&Source::history(LOCAL), &what, Some(said)));
-        let keys = match keys {
-            Ok(keys) => keys,
-            Err(said) => {
-                following.push((name, unreadable(said)));
-                continue;
+    version: &Version,
+) -> Answer<Vec<ChannelId>> {
+    let prerelease = is_prerelease(version);
+    Ok(channels_at(seams.policy.as_ref(), landed)?
+        .into_iter()
+        .filter(|c| match c.moves {
+            Moves::EachPublish { prereleases } => {
+                c.channel.component_name() == *component && (prereleases || !prerelease)
             }
-        };
-        if !keys.on_each_publish {
-            continue;
-        }
-        let answer = match (&keys.component, declared.components.as_slice()) {
-            (Some(named), _) if !declared.components.iter().any(|c| c.name == *named) => {
-                unreadable(format!(
-                    "it names the component {named}, which {POLICY_FILE} does not declare"
-                ))
-            }
-            (Some(named), _) if named != component => continue,
-            (Some(_), _) | (None, [_]) => match &keys.bound_to {
-                Some(bound) => unreadable(format!(
-                    "it follows each publish and is bound to {bound}, and a bound channel takes no version from a publish (37)"
-                )),
-                None => Ok(()),
-            },
-            (None, several) => unreadable(format!(
-                "it follows each publish and names no component, and several are declared: {}",
-                several
-                    .iter()
-                    .map(|c| c.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )),
-        };
-        following.push((name, answer));
-    }
-    Ok(following)
+            Moves::Promotion | Moves::Bound { .. } => false,
+        })
+        .map(|c| c.channel)
+        .collect())
 }
 
 /// 82, 107: what `audience` requires at the landed head; absent naming
@@ -404,12 +331,11 @@ fn required_at(seams: &Seams, at_head: &Landed, audience: &Audience) -> Answer<R
 
 /// 94: the signer the policy at the head names by the gate's identity
 /// and lets claim acceptance, looked for in what acceptance requires and
-/// then in what each channel the policy file declares requires, since a
-/// channel is what asks for the gate's acceptance; none where no policy
-/// names one (rule core.7).
+/// then in what each channel the policy lists requires, since a channel
+/// is what asks for the gate's acceptance; none where no policy names
+/// one (131, rule core.7).
 fn gate_named(
     seams: &Seams,
-    history: &History,
     at_head: &Landed,
     acceptance: &Required,
     gate: &SignerId,
@@ -425,8 +351,8 @@ fn gate_named(
     if let Some(found) = named(acceptance) {
         return Ok(Some(found));
     }
-    for (channel, _) in channel_tables(history, at_head)? {
-        match required_at(seams, at_head, &Audience::Channel(channel)) {
+    for listed in channels_at(seams.policy.as_ref(), at_head)? {
+        match required_at(seams, at_head, &Audience::Channel(listed.channel)) {
             Ok(required) => {
                 if let Some(found) = named(&required) {
                     return Ok(Some(found));
@@ -676,26 +602,21 @@ impl Judging<'_> {
     }
 
     /// 33, 35, 39, 105: `channel` judged under its own policy at the head
-    /// and, where satisfied, moved to the index: a promotion in the one
-    /// body every promotion holds, signed as the gate naming the chain's
-    /// head as its predecessor, appended to the chain, attached to the
-    /// index, and only then the channel's name in the store moved from
-    /// where the old head left it (rules core.6, core.15, core.34). A
-    /// refused append, a fork or any other answer is the channel's, and
-    /// nothing after it is done or retried.
-    fn promote(&self, at_head: &Landed, channel: &ChannelName, when: u64) -> Answer<Moved> {
-        // 1: the channel's own policy at the head (107).
+    /// and, where the gate is among its promoters and the policy is
+    /// satisfied, moved to the index: a promotion in the one body every
+    /// promotion holds, signed as the gate naming the chain's head as its
+    /// predecessor, appended to the chain, attached to the index, and only
+    /// then the channel's name in the store moved from where the old head
+    /// left it (rules core.6, core.15, core.34). A refused append, a fork
+    /// or any other answer is the channel's, and nothing after it is done
+    /// or retried.
+    fn promote(&self, at_head: &Landed, channel: &ChannelId, when: u64) -> Answer<Moved> {
+        // 1: the channel's own policy at the head (107), and the gate one
+        // of the signers whose promotion of it counts (32, 9, rule
+        // core.7).
         let audience = Audience::Channel(channel.clone());
         let required = required_at(self.seams, at_head, &audience)?;
-        if let Some(bound) = required.bound_to() {
-            return Err(Not::unreadable(
-                &Source::new(Seam::Policy, BOUND),
-                format!("the policy for channel {channel} at {}", at_head.revision()),
-                Some(format!(
-                    "{channel} is bound to {bound}, and a bound channel takes no version from a publish (37)"
-                )),
-            ));
-        }
+        may_promote(&required, self.gate)?;
         let claims = match self.count(&required)? {
             Count::Satisfied { claims, .. } => claims,
             Count::Wanting {
@@ -726,10 +647,11 @@ impl Judging<'_> {
             });
         }
 
-        // 3: the promotion, signed as the gate, asked by the rule that
-        // each publish moves the channel (33, 39, 95).
+        // 3: the promotion, signed as the gate and asked by it, its own
+        // act on the publish that told it, whatever approvers the channel
+        // names (33, 39, 95, 129, C.10).
         let promotion = Promotion {
-            channel: channel.clone(),
+            channel: channel.name.clone(),
             component: self.component.clone(),
             to: tailrace_seams::Moved {
                 version: self.version.clone(),
@@ -737,7 +659,7 @@ impl Judging<'_> {
             },
             from,
             predecessor: head.map(|(digest, _)| digest),
-            asked_by: SignerId::new("each publish"),
+            asked_by: self.gate.clone(),
             policy: Satisfied {
                 revision: at_head.revision().clone(),
                 claims,

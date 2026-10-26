@@ -1,14 +1,16 @@
 //! The ledger seam (B.8) held in the store (C.14): a channel's chain is
-//! the promotion claims attached to the indexes they move to, walked
-//! back by predecessor from the index the channel's name in the store
-//! names, through the store seam alone (105, 120 to 122, rule core.2;
+//! the promotion claims of that channel and component attached to the
+//! indexes they move to, walked back by predecessor from the index the
+//! channel's name in the store names, `channel/<channel>` where no
+//! component is declared and `channel/<component>/<channel>` where one
+//! is, through the store seam alone (105, 120 to 122, 125, rule core.2;
 //! design D10).
 //!
 //! Each chain read from the store is kept, with when it was read, under
 //! the repository's common git directory beside the record of published
-//! versions, and is answered as last read where the store does not
-//! answer, saying when, with the store's words; append is then
-//! unreadable (60 to 62). What is kept is the chain alone: no
+//! versions, an empty one as any other, and is answered as last read
+//! where the store does not answer, saying when, with the store's words;
+//! append is then unreadable (60 to 62). What is kept is the chain alone: no
 //! credential, and nothing else the store holds (64).
 
 use std::fs;
@@ -18,8 +20,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tailrace_seams::{
-    channel_name, Answer, Chain, ChannelName, Claim, Digest, Envelope, Keeper, Not, Promotion,
-    Read, Seam, Source, Store, Unreadable, Why,
+    channel_name, Answer, Chain, ChannelId, Claim, Digest, Envelope, Keeper, Not, Promotion, Read,
+    Seam, Source, Store, Unreadable, Why,
 };
 
 /// The ledger seam held in a store, its chains kept in a directory of
@@ -88,9 +90,9 @@ impl InStore {
         }
     }
 
-    /// The promotion claims of `channel` attached to `index`, in the
-    /// order attached.
-    fn on(&self, channel: &ChannelName, index: &Digest) -> Answer<Vec<Link>> {
+    /// The promotion claims of `channel` attached to `index`, each naming
+    /// its name and its component (125), in the order attached.
+    fn on(&self, channel: &ChannelId, index: &Digest) -> Answer<Vec<Link>> {
         Ok(self
             .store
             .claims_of(index)?
@@ -99,7 +101,9 @@ impl InStore {
                 let promotion = Claim::from_envelope(&envelope)
                     .as_ref()
                     .and_then(Promotion::of)?;
-                (promotion.channel == *channel).then_some(Link {
+                (promotion.channel == channel.name
+                    && promotion.component == channel.component_name())
+                .then_some(Link {
                     envelope,
                     promotion,
                 })
@@ -112,7 +116,7 @@ impl InStore {
     /// the chain to it, from the first. A predecessor not attached to its
     /// index is unreadable naming both digests; two claims met on one
     /// index naming one predecessor are a fork (105).
-    fn walk_back(&self, channel: &ChannelName, head: Link) -> Answer<Vec<Link>> {
+    fn walk_back(&self, channel: &ChannelId, head: Link) -> Answer<Vec<Link>> {
         let mut walk = vec![head];
         loop {
             let at = &walk[walk.len() - 1].promotion;
@@ -162,7 +166,7 @@ impl InStore {
     /// name names nothing. Of the channel's claims on that index, the
     /// head is the one whose walk holds every other; two neither of which
     /// holds the other are a fork (105, 122).
-    fn walk(&self, channel: &ChannelName) -> Answer<Option<Vec<Link>>> {
+    fn walk(&self, channel: &ChannelId) -> Answer<Option<Vec<Link>>> {
         let name = channel_name(channel);
         let index = match self.store.resolve(&name) {
             Ok(index) => index,
@@ -203,8 +207,10 @@ impl InStore {
         unreachable!("walks of which none holds every other hold two that part")
     }
 
-    fn path(&self, channel: &ChannelName) -> PathBuf {
-        self.kept.join(format!("{channel}.json"))
+    /// Where the chain of `channel` is kept: a file of its spelling,
+    /// under a directory of its component where it has one.
+    fn path(&self, channel: &ChannelId) -> PathBuf {
+        self.kept.join(format!("{}.json", channel.spelled()))
     }
 
     fn cannot(path: &Path, e: io::Error) -> Not {
@@ -218,18 +224,17 @@ impl InStore {
     /// 61: `claims` kept as the chain of `channel` last read, now, written
     /// beside the last and renamed over it, so a reader never sees half a
     /// chain.
-    fn keep(&self, channel: &ChannelName, claims: &[Envelope]) -> Answer<()> {
+    fn keep(&self, channel: &ChannelId, claims: &[Envelope]) -> Answer<()> {
         let path = self.path(channel);
-        fs::create_dir_all(&self.kept).map_err(|e| Self::cannot(&self.kept, e))?;
+        let dir = path.parent().unwrap_or(&self.kept);
+        fs::create_dir_all(dir).map_err(|e| Self::cannot(dir, e))?;
         let mut text = serde_json::to_string_pretty(&Kept {
             at: now(),
             claims: claims.to_vec(),
         })
         .expect("a chain is plain data");
         text.push('\n');
-        let beside = self
-            .kept
-            .join(format!(".{channel}.json.{}", std::process::id()));
+        let beside = dir.join(format!(".{}.json.{}", channel.name, std::process::id()));
         fs::write(&beside, text).map_err(|e| Self::cannot(&beside, e))?;
         fs::rename(&beside, &path).map_err(|e| {
             let _ = fs::remove_file(&beside);
@@ -240,7 +245,7 @@ impl InStore {
     /// 60, C.14: the store not answering, for `failed`, its own words:
     /// the chain of `channel` as kept, saying when; unreadable with the
     /// store's words where nothing is kept.
-    fn kept(&self, channel: &ChannelName, failed: Unreadable) -> Answer<Chain> {
+    fn kept(&self, channel: &ChannelId, failed: Unreadable) -> Answer<Chain> {
         let path = self.path(channel);
         let text = match fs::read(&path) {
             Ok(text) => text,
@@ -269,17 +274,15 @@ impl InStore {
         })
     }
 
-    /// The chain of `channel` from the store, kept as read; from what is
-    /// kept where the store does not answer. Empty where the channel's
-    /// name names nothing.
-    fn read(&self, channel: &ChannelName) -> Answer<Chain> {
+    /// The chain of `channel` from the store, kept as read, an empty one
+    /// as any other; from what is kept where the store does not answer.
+    /// Empty where the channel's name names nothing.
+    fn read(&self, channel: &ChannelId) -> Answer<Chain> {
         match self.walk(channel) {
             Ok(walked) => {
                 let claims: Vec<Envelope> =
                     walked.into_iter().flatten().map(|l| l.envelope).collect();
-                if !claims.is_empty() {
-                    self.keep(channel, &claims)?;
-                }
+                self.keep(channel, &claims)?;
                 Ok(Chain {
                     claims,
                     read: Read::Source,
@@ -301,7 +304,7 @@ impl Keeper for InStore {
     /// fork it is (105, 109).
     fn append(
         &self,
-        channel: &ChannelName,
+        channel: &ChannelId,
         promotion: &Envelope,
         predecessor: Option<&Digest>,
     ) -> Answer<Digest> {
@@ -351,11 +354,12 @@ impl Keeper for InStore {
     }
 
     /// 121: every claim of `channel` from the first, walked in the store,
-    /// or as last read where the store does not answer (60); absent where
-    /// the channel's name names nothing.
-    fn chain(&self, channel: &ChannelName) -> Answer<Chain> {
+    /// or as last read where the store does not answer, a channel last
+    /// read holding none a chain of no claims so read (60); absent where
+    /// the store answers that the channel's name names nothing.
+    fn chain(&self, channel: &ChannelId) -> Answer<Chain> {
         let chain = self.read(channel)?;
-        if chain.claims.is_empty() {
+        if chain.claims.is_empty() && chain.read == Read::Source {
             return Err(Not::absent(&source(), format!("chain of {channel}")));
         }
         Ok(chain)

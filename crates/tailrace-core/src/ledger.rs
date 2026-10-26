@@ -8,21 +8,24 @@
 //!
 //! The chain is reached through the ledger seam alone, and nothing here
 //! names how a ledger holds it, a ref, a table or the store's own claims
-//! (rules core.1, core.2). A chain the ledger answers as last read is
-//! never moved from, and moves nothing in the store (60, 61).
+//! (rules core.1, core.2). The channel, how it moves and who may sign its
+//! promotion are learned through the policy seam alone, its channels
+//! answer and the policy for the channel (131). A chain the ledger
+//! answers as last read is never moved from, and moves nothing in the
+//! store (60, 61).
 
 use serde::{Serialize, Serializer};
 use tailrace_seams::{
-    channel_name, Answer, Audience, Branch, Chain, ChannelName, Claim, ClaimKind, ComponentName,
-    Digest, Envelope, Keeper, Moved, Name, NamedSigner, Not, Read, Required, RequiredClaim,
-    Satisfied, Seam, Seams, SignerId, Source, Store, Version, Why,
+    channel_name, Answer, Audience, Branch, Chain, ChannelId, ChannelName, Claim, ClaimKind,
+    ComponentName, DeclaredChannel, Digest, Envelope, Keeper, Moved, Name, NamedSigner, Not, Read,
+    Required, RequiredClaim, Satisfied, Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 pub use tailrace_seams::Promotion;
 
 use crate::{
-    answer_json, chosen, follow, merged, policy_at, tell, Declared, Followed, History, Landed,
-    Provenance, BOUND, LOCAL,
+    answer_json, channels_at, chosen, follow, merged, policy_at, tell, Declared, Followed, History,
+    Landed, Provenance, BOUND, LOCAL,
 };
 
 /// Where a promotion moves its channel: to a version of its component,
@@ -93,11 +96,14 @@ pub struct Mirrored {
 
 /// 31, 101: a channel as its chain holds it: empty, which is an answer
 /// and not an error, or at its head's version, with every promotion in
-/// order by its envelope's digest and how the chain was read (60).
+/// order by its envelope's digest; either with how the chain was read,
+/// an empty one from the source or as last read, saying when (60).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Channel {
-    Empty,
+    Empty {
+        read: Read,
+    },
     At {
         head: Promotion,
         chain: Vec<(Digest, Promotion)>,
@@ -114,12 +120,31 @@ fn keeper() -> Source {
     Source::new(Seam::Keeper, BOUND)
 }
 
+/// 125, 131: the channel named `name` of `component` as the policy lists
+/// it at `landed`; absent naming both where it lists none.
+pub(crate) fn listed(
+    seams: &Seams,
+    landed: &Landed,
+    name: &ChannelName,
+    component: &ComponentName,
+) -> Answer<DeclaredChannel> {
+    channels_at(seams.policy.as_ref(), landed)?
+        .into_iter()
+        .find(|c| c.channel.name == *name && c.channel.component_name() == *component)
+        .ok_or_else(|| {
+            Not::absent(
+                &Source::new(Seam::Policy, BOUND),
+                format!("channel {name} of {component} at {}", landed.revision()),
+            )
+        })
+}
+
 /// The claims of `channel`'s chain as the ledger holds them now, none
 /// for a channel never promoted, refused naming a fork as the ledger
 /// answers it (105); unreadable naming the chain, with the ledger's
 /// words, where the ledger answered it as last read, whose head may be
 /// behind the one held (60, rule core.6).
-pub(crate) fn held(ledger: &dyn Keeper, channel: &ChannelName) -> Answer<Vec<Envelope>> {
+pub(crate) fn held(ledger: &dyn Keeper, channel: &ChannelId) -> Answer<Vec<Envelope>> {
     match ledger.chain(channel) {
         Ok(Chain {
             read: Read::Kept { said, .. },
@@ -137,7 +162,7 @@ pub(crate) fn held(ledger: &dyn Keeper, channel: &ChannelName) -> Answer<Vec<Env
 
 /// The promotion `envelope` holds, unreadable naming its digest where it
 /// holds no promotion claim of tailrace's form.
-pub(crate) fn promotion_of(channel: &ChannelName, envelope: &Envelope) -> Answer<Promotion> {
+pub(crate) fn promotion_of(channel: &ChannelId, envelope: &Envelope) -> Answer<Promotion> {
     Claim::from_envelope(envelope)
         .as_ref()
         .and_then(Promotion::of)
@@ -154,7 +179,9 @@ pub(crate) fn promotion_of(channel: &ChannelName, envelope: &Envelope) -> Answer
 }
 
 /// 31 to 39, 105: the promotion `ask` names, in the order of design D4:
-/// the policy read at the branch's landed head, the chain's head read
+/// the channel found among those the policy lists for the component
+/// (125, 131), its policy read at the branch's landed head, the chain's
+/// head read
 /// from the ledger itself, the version's name resolved in the store
 /// before anything of it is read (rule core.4), the channel moved only
 /// from where it is (35) and, where bound, only to a version its bound
@@ -170,9 +197,12 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
     let declared = Declared::read(history, &at_head)?;
     let component = chosen(&declared, ask.component.as_ref(), &head)?;
 
-    // 2: the channel's policy at the head; absent where none is declared
-    // for it (82).
-    let audience = Audience::Channel(ask.channel.clone());
+    // 2: the channel among those the policy lists for the component,
+    // absent naming both where it lists none (125, 131), and its policy
+    // at the head; absent where none is declared for it (82).
+    let listed = listed(seams, &at_head, &ask.channel, &component.name)?;
+    let channel = &listed.channel;
+    let audience = Audience::Channel(channel.clone());
     let required =
         policy_at(seams.policy.as_ref(), &at_head, &audience).map_err(|not| match not {
             Not::Absent(a) => Not::absent(&a.source, format!("{} at {head}", a.what)),
@@ -180,9 +210,9 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
         })?;
 
     // 3: the chain, read from the ledger itself, and its head (105, 121).
-    let chain = held(seams.keeper.as_ref(), &ask.channel)?;
+    let chain = held(seams.keeper.as_ref(), channel)?;
     let last = match chain.last() {
-        Some(envelope) => Some((envelope.digest(), promotion_of(&ask.channel, envelope)?)),
+        Some(envelope) => Some((envelope.digest(), promotion_of(channel, envelope)?)),
         None => None,
     };
     let at = last.as_ref().map(|(_, p)| p.to.clone());
@@ -195,9 +225,7 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
             .as_ref()
             .and_then(|(_, p)| p.from.as_ref())
             .map(|from| from.version.clone())
-            .ok_or_else(|| {
-                Not::absent(&keeper(), format!("a version {} moved from", ask.channel))
-            })?,
+            .ok_or_else(|| Not::absent(&keeper(), format!("a version {channel} moved from")))?,
     };
     let tag = format!("{}{}", component.prefix, version);
     let index = seams.store.resolve(&Name::new(&tag))?;
@@ -221,7 +249,7 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
             return Err(Not::refused(
                 &keeper(),
                 Why::ChannelAt {
-                    channel: ask.channel.clone(),
+                    channel: channel.clone(),
                     at,
                 },
                 None,
@@ -236,33 +264,36 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
             channel: ask.channel.clone(),
             component: component.name.clone(),
             at: to,
-            store: mirror(seams.store.as_ref(), seams.keeper.as_ref(), &ask.channel),
+            store: mirror(seams.store.as_ref(), seams.keeper.as_ref(), channel),
         });
     }
 
-    // 7: a bound channel takes only what its bound channel held (37, 83).
-    if let Some(bound_to) = required.bound_to() {
-        if !held_by(seams.keeper.as_ref(), bound_to, &to.index)? {
+    // 7: a bound channel takes only what its bound channel, of its own
+    // component, held (37, 83, 125).
+    if let Some(bound_to) = listed.bound_to() {
+        if !held_by(seams.keeper.as_ref(), &bound_to, &to.index)? {
             return Err(Not::refused(
                 &keeper(),
                 Why::NeverHeld {
-                    channel: ask.channel.clone(),
-                    bound_to: bound_to.clone(),
+                    channel: channel.clone(),
+                    bound_to,
                 },
                 None,
             ));
         }
     }
 
-    // 8: judged, and the host's signer one the policy lets promote (9,
-    // 31, 32).
+    // 8: the asker one the channel's policy lets ask, judged, and the
+    // host's signer one the channel's policy names among its promoters
+    // (9, 31, 32, C.10).
+    may_ask(&required, channel, &ask.signer)?;
     let claims = judge(seams, &required, &to.index)?;
     may_promote(&required, &ask.signer)?;
 
     // 9: the claim, naming the head as its predecessor (33, 39, 105),
     // signed as publish signs.
     let promotion = Promotion {
-        channel: ask.channel.clone(),
+        channel: channel.name.clone(),
         component: component.name.clone(),
         to: to.clone(),
         from: at.clone(),
@@ -284,11 +315,11 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
     // (33, 120, rules core.6, core.34).
     let claim = seams
         .keeper
-        .append(&ask.channel, &envelope, promotion.predecessor.as_ref())?;
+        .append(channel, &envelope, promotion.predecessor.as_ref())?;
 
     // 11: the store brought to the ledger, its answer beside (39, 106,
     // 109).
-    let store = mirror(seams.store.as_ref(), seams.keeper.as_ref(), &ask.channel);
+    let store = mirror(seams.store.as_ref(), seams.keeper.as_ref(), channel);
     Ok(Promoted::Moved {
         channel: promotion.channel,
         component: promotion.component,
@@ -304,7 +335,7 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
 /// 37, 83: whether `index` is the subject of a promotion in `bound_to`'s
 /// chain, whether or not the channel is still at it. A chain the ledger
 /// answers as last read serves, since a chain only grows (122).
-fn held_by(ledger: &dyn Keeper, bound_to: &ChannelName, index: &Digest) -> Answer<bool> {
+fn held_by(ledger: &dyn Keeper, bound_to: &ChannelId, index: &Digest) -> Answer<bool> {
     let claims = match ledger.chain(bound_to) {
         Ok(chain) => chain.claims,
         Err(Not::Absent(_)) => Vec::new(),
@@ -403,15 +434,39 @@ pub fn judge(seams: &Seams, required: &Required, index: &Digest) -> Answer<Vec<D
     Ok(satisfied)
 }
 
-/// 9, 32: `signer` is one the channel's policy lets claim a promotion;
-/// refused [`Why::Wanting`] a promotion, naming the signers that may
-/// make one, otherwise.
-fn may_promote(required: &Required, signer: &SignerId) -> Answer<()> {
-    let promotion = of_kind(&merged(required), ClaimKind::Promotion);
-    if promotion.signers.iter().any(|s| s.id == *signer) {
+/// 32, C.10: `asker`, the host's own signer while no identity provider
+/// stands (129), is among the signers the policy for `channel` lets ask,
+/// or the policy names none, so any asker the gate verifies may;
+/// refused [`Why::NotApprover`], naming the asker and who may ask,
+/// otherwise.
+fn may_ask(required: &Required, channel: &ChannelId, asker: &SignerId) -> Answer<()> {
+    let approvers = required.approvers();
+    if approvers.is_empty() || approvers.iter().any(|s| s.id == *asker) {
+        return Ok(());
+    }
+    Err(Not::refused(
+        &Source::new(Seam::Policy, BOUND),
+        Why::NotApprover {
+            channel: channel.clone(),
+            asker: asker.clone(),
+            approvers: approvers.iter().map(|s| s.id.clone()).collect(),
+        },
+        None,
+    ))
+}
+
+/// 9, 32: `signer` is among the signers the channel's policy names as
+/// its promoters (rule core.7); refused [`Why::Wanting`] a promotion,
+/// naming them, otherwise.
+pub(crate) fn may_promote(required: &Required, signer: &SignerId) -> Answer<()> {
+    if required.promoted_by().iter().any(|s| s.id == *signer) {
         Ok(())
     } else {
-        Err(wanting(&promotion))
+        Err(wanting(&RequiredClaim {
+            kind: ClaimKind::Promotion,
+            check: None,
+            signers: required.promoted_by().to_vec(),
+        }))
     }
 }
 
@@ -421,7 +476,7 @@ fn may_promote(required: &Required, signer: &SignerId) -> Answer<()> {
 /// index the head moved from, a race lost on it reported and repaired
 /// (rule core.6). The ledger is written nothing, and a chain it answers
 /// as last read writes nothing to the store (60).
-pub fn mirror(store: &dyn Store, ledger: &dyn Keeper, channel: &ChannelName) -> Answer<Mirrored> {
+pub fn mirror(store: &dyn Store, ledger: &dyn Keeper, channel: &ChannelId) -> Answer<Mirrored> {
     let mut attached = Vec::new();
     let mut head = None;
     for envelope in held(ledger, channel)? {
@@ -445,12 +500,14 @@ pub fn mirror(store: &dyn Store, ledger: &dyn Keeper, channel: &ChannelName) -> 
 /// 31, 60, 101: `channel` as its chain holds it, asked of the ledger
 /// alone: nothing of the store is read, and nothing is written (rule
 /// core.32). A chain the ledger answers as last read is answered so,
-/// saying when and with its words; a claim of it holding no promotion of
-/// tailrace's form is unreadable naming its digest.
-pub fn channel(ledger: &dyn Keeper, channel: &ChannelName) -> Answer<Channel> {
+/// saying when and with its words, an empty one among them, and one the
+/// ledger answers absent is empty as the source holds it; a claim of it
+/// holding no promotion of tailrace's form is unreadable naming its
+/// digest.
+pub fn channel(ledger: &dyn Keeper, channel: &ChannelId) -> Answer<Channel> {
     let chain = match ledger.chain(channel) {
         Ok(chain) => chain,
-        Err(Not::Absent(_)) => return Ok(Channel::Empty),
+        Err(Not::Absent(_)) => return Ok(Channel::Empty { read: Read::Source }),
         Err(not) => return Err(not),
     };
     let mut read = Vec::new();
@@ -458,7 +515,7 @@ pub fn channel(ledger: &dyn Keeper, channel: &ChannelName) -> Answer<Channel> {
         read.push((envelope.digest(), promotion_of(channel, envelope)?));
     }
     Ok(match read.last() {
-        None => Channel::Empty,
+        None => Channel::Empty { read: chain.read },
         Some((_, head)) => Channel::At {
             head: head.clone(),
             chain: read,

@@ -128,7 +128,7 @@ pub struct ChannelStatus {
 
 impl ChannelStatus {
     pub fn name(&self) -> &ChannelName {
-        &self.declared.name
+        &self.declared.channel.name
     }
 }
 
@@ -167,10 +167,10 @@ pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<C
             .filter(|c| {
                 ask.component
                     .as_ref()
-                    .is_none_or(|named| c.component == *named)
+                    .is_none_or(|named| c.channel.component_name() == *named)
             })
             .map(|declared| ChannelStatus {
-                at: channel(seams.keeper.as_ref(), &declared.name),
+                at: channel(seams.keeper.as_ref(), &declared.channel),
                 declared,
             })
             .collect(),
@@ -288,10 +288,10 @@ pub fn row(repository: &RepositoryName, overview: &Overview) -> Row {
             c.channels
                 .iter()
                 .map(|channel| Head {
-                    component: channel.declared.component.clone(),
-                    channel: channel.declared.name.clone(),
+                    component: channel.declared.channel.component_name(),
+                    channel: channel.declared.channel.name.clone(),
                     at: channel.at.as_ref().map_err(Not::clone).map(|at| match at {
-                        Channel::Empty => HeadAt::Empty,
+                        Channel::Empty { .. } => HeadAt::Empty,
                         Channel::At { head, .. } => HeadAt::At {
                             version: head.to.version.clone(),
                             index: head.to.index.clone(),
