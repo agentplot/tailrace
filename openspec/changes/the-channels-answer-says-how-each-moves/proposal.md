@@ -224,6 +224,7 @@ crates/tailrace/src/profiles/ledger/**
 crates/tailrace/src/commands/promote.rs
 crates/tailrace/src/commands/verify.rs
 crates/tailrace/src/commands/policy.rs
+crates/tailrace/src/commands/status.rs
 crates/tailrace/src/commands/mod.rs
 crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
