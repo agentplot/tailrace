@@ -8,17 +8,21 @@ mod world;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use common::Fixture;
 use serde_json::json;
 use tailrace_core::{
     accept, answer_json, channel, following, promote, AcceptAsk, Channel, Followed, Judged, Moved,
-    PromoteAsk, Promoted, Published, To, ToldBy, WhyWanting,
+    PromoteAsk, Promoted, Published, To, ToldBy, WhyWanting, POLICY_FILE,
 };
-use tailrace_fakes::{FakeKeeper, FakeSigner, Fault, KeeperOp, PolicyOp, SignerOp, StoreOp, Times};
+use tailrace_fakes::{
+    FakeKeeper, FakeSigner, Fakes, Fault, KeeperOp, PolicyOp, SignerOp, StoreOp, Times,
+};
 use tailrace_seams::{
-    channel_name, Answer, Audience, Branch, Chain, ChannelId, ChannelName, Check, Claim, ClaimKind,
-    ComponentName, Digest, Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome,
-    Promotion, Put, Required, RequiredClaim, Revision, Satisfied, Seam, Seams, Signer, SignerId,
-    Source, Store, Version, Why,
+    channel_name, Answer, Artifact, ArtifactMeta, Audience, Branch, Chain, ChannelId, ChannelName,
+    Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Envelope, Held,
+    IndexMeta, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Promotion, Put, Required,
+    RequiredClaim, Revision, Satisfied, Seam, Seams, Signer, SignerId, Source, Store, Version, Why,
+    REPOSITORY_COMPONENT,
 };
 use world::{build_of, version_of, World, HOST, LANDING};
 
@@ -1562,4 +1566,171 @@ fn a_version_the_gate_moved_beta_to_is_taken_by_stable_bound_to_beta() {
     assert_eq!(to, at("0.2.0", index));
     assert!(store.is_ok(), "{store:?}");
     assert_eq!(named_at(&world, &of("lib", "stable")).as_ref(), Some(index));
+}
+
+// Requirement: The core knows no channel's name
+
+#[test]
+fn edge_moves_on_each_publish_and_next_bound_to_it_takes_what_the_gate_moved_edge_to() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    let (edge, next) = (of("lib", "edge"), of("lib", "next"));
+    following_requires(&world, &edge, vec![from_gate()], vec![the_gate()]);
+    world.fakes.policy.require(
+        Audience::Channel(next.clone()),
+        Required::Channel {
+            claims: vec![from_gate()],
+            bound_to: Some(ChannelName::new("edge")),
+            promoted_by: vec![the_gate()],
+        },
+    );
+    world.fakes.signer.hold(&SignerId::new(GATE));
+    let seams = world.fakes.seams();
+
+    let answer = accept(&seams, &world.history(), &ask("0.2.0", ToldBy::Publish));
+    let Ok(Judged::Accepted { channels, .. }) = answer else {
+        panic!("the version was not accepted: {answer:?}")
+    };
+    assert_eq!(channels.len(), 1, "{channels:?}");
+    assert_eq!(channels[0].0, edge);
+    assert!(
+        matches!(channels[0].1, Ok(Moved::Promoted { .. })),
+        "{channels:?}"
+    );
+    assert_eq!(named_at(&world, &edge).as_ref(), Some(index));
+    assert_eq!(named_at(&world, &next), None);
+
+    let answer = promote(
+        &seams,
+        &world.history(),
+        &PromoteAsk {
+            branch: Branch::new("main"),
+            component: Some(ComponentName::new("lib")),
+            channel: ChannelName::new("next"),
+            to: To::Version(Version::new("0.2.0")),
+            from: None,
+            signer: SignerId::new(GATE),
+            at: WHEN,
+        },
+    );
+    let Ok(Promoted::Moved { to, store, .. }) = answer else {
+        panic!("next bound to edge did not take what the gate moved edge to: {answer:?}")
+    };
+    assert_eq!(to, at("0.2.0", index));
+    assert!(store.is_ok(), "{store:?}");
+    assert_eq!(named_at(&world, &next).as_ref(), Some(index));
+    assert_eq!(
+        world.fakes.keeper.chain(&next).map(|c| c.claims.len()),
+        Ok(1)
+    );
+}
+
+// Requirement: The gate and the ledger learn a channel through the answer
+
+#[test]
+fn a_gate_over_a_fake_policy_moves_edge_in_a_history_holding_no_policy_file() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    let head = repo.touch("feat: start", &["site"]);
+    repo.tag("v0.1.0", &head);
+    let history = repo.history();
+    assert!(
+        matches!(
+            history.blob(&common::landed(&head), POLICY_FILE),
+            Err(Not::Absent(_))
+        ),
+        "the history holds a policy file"
+    );
+
+    let fakes = Fakes::new();
+    fakes.landing.land(&Branch::new("main"), &head);
+    fakes.signer.hold(&SignerId::new(HOST));
+    let version = Version::new("0.1.0");
+    let meta = ArtifactMeta::new(
+        Ecosystem::new("eco-a"),
+        EcosystemName::new("site"),
+        version.clone(),
+    )
+    .unwrap();
+    let layer = fakes.store.put_bytes(b"the site").unwrap().digest;
+    let artifact = fakes
+        .store
+        .put_artifact(&Manifest::Artifact {
+            meta: meta.clone(),
+            layers: vec![layer],
+        })
+        .unwrap()
+        .digest;
+    let index = IndexMeta::new(
+        ComponentName::new(REPOSITORY_COMPONENT),
+        version,
+        vec![Artifact {
+            digest: artifact.clone(),
+            meta,
+        }],
+    )
+    .unwrap();
+    let index = fakes
+        .store
+        .put_artifact(&Manifest::Index(index))
+        .unwrap()
+        .digest;
+    fakes
+        .store
+        .name(&Name::new("v0.1.0"), &index, None)
+        .unwrap();
+    let provenance = Claim {
+        subject: artifact.clone(),
+        kind: ClaimKind::Provenance,
+        revision: head.clone(),
+        build: None,
+        body: json!({}),
+    };
+    let provenance = fakes
+        .signer
+        .sign(&provenance, &SignerId::new(HOST))
+        .unwrap();
+    fakes.store.attach(&artifact, &provenance).unwrap();
+
+    let edge = ChannelId::new(None, ChannelName::new("edge"));
+    fakes
+        .policy
+        .require(Audience::Acceptance, provenance_only());
+    fakes.policy.require(
+        Audience::Channel(edge.clone()),
+        Required::Channel {
+            claims: vec![from_gate()],
+            bound_to: None,
+            promoted_by: vec![the_gate()],
+        },
+    );
+    fakes.policy.follows(&edge);
+    let mut seams = fakes.seams();
+    let gate = FakeSigner::new();
+    gate.hold(&SignerId::new(GATE));
+    seams.signers.push(Box::new(gate));
+
+    let told = AcceptAsk {
+        component: None,
+        ..ask("0.1.0", ToldBy::Publish)
+    };
+    let answer = accept(&seams, &history, &told);
+    let Ok(Judged::Accepted { channels, .. }) = answer else {
+        panic!("the version was not accepted: {answer:?}")
+    };
+    assert_eq!(channels.len(), 1, "{channels:?}");
+    assert_eq!(channels[0].0, edge);
+    assert!(
+        matches!(channels[0].1, Ok(Moved::Promoted { .. })),
+        "{channels:?}"
+    );
+    assert_eq!(fakes.store.resolve(&channel_name(&edge)), Ok(index));
+    assert!(
+        fakes
+            .policy
+            .calls()
+            .iter()
+            .all(|c| c.given["revision"] == head.as_str()),
+        "the policy was read at another revision than the landed head"
+    );
 }
