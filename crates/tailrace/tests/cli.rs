@@ -134,6 +134,12 @@ impl Host {
         self.root().join("data/tailrace/layout")
     }
 
+    /// Where the built binary's given host key is: under the same data
+    /// directory.
+    fn given_key(&self) -> PathBuf {
+        self.root().join("data/tailrace/host/signing.key")
+    }
+
     /// `text` as the host's bindings file.
     fn bind(&self, text: &str) {
         let file = self.bindings_file();
@@ -390,10 +396,7 @@ fn the_built_binary_on_a_host_with_no_bindings_file_pushes_through_the_given_lan
         "the push kept something"
     );
     assert!(!file.exists(), "the push wrote a bindings file");
-    assert!(
-        !file.with_file_name("signing").exists(),
-        "the push made a key"
-    );
+    assert!(!host.given_key().exists(), "the push made a key");
 }
 
 // Requirement: Rebuild takes a landed revision
@@ -815,8 +818,7 @@ fn a_moment_is_rendered_in_utc() {
     assert_eq!(tailrace::render::utc(1_793_000_000), "2026-10-26T07:33:20Z");
 }
 
-// Requirement: A host with no bindings file is bound to the given
-// profiles (spec host-bindings)
+// Requirement: A host with no bindings file is bound to the defaults
 
 /// The store's unreadable answer in `out`, once it names `layout`.
 fn unreadable_layout(out: &std::process::Output, layout: &Path) {
@@ -837,8 +839,9 @@ fn the_built_binary_on_a_host_with_no_bindings_file_is_bound_to_the_given_profil
     let host = Host::new();
     let file = host.bindings_file();
     let layout = host.given_layout();
+    let data = host.root().join("data");
     unreadable_layout(&host.binary(&["verify", "0.1.0", "--json"]), &layout);
-    assert!(!layout.exists(), "verify made the given layout");
+    assert!(!data.exists(), "verify made {}", data.display());
 
     let out = host.binary(&["publish", "HEAD"]);
     assert_eq!(out.status.code(), Some(1), "{out:?}");
@@ -851,10 +854,123 @@ fn the_built_binary_on_a_host_with_no_bindings_file_is_bound_to_the_given_profil
     assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
     let history = History::open(&host.repo).unwrap();
     assert!(!Kept::at(&history).dir().exists());
+    assert!(
+        !layout.exists(),
+        "the refused publish made the given layout"
+    );
     assert!(!file.exists(), "the publish wrote a bindings file");
     assert!(
-        !file.with_file_name("signing").exists(),
+        !host.given_key().exists(),
         "a publish that signed nothing made a key"
+    );
+    assert!(
+        !data.exists(),
+        "the refused publish made {}",
+        data.display()
+    );
+}
+
+#[test]
+fn the_built_binary_in_a_checkout_with_several_remotes_and_no_origin_names_them_and_writes_nothing()
+{
+    let host = Host::new();
+    git(&host.repo, &["remote", "rename", "origin", "github"]);
+    git(
+        &host.repo,
+        &["remote", "add", "gitlab", "/nowhere/gitlab.git"],
+    );
+    let out = host.binary(&["publish", "HEAD"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("github, gitlab"), "{stdout}");
+    assert!(
+        stdout.contains(&format!(
+            "[landing] remote of {}",
+            host.bindings_file().display()
+        )),
+        "{stdout}"
+    );
+    assert_eq!(git(&host.repo, &["tag", "-l"]), "");
+    assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
+    let history = History::open(&host.repo).unwrap();
+    assert!(!Kept::at(&history).dir().exists());
+    assert!(
+        !host.root().join("data").exists(),
+        "a layout or a key was made"
+    );
+    assert!(!host.bindings_file().exists());
+}
+
+#[test]
+fn the_built_binary_on_a_host_with_no_bindings_file_shows_status_from_the_record_and_the_ledger() {
+    let host = Host::new();
+    git(&host.repo, &["push", "-q", "origin", "main"]);
+    let index = Digest::of(b"the index");
+    let history = History::open(&host.repo).unwrap();
+    Kept::at(&history)
+        .write(&Entry {
+            component: ComponentName::new("repository"),
+            version: Version::new("0.1.0"),
+            tag: "v0.1.0".into(),
+            revision: host.head.clone(),
+            branch: Branch::new("main"),
+            index: index.clone(),
+            store: store(),
+        })
+        .unwrap();
+    // One promotion of stable on origin's ledger refs, where the given
+    // ledger is kept, and none in the checkout's own.
+    let promotion = Promotion {
+        channel: ChannelName::new("stable"),
+        component: ComponentName::new("repository"),
+        to: tailrace_seams::Moved {
+            version: Version::new("0.1.0"),
+            index: index.clone(),
+        },
+        from: None,
+        predecessor: None,
+        asked_by: SignerId::new("host"),
+        policy: tailrace_seams::Satisfied {
+            revision: host.head.clone(),
+            claims: vec![acceptance("0.1.0")],
+        },
+        at: 1_793_000_000,
+    };
+    let envelope = host
+        .fakes
+        .signer
+        .sign(&promotion.claim(host.head.clone()), &SignerId::new("host"))
+        .unwrap();
+    let origin =
+        tailrace::profiles::ledger::git_ref::GitRef::new(&host.repo, Some("origin".into()));
+    tailrace_seams::Keeper::append(&origin, &stable(), &envelope, None).unwrap();
+    git(
+        &host.repo,
+        &["update-ref", "-d", "refs/tailrace/ledger/stable"],
+    );
+
+    let out = host.binary(&["status", "--json"]);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let entry = &json["value"]["published"]["value"]["components"][0]["versions"][0];
+    assert_eq!(entry["version"], "0.1.0", "{json}");
+    assert_eq!(entry["index"], index.as_str());
+    let channels = &json["value"]["channels"];
+    assert_eq!(channels["answer"], "ok", "{json}");
+    let stable = channels["value"]["channels"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["channel"]["name"] == "stable")
+        .unwrap_or_else(|| panic!("no stable: {json}"));
+    assert_eq!(
+        stable["at"]["value"]["head"]["to"]["version"], "0.1.0",
+        "{json}"
+    );
+    assert!(!host.bindings_file().exists());
+    assert!(
+        !host.root().join("data").exists(),
+        "status made a layout or a key"
     );
 }
 
@@ -870,7 +986,8 @@ fn the_built_binary_on_a_host_with_no_bindings_file_syncs_from_the_given_layout_
     assert!(!file.exists(), "the sync wrote a bindings file");
 }
 
-// Requirement: An unbound host answers absent
+// Requirement: A host with no bindings file is bound to the defaults, a
+// broken file
 
 #[test]
 fn a_bindings_file_that_is_not_toml_is_one_json_document_in_the_parsers_words() {
