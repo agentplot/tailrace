@@ -108,8 +108,12 @@ pub trait Projection {
 
     /// 137: the versions the lockfile of the ecosystem in the checkout at
     /// `checkout` pins, as the lockfile spells them; [`no_lockfile`] where
-    /// the checkout holds none. It reads the checkout alone: the store,
-    /// the policy and a version's claims are the core's (rule core.2).
+    /// the checkout holds none. A name the checkout's manifest declares
+    /// and its lockfile does not pin is no pin, so its layout holds none
+    /// of it: a manifest's range, resolved by the store's listing of a
+    /// name's versions, waits on the unit that lists them. It reads the
+    /// checkout alone: the store, the policy and a version's claims are
+    /// the core's (rule core.2).
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>>;
 }
 
