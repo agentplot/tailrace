@@ -14,7 +14,9 @@ knows on one page, one row each, and each repository whole on a page of
 its own
 (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4,
 status across machines; 31, 36, 56 to 63, 114, 118, 131, 132, S10 to
-S12, as amended at `agentplot/blueprints` 85bbf54 and 157c828).
+S12, as amended at `agentplot/blueprints` 85bbf54 and 157c828; 77,
+C.5 and C.6 as amended at 061bfa8 for what this unit leaves to the
+landing).
 
 ## What Changes
 
@@ -31,7 +33,10 @@ S12, as amended at `agentplot/blueprints` 85bbf54 and 157c828).
 - **Every reader gets one answer, as of when it read.** Status says
   when it asked, and a chain the ledger could only answer as this host
   last read it says when that was, with the remote's or store's own
-  words (36, 60, 61, C.13, C.14).
+  words (36, 60, 61, C.13, C.14). Status reads the landing as the
+  landing seam answers it: where the landing's remote does not answer,
+  the channels' part carries the landing's own answer and words, never
+  a refusal, and the record's part still answers.
 - **Three answers kept apart, per channel.** A chain that cannot be
   read, a fork the ledger refuses, and a channel never promoted are
   three answers, each carrying the ledger's own words verbatim beside
@@ -126,6 +131,15 @@ Out of scope, and what each waits on:
 - How each channel moves, in the policy seam's answer (131 as widened
   at 67f95da): `the-policy-seam-lists-the-channels`, as amended by the
   plan's proposal 92. This unit shows what that answer carries.
+- A landing read from the host's copy of the branch as last fetched,
+  saying when, where its remote does not answer (77, C.5, C.6 as
+  amended at 061bfa8), and so the channels shown from the ledger's kept
+  chain on a machine cut off from its remote:
+  `the-landing-answers-as-last-fetched`, after this unit in the bolt,
+  whose reading of the landing extends status's channels. It changes
+  the landing seam's contract at every caller, both landing profiles
+  and publish's not-landed refusal. Status already shows a chain the
+  ledger answers as last read, proven over the fakes.
 
 ## Capabilities
 
