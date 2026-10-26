@@ -290,12 +290,21 @@ enum Found {
 }
 
 /// One `GET /serving.json` at `address`, waiting a second for any
-/// answer: nothing where the connection is refused, unreadable naming
-/// the address and what answered where it is not tailrace's document.
+/// answer: nothing where the connection is refused or reset, or reaches
+/// the asker itself; unreadable naming the address and what answered
+/// where it is not tailrace's document.
 fn ask(address: SocketAddr) -> Answer<Found> {
     let mut stream = match TcpStream::connect_timeout(&address, ASKED) {
         Ok(stream) => stream,
-        Err(e) if e.kind() == io::ErrorKind::ConnectionRefused => return Ok(Found::Nothing),
+        // Refused, or reset while a process is still starting to listen.
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::ConnectionRefused | io::ErrorKind::ConnectionReset
+            ) =>
+        {
+            return Ok(Found::Nothing)
+        }
         Err(e) => {
             return Err(Not::unreadable(
                 &asker(address),
@@ -304,6 +313,11 @@ fn ask(address: SocketAddr) -> Answer<Found> {
             ))
         }
     };
+    // A port nothing listens on can be handed to the asker's own end of
+    // the connection, which then reaches itself: nothing answers there.
+    if stream.local_addr().ok() == stream.peer_addr().ok() {
+        return Ok(Found::Nothing);
+    }
     let unread = |said: String| {
         Not::unreadable(
             &asker(address),
@@ -545,10 +559,12 @@ mod tests {
         address
     }
 
-    /// A port the system picked and no one listens on.
+    /// A port no one listens on: below the range the system hands to
+    /// connections, so no connection is given it, and never bound to see
+    /// it free, so no git another test runs holds it.
     fn nothing() -> SocketAddr {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        listener.local_addr().unwrap()
+        let port = 30_000 + (std::process::id() % 2_000) as u16;
+        SocketAddr::from(([127, 0, 0, 1], port))
     }
 
     #[test]

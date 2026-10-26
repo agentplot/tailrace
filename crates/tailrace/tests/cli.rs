@@ -140,10 +140,10 @@ impl Host {
         fs::write(file, text).unwrap();
     }
 
-    /// The built binary run in the repository, its home, its
-    /// configuration directory and its data directory in the scratch
-    /// directory, so it reads no bindings file and makes no layout of the
-    /// host running the tests.
+    /// The built binary run in the repository, its home and its
+    /// configuration, data and state directories in the scratch
+    /// directory, so it reads no bindings file and makes no layout or
+    /// record of the host running the tests.
     fn binary(&self, args: &[&str]) -> std::process::Output {
         let home = self.root().join("home");
         fs::create_dir_all(&home).unwrap();
@@ -154,6 +154,7 @@ impl Host {
             .env("HOME", &home)
             .env("XDG_CONFIG_HOME", self.root().join("config"))
             .env("XDG_DATA_HOME", self.root().join("data"))
+            .env("XDG_STATE_HOME", self.root().join("state"))
             .output()
             .expect("the binary runs")
     }
@@ -755,6 +756,35 @@ fn status_in_a_directory_that_is_no_repository_exits_3_naming_it() {
     assert_eq!(out.status.code(), Some(3), "{out:?}");
     let printed = String::from_utf8_lossy(&out.stdout);
     assert!(printed.contains("elsewhere"), "{printed}");
+}
+
+// Requirement: Status names the page
+
+#[test]
+fn status_page_where_the_remote_names_no_owner_and_name_is_unreadable_and_names_nothing() {
+    let host = Host::new();
+    let out = host.binary(&["status", "--page", "--json"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["answer"], "unreadable", "{json}");
+    let what = json["unreadable"]["what"].as_str().unwrap();
+    assert!(
+        what.contains("remote origin") && what.contains("shared.git"),
+        "{what}"
+    );
+    assert!(!host.root().join("state").exists(), "an entry was written");
+}
+
+// Requirement: Serve is a command
+
+#[test]
+fn serve_takes_no_argument_that_would_move_it() {
+    let host = Host::new();
+    let out = host.binary(&["serve", "--port", "8080"]);
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--port"), "{stderr}");
+    assert!(!host.root().join("state").exists(), "serve took the lock");
 }
 
 #[test]
