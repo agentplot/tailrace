@@ -16,7 +16,7 @@ use tailrace_seams::{
     Version,
 };
 
-use crate::common::{Fixture, Repo};
+use crate::common::{Fixture, Repo, CLIFF_TOML};
 
 /// Two components: `lib`, two outputs packed in two ecosystems, and
 /// `web`, one.
@@ -73,8 +73,8 @@ pub fn build_of(output: &str, revision: &Revision) -> BuildId {
 }
 
 impl World {
-    /// The repository, its shared history and the fakes: `lib` and `web`
-    /// tagged at `start`, one feature on `lib` since, landed on `main`,
+    /// The repository, its shared history and the fakes: the policy and
+    /// the notes' template, `lib` and `web` tagged at `start`, one feature on `lib` since, landed on `main`,
     /// every output built and passing, the host's identity at hand, and
     /// both ecosystems bound.
     pub fn new() -> World {
@@ -85,7 +85,10 @@ impl World {
         let fixture = Fixture::new();
         let shared = fixture.bare("shared.git");
         let repo = fixture.clone_of(&shared, "repo");
-        repo.commit("chore: policy", &[(POLICY_FILE, policy)]);
+        repo.commit(
+            "chore: policy",
+            &[(POLICY_FILE, policy), ("cliff.toml", CLIFF_TOML)],
+        );
         let start = repo.touch("feat: start", &["crates/lib", "site"]);
         repo.tag("lib-v0.1.0", &start);
         repo.tag("web-v0.1.0", &start);

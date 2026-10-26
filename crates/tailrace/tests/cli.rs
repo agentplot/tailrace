@@ -53,6 +53,27 @@ fn git(dir: &Path, args: &[&str]) -> String {
         .to_string()
 }
 
+/// The day `at` was committed in the repository at `dir`, in UTC, as a
+/// template's date filter prints its time.
+fn day(dir: &Path, at: &Revision) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "show",
+            "-s",
+            "--date=format-local:%Y-%m-%d",
+            "--format=%cd",
+            at.as_str(),
+        ])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("TZ", "UTC")
+        .output()
+        .expect("git runs");
+    assert!(out.status.success());
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
 /// A repository on `main` whose shared history is a bare one beside it,
 /// with the policy and one feature committed, and the fakes bound to
 /// publish its head.
@@ -213,10 +234,12 @@ fn publish_prints_the_notes_beneath_the_versions_line_and_names_them_in_its_json
     let json: Value = serde_json::from_str(&json).unwrap();
     let notes = &json["value"]["components"][0]["value"]["notes"];
     let text = notes["text"].as_str().expect("the notes' text");
-    let short = &host.head.as_str()[..7];
+    // The repository keeps no template, so git-cliff's own default
+    // renders them, dated the day of the tagged revision.
+    let day = day(&host.repo, &host.head);
     assert_eq!(
         text,
-        format!("## 0.1.0\n\n### Features\n\n- the site ({short})\n")
+        format!("## [0.1.0] - {day}\n\n### 🚀 Features\n\n- The site\n")
     );
 
     let Held::Bytes(bytes) = host

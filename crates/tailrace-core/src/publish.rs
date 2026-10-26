@@ -345,10 +345,12 @@ impl<'a> Run<'a> {
         let claimed = claim(self.history, self.landed, versioned)?;
         let name = Name::new(&versioned.name);
         let rendered = notes::render(
+            self.history,
             &component.name,
             &versioned.version,
-            versioned.last.as_ref().map(|t| t.name.as_str()),
-            &versioned.since,
+            &versioned.name,
+            &claimed.revision,
+            &Noted::of(versioned),
         )?;
 
         // 8: a name already held makes this a repeat (18).

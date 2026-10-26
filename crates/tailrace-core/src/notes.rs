@@ -1,49 +1,27 @@
 //! A version's notes: the commits the version is derived from, rendered
-//! by the version rule's own tool, git-cliff, in one fixed form (21, 134,
-//! section 9; design D2). Nothing in the form reads the clock, the host
-//! or the checkout's path, so the bytes are a function of the version,
-//! the last release tag and the commits alone, and the same revision
+//! by the version rule's own tool, git-cliff, under the repository's own
+//! template for it, the `cliff.toml` the version's revision holds, and
+//! git-cliff's own default where it holds none; tailrace imposes no
+//! template of its own (21, 134, section 9). The release is handed to the
+//! template as git-cliff's own run hands a tagged one: the tag, the
+//! tagged commit and its time, the last release tag, and each commit as
+//! the history holds it. Nothing tailrace hands it reads the clock, the
+//! host, its environment or the checkout's path, so the same revision
 //! renders the same notes on every host (18).
 
 use git_cliff_core::changelog::Changelog;
-use git_cliff_core::config::{ChangelogConfig, CommitParser, Config, GitConfig, RemoteConfig};
+use git_cliff_core::config::Config;
+use git_cliff_core::embed::EmbeddedConfig;
 use git_cliff_core::release::Release;
-use regex::Regex;
-use tailrace_seams::{Answer, ComponentName, Not, Source, Version};
+use git_cliff_core::CONFIG_FILES;
+use tailrace_seams::{Answer, ComponentName, Not, Revision, Source, Version};
+use toml::{Table, Value};
 
-use crate::{cliff_commit, Commit, LOCAL};
+use crate::{History, Noted, LOCAL};
 
 /// The ecosystem of a version's notes, reserved: no output is packed in
 /// it (design D3, D9).
 pub const NOTES: &str = "notes";
-
-/// The notes' one form: a heading naming the version, the last release
-/// tag they follow where there is one, then each group that has commits,
-/// one line per commit with its subject, `(breaking)` where it is one,
-/// and its seven-character revision, in the order the history gives
-/// them. The template is trimmed line by line before it is read.
-const BODY: &str = r#"
-## {{ version }}
-{%- if previous.version %}
-
-Since {{ previous.version }}.
-{%- endif %}
-{%- for group in commits | commit_groups(groups=commit_parsers_groups) %}
-
-### {{ group.group }}
-{% for commit in group.commits %}
-- {{ commit.message | split(pat="\n") | first | trim }}{% if commit.breaking %} (breaking){% endif %} ({{ commit.id | truncate(length=7, end="") }})
-{%- endfor %}
-{%- endfor %}
-"#;
-
-/// The groups, in the order the notes print them: a feature, a fix, and
-/// every other commit, conventional or not, so none is dropped.
-const GROUPS: [(&str, &str); 3] = [
-    ("Features", r"(?i)^feat(\([^)]*\))?!?:"),
-    ("Fixes", r"(?i)^fix(\([^)]*\))?!?:"),
-    ("Other", r"(?s).*"),
-];
 
 /// A version's notes as rendered: Markdown, ending in one newline.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,61 +36,54 @@ impl Rendered {
     }
 }
 
-/// 134: the notes of `component` at `version`, rendered from `commits`,
-/// the commits the version was derived from, since `last`, the last
-/// release tag as the history spells it. git-cliff's words make it
-/// unreadable naming the component and the version (58, 59).
+/// 134: the notes of `component` at `version`, tagged `tag` at `at`,
+/// rendered from what `noted` names, the last release tag as the history
+/// spells it and the commits the version was derived from, under the
+/// template `at` holds. A commit the history no longer holds, and
+/// git-cliff's words on the template, make them unreadable naming the
+/// component and the version (58, 59).
 pub fn render(
+    history: &History,
     component: &ComponentName,
     version: &Version,
-    last: Option<&str>,
-    commits: &[Commit],
+    tag: &str,
+    at: &Revision,
+    noted: &Noted,
 ) -> Answer<Rendered> {
-    let failed = |said: String| {
-        Not::unreadable(
-            &Source::history(LOCAL),
-            format!("the notes of {component} {version}"),
-            Some(said),
-        )
-    };
-    let mut parsers = Vec::new();
-    for (group, message) in GROUPS {
-        parsers.push(CommitParser {
-            message: Some(Regex::new(message).map_err(|e| failed(e.to_string()))?),
-            group: Some(group.to_string()),
-            ..CommitParser::default()
-        });
+    let what = format!("the notes of {component} {version}");
+    let failed = |said: String| Not::unreadable(&Source::history(LOCAL), &what, Some(said));
+    let config = template(history, at)?;
+
+    let mut commits = Vec::new();
+    for revision in &noted.commits {
+        commits.push(history.cliff_commit(revision).map_err(|not| match not {
+            Not::Absent(_) => Not::unreadable(
+                &Source::history(LOCAL),
+                format!("{what}, rendered from {revision}"),
+                Some(format!("the history holds no commit {revision}")),
+            ),
+            not => not,
+        })?);
     }
-    let config = Config {
-        changelog: ChangelogConfig {
-            body: BODY.to_string(),
-            trim: true,
-            render_always: true,
-            format: false,
-            ..ChangelogConfig::default()
-        },
-        git: GitConfig {
-            conventional_commits: true,
-            filter_unconventional: false,
-            filter_commits: false,
-            commit_parsers: parsers,
-            ..GitConfig::default()
-        },
-        remote: RemoteConfig {
-            offline: true,
-            ..RemoteConfig::default()
-        },
-        bump: Default::default(),
-    };
+    // The history gives the newest first; git-cliff hands a release's
+    // commits oldest first unless the template sorts them newest first.
+    if config.git.sort_commits != "newest" {
+        commits.reverse();
+    }
+    let tagged = history.cliff_commit(at)?;
+
     // A previous release, with no version where there is no last tag,
-    // keeps a release with no commits rendered rather than dropped.
+    // keeps a release with no commits rendered where the template renders
+    // one always.
     let previous = Release {
-        version: last.map(str::to_string),
+        version: noted.last.clone(),
         ..Release::default()
     };
     let release = Release {
-        version: Some(version.to_string()),
-        commits: commits.iter().map(cliff_commit).collect(),
+        version: Some(tag.to_string()),
+        commit_id: Some(tagged.id),
+        timestamp: Some(tagged.committer.timestamp),
+        commits,
         previous: Some(Box::new(previous)),
         ..Release::default()
     };
@@ -126,4 +97,52 @@ pub fn render(
     Ok(Rendered {
         text: format!("{}\n", text.trim()),
     })
+}
+
+/// 134: git-cliff's configuration as the repository keeps it at `at`:
+/// the first file of git-cliff's own names its tree holds, laid over
+/// git-cliff's default as git-cliff lays it, a table into a table and
+/// every other value in place of the default's, and the default alone
+/// where the tree holds none. Never the working tree's, the host's own
+/// configuration or its environment (18, 65). A file that is not
+/// well formed is unreadable naming it at `at`, with the parser's words.
+fn template(history: &History, at: &Revision) -> Answer<Config> {
+    let unreadable =
+        |what: &str, said: String| Not::unreadable(&Source::history(LOCAL), what, Some(said));
+    let mut what = "git-cliff's default configuration".to_string();
+    let mut config = EmbeddedConfig::get_config()
+        .map_err(|e| e.to_string())
+        .and_then(|text| text.parse::<Table>().map_err(|e| e.to_string()))
+        .map_err(|said| unreadable(&what, said))?;
+    for file in CONFIG_FILES {
+        match history.file(at, file) {
+            Ok(bytes) => {
+                what = format!("{file} at {at}");
+                let own = String::from_utf8(bytes)
+                    .map_err(|e| e.to_string())
+                    .and_then(|text| text.parse::<Table>().map_err(|e| e.to_string()))
+                    .map_err(|said| unreadable(&what, said))?;
+                lay(&mut config, own);
+                break;
+            }
+            Err(Not::Absent(_)) => {}
+            Err(not) => return Err(not),
+        }
+    }
+    Value::Table(config)
+        .try_into()
+        .map_err(|e: toml::de::Error| unreadable(&what, e.to_string()))
+}
+
+/// `over` laid on `under`: a table into the table under it, every other
+/// value in place of what is under it.
+fn lay(under: &mut Table, over: Table) {
+    for (key, value) in over {
+        match (under.get_mut(&key), value) {
+            (Some(Value::Table(below)), Value::Table(above)) => lay(below, above),
+            (_, value) => {
+                under.insert(key, value);
+            }
+        }
+    }
 }

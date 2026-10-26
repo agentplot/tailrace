@@ -1126,11 +1126,11 @@ fn a_policy_for_layouts_that_cannot_be_read_stops_the_publish_before_the_name() 
 
 // Requirement: The notes are an artifact of the version named in its index
 
-/// The notes `world`'s first publish of `lib` renders: its one feature
-/// since `lib-v0.1.0`.
+/// The notes `world`'s first publish of `lib` renders under the
+/// repository's own template: its one feature since `lib-v0.1.0`.
 fn lib_notes(world: &World) -> String {
     format!(
-        "## 0.2.0\n\nSince lib-v0.1.0.\n\n### Features\n\n- lib grows ({})\n",
+        "## lib-v0.2.0\n\nSince lib-v0.1.0.\n\n### Features\n\n- lib grows ({}) by A. Uthor\n",
         &world.head.as_str()[..7]
     )
 }
