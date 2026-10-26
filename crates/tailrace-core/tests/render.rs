@@ -3,14 +3,15 @@
 
 use serde_json::json;
 use tailrace_core::{
-    artifact_name, layout_policy_body, locate, own_policy, policy_for, Landed, Located, Own,
-    PolicyOf, ARTIFACT,
+    artifact_name, judge, layout_policy_body, locate, own_policy, policy_for, Carried, Landed,
+    Located, Own, PolicyOf, Provenance, ARTIFACT,
 };
 use tailrace_fakes::{Fakes, Fault, PolicyOp, StoreOp, Times};
 use tailrace_seams::{
-    Artifact, ArtifactMeta, Audience, Branch, Check, Claim, ClaimKind, ComponentName, Digest,
-    Ecosystem, EcosystemName, Envelope, IndexMeta, Manifest, Name, NamedSigner, Not, Pinned,
-    Required, RequiredClaim, Revision, Seam, Signer, SignerId, Store, Version, Why,
+    Artifact, ArtifactMeta, Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName,
+    Digest, Ecosystem, EcosystemName, Envelope, IndexMeta, Manifest, Name, NamedSigner, Not,
+    Outcome, OutputName, Pinned, Required, RequiredClaim, Revision, Seam, Signer, SignerId, Store,
+    Verdict, Version, Why,
 };
 
 const ECO: &str = "eco";
@@ -379,4 +380,211 @@ fn two_publishers_policies_of_different_content_are_unreadable_naming_both() {
         }
         other => panic!("two policies answered {other:?}"),
     }
+}
+
+const LANDING: &str = "landing";
+
+/// The landing's verdict of `check` passing, by the landing's signer.
+fn verdict(check: &str) -> RequiredClaim {
+    RequiredClaim {
+        kind: ClaimKind::Verdict,
+        check: Some(Check::new(check)),
+        signers: vec![named(LANDING, &[ClaimKind::Verdict], &[check])],
+    }
+}
+
+/// The host's provenance of the artifact at `located`, carrying the
+/// landing's verdicts of `checks` as the landing made them.
+fn provenance_of(located: &Located, checks: &[&str]) -> Envelope {
+    let build = BuildId::new("b7e1");
+    let carried = checks
+        .iter()
+        .map(|check| {
+            let envelope = signed(
+                &Digest::of(build.as_str().as_bytes()),
+                ClaimKind::Verdict,
+                json!({ "check": check, "outcome": "pass" }),
+                LANDING,
+            );
+            Carried::from_landing(
+                &Verdict {
+                    check: Check::new(*check),
+                    build: build.clone(),
+                    outcome: Outcome::Pass,
+                    signer: SignerId::new(LANDING),
+                    envelope,
+                    found: format!("the landing's record of {check}"),
+                },
+                &Revision::new("p1b11s4"),
+            )
+        })
+        .collect();
+    let meta = &located.artifact.meta;
+    let body = Provenance {
+        output: OutputName::new(meta.name().as_str()),
+        ecosystem: meta.ecosystem().clone(),
+        name: meta.name().clone(),
+        version: meta.version().clone(),
+        outcome: Outcome::Pass,
+        carried,
+    };
+    signed(
+        &located.artifact.digest,
+        ClaimKind::Provenance,
+        serde_json::to_value(body).unwrap(),
+        HOST,
+    )
+}
+
+/// The version `pkg 1.1.0` published to a fresh world's store, and the
+/// gate's acceptance of its index.
+fn accepted() -> (Fakes, Located, Envelope) {
+    let fakes = Fakes::new();
+    let located = published(&fakes.store, "pkg", "1.1.0");
+    let acceptance = signed(&located.index, ClaimKind::Acceptance, json!(null), GATE);
+    (fakes, located, acceptance)
+}
+
+fn wanting(answer: Result<Vec<SignerId>, Not>) -> (RequiredClaim, Vec<SignerId>) {
+    match answer {
+        Err(Not::Refused(r)) => match r.why {
+            Why::Wanting {
+                wanting, checked, ..
+            } => (wanting, checked),
+            other => panic!("refused for {other:?}"),
+        },
+        other => panic!("judged {other:?}"),
+    }
+}
+
+#[test]
+fn every_required_claim_satisfied_on_the_index_or_the_artifact_holds_the_version() {
+    let (fakes, located, gates) = accepted();
+    let hosts = provenance_of(&located, &["test"]);
+    let required = [acceptance(), provenance(), verdict("test")];
+    assert_eq!(
+        judge(&fakes.seams(), &required, &located, &[gates], &[hosts]),
+        Ok(Ok(vec![]))
+    );
+}
+
+#[test]
+fn a_claim_by_a_signer_the_policy_does_not_name_does_not_count() {
+    let (fakes, located, _) = accepted();
+    let before = fakes.store.calls().len();
+    let strangers = signed(
+        &located.index,
+        ClaimKind::Acceptance,
+        json!(null),
+        "stranger",
+    );
+    let answer = judge(
+        &fakes.seams(),
+        &[acceptance()],
+        &located,
+        std::slice::from_ref(&strangers),
+        &[],
+    );
+    let (wanted, checked) = wanting(answer.unwrap());
+    assert_eq!(wanted, acceptance());
+    assert_eq!(checked, [SignerId::new(GATE)]);
+    assert_eq!(
+        fakes.store.calls().len(),
+        before,
+        "the judgment asked the store something"
+    );
+}
+
+#[test]
+fn a_claim_of_a_kind_its_signer_may_not_make_does_not_count() {
+    let (fakes, located, _) = accepted();
+    let by_the_gate = signed(
+        &located.artifact.digest,
+        ClaimKind::Provenance,
+        json!({}),
+        GATE,
+    );
+    let gate_for_provenance = RequiredClaim {
+        kind: ClaimKind::Provenance,
+        check: None,
+        signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
+    };
+    let answer = judge(
+        &fakes.seams(),
+        std::slice::from_ref(&gate_for_provenance),
+        &located,
+        &[],
+        &[by_the_gate],
+    );
+    assert_eq!(wanting(answer.unwrap()).0, gate_for_provenance);
+
+    let other_check = provenance_of(&located, &["lint"]);
+    let answer = judge(
+        &fakes.seams(),
+        &[verdict("test")],
+        &located,
+        &[],
+        &[other_check],
+    );
+    assert_eq!(wanting(answer.unwrap()).0, verdict("test"));
+}
+
+#[test]
+fn a_claim_by_an_expired_signer_counts_and_is_reported() {
+    let (fakes, located, gates) = accepted();
+    fakes.signer.expire(&SignerId::new(GATE));
+    assert_eq!(
+        judge(&fakes.seams(), &[acceptance()], &located, &[gates], &[]),
+        Ok(Ok(vec![SignerId::new(GATE)]))
+    );
+}
+
+#[test]
+fn of_two_claims_wanting_the_first_in_the_policys_order_is_named() {
+    let (fakes, located, _) = accepted();
+    let answer = judge(
+        &fakes.seams(),
+        &[acceptance(), provenance()],
+        &located,
+        &[],
+        &[],
+    );
+    match answer {
+        Ok(Err(Not::Refused(r))) => {
+            assert_eq!(r.source.seam, Seam::Policy);
+            assert_eq!(
+                r.why,
+                Why::Wanting {
+                    version: located.artifact.meta.clone(),
+                    index: located.index.clone(),
+                    wanting: acceptance(),
+                    checked: vec![SignerId::new(GATE)],
+                }
+            );
+        }
+        other => panic!("judged {other:?}"),
+    }
+    let hosts = provenance_of(&located, &[]);
+    let answer = judge(
+        &fakes.seams(),
+        &[provenance(), acceptance()],
+        &located,
+        &[],
+        &[hosts],
+    );
+    assert_eq!(wanting(answer.unwrap()).0, acceptance());
+}
+
+#[test]
+fn a_signer_that_cannot_say_is_the_outer_answer() {
+    let (fakes, located, gates) = accepted();
+    fakes.signer.fault(
+        tailrace_fakes::SignerOp::Verify,
+        Fault::Unreadable("key service down".into()),
+        Times::Once,
+    );
+    assert!(matches!(
+        judge(&fakes.seams(), &[acceptance()], &located, &[gates], &[]),
+        Err(Not::Unreadable(u)) if u.said.as_deref() == Some("key service down")
+    ));
 }

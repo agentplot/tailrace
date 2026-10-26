@@ -14,17 +14,22 @@
 //! each version under its publisher's, read from the one layout-policy
 //! claim on the version's index. A version with no policy anywhere is
 //! refused, so no layout holds a version judged under none (rule
-//! core.17; design D3).
+//! core.17; design D3). A version is held only when each claim the policy
+//! requires, in its order, is satisfied by a claim attached to its index
+//! or its artifact that a signer the policy names made and may make (47,
+//! 9, 116, rule core.7); the first that none satisfies is the refusal,
+//! naming it (99; design D4).
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Audience, Claim, ClaimKind, Digest, Ecosystem, EcosystemName,
-    Envelope, Held, Manifest, Name, Not, Pinned, Policy, RequiredClaim, Revision, Seam, Source,
-    Store, Version, Why,
+    Envelope, Held, Manifest, Name, Not, Pinned, Policy, RequiredClaim, Revision, Seam, Seams,
+    SignerId, Source, Store, Version, Why,
 };
 
-use crate::{policy_at, Landed, BOUND};
+use crate::verify::{tell, Told};
+use crate::{policy_at, Landed, Provenance, BOUND};
 
 /// What every name of a version's index by ecosystem, name and version
 /// begins with (138).
@@ -219,4 +224,102 @@ pub fn policy_for(
             ))
         }
     }
+}
+
+/// Whether `told` satisfies `wanted`: it counts, by a signer the claim
+/// names and may make it (rule core.7), and is of the claim's kind and,
+/// for a verdict, its check (116).
+fn satisfies(told: &Told, wanted: &RequiredClaim) -> bool {
+    told.counts
+        && told.kind == Some(wanted.kind)
+        && (wanted.kind != ClaimKind::Verdict || told.check == wanted.check)
+}
+
+/// 47, 9, 116, rule core.7: whether the version at `located` satisfies
+/// `required`, the claims its policy requires, by `on_index` and
+/// `on_artifact`, the attestations attached to its index and its
+/// artifact (design D4). Each required claim, in the policy's order, is
+/// satisfied by an attestation, or a verdict carried in a provenance
+/// among them, that verify's telling says a signer the claim names made
+/// and may make. The first that none satisfies is refused
+/// [`Why::Wanting`], naming it and the signers checked (99). A claim by an
+/// expired signer counts, and the answer names the expired signers whose
+/// claims counted (81, 117). A signer that cannot say is the outer
+/// answer.
+pub fn judge(
+    seams: &Seams,
+    required: &[RequiredClaim],
+    located: &Located,
+    on_index: &[Envelope],
+    on_artifact: &[Envelope],
+) -> Pinning<Vec<SignerId>> {
+    let attached = [
+        (&located.index, on_index),
+        (&located.artifact.digest, on_artifact),
+    ];
+    let mut expired: Vec<SignerId> = Vec::new();
+    for wanted in required {
+        let mut counted: Option<Told> = None;
+        'attached: for (on, envelopes) in attached {
+            for envelope in envelopes {
+                let claim = Claim::from_envelope(envelope);
+                let kind = claim.as_ref().map(|c| c.kind);
+                // A verdict counts only carried with its check, as verify
+                // tells it.
+                if kind == Some(wanted.kind) && wanted.kind != ClaimKind::Verdict {
+                    let told = tell(seams, &wanted.signers, on, envelope, kind, None, None)?;
+                    if satisfies(&told, wanted) {
+                        counted = Some(told);
+                        break 'attached;
+                    }
+                }
+                if wanted.kind != ClaimKind::Verdict {
+                    continue;
+                }
+                let Some(provenance) = claim.as_ref().and_then(Provenance::of) else {
+                    continue;
+                };
+                for carried in &provenance.carried {
+                    if wanted.check.as_ref() != Some(&carried.check) {
+                        continue;
+                    }
+                    let told = tell(
+                        seams,
+                        &wanted.signers,
+                        on,
+                        &carried.envelope,
+                        Some(ClaimKind::Verdict),
+                        Some(carried.check.clone()),
+                        Some(envelope.digest()),
+                    )?;
+                    if satisfies(&told, wanted) {
+                        counted = Some(told);
+                        break 'attached;
+                    }
+                }
+            }
+        }
+        match counted {
+            Some(told) => {
+                if let Some(signer) = told.made_by.filter(|_| told.expired) {
+                    if !expired.contains(&signer) {
+                        expired.push(signer);
+                    }
+                }
+            }
+            None => {
+                return Ok(Err(Not::refused(
+                    &Source::new(Seam::Policy, BOUND),
+                    Why::Wanting {
+                        version: located.artifact.meta.clone(),
+                        index: located.index.clone(),
+                        wanting: wanted.clone(),
+                        checked: wanted.signers.iter().map(|s| s.id.clone()).collect(),
+                    },
+                    None,
+                )))
+            }
+        }
+    }
+    Ok(Ok(expired))
 }
