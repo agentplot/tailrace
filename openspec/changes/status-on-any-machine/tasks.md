@@ -54,4 +54,4 @@ port 7420: every test of the process runs it on a port the system picks
 
 ## 7. The gate
 
-- [ ] 7.1 Verify `devenv shell -- moon run ':#check-fast'` passes.
+- [x] 7.1 Verify `devenv shell -- moon run ':#check-fast'` passes.
