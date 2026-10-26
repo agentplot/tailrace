@@ -2,12 +2,15 @@
 
 This unit's code starts once bolt tailrace-the-gate-and-the-channels has
 landed on `main` and `main` is taken into bolt/tailrace-sync-and-serve,
-and once render-under-a-policy and
-the-store-names-an-artifact-by-ecosystem-name-and-version are on this
-bolt. It is written against them as they stand: render-under-a-policy as
-its revised change says at `34627b0`, whose code is on its branch, and
-the serving process as it is on bolt/tailrace-the-gate-and-the-channels
-at `0172321`. The statement is `agentplot/blueprints` `d91401e`.
+and once the-store-names-an-artifact-by-ecosystem-name-and-version and
+render-under-a-policy's fix adding requires are on this bolt. Its range
+and requires work (D13, D14, and the closure in D4) waits besides on
+cargos-registry, which runs beside it and owns the range a pin carries
+and the core's loop. It is written against them as they stand:
+render-under-a-policy as merged on bolt/tailrace-sync-and-serve at
+`71f8841`, the store-naming unit's change at `c7ac89d`, and the serving
+process as it is on bolt/tailrace-the-gate-and-the-channels at
+`0172321`. The statement is `agentplot/blueprints` `4c14235`.
 
 What it builds on:
 
@@ -25,9 +28,11 @@ What it builds on:
   repository from the landing's remote with `RepositoryName::from_remote`
   and calls both. `tailrace-core/src/served.rs` holds `SERVING_HOST`
   `127.0.0.1`, `SERVING_PORT` 7420 and `RepositoryName`.
-- **Render under a policy** (`render-under-a-policy` design and its
-  code in `crates/tailrace-core/src/render.rs`): pinned on the seam
-  (`Pinned { name, version }`); `render::render(seams, layouts,
+- **Render under a policy** (archived on the bolt as
+  `2026-10-26-render-under-a-policy`, its code in
+  `crates/tailrace-core/src/render.rs`): pinned on the seam
+  (`Pinned { name, version }`), whose doc says a name the lockfile does
+  not pin is no pin until ranges resolve; `render::render(seams, layouts,
   &RenderAsk { ecosystem, pins, own, trusted, tree, when }) ->
   Answer<Refreshed>` reads and judges every pin before it writes
   anything: `locate` resolves `artifact/<ecosystem>/<name>@<version>`
@@ -35,9 +40,10 @@ What it builds on:
   the consumer's own policy for layouts at the landed revision,
   `policy_for` answers the policy that judges a version where the
   consumer has none, from the publisher's layout-policy claim counted
-  through the signers the host's bindings trust (`[trust]`, 118, C.10),
-  and `judge` holds the version to every claim that policy requires; the
-  private `judged` does all four for one pin. The projection then
+  through the signers its file names, else the host's trusted ones (118,
+  C.10), and `judge` holds the version to every claim that policy
+  requires; the private `judged(seams, &RenderAsk, &Pinned)` does all
+  four for one pin. The projection then
   renders exactly the held artifacts at `place(tree, ecosystem)`,
   `<working tree>/.tailrace/layouts/<ecosystem>/`, and `Layouts` writes
   the record, `<git dir>/tailrace/layouts/<ecosystem>.json`, whose
@@ -50,6 +56,26 @@ What it builds on:
   address. The file and image profiles answer serve absent, not built;
   the moon cache's likewise. The conformance group's scenario "served
   where the clients read no files" asserts a non-empty address.
+- **The store's listing** (the store-naming unit's D7): `Store::versions(
+  &Ecosystem, &EcosystemName) -> Answer<Vec<Version>>`, every version the
+  store names `artifact/<ecosystem>/<name>@` at, in no order the core
+  relies on, empty where it names none.
+- **requires and the core's loop** (137, 140, ruled at `4c14235`): the
+  projection seam gains requires, given a held version's artifact, the
+  family's names and ranges its manifest requires, as it spells them,
+  and whether a version satisfies a range by the ecosystem's own order;
+  a projection with no manifest answers none. render-under-a-policy's fix
+  adds it to the trait, with the fake's answer and the absent answer of
+  the file, image and moon cache projections. cargos-registry owns the
+  range a pin carries (pinned answering a pin or a name and its range)
+  and the loop in `render.rs`: for each range, list the name's versions
+  through the store, take those within it newest first by the
+  projection's order, judge each under the layout's policy until one is
+  admitted, hold it; then ask requires of every version held and do the
+  same, until nothing held requires a name the layout lacks. The core
+  never reads a manifest (core.1). This design names the operations by
+  what they do; their Rust names and types are the fix's and
+  cargos-registry's.
 - **The bindings**: `profiles::projection::bound(store, checkout)` builds
   every projection, the moon cache given a store opened with
   `profiles::store::bind(store, false)`; `Host::bind` binds a checkout
@@ -63,22 +89,33 @@ packument's `versions[v].dist` carries `tarball`, `shasum` and, since
 (npm/registry, package-metadata.md); npm-registry-fetch builds an HTTP
 error's message as `<status> <statusText> - <METHOD> <uri> - <body.error>`
 where the body is a JSON object (`lib/errors.js`); npm escapes a scoped
-name's `/` as `%2f` in the packument's path.
+name's `/` as `%2f` in the packument's path. npm 7 and later install a
+package's `peerDependencies` unless `peerDependenciesMeta` marks one
+optional, and never a dependency's `devDependencies`; a name in
+`bundleDependencies` comes inside the tarball. An install from a
+complete lockfile fetches each tarball from its `resolved` address
+without asking a packument. A scope's registry is the `.npmrc` line
+`@<scope>:registry=<url>`; a project's `.npmrc` sits beside its
+`package.json` (docs.npmjs.com, npmrc, package-json, v11). npm's version
+and range rules are node-semver's; the `nodejs-semver` crate, 4.2,
+ports them: `Range::parse` reads `^`, `~`, `x`, hyphen and `||` ranges
+and `*` or empty as any; `Range::satisfies(&Version)` leaves out a
+prerelease unless a comparator names a prerelease of the same major,
+minor and patch, as npm does; `Version` orders by semver precedence.
 
 ## Goals / Non-Goals
 
-**Goals:** the npm profile's four operations; serve reshaped to answer
-one request inside the host's one process; the process routing served
-layouts, and staying while one is served; the core's render of one
-missed version, and the layout's lock;
-sync naming and starting the process; npm pinned and its tests in the
-tools layer.
+**Goals:** the npm profile's five operations, a manifest's ranges and
+requires among them; serve reshaped to answer one request inside the
+host's one process; the process routing served layouts, and staying
+while one is served; the core's render of one missed version, closed
+over what it requires, and the layout's lock; sync naming and starting
+the process; npm pinned and its tests in the tools layer.
 
-**Non-Goals:** serving any other ecosystem; a manifest's range answered
-by pinned (137), which waits on render-under-a-policy carrying a range on
-the seam's pin and resolving it by the store's listing (138, proposal);
+**Non-Goals:** serving any other ecosystem; the range type on the seam
+and the core's loop, cargos-registry's; requires on the trait, the fix's;
 `.npmrc` written by tailrace (the consumer writes its scope line once,
-S4); the store's `artifact/` pointer.
+S4); the store's `artifact/` pointer and listing.
 
 ## Decisions
 
@@ -154,9 +191,10 @@ render-under-a-policy fixes.
 
 ### D3. The served address is the core's
 
-`served.rs` gains `layout_address(&RepositoryName, &Ecosystem) -> String`,
-`http://127.0.0.1:7420/<owner>/<name>/<ecosystem>/`, from the constants
-already there. The process's base, sync's answer and the tests all take
+`served.rs` gains `origin() -> String`, `http://127.0.0.1:7420/`, and
+`layout_address(&RepositoryName, &Ecosystem) -> String`,
+`http://127.0.0.1:7420/<owner>/<name>/<ecosystem>/`, both from the
+constants already there. The process's base, sync's answer and the tests all take
 it from there, so the address is spelled once (114, core.36).
 
 ### D4. A miss renders one version into the layout
@@ -187,9 +225,18 @@ carries, counted through the host's trusted signers, else the given
 (C.10). Whatever render-under-a-policy builds of that order, a miss
 holds a version to the same.
 
-It reads the store for the one pin alone: the held versions were judged
-when they were rendered, and the record names their digests (48, 50).
-The process maps the answer to `miss`'s `Answer<()>`.
+It reads the store for the one pin, and then for what it requires: the
+held versions were judged when they were rendered, and the record names
+their digests (48, 50). Once the pin is held, the miss closes the layout
+over it by the same loop sync's render runs (cargos-registry's), asking
+the projection what the version requires and holding the newest
+admitted version of each family name the layout lacks, through every
+level, before the projection renders and the record is written; a
+required name none of whose versions is admitted leaves the pin held
+and is answered as sync answers it (137). With a lockfile, npm fetches
+each tarball it pins from its `resolved` address, so the closure seldom
+finds anything to add; it holds a miss to the rule every held version
+keeps. The process maps the answer to `miss`'s `Answer<()>`.
 
 ### D5. One render of a layout at a time
 
@@ -203,7 +250,9 @@ the host's, as `serve.lock` and `repositories.lock` are.
 
 ### D6. npm's pack
 
-`NpmProjection::pack(output, build, Some(version))`:
+`NpmProjection::pack(output, build, Some(version))`, in the signature
+pack has when this code starts, which cargos-registry widens with the
+output's component; npm reads only the version from it:
 
 1. the output's files' shallowest `package.json` names the package
    directory; none is refused naming the output;
@@ -227,14 +276,34 @@ devenv shell's is the pinned one (D12).
 
 ### D7. npm's pinned
 
-`npm-shrinkwrap.json` where it exists, else `package-lock.json`, at the
-checkout's root; neither is absent naming `lockfile`. `lockfileVersion`
+The lockfile's pins: `npm-shrinkwrap.json` where it exists, else
+`package-lock.json`, at the checkout's root. `lockfileVersion`
 2 and 3: every entry of `packages` but `""` and those with `link: true`,
 named by the entry's `name` where it has one (an alias) and otherwise by
 the key's part after its last `node_modules/`, at its `version`,
 deduplicated and sorted. Version 1 is unreadable naming the file and
 `lockfileVersion 1`, which npm 7 and later rewrite. A parse failure is
 unreadable with the parser's words.
+
+Then the ranges (137): the checkout's root `package.json` and, where its
+`workspaces` names any (an array, or an object's `packages`), each
+workspace's `package.json` its globs match. From each,
+`dependencies`, `devDependencies`, `optionalDependencies` and the
+`peerDependencies` npm installs, every name that is the family's (D13),
+is not a workspace's own name, and is not pinned by the lockfile at any
+version, is answered once as that name and its range as the manifest
+spells it; an `npm:<name>@<range>` alias is answered as its target's name
+and range. A spec npm does not read as a range is no range: `latest` is
+read as `*`, since the packument's `latest` names the newest version
+held (D8); a path, `git`, URL or other tag names no version a layout
+can hold and is passed over. Two manifests asking one name answer each
+range they ask. A `package.json` that does not parse is unreadable with
+the parser's words.
+
+pinned is absent naming `lockfile` where the checkout holds neither
+lockfile nor a family range, as Cargo's is: a checkout with no npm
+lockfile and nothing of the family to ask for has nothing for a layout
+to hold.
 
 ### D8. npm's layout
 
@@ -272,9 +341,11 @@ The request's `path`, its `%2f` and `%40` unescaped:
 
 - `<name>` (one part, or `@scope/pkg`): the packument from the layout,
   each `dist.tarball` made `<base>/<relative path>`, `200`
-  `application/json`; no packument is `404`. A packument never asks the
-  core: it names no version, so nothing is missed (50), and a name the
-  manifest declares with no pin is sync's to render (137).
+  `application/json`; no packument is `404`, its words saying the layout
+  holds no version of the name and that a name `package.json` declares
+  is held by `tailrace sync`. A packument never asks the core: it names
+  no version, so nothing is missed (50), and a name the manifest
+  declares with no pin is sync's to resolve (137).
 - `<name>/-/<base>-<version>.tgz`: the tarball, `200`
   `application/octet-stream`; a tarball the layout lacks calls `miss`
   once with `Pinned { name, version }` and, on `Ok`, answers the
@@ -330,7 +401,7 @@ leave behind, keeping the process for a layout that is gone.
 `devenv.nix` adds `pkgs.nodejs` to `packages`, pinned by `devenv.lock`
 (core.26). Tests:
 
-- `crates/tailrace/src/profiles/projection/npm/` unit tests for pinned,
+- `crates/tailrace/src/profiles/projection/npm/` unit tests for pinned, requires,
   render and serve over tarballs a test makes with `tar` and `flate2`, no
   npm needed, in `cli:test` (`check-fast`);
 - `crates/tailrace/tests/npm_projection.rs`: the projection group over
@@ -340,15 +411,62 @@ leave behind, keeping the process for a layout that is gone.
 - `crates/tailrace/tests/npm_served.rs` behind `tools`: a consumer
   checkout whose policy file names the publisher's host key signer for
   provenance, since the givens name no signer (116, C.10), a layout store
-  holding a published `@family/widget` with its claims and `artifact/`
-  name, `[layout]` requiring its provenance, `.npmrc` naming the served address for
-  `@family`, `serve_on` at a test address over a temporary host;
-  `tailrace sync` then `npm install` under a home and `npm_config_*` of
-  its own, a refused and an absent version, and two worktrees sharing one
-  process. Added to the `tools` task's `--test` list in `moon.yml`.
+  holding published `@family/widget` versions, each requiring
+  `@family/base`, and `@family/base` versions, with their claims and
+  `artifact/` names, `[layout]` requiring provenance, `.npmrc` naming the
+  served address for `@family`, `package.json` declaring
+  `@family/widget` by a range and no lockfile, `serve_on` at a test
+  address over a temporary host; `tailrace sync` then `npm install`
+  under a home and `npm_config_*` of its own, which writes the lockfile;
+  then a second sync from that lockfile and `npm ci`; a refused and an
+  absent version; and two worktrees sharing one process. Added to the
+  `tools` task's `--test` list in `moon.yml`.
 - `crates/tailrace/tests/serve.rs` for the route (D2) and the stay
   (D11) with the fake projection, the latter at an idle of moments;
   `crates/tailrace-core/tests/render.rs` for D4 and D5.
+
+### D13. A family package is one the checkout's `.npmrc` sends to the host
+
+140 asks the projection for the family's names, and the statement says
+no more of what makes a name the family's in an ecosystem. In npm it is
+the scope the consumer's own `.npmrc` sends to the host's one process:
+npm reads such a name from a layout and from nowhere else, so the layout
+must hold it, and npm reads every other name from its own registry, so
+the layout must not (section 8). The projection reads the `.npmrc`
+beside the checkout's root `package.json` once per operation, takes each
+`@<scope>:registry=<url>` line whose URL begins with the process's
+address, `served::origin()`, `http://127.0.0.1:7420/`, which the binding
+hands it, and reads nothing else of the file; no credential in it is
+read or kept (core.21). A name of such a scope is the family's; no other
+name is, and a checkout with no `.npmrc` has no family. The lockfile's
+pins are answered whatever their scope, as render-under-a-policy answers
+them, and the core answers a third-party pin absent.
+
+Why the scope and not every name: a manifest names its third-party
+packages too, and listing each in the store at every level would ask
+the store hundreds of names it never holds; Cargo's projection answers
+only dependencies of the registry `tailrace`, which is the same rule.
+Alternative: a list of family scopes in the policy file, which the
+statement does not name, and which the `.npmrc` line already says.
+
+### D14. npm's requires, and its order
+
+Given a held version's artifact, the projection reads its tarball by the
+layer's digest through its own store, checked against that digest as
+render does (D8), and its `package/package.json` with `flate2` and
+`tar`. It answers each family name (D13) of `dependencies`,
+`optionalDependencies` and the `peerDependencies` npm installs, passing
+over a name `bundleDependencies` lists, with its range as written, an
+alias read as in D7; a spec that is no range is passed over or read as
+`*` as in D7. A tarball the store does not hold, or one with no
+`package.json`, is unreadable naming the artifact.
+
+Whether a version is within a range is `nodejs_semver::Range::parse`
+then `satisfies`, a version or range that does not parse being within
+nothing; which of two versions is newer is `nodejs_semver::Version`'s
+order (23). Both are npm's own rules, so the version the core holds for
+a range is the one npm would pick from what the layout offers, prereleases
+left out as npm leaves them.
 
 ## Risks / Trade-offs
 
@@ -365,13 +483,17 @@ leave behind, keeping the process for a layout that is gone.
   pins its layout lacks are rendered into it on the miss, and leave at
   that checkout's next sync; the lockfile is the same either way, so
   installs agree.
-- [A family package no lockfile pins] → `npm install @family/new` and
-  `npm install @family/new@<version>` both answer `404`, since npm asks
-  the packument first and the layout holds none for the name, until
-  render resolves a manifest's range by the store's listing (137, 138;
-  proposal). The `404`'s words say the layout holds no version of the
-  name, so the developer sees that it is the layout's and not the
-  public registry's.
+- [A family package named on npm's command line first] → `npm install
+  @family/new`, where `package.json` does not yet declare it, answers
+  `404`, since npm asks the packument first and the layout holds none for
+  the name until a sync reads the manifest's range. The `404`'s words say
+  the layout holds no version of the name and to declare it and sync, so
+  the developer sees that it is the layout's and not the public
+  registry's; the site says to declare it with `npm pkg set` and sync.
+- [A scope the `.npmrc` sends elsewhere] → its names are not the
+  family's, so no range or requirement of them is held, and npm reads
+  them where the line sends it. A consumer who forgets the line installs
+  from the public registry, as before this unit.
 - [npm retries a `502`] → npm's fetch retries 5xx with backoff before it
   fails; the words still reach the user, later.
 - [A miss judged under a newer landed policy than the layout's] → the
