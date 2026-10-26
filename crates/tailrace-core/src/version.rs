@@ -34,6 +34,11 @@ pub struct Versioned {
     pub kind: Kind,
     /// The component's last release tag before this version.
     pub last: Option<Tag>,
+    /// The commits the version is derived from: those the landed
+    /// revision reaches since `last` that touch the component's paths, in
+    /// the order the history gives them, the same on a revision a tag
+    /// already names as on its first publish (134; design D1).
+    pub since: Vec<Commit>,
     /// Whether a tag of this name already names the landed revision.
     pub claimed: bool,
 }
@@ -65,12 +70,14 @@ fn highest<'a>(tags: impl Iterator<Item = &'a Tag>) -> Option<&'a Tag> {
 }
 
 /// 21: the version of `component` at the landed revision under `rule`,
-/// from the history alone. In order: a tag carrying the component's
-/// prefix at the revision itself gives its version (18); otherwise the
-/// commits since the highest release tag the revision reaches that touch
-/// the component's paths decide it, none giving no version, a feature, a
-/// fix or a breaking change a release by git-cliff's bump, and anything
-/// else a prerelease of the next patch numbered by how many there are.
+/// from the history alone. The commits since the highest release tag the
+/// revision reaches below it that touch the component's paths are read
+/// first, and the version keeps them (134). Then, in order: a tag
+/// carrying the component's prefix at the revision itself gives its
+/// version (18); otherwise those commits decide it, none giving no
+/// version, a feature, a fix or a breaking change a release by git-cliff's
+/// bump, and anything else a prerelease of the next patch numbered by how
+/// many there are.
 pub fn derive(
     history: &History,
     landed: &Landed,
@@ -82,6 +89,8 @@ pub fn derive(
     let release = |t: &&Tag| t.version.pre.is_empty();
     let (here, before): (Vec<&Tag>, Vec<&Tag>) = tags.iter().partition(|t| t.revision == revision);
     let last = highest(before.iter().copied().filter(release)).cloned();
+
+    let since = history.commits(landed, last.as_ref().map(|t| &t.revision), &component.paths)?;
 
     let held = highest(here.iter().copied().filter(release)).or(highest(here.iter().copied()));
     if let Some(tag) = held {
@@ -95,11 +104,11 @@ pub fn derive(
                 Kind::Prerelease
             },
             last,
+            since,
             claimed: true,
         }));
     }
 
-    let since = history.commits(landed, last.as_ref().map(|t| &t.revision), &component.paths)?;
     if since.is_empty() {
         return Ok(Derived::Unchanged {
             component: component.name.clone(),
@@ -135,6 +144,7 @@ pub fn derive(
         version: Named::new(version.to_string()),
         kind,
         last,
+        since,
         claimed: false,
     }))
 }

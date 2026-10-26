@@ -9,7 +9,7 @@ use tailrace_core::{
     claim, derive, touched, Declared, Derived, Kind, Landed, Rule, Versioned, POLICY_FILE,
 };
 use tailrace_fakes::Fakes;
-use tailrace_seams::{Branch, Component, ComponentName};
+use tailrace_seams::{Branch, Component, ComponentName, Revision};
 
 fn component(name: &str, paths: &[&str], prefix: &str) -> Component {
     Component {
@@ -281,4 +281,56 @@ fn deriving_and_claiming_ask_nothing_of_the_build() {
         claim(&history, &at, v).unwrap();
     }
     assert!(fakes.build.calls().is_empty(), "the build was asked");
+}
+
+/// The revisions of the commits `v` was derived from, in the order it
+/// keeps them.
+fn since(v: &Versioned) -> Vec<Revision> {
+    v.since.iter().map(|c| c.revision.clone()).collect()
+}
+
+#[test]
+fn a_release_keeps_the_commits_since_the_last_release_touching_its_paths() {
+    let fixture = Fixture::new();
+    let repo = released(&fixture);
+    let feat = repo.touch("feat: a call", &["crates/lib"]);
+    repo.touch("docs: the site", &["site"]);
+    let fix = repo.touch("fix: a bug", &["crates/lib"]);
+    let v = versioned(at_head(&repo, &lib()));
+    assert_eq!((v.version.as_str(), v.kind), ("1.3.0", Kind::Release));
+    assert_eq!(since(&v), [fix.clone(), feat.clone()]);
+    assert_eq!(v.since[0].message.trim_end(), "fix: a bug");
+    assert_eq!(v.since[1].message.trim_end(), "feat: a call");
+}
+
+#[test]
+fn a_prerelease_keeps_every_commit_since_the_last_release() {
+    let fixture = Fixture::new();
+    let repo = released(&fixture);
+    let one = repo.touch("chore: one", &["crates/lib"]);
+    repo.touch("feat: site", &["site"]);
+    let two = repo.touch("chore: two", &["crates/lib"]);
+    let v = versioned(at_head(&repo, &lib()));
+    assert_eq!(
+        (v.version.as_str(), v.kind),
+        ("1.2.4-pre.2", Kind::Prerelease)
+    );
+    assert_eq!(since(&v), [two, one]);
+}
+
+#[test]
+fn a_held_tag_keeps_the_commits_its_first_publish_had() {
+    let fixture = Fixture::new();
+    let repo = released(&fixture);
+    let feat = repo.touch("feat: a call", &["crates/lib"]);
+    repo.touch("docs: the site", &["site"]);
+    let first = versioned(at_head(&repo, &lib()));
+    assert!(!first.claimed);
+    repo.tag(&first.name, &repo.head());
+
+    let held = versioned(at_head(&repo, &lib()));
+    assert!(held.claimed);
+    assert_eq!(held.name, first.name);
+    assert_eq!(held.since, first.since);
+    assert_eq!(since(&held), [feat]);
 }
