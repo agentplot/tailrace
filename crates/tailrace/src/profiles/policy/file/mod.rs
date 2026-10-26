@@ -2,9 +2,9 @@
 //! `.config/tailrace.toml` read with git from the tree of the revision
 //! asked, never from a checkout (65, rule core.22; design D3, D4). It
 //! reads its own tables, the `name` of each `[[component]]`, and of each
-//! environment its `channel`, `policy` and `after`, and leaves the core's
-//! other keys (`outputs`, `[version]`, `[projections]`, the rest of
-//! `[[component]]`) and every other reader's alone:
+//! environment its `channel`, `policy`, `after` and `approvers`, and
+//! leaves the core's other keys (`outputs`, `[version]`, `[projections]`,
+//! the rest of `[[component]]`) and every other reader's alone:
 //!
 //! ```toml
 //! [[component]]
@@ -51,10 +51,12 @@
 //! require = [{ kind = "rebuild", signers = ["box"] }]
 //! approvers = ["box"]
 //!
-//! # prod waits on a person: its own channel, prod, bound to stable.
+//! # prod waits on a yes: its own channel, prod, bound to stable, which
+//! # only box may ask to move.
 //! [environments.web.prod]
 //! channel = "stable"
 //! policy = "manual"
+//! approvers = ["box"]
 //! ```
 //!
 //! A signer's table names exactly one key besides `kinds` and `checks`,
@@ -100,8 +102,9 @@
 //! names that may claim a promotion. A channel's table may name
 //! `approvers`, signers `[signers]` holds, the only ones that may then ask
 //! for it to move; where none is named any asker the gate verifies may
-//! (32, 129, C.10). They never join who signs. A repository never writes
-//! them on a channel an environment makes (C.10).
+//! (32, 129, C.10). They never join who signs. A repository writes them on
+//! a manual environment for the channel it makes, which takes its
+//! environment's, and never under that channel (C.10).
 //!
 //! Every operation begins by reading the fragment and resolving the
 //! revision in the repository, so a fragment or a repository that cannot
@@ -220,14 +223,16 @@ struct ChannelTable {
 }
 
 /// An environment's table, of which this profile reads the channel it
-/// names, its policy and the environments it comes after (C.10); its
-/// other keys are its target's.
+/// names, its policy, the environments it comes after and, where it is
+/// manual, who may say yes to it (C.10); its other keys are its
+/// target's.
 #[derive(Deserialize)]
 struct EnvironmentTable {
     channel: Option<ChannelName>,
     policy: Option<String>,
     #[serde(default)]
     after: Vec<String>,
+    approvers: Option<Vec<SignerId>>,
 }
 
 /// The file at a revision, parsed whole, with its signers read.
@@ -696,6 +701,31 @@ fn moves_of(full: &str, keys: &ChannelTable) -> Result<Moves, String> {
     Ok(moves)
 }
 
+/// 32, C.10: the approvers the table `full` names, each one `[signers]`
+/// holds and the list never empty, since an empty one would read as
+/// naming no one; none where it names none.
+fn approvers_of(
+    full: &str,
+    approvers: &Option<Vec<SignerId>>,
+    signers: &BTreeMap<String, toml::Table>,
+) -> Result<Vec<SignerId>, String> {
+    match approvers {
+        None => Ok(Vec::new()),
+        Some(approvers) if approvers.is_empty() => Err(format!(
+            "{full} names no approver, and an empty approvers would read as naming no one; leave it out for any asker the gate verifies (C.10)"
+        )),
+        Some(approvers) => match approvers
+            .iter()
+            .find(|a| !signers.contains_key(a.as_str()))
+        {
+            Some(unknown) => Err(format!(
+                "{full} names the approver {unknown}, which [signers] does not name"
+            )),
+            None => Ok(approvers.clone()),
+        },
+    }
+}
+
 /// 125, 131, C.10: every channel of the table in force, by its identity,
 /// in one pass shared by the channels listed and one channel's policy
 /// (83), in D4's six steps: the components; the channels' tables; how
@@ -742,24 +772,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
             ));
         }
         let moves = moves_of(&full, &keys)?;
-        match &keys.approvers {
-            Some(approvers) if approvers.is_empty() => {
-                return Err(format!(
-                    "{full} names no approver, and an empty approvers would read as naming no one; leave it out for any asker the gate verifies (C.10)"
-                ))
-            }
-            Some(approvers) => {
-                if let Some(unknown) = approvers
-                    .iter()
-                    .find(|a| !table.file.signers.contains_key(a.as_str()))
-                {
-                    return Err(format!(
-                        "{full} names the approver {unknown}, which [signers] does not name"
-                    ));
-                }
-            }
-            None => {}
-        }
+        approvers_of(&full, &keys.approvers, &table.file.signers)?;
         tables_of.push((
             ChannelId::new(component, ChannelName::new(&name)),
             full,
@@ -777,7 +790,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
         &components,
     )?;
     let mut follows: Vec<(String, Option<ComponentName>, ChannelName)> = Vec::new();
-    let mut made: BTreeMap<ChannelId, (String, ChannelName)> = BTreeMap::new();
+    let mut made: BTreeMap<ChannelId, (String, ChannelName, Vec<SignerId>)> = BTreeMap::new();
     for scope in &scopes {
         let of: BTreeMap<&str, (&String, &EnvironmentTable)> = environments
             .iter()
@@ -799,6 +812,11 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
                 }
             };
             follows.push(((*env_table).clone(), scope.clone(), channel.clone()));
+            let approvers = if manual {
+                approvers_of(env_table, &env.approvers, &table.file.signers)?
+            } else {
+                Vec::new()
+            };
             let bound = if !env.after.is_empty() {
                 after(&of, name, env_table, env, scope)?
             } else if manual {
@@ -813,19 +831,20 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
             }
             made.insert(
                 ChannelId::new(scope.clone(), ChannelName::new(*name)),
-                ((*env_table).clone(), bound),
+                ((*env_table).clone(), bound, approvers),
             );
         }
     }
 
     // 5: a table under a made channel is a line under it, which never
     // changes how it moves and names no approvers, its environment's
-    // words saying both; every other is the channel it says.
+    // words saying both, so it takes its environment's approvers; every
+    // other is the channel it says.
     let mut resolved: BTreeMap<ChannelId, Resolved> = BTreeMap::new();
     let off: BTreeSet<ChannelId> = table.off.iter().map(|(id, ..)| id.clone()).collect();
     let mut lines: BTreeMap<ChannelId, (String, Vec<Entry>)> = BTreeMap::new();
     for (id, full, keys, moves) in tables_of {
-        if let Some((_, to)) = made.get(&id) {
+        if let Some((env_table, to, _)) = made.get(&id) {
             let restates = keys.bound_to.as_ref().is_none_or(|b| b == to)
                 && keys.on_each_publish != Some(true);
             if !restates {
@@ -836,7 +855,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
             }
             if keys.approvers.is_some() {
                 return Err(format!(
-                    "{full} names approvers, and who may ask for {}, a channel its environment makes, is written on the environment and never on the channel it makes (C.10)",
+                    "{full} names approvers, and who may ask for {}, a channel its environment makes, is written on {env_table} and never on the channel it makes (C.10)",
                     id.name
                 ));
             }
@@ -859,7 +878,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
             },
         );
     }
-    for (id, (env_table, to)) in made {
+    for (id, (env_table, to, approvers)) in made {
         let (table, require) = lines.remove(&id).unwrap_or((env_table, Vec::new()));
         resolved.insert(
             id,
@@ -868,7 +887,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
                 origin: Origin::Made,
                 table,
                 require,
-                approvers: Vec::new(),
+                approvers,
             },
         );
     }
@@ -1031,8 +1050,9 @@ fn may_claim<'a>(
 /// given or made, the gate's acceptance by every signer that may claim
 /// acceptance, then its line's claims, promoted by those same signers;
 /// for one declared by hand, its table's claims, promoted by the signers
-/// they name that may claim a promotion; and for either, the approvers
-/// its table names, each as `[signers]` names it.
+/// they name that may claim a promotion; and for any, the approvers its
+/// table names, or for one made its environment's, each as `[signers]`
+/// names it.
 fn channel_policy(
     resolved: &Resolved,
     signers: &BTreeMap<String, NamedSigner>,

@@ -1073,7 +1073,45 @@ fn approvers_under_a_channel_an_environment_makes_are_unreadable_naming_its_tabl
     let said = both_unreadable(&repo, &at, &id(None, "prod"));
     assert_eq!(
         said,
-        "[channels.prod] names approvers, and who may ask for prod, a channel its environment makes, is written on the environment and never on the channel it makes (C.10)"
+        "[channels.prod] names approvers, and who may ask for prod, a channel its environment makes, is written on [environments.prod] and never on the channel it makes (C.10)"
+    );
+}
+
+#[test]
+fn a_manual_environments_approvers_are_who_may_ask_for_the_channel_it_makes() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[environments.prod]\nchannel = \"stable\"\npolicy = \"manual\"\napprovers = [\"ci\"]\n",
+        askers_table()
+    ));
+    let mut all = givens(None);
+    all.push(declared(id(None, "prod"), bound("stable")));
+    assert_eq!(repo.policy().listed(&at), Ok(sorted(all)));
+    let prod = channel_policy(&repo, &at, &id(None, "prod")).unwrap();
+    assert_eq!(prod.approvers(), &[asker("ci", "CCCC")]);
+    assert_eq!(
+        prod.promoted_by(),
+        &[asker("ci", "CCCC"), asker("desk", "DDDD")],
+        "the promoters are the gate's signers"
+    );
+}
+
+#[test]
+fn a_manual_environments_approver_the_signers_table_lacks_is_unreadable_naming_it() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[environments.prod]\nchannel = \"stable\"\npolicy = \"manual\"\napprovers = [\"nobody\"]\n",
+        askers_table()
+    ));
+    assert_eq!(
+        both_unreadable(&repo, &at, &id(None, "prod")),
+        "[environments.prod] names the approver nobody, which [signers] does not name"
+    );
+    let at =
+        repo.at("[environments.prod]\nchannel = \"stable\"\npolicy = \"manual\"\napprovers = []\n");
+    assert_eq!(
+        both_unreadable(&repo, &at, &id(None, "prod")),
+        "[environments.prod] names no approver, and an empty approvers would read as naming no one; leave it out for any asker the gate verifies (C.10)"
     );
 }
 
