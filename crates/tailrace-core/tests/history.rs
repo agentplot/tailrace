@@ -76,6 +76,36 @@ fn a_commit_outside_the_paths_is_not_listed() {
 }
 
 #[test]
+fn a_commits_message_is_read_as_written_from_the_local_history() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    let rev = repo.commit("feat: a call\n\nWith a body.", &[("lib.txt", "a call")]);
+    let history = repo.history();
+    assert_eq!(
+        history.message(&rev).unwrap(),
+        "feat: a call\n\nWith a body.\n"
+    );
+    let listed = history
+        .commits(&landed(&rev), None, &["**".into()])
+        .unwrap();
+    assert_eq!(history.message(&rev).unwrap(), listed[0].message);
+}
+
+#[test]
+fn a_commit_the_history_does_not_hold_is_absent_naming_it() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a.txt", "a")]);
+    let history = repo.history();
+    let gone = Revision::new("4f2a9c1e0b7d3a5f6c8e9d0a1b2c3d4e5f6a7b8c");
+    let Err(Not::Absent(a)) = history.message(&gone) else {
+        panic!("a commit the history does not hold was read")
+    };
+    assert_eq!(a.source.seam, Seam::History);
+    assert!(a.what.contains(gone.as_str()), "{}", a.what);
+}
+
+#[test]
 fn an_annotated_and_a_lightweight_tag_both_peel_to_their_commit() {
     let fixture = Fixture::new();
     let repo = fixture.repo("repo");
