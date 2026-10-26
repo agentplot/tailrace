@@ -13,7 +13,9 @@ landing, the policy and the keeper alone and writing nothing:
 - one chain unreadable and one forked beside a channel shown, each
   carrying the keeper's words (58, 59, 105);
 - everything kept deleted, the channels answered the same and the
-  record the same once rebuilt, playing S12 for the channels (63).
+  record the same once rebuilt, playing S12 for the channels (63);
+- the environments' part unreadable with a fake target bound, the
+  target asked nothing (58, 60).
 
 #### Scenario: Every channel at its version or empty
 
@@ -35,12 +37,18 @@ landing, the policy and the keeper alone and writing nothing:
 - **WHEN** status is asked, the host's record is deleted, and status is asked again
 - **THEN** the channels' part of both answers is equal, and after a rebuild so is the record's
 
+#### Scenario: The environments not yet read
+
+- **WHEN** the fake world binds a target for an environment and status is asked
+- **THEN** the environments' part is unreadable saying no target is read, never empty, and the fake target records no call
+
 ### Requirement: The page answers from the one core beside the command line
 
 The surfaces group SHALL hold every surface to answer status's channels
 as the core does, below its marker, for 36, 56, 57 and 132, and SHALL
 run over the command line and over the served page, the page asked
-for its JSON through the process's own handling of a request. A
+for its repository's JSON, `/<owner>/<name>/status.json`, through the
+process's own handling of a request. A
 surface's answer and the core's SHALL be equal value for value but for
 the moment each asked.
 

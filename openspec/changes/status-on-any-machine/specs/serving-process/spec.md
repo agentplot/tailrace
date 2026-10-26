@@ -4,14 +4,15 @@
 
 `tailrace serve` SHALL answer HTTP at `127.0.0.1` port `7420`, the
 core's name and port, which no setting, flag or variable moves, on
-every host (114, core.36). It SHALL answer `GET /` with a JSON document
-naming itself as tailrace's serving process, its revision and its
-process id, so an asker tells it from anything else on the port.
+every host (114, core.36). It SHALL answer `GET /serving.json` with a
+JSON document naming itself as tailrace's serving process, its revision
+and its process id, asking no repository, so an asker tells it from
+anything else on the port.
 
 #### Scenario: The address on every host
 
 - **WHEN** `tailrace serve` runs on a host
-- **THEN** it answers `GET http://127.0.0.1:7420/` with a document naming tailrace, its revision and its process id, and no flag or setting is read that would move the address
+- **THEN** it answers `GET http://127.0.0.1:7420/serving.json` with a document naming tailrace, its revision and its process id, and no flag or setting is read that would move the address
 
 ### Requirement: The repository is in the path, by its remote's owner and name
 
@@ -54,43 +55,74 @@ is gone unreadable naming the path (58).
 - **WHEN** two checkouts of one repository name it in turn
 - **THEN** the file holds one entry for the repository, naming the second checkout
 
-### Requirement: The page and its JSON are the status answer
+### Requirement: A repository's page and its JSON are its status answer
 
 The process SHALL answer `GET /<owner>/<name>/status.json` with the
 status answer the core gives in the named checkout, as `tailrace
-status --json` prints it there, and `GET /<owner>/<name>/status` with
-a page rendering that answer: each channel with its component, how it
-moves, its version or that it is empty, its chain, and the record of
-what this host published, every refusal and unreadable answer shown
-with the source's own words (57, 58, 59, 132). Each request SHALL
-compute the answer anew, and SHALL write nothing and ask no store,
-signer or target (60). A path the process does not answer SHALL be 404,
-and a method other than `GET` 405.
+status --json` prints it there, and `GET /<owner>/<name>/` with a page
+rendering that answer whole: each channel with its component, how it
+moves, its version or that it is empty, its chain, the environments'
+part, and the record of what this host published, every refusal and
+unreadable answer shown with the source's own words (57, 58, 59, 132).
+Each request SHALL compute the answer anew, and SHALL write nothing and
+ask no store, signer or target (60). A path the process does not answer
+SHALL be 404, and a method other than `GET` 405.
 
 #### Scenario: The page and the JSON agree
 
 - **WHEN** the page and the JSON of one named repository are asked
-- **THEN** the JSON is the status answer in that checkout, and the page names every channel, version and promotion the JSON names
+- **THEN** the JSON is the status answer in that checkout, and the page names every channel, version and promotion the JSON names, and the environments' answer
 
 #### Scenario: A promotion after the page was read
 
 - **WHEN** a channel is promoted after the page was asked, and the page is asked again
 - **THEN** the second page shows the new version, with no restart and no timer between
 
+### Requirement: The root answers every repository it knows together
+
+The process SHALL answer `GET /status.json` with every repository the
+host's file names, ordered by owner and name, each as the core's row of
+its status answer in its checkout, computed anew on the request, and
+`GET /` with a page rendering those rows: each repository linked to its
+own page, every channel's head, and the environments' four counts or
+the answer given in their place (132). An entry whose checkout is gone
+or whose status cannot be asked SHALL be its own row's unreadable
+answer, naming the path, and every other row SHALL be shown (58). A
+host whose file names no repository SHALL answer an empty list, and a
+file that cannot be read SHALL be the root's unreadable answer naming
+the file with the parser's words. The root SHALL write nothing and ask
+no store, signer or target (60).
+
+#### Scenario: Two repositories together
+
+- **WHEN** two checkouts of two repositories have each named theirs, and `/status.json` and `/` are asked
+- **THEN** the JSON holds two rows, each equal to the core's row of that repository's status but for the moment asked, and the page names both repositories, every channel's head and each row's environments' answer
+
+#### Scenario: One checkout gone
+
+- **WHEN** one of two named repositories' checkouts has been removed
+- **THEN** its row is unreadable naming the path, and the other row is shown
+
+#### Scenario: Nothing named yet
+
+- **WHEN** the host's file is absent and `/status.json` is asked
+- **THEN** the answer is an empty list of repositories, status 200
+
 ### Requirement: The first asker that finds none starts it, and one lock keeps it one
 
 `tailrace status --page` SHALL name the checkout's repository in the
-host's file, find the serving process at the core's address, start
-`tailrace serve` detached from its terminal and from the checkout where
-none answers, wait for it to answer, and print the page's address; a
-port that answers as something else SHALL be unreadable naming the
-address (114). The process SHALL hold the host's one lock,
-`tailrace/serve.lock` beside the file of repositories, for as long as
-it runs: a `tailrace serve` that finds the lock held SHALL exit 0
-saying the host's process answers at the address, and no asker SHALL
-start a second (114, as sluice 129). The process SHALL end when nothing
-has asked it for ten minutes. A host may run it as a service of its
-own, and nothing SHALL tell a person to start one.
+host's file, find the serving process at the core's address by its
+`/serving.json`, start `tailrace serve` detached from its terminal and
+from the checkout where none answers, wait for it to answer, and print
+the address of the repository's own page; a port that answers as
+something else SHALL be unreadable naming the address (114). The
+process SHALL hold the host's one lock, `tailrace/serve.lock` beside
+the file of repositories, for as long as it runs: a `tailrace serve`
+that finds the lock held SHALL exit 0 saying the host's process answers
+at the address, and no asker SHALL start a second (114, as sluice 129).
+The process SHALL end when nothing has asked it for ten minutes. A host
+may run it as a service of its own, and nothing SHALL tell a person to
+start one.
 
 #### Scenario: Two askers on one host
 
@@ -109,5 +141,5 @@ own, and nothing SHALL tell a person to start one.
 
 #### Scenario: Something else on the port
 
-- **WHEN** the port answers `GET /` with something other than tailrace's document
+- **WHEN** the port answers `GET /serving.json` with something other than tailrace's document
 - **THEN** `tailrace status --page` is unreadable naming the address, and starts nothing

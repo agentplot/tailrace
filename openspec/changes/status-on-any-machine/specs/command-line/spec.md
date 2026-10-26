@@ -16,7 +16,7 @@ its answer only where it cannot read the repository at all.
 #### Scenario: Status from the installed binary
 
 - **WHEN** the built binary runs `tailrace status --json` in a repository whose host record holds one entry
-- **THEN** it prints that entry's component, version, revision and index's digest in the record's part, the channels in theirs, and exits 0
+- **THEN** it prints that entry's component, version, revision and index's digest in the record's part, the channels in theirs, the environments' part unreadable, and exits 0
 
 #### Scenario: A broken bindings file
 
@@ -59,7 +59,7 @@ answer in their own form, as text or with `--json` (58, 59).
 ### Requirement: Status names the page
 
 `tailrace status --page` SHALL answer the address of the checkout's
-page, `http://127.0.0.1:7420/<owner>/<name>/status`, after naming the
+repository's own page, `http://127.0.0.1:7420/<owner>/<name>/`, after naming the
 repository to the host and finding or starting the host's serving
 process; it SHALL answer unreadable where the repository has no remote
 that names an owner and a name, or the port answers as something else,
@@ -68,7 +68,7 @@ and SHALL exit with its answer's code (57, 114, 132).
 #### Scenario: The page's address
 
 - **WHEN** `tailrace status --page --json` runs in a checkout whose landing's remote is `https://example.com/o/r.git`
-- **THEN** it prints the address ending `/o/r/status` and exits 0
+- **THEN** it prints the address ending `/o/r/` and exits 0
 
 ### Requirement: Serve is a command
 
