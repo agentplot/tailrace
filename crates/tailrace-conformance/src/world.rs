@@ -676,21 +676,19 @@ pub const PROMOTED: u64 = 1_767_312_000;
 
 impl FakeWorld {
     /// 131: each of `channels` declared through the fake policy in the
-    /// world's one component, `repository`, its policy requiring nothing,
-    /// bound to the channel beside it where one is named (37, 125).
+    /// world's one component, which declares none (123, 125), its policy
+    /// requiring nothing and naming no promoter, bound to the channel
+    /// beside it where one is named (37) and moving by a promotion alone
+    /// where none is.
     pub fn declare_channels(&self, channels: &[(&str, Option<&str>)]) {
         for (channel, bound_to) in channels {
-            let channel = ChannelName::new(*channel);
             self.fakes.policy.require(
-                Audience::Channel(channel.clone()),
+                Audience::Channel(ChannelId::new(None, ChannelName::new(*channel))),
                 tailrace_seams::Required::Channel {
                     claims: vec![],
                     bound_to: bound_to.map(ChannelName::new),
+                    promoted_by: vec![],
                 },
-            );
-            self.fakes.policy.belongs(
-                &channel,
-                &tailrace_seams::ComponentName::new(tailrace_seams::REPOSITORY_COMPONENT),
             );
         }
     }
@@ -701,7 +699,7 @@ impl FakeWorld {
     /// gate and sealed by a fake signer holding its identity; its
     /// claim's digest. Each is made a second after the one before.
     pub fn promote_fake(&self, channel: &str, version: &str) -> Digest {
-        let channel = ChannelName::new(channel);
+        let channel = ChannelId::new(None, ChannelName::new(channel));
         let index =
             tailrace_seams::Store::resolve(&self.fakes.store, &Name::new(format!("v{version}")))
                 .expect("the version is named in the store");
@@ -715,8 +713,8 @@ impl FakeWorld {
             ),
         };
         let promotion = tailrace_seams::Promotion {
-            channel: channel.clone(),
-            component: tailrace_seams::ComponentName::new(tailrace_seams::REPOSITORY_COMPONENT),
+            channel: channel.name.clone(),
+            component: channel.component_name(),
             to: tailrace_seams::Moved {
                 version: Version::new(version),
                 index,

@@ -1042,7 +1042,7 @@ fn beta_of_one_component(_: &FakeWorld) {
 
     let ask = tailrace_core::AcceptAsk {
         component: Some(ComponentName::new("lib")),
-        ..world.gate_ask(version.as_str(), ToldBy::Publish, GATE)
+        ..world.gate_ask(version.as_str(), told(&published), GATE)
     };
     let (_, _, _, channels) = accepted(world.judge(&ask, &[GATE]));
     let [(channel, Ok(Moved::Promoted { to, .. }))] = channels.as_slice() else {

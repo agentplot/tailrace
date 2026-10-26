@@ -17,8 +17,8 @@ use tailrace_core::{
 };
 use tailrace_fakes::{Fault, KeeperOp, StoreOp, Times};
 use tailrace_seams::{
-    channel_name, Branch, ChannelName, ComponentName, IndexMeta, Manifest, Name, Not, Read, Seam,
-    Signer, SignerId, Source, Store, Version, Why,
+    channel_name, Branch, ChannelId, ChannelName, ComponentName, IndexMeta, Manifest, Moves, Name,
+    Not, Read, Seam, Signer, SignerId, Source, Store, Version, Why,
 };
 
 use crate::core::publish::{one, passing, TAG, VERSION};
@@ -281,10 +281,11 @@ fn every_channel_at_its_version_or_empty(world: &FakeWorld) {
         "the published version's name",
     );
     ok(
-        world
-            .fakes
-            .store
-            .name(&channel_name(&ChannelName::new(STABLE)), &elsewhere, None),
+        world.fakes.store.name(
+            &channel_name(&ChannelId::new(None, ChannelName::new(STABLE))),
+            &elsewhere,
+            None,
+        ),
         "another name for stable",
     );
     let (before, appended, record) = (reached(world), appends(world), world.record());
@@ -300,7 +301,7 @@ fn every_channel_at_its_version_or_empty(world: &FakeWorld) {
     assert_eq!(names, [BETA, STABLE], "the policy's channels, in its order");
     for channel in channels {
         assert_eq!(
-            channel.declared.component,
+            channel.declared.channel.component_name(),
             ComponentName::new(COMPONENT),
             "{} names another component",
             channel.name()
@@ -311,7 +312,13 @@ fn every_channel_at_its_version_or_empty(world: &FakeWorld) {
         Ok(Channel::Empty),
         "beta was never promoted"
     );
-    assert_eq!(channels[1].declared.bound_to, Some(ChannelName::new(BETA)));
+    assert_eq!(channels[0].declared.moves, Moves::Promotion);
+    assert_eq!(
+        channels[1].declared.moves,
+        Moves::Bound {
+            to: ChannelName::new(BETA)
+        }
+    );
     let Ok(Channel::At { head, chain, read }) = &channels[1].at else {
         panic!("stable answered {:?}", channels[1].at)
     };
@@ -438,7 +445,10 @@ fn one_channels_answer_beside_anothers(world: &FakeWorld) {
         ok(gate.sign(&claim, &SignerId::new(GATE)), "the gate's seal")
     };
     let (a, b) = (sealed(VERSION), sealed("0.3.0"));
-    world.fakes.keeper.fork(&ChannelName::new(edge), &a, &b);
+    world
+        .fakes
+        .keeper
+        .fork(&ChannelId::new(None, ChannelName::new(edge)), &a, &b);
     world.fakes.keeper.fault(
         KeeperOp::Chain,
         Fault::Unreadable("connection reset".into()),

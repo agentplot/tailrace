@@ -63,7 +63,7 @@ fn channel<'a>(value: &'a Value, name: &str) -> &'a Value {
         .as_array()
         .unwrap_or_else(|| panic!("no channels answered: {value}"))
         .iter()
-        .find(|c| c["name"] == name)
+        .find(|c| c["channel"]["name"] == name)
         .unwrap_or_else(|| panic!("no channel {name}: {value}"))
 }
 
@@ -93,7 +93,8 @@ fn files(dir: &Path, git: bool) -> Vec<(PathBuf, Vec<u8>)> {
 
 /// The scratch remote; machine A, which put two versions of the one
 /// component in its layout, each index carrying the gate's acceptance,
-/// and promoted `stable` to the first, then the second; and machine B, a
+/// and promoted `rc`, which moves by a promotion alone, to the first,
+/// then the second, `beta` and `stable` left empty; and machine B, a
 /// clone of the remote with no bindings file and an empty home.
 struct Two {
     scratch: Scratch,
@@ -116,7 +117,8 @@ impl Two {
                 "outputs = [\"site\"]\n\n[projections]\nsite = \"file\"\n\n\
                  [signers.{GATE}]\nssh = \"{}\"\nkinds = [\"acceptance\", \"promotion\"]\n\n\
                  [channels.beta]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n\n\
-                 [channels.stable]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n",
+                 [channels.stable]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n\n\
+                 [channels.rc]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n",
                 key.public_key().to_openssh().unwrap()
             ),
         );
@@ -186,8 +188,8 @@ impl Two {
         }
         let promote = Ok(binding);
         for args in [
-            &["promote", "0.1.0", "--to", "stable"][..],
-            &["promote", "0.2.0", "--to", "stable", "--from", "0.1.0"][..],
+            &["promote", "0.1.0", "--to", "rc"][..],
+            &["promote", "0.2.0", "--to", "rc", "--from", "0.1.0"][..],
         ] {
             let (code, printed) = ask(&promote, &two.a.path, args);
             assert_eq!(code, 0, "{args:?}: {printed}");
@@ -275,15 +277,18 @@ fn a_machine_that_never_published_answers_every_channel_as_the_one_that_promoted
     // Machine B, bound with nothing written, answers the same channels.
     let b_tree = files(&two.b.path, false);
     let theirs = status(&two.bind_b(), &two.b.path);
-    let stable = channel(&theirs, "stable");
-    assert_eq!(stable["at"]["answer"], "ok", "{theirs}");
-    assert_eq!(stable["at"]["value"]["head"]["to"]["version"], "0.2.0");
-    assert_eq!(
-        stable["at"]["value"]["chain"].as_array().map(Vec::len),
-        Some(2)
-    );
-    assert_eq!(stable["at"], channel(&ours, "stable")["at"], "{theirs}");
-    assert_eq!(channel(&theirs, "beta")["at"]["value"]["state"], "empty");
+    let rc = channel(&theirs, "rc");
+    assert_eq!(rc["at"]["answer"], "ok", "{theirs}");
+    assert_eq!(rc["at"]["value"]["head"]["to"]["version"], "0.2.0");
+    assert_eq!(rc["at"]["value"]["chain"].as_array().map(Vec::len), Some(2));
+    assert_eq!(rc["at"], channel(&ours, "rc")["at"], "{theirs}");
+    for empty in ["beta", "stable"] {
+        assert_eq!(
+            channel(&theirs, empty)["at"]["value"]["state"],
+            "empty",
+            "{theirs}"
+        );
+    }
     assert_eq!(
         theirs["value"]["channels"]["value"]["revision"],
         ours["value"]["channels"]["value"]["revision"]

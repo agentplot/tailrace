@@ -26,13 +26,15 @@ use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use tailrace::bindings::{self, For};
 use tailrace::profiles::store::layout::Layout;
 use tailrace_core::{channel, Channel};
-use tailrace_seams::{channel_name, ChannelName, Claim, ClaimKind, Digest, Promotion, Store};
+use tailrace_seams::{
+    channel_name, ChannelId, ChannelName, Claim, ClaimKind, Digest, Promotion, Store,
+};
 
 /// The identity the one host signs as, and the gate's.
 const LAPTOP: &str = "laptop";
 
-fn beta() -> ChannelName {
-    ChannelName::new("beta")
+fn beta() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("beta"))
 }
 
 /// The one host: a scratch repository on a plain branch with moon's
@@ -216,7 +218,11 @@ fn beta_follows_two_landings(gate: &str) {
         assert_eq!(gate["value"]["index"], index.as_str(), "{json}");
         let channels = gate["value"]["channels"].as_array().unwrap();
         assert_eq!(channels.len(), 1, "{json}");
-        assert_eq!(channels[0]["channel"], "beta", "{json}");
+        assert_eq!(
+            channels[0]["channel"],
+            serde_json::json!({ "component": null, "name": "beta" }),
+            "{json}"
+        );
         assert_eq!(channels[0]["value"]["moved"], "promoted", "{json}");
         assert_eq!(channels[0]["value"]["to"], index.as_str(), "{json}");
 

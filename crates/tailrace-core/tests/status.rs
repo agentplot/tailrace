@@ -637,7 +637,7 @@ fn a_chain_answered_as_last_read_is_shown_with_its_time_and_words() {
 #[test]
 fn a_landing_that_cannot_be_read_is_the_channels_unreadable_answer_and_the_rest_still_answers() {
     let world = World::new();
-    declare(&world, &stable(), "lib", None);
+    declare(&world, &stable(), None);
     published(&world);
     promoted(&world, &stable(), &["0.1.0"]);
     let before = asked(&world, &ask(&world));

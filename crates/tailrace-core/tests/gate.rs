@@ -394,7 +394,7 @@ fn told_an_index_the_name_does_not_resolve_to_is_unreadable_naming_both_and_writ
         world.fakes.store.claims_of(index).unwrap().len(),
         claims_before
     );
-    assert_eq!(named_at(&world, "beta"), None);
+    assert_eq!(named_at(&world, &beta()), None);
 }
 
 #[test]
@@ -1043,7 +1043,7 @@ fn beta_given_by_the_policy_follows_each_publish_and_stable_does_not() {
     stable_bound(&world, "lib");
     assert_eq!(followers(&world, "lib"), Ok(vec![beta()]));
 
-    let moved = beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish)));
+    let moved = beta_moved(judged(&world, &ask("0.2.0", told(&published))));
     assert!(matches!(moved, Ok(Moved::Promoted { .. })), "{moved:?}");
     assert_eq!(named_at(&world, &beta()).as_ref(), Some(index));
     assert_eq!(named_at(&world, &of("lib", "stable")), None);
@@ -1073,7 +1073,7 @@ fn two_components_beta_only_the_published_ones_moves() {
     assert_eq!(followers(&world, "lib"), Ok(vec![beta()]));
     assert_eq!(followers(&world, "web"), Ok(vec![of("web", "beta")]));
 
-    beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish))).unwrap();
+    beta_moved(judged(&world, &ask("0.2.0", told(&published)))).unwrap();
     assert_eq!(named_at(&world, &beta()).as_ref(), Some(index));
     assert_eq!(named_at(&world, &of("web", "beta")), None);
     assert_eq!(
@@ -1094,7 +1094,7 @@ fn a_following_channel_whose_promoters_exclude_the_gate_is_refused_while_the_acc
     let edge = of("lib", "edge");
     following_requires(&world, &edge, vec![from_gate()], vec![release]);
 
-    let answer = judged(&world, &ask("0.2.0", ToldBy::Publish));
+    let answer = judged(&world, &ask("0.2.0", told(&published)));
     let Ok(Judged::Accepted {
         already: false,
         acceptance,
@@ -1131,7 +1131,7 @@ fn a_following_channel_whose_promoters_exclude_the_gate_is_refused_while_the_acc
 
 #[test]
 fn an_unreadable_channels_answer_accepts_nothing() {
-    let (world, _) = published_under(acceptance());
+    let (world, published) = published_under(acceptance());
     beta_requires(&world, vec![from_gate()]);
     world.fakes.policy.fault(
         PolicyOp::Channels,
@@ -1139,7 +1139,7 @@ fn an_unreadable_channels_answer_accepts_nothing() {
         Times::UntilHealed,
     );
     let before = counts(&world);
-    let answer = judged(&world, &ask("0.2.0", ToldBy::Publish));
+    let answer = judged(&world, &ask("0.2.0", told(&published)));
     let Err(Not::Unreadable(u)) = answer else {
         panic!("an unreadable channels answer was answered {answer:?}")
     };
@@ -1653,7 +1653,7 @@ fn edge_moves_on_each_publish_and_next_bound_to_it_takes_what_the_gate_moved_edg
     world.fakes.signer.hold(&SignerId::new(GATE));
     let seams = world.fakes.seams();
 
-    let answer = accept(&seams, &world.history(), &ask("0.2.0", ToldBy::Publish));
+    let answer = accept(&seams, &world.history(), &ask("0.2.0", told(&published)));
     let Ok(Judged::Accepted { channels, .. }) = answer else {
         panic!("the version was not accepted: {answer:?}")
     };
@@ -1778,7 +1778,12 @@ fn a_gate_over_a_fake_policy_moves_edge_in_a_history_holding_no_policy_file() {
 
     let told = AcceptAsk {
         component: None,
-        ..ask("0.1.0", ToldBy::Publish)
+        ..ask(
+            "0.1.0",
+            ToldBy::Publish {
+                index: index.clone(),
+            },
+        )
     };
     let answer = accept(&seams, &history, &told);
     let Ok(Judged::Accepted { channels, .. }) = answer else {
