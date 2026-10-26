@@ -8,9 +8,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::json;
 use tailrace_seams::{
-    canonical, no_cache_entries, Answer, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName,
-    Holds, Layout, Not, Output, OutputName, Packed, Projection, Rendered, Seam, Serving, Version,
-    Why,
+    canonical, no_cache_entries, no_lockfile, Answer, ArtifactMeta, BuildId, Contents, Ecosystem,
+    EcosystemName, Holds, Layout, Not, Output, OutputName, Packed, Pinned, Projection, Rendered,
+    Seam, Serving, Version, Why,
 };
 
 use crate::Fake;
@@ -21,6 +21,7 @@ pub enum ProjectionOp {
     Pack,
     Render,
     Serve,
+    Pinned,
 }
 
 /// The projection's ecosystem, the names outputs take in it, whether its
@@ -177,6 +178,16 @@ impl Projection for FakeProjection {
                     address: format!("fake://{}/{}", s.ecosystem, layout.at),
                 })
             },
+        )
+    }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+        let given = json!({ "checkout": checkout });
+        self.ask(
+            ProjectionOp::Pinned,
+            given,
+            format!("the lockfile of {checkout}"),
+            |_, source| Err(no_lockfile(source)),
         )
     }
 }

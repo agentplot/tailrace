@@ -11,8 +11,8 @@ use tailrace_core::{answer_json, cache_name, sync, write, Filled, SyncAsk, Synce
 use tailrace_fakes::{Call, FakeSigner, Fakes, Fault, LandingOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
     Answer, ArtifactMeta, Branch, BuildId, Check, Claim, ClaimKind, Contents, Digest, Ecosystem,
-    EcosystemName, Held, Layout, Name, Not, Outcome, Output, OutputName, Packed, Projection,
-    Rendered, Revision, Seam, Serving, Signer, SignerId, Store, Verdict, Version, Why,
+    EcosystemName, Held, Layout, Name, Not, Outcome, Output, OutputName, Packed, Pinned,
+    Projection, Rendered, Revision, Seam, Serving, Signer, SignerId, Store, Verdict, Version, Why,
 };
 
 fn site() -> Output {
@@ -131,6 +131,10 @@ impl Projection for Offering {
 
     fn serve(&self, _: &Layout) -> Answer<Serving> {
         unreachable!("a write serves nothing")
+    }
+
+    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+        unreachable!("a write reads no lockfile")
     }
 }
 

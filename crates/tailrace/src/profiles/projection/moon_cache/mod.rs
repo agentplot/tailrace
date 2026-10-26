@@ -25,8 +25,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    Answer, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not, Output, Packed,
-    Projection, Rendered, Seam, Serving, Source, Store, Version, Why,
+    no_lockfile, Answer, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not, Output,
+    Packed, Pinned, Projection, Rendered, Seam, Serving, Source, Store, Version, Why,
 };
 
 /// The ecosystem this projection packs in, as the bindings bind it.
@@ -202,6 +202,13 @@ impl Projection for MoonCache {
             &MoonCache::source(),
             "serve of the moon-cache projection, whose outputs directory moon reads itself",
         ))
+    }
+
+    /// 137: absent naming the lockfile for every checkout, since moon's
+    /// cache has no lockfile: sync fills it from the landing's verdicts,
+    /// never from a pin.
+    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+        Err(no_lockfile(&MoonCache::source()))
     }
 }
 

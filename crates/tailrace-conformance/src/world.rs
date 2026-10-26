@@ -19,8 +19,8 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Answer, Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, Contents, Digest,
     Ecosystem, Envelope, Environment, EnvironmentName, Layout, Manifest, Name, Outcome, Output,
-    OutputName, Packed, Projection, Rendered, Report, Revision, Seam, Seams, Serving, Signer,
-    SignerId, Source, Verdict, Version,
+    OutputName, Packed, Pinned, Projection, Rendered, Report, Revision, Seam, Seams, Serving,
+    Signer, SignerId, Source, Verdict, Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -509,6 +509,10 @@ impl Projection for Watched {
 
     fn serve(&self, layout: &Layout) -> Answer<Serving> {
         self.inner.serve(layout)
+    }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+        self.inner.pinned(checkout)
     }
 }
 

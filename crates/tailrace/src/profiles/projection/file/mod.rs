@@ -12,8 +12,8 @@
 //! absent.
 
 use tailrace_seams::{
-    no_cache_entries, Answer, BuildId, Contents, Layout, Output, Packed, Projection, Rendered,
-    Seam, Serving, Source, Version,
+    no_cache_entries, no_lockfile, Answer, BuildId, Contents, Layout, Output, Packed, Pinned,
+    Projection, Rendered, Seam, Serving, Source, Version,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -65,6 +65,12 @@ impl Projection for FileProjection {
 
     fn serve(&self, _: &Layout) -> Answer<Serving> {
         Err(not_built("serve", ECOSYSTEM, &FileProjection::source()))
+    }
+
+    /// 137: absent naming the lockfile for every checkout, since a file
+    /// has no lockfile.
+    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+        Err(no_lockfile(&FileProjection::source()))
     }
 }
 

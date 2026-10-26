@@ -13,7 +13,7 @@ use tailrace_fakes::{
 };
 use tailrace_seams::{
     Answer, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest, EcosystemName,
-    Envelope, EnvironmentName, Held, Layout, Manifest, Name, Not, Outcome, Output, Packed,
+    Envelope, EnvironmentName, Held, Layout, Manifest, Name, Not, Outcome, Output, Packed, Pinned,
     Projection, Put, Rendered, Seam, Serving, SignerId, Source, Store, Version, Why,
 };
 use world::{build_of, build_ops, by_host, eco, output, version_of, Watched, World, HOST, LANDING};
@@ -478,6 +478,9 @@ impl Projection for Metaless {
     }
     fn serve(&self, layout: &Layout) -> Answer<Serving> {
         self.0.serve(layout)
+    }
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+        self.0.pinned(checkout)
     }
 }
 
