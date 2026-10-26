@@ -61,6 +61,11 @@ nowhere else, and the lockfile it writes names no host
   the answer, and sync names the checkout's repository to the host and
   finds the serving process or starts it, as `tailrace status --page`
   does (114, 132).
+- **The process stays while a layout is served.** npm cannot start the
+  process, so an install long after a sync must still find it: the
+  process ends after its idle time only where no checkout the host's
+  file names holds a rendered layout its projection serves, and ends
+  once the last such layout, or its checkout, is gone (114).
 - **The address npm records names no host.** Every tarball address in a
   packument, which npm writes into `package-lock.json` as `resolved`, is
   the core's fixed name and port with the consuming repository in the
@@ -81,10 +86,17 @@ Out of scope, and what each waits on:
 - The serving process itself, its lock, the host's file of repositories
   and `tailrace status --page`: bolt tailrace-the-gate-and-the-channels'
   status across machines, on which this unit's code waits.
-- A client asking for a family package no lockfile pins yet, as `npm
-  install @family/new` does: the store answers a name only with its
-  version (138), so the process answers absent for a name with no version
-  in the layout. Named for the design agent.
+- A first install of a family package no lockfile pins yet, as `npm
+  install @family/new` does, where 137 has pinned answer the manifest's
+  range and render hold the newest version the policy admits within it.
+  The store resolves a name only by its exact version
+  (`artifact/<ecosystem>/<name>@<version>`, 138) and has no operation
+  that lists a name's versions (B.1, 66 to 73), so render has nothing to
+  choose the newest from; it waits on the design's answer of how a range
+  is resolved against the store, and on the render-under-a-policy
+  change that would carry a range on the seam's pin. Until then pinned
+  answers the lockfile's pins alone and the process answers `404` for a
+  packument the layout holds no version of. Named for the design agent.
 - `npm publish` refused in a tailrace repository: the Claude Code
   plugin unit.
 - Third-party packages, which stay the public registry's (section 8).
@@ -108,7 +120,8 @@ Out of scope, and what each waits on:
 - `consumer-layouts`: a version a served layout lacks is rendered into
   it under the policy, and one layout is rendered by one party at a time.
 - `serving-process`: the process answers each served layout under the
-  repository's path, from the layout of the checkout that last named it.
+  repository's path, from the layout of the checkout that last named it,
+  and stays past its idle time while any such layout is served.
 - `command-line`: `tailrace sync` names each served layout's address and
   finds or starts the host's serving process.
 - `conformance-suite`: the projection group holds a projection to serve
