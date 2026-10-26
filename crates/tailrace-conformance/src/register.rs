@@ -56,7 +56,6 @@ pub const PENDING: &[Pending] = &[
     Pending { clause: 127, unit: PHASE_2, why: "A channel declared by a pattern over branch names, which no unit of phase 1 carves." },
     Pending { clause: 128, unit: PHASE_2, why: "Several promotions in one act, which no unit of phase 1 carves." },
     Pending { clause: 129, unit: PHASE_2, why: "The asker named by an identity the owner's identity provider issued, and phase 1 binds none." },
-    Pending { clause: 130, unit: PHASE_2, why: "What runs a publish and tells the gate, named in the host's bindings file, which no unit of phase 1 carves." },
 ];
 
 /// A part of a clause a scenario cites that waits: the part, the unit

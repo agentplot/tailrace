@@ -115,6 +115,18 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             cites: &[27, 108],
             run: a_separated_gate_names_its_offerer,
         },
+        Scenario {
+            name: "the core starts nothing after an offer",
+            plays: None,
+            cites: &[95, 130],
+            run: the_core_starts_nothing_after_an_offer,
+        },
+        Scenario {
+            name: "a told index the name does not resolve to",
+            plays: None,
+            cites: &[95, 130],
+            run: a_told_index_the_name_does_not_resolve_to,
+        },
     ]
 }
 
@@ -894,4 +906,82 @@ fn a_separated_gate_names_its_offerer(world: &FakeWorld) {
         ),
         "the separated acceptance was not the gate's"
     );
+}
+
+fn the_core_starts_nothing_after_an_offer(world: &FakeWorld) {
+    let published = offered(world);
+    let (_, index) = version_of(&published);
+
+    // The publish answered, and nothing is accepted, promoted or asked of
+    // the ledger.
+    assert!(
+        world.keeper_calls().is_empty(),
+        "a publish asked the keeper"
+    );
+    for digest in digests(&published) {
+        for kind in [ClaimKind::Acceptance, ClaimKind::Promotion] {
+            assert_eq!(
+                of_kind(world, &digest, kind),
+                0,
+                "a publish attached {kind:?} to {digest}"
+            );
+        }
+    }
+    beta_unmoved(world);
+
+    // The gate, told of the publish's answer, accepts the index it names
+    // and moves beta.
+    let (acceptance, _, _, channels) =
+        accepted(world.judge(&world.gate_ask(VERSION, told(&published), GATE), &[GATE]));
+    assert!(
+        ok(world.fakes.store.claims_of(index), "claims-of")
+            .iter()
+            .any(|e| e.digest() == acceptance),
+        "the acceptance is not on the index the publish named"
+    );
+    acceptance_by(world, index, GATE);
+    let [(channel, Ok(Moved::Promoted { to, promotion, .. }))] = channels.as_slice() else {
+        panic!("beta was not promoted: {channels:?}")
+    };
+    assert_eq!(channel, &beta());
+    assert_eq!(to, index);
+    let chain = ok(world.fakes.keeper.chain(&beta()), "beta's chain").claims;
+    assert_eq!(
+        chain.iter().map(Envelope::digest).collect::<Vec<_>>(),
+        std::slice::from_ref(promotion),
+        "beta's chain does not hold the promotion"
+    );
+}
+
+fn a_told_index_the_name_does_not_resolve_to(world: &FakeWorld) {
+    let published = offered(world);
+    let (_, index) = version_of(&published);
+    let (other, _) = artifacts(&published).remove(0);
+    let written = world.writes().len();
+    let signed = world.fakes.signer.calls().len();
+
+    let told = ToldBy::Publish {
+        index: other.clone(),
+    };
+    let answer = world.judge(&world.gate_ask(VERSION, told, GATE), &[GATE]);
+    let Err(Not::Unreadable(u)) = &answer else {
+        panic!("a told index the name does not resolve to answered {answer:?}")
+    };
+    let said = u.said.clone().unwrap_or_default();
+    assert!(
+        said.contains(index.as_str()) && said.contains(other.as_str()),
+        "the answer does not name both digests: {said}"
+    );
+    assert_eq!(world.writes().len(), written, "the store was written");
+    assert!(
+        world.fakes.keeper.calls().is_empty(),
+        "the keeper was asked"
+    );
+    assert_eq!(
+        world.fakes.signer.calls().len(),
+        signed,
+        "the host's signer was asked"
+    );
+    assert_eq!(of_kind(world, index, ClaimKind::Acceptance), 0);
+    beta_unmoved(world);
 }
