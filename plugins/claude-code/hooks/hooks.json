@@ -1,0 +1,17 @@
+{
+  "description": "Refuse an ecosystem's own publish command in a tailrace repository, naming tailrace publish instead.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

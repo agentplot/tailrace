@@ -1,0 +1,9 @@
+{
+  "name": "tailrace",
+  "version": "0.1.0",
+  "description": "Keep a session publishing a tailrace repository only through tailrace publish: an ecosystem's own publish command is refused, naming tailrace publish instead.",
+  "author": { "name": "agentplot" },
+  "homepage": "https://agentplot.github.io/tailrace/guides/claude-code/",
+  "repository": "https://github.com/agentplot/tailrace",
+  "license": "MIT"
+}
