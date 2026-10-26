@@ -59,16 +59,15 @@ or bound to a channel of the same component (37, 83, 131, C.10); a
 repository that declares one component SHALL
 have every channel in it, and one that declares none SHALL have every
 channel in that one, its channels spelled by name alone (123). The
-policy SHALL answer the givens held off, given a repository at a landed
-revision, with every channel the profile gives but holds until the
-repository switches it on, and the repository has not switched on,
-once each, ordered by name and then by component, each with its
-component, how it would move once switched on, and the line that would
-switch it on, in the profile's own words; an empty list where it holds
-none back; and never a channel the channels answer lists at that
-revision (C.10, as amended at agentplot/blueprints b1267d7). The held
-answer SHALL be unreadable wherever the channels answer is, with the
-same words.
+same channels answer SHALL carry, apart from the channels in force,
+every channel the profile gives but holds until the repository switches
+it on, and the repository has not switched on, marked held, once each,
+ordered by name and then by component, each with its component, how it
+would move once switched on, and the line that would switch it on, in
+the profile's own words; an empty list where it holds none back; and
+never a channel in force (131 as amended at agentplot/blueprints
+1ae1cc5, C.10). The policy seam SHALL have no operation for the held
+givens apart from channels (136).
 
 #### Scenario: Acceptance names no channel
 
@@ -92,13 +91,13 @@ same words.
 
 #### Scenario: A given held off
 
-- **WHEN** the held givens are asked at a revision, and the channels at the same revision
-- **THEN** each held given names its component, how it would move and the line that would switch it on, and no channel is in both answers
+- **WHEN** the channels are asked at a revision whose policy holds a given the repository has not switched on
+- **THEN** the one answer carries the channels in force and, apart from them, the held given marked held, naming its component, how it would move and the line that would switch it on, and no channel is both in force and held
 
-#### Scenario: A held given written and read back
+#### Scenario: A channels answer written and read back
 
-- **WHEN** a given held off is written in its machine-readable form and read back
-- **THEN** it is the same value, naming the channel, its component or that the repository declares none, how it would move and its line
+- **WHEN** a channels answer holding a channel in force and a given held off is written in its machine-readable form and read back
+- **THEN** it is the same value, the held given naming the channel, its component or that the repository declares none, how it would move and its line, apart from the channels in force
 
 ### Requirement: The keeper's contract
 

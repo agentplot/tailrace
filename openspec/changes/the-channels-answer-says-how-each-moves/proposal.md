@@ -19,7 +19,7 @@ and gives a channel its component wherever it travels, so the gate and
 the ledger learn every channel from that one answer and the core knows
 no channel's name (131, 125, 37, 83, 95, C.10, C.13, C.14, as amended
 at agentplot/blueprints 67f95da, 85bbf54, 7749369, e18ba89, 061bfa8,
-b64d367, 53f6d44 and b1267d7).
+b64d367, 53f6d44, b1267d7, 088430c and 1ae1cc5).
 
 ## What Changes
 
@@ -78,8 +78,9 @@ b64d367, 53f6d44 and b1267d7).
   today (129), unless `approvers` under its table names signers, and
   then only at theirs; a refused asking names the asker and who may
   ask. The same key under a given narrows who asks for it. A manual
-  environment's approvers are written under its made channel,
-  `[channels.<environment>]`. Approvers never widen who signs, and the
+  environment's approvers are written on the environment, and the
+  channel it makes takes them; never under that made channel (as ruled
+  at 088430c). Approvers never widen who signs, and the
   gate's own move on a publish is no asking (32, 95, C.10).
 - **A given channel is promoted by the gate's own signer.** Every
   channel the fragment holds and the table in force has on requires the
@@ -97,21 +98,23 @@ b64d367, 53f6d44 and b1267d7).
   beneath that table each given held off, with how it would move and
   the line that would switch it on, so a switched-off `alpha` shows as
   one line away. It asks the core like every command (core.31), and the
-  held givens come from the policy seam's new held answer, which the
-  file profile reads from the fragment (C.10, as amended at b1267d7).
+  held givens come in the channels answer itself, carried apart from
+  the channels in force, which the file profile reads from the
+  fragment; the policy seam gains no operation for them (C.10 as
+  amended at b1267d7, 131 as amended at 1ae1cc5).
 - **An environment's words make its channels.** An environment's
   `policy = "manual"` gives it a channel of its own, named for the
   environment and bound to the channel it names; `after = [...]` gives
   it a channel of its own bound to the channel the named environments
   follow (C.10, 41, 97). These are listed like a channel declared by
   hand and promoted by the gate's signer as a given channel is; a line
-  under one adds claims or names its approvers and never changes how it
-  moves, since the
-  environment's words say that. An environment's table holds C.10's
-  words and no others: `channel`, `policy` (`auto` or `manual`, `auto`
-  unless written), `after` and `target`; any other key is unreadable
-  naming the table and the key, since a target's own settings sit in the
-  target's table and nowhere else (C.10).
+  under one adds claims and never changes how it moves or who may ask,
+  since the environment's words say that. An environment's table holds
+  C.10's words and no others: `channel`, `policy` (`auto` or `manual`,
+  `auto` unless written), `after`, `target`, and `approvers` where the
+  environment is manual; any other key is unreadable naming the table
+  and the key, since a target's own settings sit in the target's table
+  and nowhere else (C.10).
 - **An empty channel read as last read says when.** Where the ledger
   does not answer and the host's copy holds a channel with no promotion,
   the chain is answered empty with the time the copy was read and the
@@ -143,9 +146,10 @@ b64d367, 53f6d44 and b1267d7).
   given's table and overriding it by the same line, with no `on` key,
   as ruled at 53f6d44, who signs a given's promotion, who may ask, the
   environment's table, the gate's reading through the seam, and the
-  policy command with the givens held off; it puts to the user only
-  what is still this unit's reading, the fragment's `held` mark and a
-  manual environment's approvers under its made channel. The
+  policy command with the givens held off, carried by the channels
+  answer; the fragment's own hold mark and approvers on the environment
+  are the statement's, ruled at 088430c, so it puts no reading of this
+  unit's to the user. The
   self-hosting, ledgers and how-it-works pages say what is built.
 
 Out of scope, and what each waits on:
@@ -203,12 +207,13 @@ Out of scope, and what each waits on:
   policy, keeper and target seams; the channel's store name carries its
   component where components are declared; the policy for a channel
   names who may sign its promotion; an empty chain read as last read
-  says when; the policy answers the givens held off, each with the line
-  that would switch it on.
+  says when; the channels answer carries the givens held off apart from
+  the channels in force, each with the line that would switch it on,
+  and the policy seam gains no operation.
 - `seam-fakes`: the fake policy scripts how a channel moves,
   prereleases among it, its
   component carried by the channel itself, and the givens it holds off
-  as a test scripts them; the fake keeper keeps a
+  as a test scripts them, carried in its channels answer; the fake keeper keeps a
   chain per component and channel, and an empty chain as last read.
 - `conformance-suite`: the policy's group holds how each channel moves,
   prereleases among it, and what a profile gives with nothing declared,
@@ -219,9 +224,9 @@ Out of scope, and what each waits on:
   and an empty chain as last read saying when.
 - `policy-file`: the file's channel form per component, the givens'
   fragment laid beneath it as the table in force with its `held` mark,
-  its environments' channels and the four keys an environment's table
-  holds, and `on_each_publish`, `bound_to`, `prereleases` and
-  `approvers` read by the profile.
+  its environments' channels and the keys an environment's table holds,
+  `approvers` on a manual one among them, and `on_each_publish`,
+  `bound_to`, `prereleases` and `approvers` read by the profile.
 - `command-line`: `tailrace policy` shows the policy in force at the
   branch's landed head and, beneath it, the givens held off with the
   line that switches each on.
@@ -243,12 +248,13 @@ Out of scope, and what each waits on:
 
 - `crates/tailrace-seams/src/policy.rs` (how a channel moves,
   prereleases among it, the promotion's signers and approvers, and the
-  held givens' answer), a channel identity type in `artifact.rs`,
+  channels answer carrying the held givens apart from the channels in
+  force), a channel identity type in `artifact.rs`,
   `keeper.rs` (append, chain and the store name by identity, an empty
   chain as last read),
   `answer.rs` (the promotion refusals naming the identity, and the
   asker the approvers do not name),
-  `target.rs`, `lib.rs` (`Nowhere` answering the held givens).
+  `target.rs`, `lib.rs` (`Nowhere`).
 - `crates/tailrace-fakes/src/policy.rs` (with the held givens a test
   scripts), `keeper.rs`, `target.rs`.
 - `crates/tailrace-core/src/gate.rs` (no file parsing, a prerelease
@@ -258,11 +264,14 @@ Out of scope, and what each waits on:
 - `crates/tailrace/src/profiles/policy/file/` (the resolution, and the
   fragment `givens.toml` beside it), `profiles/ledger/`,
   `commands/promote.rs`, `commands/verify.rs`, `commands/status.rs`
-  (an empty channel as last read), a new
+  (an empty channel as last read), `commands/serve/page.rs` (the
+  status page's channel row matching the new `Moves` and empty
+  channel), a new
   `commands/policy.rs` with its binding in `bindings/mod.rs`, `lib.rs`
   and `main.rs`, and their tests.
 - `crates/tailrace-core/src/in_force.rs`, the policy in force asked of
-  the core, with the givens held off, and `landed.rs`'s `held_at`.
+  the core, with the givens held off, and `landed.rs`'s
+  `policy_channels_at`.
 - `crates/tailrace-conformance/src/seams/policy.rs`, `seams/keeper.rs`,
   `core/gate.rs`, `core/ledger.rs`, `fakes.rs`, `world.rs` and the rest
   that name a channel.
@@ -301,6 +310,7 @@ crates/tailrace/src/commands/promote.rs
 crates/tailrace/src/commands/verify.rs
 crates/tailrace/src/commands/policy.rs
 crates/tailrace/src/commands/status.rs
+crates/tailrace/src/commands/serve/page.rs
 crates/tailrace/src/commands/mod.rs
 crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
