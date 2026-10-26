@@ -1241,14 +1241,17 @@ fn with_remotes(host: &Host, remotes: &[&str]) -> (PathBuf, tailrace_seams::Revi
 
 /// The remote `landing` reads, by the path its answer of `head` on
 /// `main` names, or none where it reads the repository's own refs and
-/// finds `head` landed.
+/// finds `head` landed, saying it read the landing itself (77, C.6).
 fn remote_read(
     host: &Host,
     landing: &dyn tailrace_seams::Landing,
     head: &tailrace_seams::Revision,
 ) -> Option<String> {
     match landing.landed(&tailrace_seams::Branch::new("main"), head) {
-        Ok(true) => None,
+        Ok(tailrace_seams::IsLanded {
+            landed: true,
+            read: tailrace_seams::Read::Source,
+        }) => None,
         Err(Not::Unreadable(u)) => {
             let said = u.said.unwrap_or_default();
             let read: Vec<&str> = ["origin", "upstream", "github", "gitlab"]

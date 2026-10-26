@@ -5,7 +5,8 @@
 //! the keeper no longer answers, the same with everything kept deleted,
 //! and the environments not yet read, each asking the landing, the
 //! policy and the keeper alone (31, 36, 58 to 61, 63, 101, 105, 125,
-//! 131).
+//! 131); and the channels shown from a landing read as last fetched,
+//! saying when (36, 60, 77).
 
 use std::fs;
 
@@ -76,6 +77,12 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             plays: None,
             cites: &[58, 60],
             run: the_environments_not_yet_read_a_fake_target_bound,
+        },
+        Scenario {
+            name: "the landing read as last fetched",
+            plays: None,
+            cites: &[36, 60, 77],
+            run: the_landing_read_as_last_fetched,
         },
     ]
 }
@@ -549,4 +556,53 @@ fn the_environments_not_yet_read_a_fake_target_bound(world: &FakeWorld) {
         "the channels were not shown beside the environments"
     );
     assert_eq!(world.target_calls(), targets, "status asked the target");
+}
+
+/// 77: the branch's head answered landed from the landing's copy shows
+/// every channel as a landing answering from itself shows it, the
+/// channels' part saying the landing was read as last fetched, when, and
+/// with the remote's words (36, 60).
+fn the_landing_read_as_last_fetched(world: &FakeWorld) {
+    const WORDS: &str = "fatal: unable to access 'https://forge.example/o/r.git/': \
+                         Could not resolve host: forge.example\n";
+    two_versions(world);
+    world.declare_channels(&[(BETA, None), (STABLE, None)]);
+    world.promote_fake(STABLE, VERSION);
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let first = asked(world);
+    assert_eq!(
+        first.channels.as_ref().map(|c| &c.landing),
+        Ok(&Read::Source),
+        "a landing answering from itself said it read a copy"
+    );
+    world.fakes.landing.unreachable(WORDS);
+
+    let again = asked(world);
+    let channels = match &again.channels {
+        Ok(channels) => channels,
+        Err(not) => panic!("the channels' part answered {not:?} from a landed head's copy"),
+    };
+    let Read::Kept { at, said } = &channels.landing else {
+        panic!(
+            "the channels' part says the landing was read {:?}",
+            channels.landing
+        )
+    };
+    assert!(
+        *at >= since,
+        "the landing was fetched at {at}, before it was read"
+    );
+    assert_eq!(said, WORDS, "the remote's words were not carried unchanged");
+    assert_eq!(
+        channels_of(&again),
+        channels_of(&first),
+        "the channels were shown otherwise from the landing's copy"
+    );
+    assert_eq!(channels.revision, world.head);
+    let json = serde_json::to_value(&again).expect("status serializes");
+    let landing = &json["channels"]["value"]["landing"]["kept"];
+    assert_eq!(landing["at"], *at, "{json}");
+    assert_eq!(landing["said"], WORDS, "{json}");
 }

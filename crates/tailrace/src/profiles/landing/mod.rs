@@ -2,6 +2,7 @@
 //! host's `[landing]` names.
 
 pub mod branch;
+mod copy;
 pub mod sluice;
 
 use std::path::Path;

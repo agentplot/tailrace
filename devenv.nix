@@ -226,7 +226,8 @@ in
     # Chromium its screenshots are taken in (site/scripts/shots.mjs).
     pkgs.bun
     pkgs.playwright-test
-    pkgs.sccache
+    # check-compile-server.sh reads the host's sluice settings, TOML.
+    pkgs.taplo
     # The tools layer: ssh-keygen signs the run records its tests stage as
     # sluice's signers sign them.
     pkgs.openssh
@@ -258,18 +259,12 @@ in
   # run on the cores sluice handed the run (SLUICE_JOBS, sluice 0.37.0); a
   # session's own shell has no SLUICE_JOBS, and cargo takes every core.
   #
-  # In a session's own shell rustc runs under sccache (RUSTC_WRAPPER), its
-  # cache in the git common dir, so the agents' worktrees on a host reuse the
-  # crates another compiled: the dependencies, which compile where cargo
-  # unpacked them, while a workspace crate's key holds its checkout's path.
-  # Its server listens on a port the common dir derives, below the hosts'
-  # ephemeral ranges (32768 on Linux, 49152 on macOS), so the server a compile
-  # reaches is this repository's, the sccache devenv.lock pins (core.26),
-  # never one another repository started on sccache's default port. A port,
-  # not a socket: two servers starting at once on one socket would share the
-  # cache, which sccache does not survive. In a run sluice starts, which
-  # SLUICE_CHECKOUT in its environment tells, rustc runs unwrapped, and the
-  # run reaches no server or cache of the sessions' (check-sccache.sh).
+  # rustc compiles through the compile server and cache the host's sluice
+  # settings declare, and this shell sets nothing of its own for them: sluice
+  # hands a run the server's variables (sluice 0.43.0), none to a run holding
+  # a check the policy marks cold, and a session's own shell inherits the
+  # same from the host, which exports them into every shell. Where the host
+  # declares none, rustc runs unwrapped (clause 133; check-compile-server.sh).
   enterShell = ''
     if [ -n "''${SLUICE_JOBS:-}" ]; then
       CARGO_BUILD_JOBS="$SLUICE_JOBS"
@@ -289,14 +284,6 @@ in
       export MOON_HOME
     fi
     unset _moon_root _moon_common _moon_cache
-    if [ -z "''${SLUICE_CHECKOUT:-}" ] &&
-      _sccache_common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
-      RUSTC_WRAPPER=${lib.getExe pkgs.sccache}
-      SCCACHE_DIR="$_sccache_common/sccache"
-      SCCACHE_SERVER_PORT=$((20000 + $(printf %s "$_sccache_common" | cksum | cut -d' ' -f1) % 10000))
-      export RUSTC_WRAPPER SCCACHE_DIR SCCACHE_SERVER_PORT
-    fi
-    unset _sccache_common
     ${activate}
     ${lib.optionalString (sluice != null) ''
       # proto puts cargo's own bin first, where a sluice built from source

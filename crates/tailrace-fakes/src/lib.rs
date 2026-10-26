@@ -125,8 +125,8 @@ mod tests {
     use serde_json::Value;
     use tailrace_seams::{
         Artifact, Audience, Branch, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
-        Environment, Layout, Manifest, Name, NamedSigner, Output, OutputName, Required, Revision,
-        SignerId, Verified, Version,
+        Environment, IsLanded, Layout, Manifest, Name, NamedSigner, Output, OutputName, Read,
+        Required, Revision, SignerId, Verdicts, Verified, Version,
     };
 
     use super::*;
@@ -216,8 +216,20 @@ mod tests {
             .ensure(&rev, &[OutputName::new("site")])
             .is_err());
         assert!(seams.build.report(&rev, &OutputName::new("site")).is_err());
-        assert_eq!(seams.landing.landed(&Branch::new("main"), &rev), Ok(true));
-        assert_eq!(seams.landing.verdicts_of(&rev), Ok(vec![]));
+        assert_eq!(
+            seams.landing.landed(&Branch::new("main"), &rev),
+            Ok(IsLanded {
+                landed: true,
+                read: Read::Source
+            })
+        );
+        assert_eq!(
+            seams.landing.verdicts_of(&rev),
+            Ok(Verdicts {
+                verdicts: vec![],
+                read: Read::Source
+            })
+        );
         assert!(seams.policy.policy_for(&rev, &Audience::Acceptance).is_ok());
 
         let projection = seams.projection(&eco_b).expect("eco-b is bound");

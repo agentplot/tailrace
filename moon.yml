@@ -23,11 +23,12 @@ tasks:
     command: 'sh check-toolchain.sh'
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true, cache: false}
-  # rustc runs under sccache in a session's shell and unwrapped in a run
-  # sluice starts (check-sccache.sh). It reads the shell it runs in, so it
-  # never replays.
-  sccache:
-    command: 'sh check-sccache.sh'
+  # rustc compiles through the compile server the host's sluice settings
+  # declare, in a run and in a session's shell alike, and unwrapped where
+  # the host declares none (check-compile-server.sh). It reads the shell it
+  # runs in and the host's settings, so it never replays.
+  compile-server:
+    command: 'sh check-compile-server.sh'
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true, cache: false}
   # A merge made outside the shell, as a take is, passes the commit hooks
