@@ -10,10 +10,12 @@
 mod scratch;
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
 use scratch::gate::{Gate, SIGNER};
 use scratch::recorder::{remote_file, Ran, Recorder};
-use scratch::{git_fails, moon_hash, moon_workspace, Scratch, Task, MAIN};
+use scratch::{git_fails, home, moon_hash, moon_workspace, Scratch, Task, HOME_ENV, MAIN};
 use tailrace::profiles::landing::sluice::{as_written, Sluice};
 use tailrace_conformance::seams::landing::{self, LandingRig, Recorded};
 use tailrace_conformance::{run, Rig};
@@ -392,6 +394,41 @@ fn the_remote_is_gone() {
             other => panic!("answered {other:?} with the remote gone"),
         }
     }
+}
+
+/// A hook the scratch git runs, as a gate's fetch runs sluice's own, and
+/// a profile's tools, which run in the test's own process, run under the
+/// scratch home: none of the host's, and no sluice configuration in it.
+#[test]
+fn a_hook_and_the_tests_own_process_run_under_the_scratch_home() {
+    let scratch = Scratch::new();
+    let seen = scratch.path().join("seen");
+    let hooks = scratch.repo.path.join(".git/hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    let hook = hooks.join("post-commit");
+    let printed: Vec<String> = HOME_ENV.iter().map(|(n, _)| format!("\"${n}\"")).collect();
+    fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' {} > {:?}\n",
+            printed.join(" "),
+            seen.display().to_string()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    scratch.repo.commit("chore: a commit the hook sees");
+    let seen = fs::read_to_string(&seen).expect("the hook ran");
+    let wanted: Vec<PathBuf> = HOME_ENV.iter().map(|(_, d)| home().join(d)).collect();
+    let hooked: Vec<PathBuf> = seen.lines().map(PathBuf::from).collect();
+    assert_eq!(hooked, wanted);
+    let own: Vec<PathBuf> = HOME_ENV
+        .iter()
+        .map(|(n, _)| PathBuf::from(std::env::var_os(n).expect("set")))
+        .collect();
+    assert_eq!(own, wanted);
+    assert!(wanted.iter().all(|d| d.is_dir()), "{wanted:?}");
+    assert!(!home().join("config/sluice/config.toml").exists());
 }
 
 /// sluice itself lands a submission whose gate requires one moon task,
