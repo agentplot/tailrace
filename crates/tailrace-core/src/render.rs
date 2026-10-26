@@ -7,13 +7,24 @@
 //! the index by its metadata; the digests resolved are the ones acted on
 //! (rule core.4). A name the store does not hold is absent, as most of a
 //! lockfile's pins are, and never a refusal (51, 58).
+//!
+//! A layout is judged under the consuming repository's own policy for
+//! layouts, read once at the landed revision sync runs for and never
+//! from the checkout (113, 65, rule core.22); where it declares none,
+//! each version under its publisher's, read from the one layout-policy
+//! claim on the version's index. A version with no policy anywhere is
+//! refused, so no layout holds a version judged under none (rule
+//! core.17; design D3).
 
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, Digest, Ecosystem, EcosystemName, Held, Manifest, Name, Not, Pinned, Seam,
-    Source, Store, Version,
+    Answer, Artifact, ArtifactMeta, Audience, Claim, ClaimKind, Digest, Ecosystem, EcosystemName,
+    Envelope, Held, Manifest, Name, Not, Pinned, Policy, RequiredClaim, Revision, Seam, Source,
+    Store, Version, Why,
 };
 
-use crate::BOUND;
+use crate::{policy_at, Landed, BOUND};
 
 /// What every name of a version's index by ecosystem, name and version
 /// begins with (138).
@@ -87,5 +98,125 @@ pub fn locate(store: &dyn Store, ecosystem: &Ecosystem, pin: &Pinned) -> Pinning
             pin.name,
             pin.version
         )))),
+    }
+}
+
+/// 113: the consuming repository's own policy for layouts: the landed
+/// revision it was read at, and the claims it requires in its order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Own {
+    pub revision: Revision,
+    pub claims: Vec<RequiredClaim>,
+}
+
+/// 113: which policy judged a version, as the answer and the record name
+/// it: the consumer's own at the landed revision, or its publisher's at
+/// the revision the publisher's claim names.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PolicyOf {
+    Own { revision: Revision },
+    Publisher { revision: Revision },
+}
+
+/// 113, 65: the consuming repository's policy for layouts at `landed`,
+/// never the checkout's (rule core.22); none where it declares none, so
+/// each version is judged under its publisher's; the policy's own answer
+/// where it cannot say.
+pub fn own_policy(policy: &dyn Policy, landed: &Landed) -> Answer<Option<Own>> {
+    match policy_at(policy, landed, &Audience::Layout) {
+        Ok(required) => Ok(Some(Own {
+            revision: landed.revision().clone(),
+            claims: required.claims().to_vec(),
+        })),
+        Err(Not::Absent(_)) => Ok(None),
+        Err(not) => Err(not),
+    }
+}
+
+/// 113: the body of the publisher's layout-policy claim: the claims a
+/// layout must require, in the policy's order (design D8).
+pub fn layout_policy_body(claims: &[RequiredClaim]) -> Value {
+    json!({ "claims": claims })
+}
+
+#[derive(Deserialize)]
+struct LayoutPolicyBody {
+    claims: Vec<RequiredClaim>,
+}
+
+/// 113, rule core.17: the policy `version`, whose index is `index`, is
+/// judged under: the consumer's `own` where it declares one; otherwise
+/// its publisher's, the one layout-policy claim about the index among
+/// `on_index`, the index's attestations, read as the store holds them
+/// (design D3). None is refused naming the publisher's layout policy as
+/// the claim found wanting; two of different content are unreadable
+/// naming both, and neither is chosen, as a fork is never chosen between
+/// (rule core.34).
+pub fn policy_for(
+    own: Option<&Own>,
+    version: &ArtifactMeta,
+    index: &Digest,
+    on_index: &[Envelope],
+) -> Answer<(PolicyOf, Vec<RequiredClaim>)> {
+    if let Some(own) = own {
+        let policy = PolicyOf::Own {
+            revision: own.revision.clone(),
+        };
+        return Ok((policy, own.claims.clone()));
+    }
+    let mut found: Vec<(Digest, Claim)> = Vec::new();
+    for envelope in on_index {
+        let Some(claim) = Claim::from_envelope(envelope) else {
+            continue;
+        };
+        if claim.kind != ClaimKind::LayoutPolicy || claim.subject != *index {
+            continue;
+        }
+        if !found.iter().any(|(_, held)| held.body == claim.body) {
+            found.push((envelope.digest(), claim));
+        }
+    }
+    let store = Source::new(Seam::Store, BOUND);
+    match found.as_slice() {
+        [] => Err(Not::refused(
+            &Source::new(Seam::Policy, BOUND),
+            Why::Wanting {
+                version: version.clone(),
+                index: index.clone(),
+                wanting: RequiredClaim {
+                    kind: ClaimKind::LayoutPolicy,
+                    check: None,
+                    signers: Vec::new(),
+                },
+                checked: Vec::new(),
+            },
+            None,
+        )),
+        [(envelope, claim)] => {
+            let body: LayoutPolicyBody =
+                serde_json::from_value(claim.body.clone()).map_err(|e| {
+                    Not::unreadable(
+                        &store,
+                        format!("the layout policy {envelope} on {index}"),
+                        Some(e.to_string()),
+                    )
+                })?;
+            let policy = PolicyOf::Publisher {
+                revision: claim.revision.clone(),
+            };
+            Ok((policy, body.claims))
+        }
+        several => {
+            let claims: Vec<String> = several.iter().map(|(d, _)| d.to_string()).collect();
+            Err(Not::unreadable(
+                &store,
+                format!("the layout policies {} on {index}", claims.join(" and ")),
+                Some(format!(
+                    "{} layout-policy claims of different content on one index, and none is chosen",
+                    several.len()
+                )),
+            ))
+        }
     }
 }
