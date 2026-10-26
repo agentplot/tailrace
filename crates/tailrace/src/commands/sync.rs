@@ -5,9 +5,9 @@
 //! holding only what the policy for layouts at that revision admits; by
 //! default for the newest revision of the branch the checkout descends
 //! from (47 to 54, 99, C.3). Filling the cache reads no policy (53); the
-//! layouts read the consumer's policy, or, where it has none, the
-//! publisher's through the signers the host's bindings trust (113,
-//! C.10). It writes nothing to the store. Text names each layout's place
+//! layouts read the consumer's layout line, or, where it writes none, the
+//! publisher's through the signers the host's bindings trust, else the
+//! given (113, C.10). It writes nothing to the store. Text names each layout's place
 //! and, per pin, held with its index, refused with the claim found
 //! wanting and the signers checked, and a count of the pins the store
 //! does not name; a layout that cannot be refreshed says what it holds
@@ -143,7 +143,7 @@ fn utc(seconds: u64) -> String {
 fn under(policy: &Under) -> String {
     match policy {
         Under::Own { revision } => format!("under its own policy at {revision}"),
-        Under::Publisher => "under each version's publisher's policy".into(),
+        Under::Publisher => "under each version's publisher's policy, else the given".into(),
     }
 }
 
@@ -152,6 +152,12 @@ fn judged_by(policy: &Option<PolicyOf>) -> String {
     match policy {
         Some(PolicyOf::Publisher { revision }) => {
             format!(" under its publisher's policy at {revision}")
+        }
+        Some(PolicyOf::Given {
+            revision: Some(revision),
+        }) => format!(" under the given policy at {revision}"),
+        Some(PolicyOf::Given { revision: None }) => {
+            " under the given policy, through the signers the host trusts".into()
         }
         _ => String::new(),
     }
