@@ -53,10 +53,10 @@ reordered (122).
 Each fake SHALL be set up by the test that uses it, with what its seam
 holds (the revisions a branch has landed and their verdicts, the
 outputs a build leaves and their identities and outcomes, the policy
-for each audience and the component each channel belongs to, the
-signers and their identities, a projection's ecosystem, an
-environment's channel head and what it runs), and SHALL share that
-state with every copy the test hands to the core.
+for each audience, each channel with its component, and how each
+channel moves, the signers and their identities, a projection's
+ecosystem, an environment's channel head and what it runs), and SHALL
+share that state with every copy the test hands to the core.
 
 #### Scenario: A landing scripted for one test
 
@@ -70,8 +70,23 @@ state with every copy the test hands to the core.
 
 #### Scenario: The fake policy's channels
 
-- **WHEN** a test scripts the fake policy with policies for the channels `beta` and `stable`, `stable` bound to `beta`, and puts `beta` in the component `lib` at one revision
-- **THEN** channels at that revision answers `beta` of `lib` and `stable` of `repository` bound to `beta`, and at another revision both of `repository`, with the call recorded and faultable like policy-for
+- **WHEN** a test scripts the fake policy with policies for `beta` of `lib`, which it says moves on each publish, `stable` of `lib` bound to `beta`, and `edge` of no declared component at one revision only
+- **THEN** channels at that revision answers `beta` of `lib` moving on each publish, `edge` moving by promotion alone and `stable` of `lib` bound to `beta`, and at another revision only the two of `lib`, with the call recorded and faultable like policy-for
+
+#### Scenario: A scripted following channel that takes prereleases
+
+- **WHEN** a test scripts the fake policy with `nightly` moving on each publish with prereleases
+- **THEN** channels answers `nightly` moving on each publish with prereleases
+
+#### Scenario: A scripted given held off
+
+- **WHEN** a test scripts the fake policy with `canary` held off, moving on each publish, with the line `[channels.canary]`, and scripts no other
+- **THEN** the channels answer carries `canary` held, with how it would move and its line, apart from the channels in force, which do not include it, and a fake scripted with none held carries an empty list held, the one call recorded and faultable as before
+
+#### Scenario: The fake keeper's two components
+
+- **WHEN** a test appends a promotion to `beta` of `lib` on the fake keeper
+- **THEN** the chain of `beta` of `lib` holds it, and the chain of `beta` of `web` and of `beta` of no declared component are absent
 
 ### Requirement: Scripted refusals and unreadable answers
 

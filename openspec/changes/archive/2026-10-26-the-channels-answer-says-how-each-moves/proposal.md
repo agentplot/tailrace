@@ -302,6 +302,7 @@ crates/tailrace-core/src/verify.rs
 crates/tailrace-core/src/landed.rs
 crates/tailrace-core/src/status.rs
 crates/tailrace-core/src/in_force.rs
+crates/tailrace-core/src/version.rs
 crates/tailrace-core/src/lib.rs
 crates/tailrace-core/tests/**
 crates/tailrace/src/profiles/policy/file/**

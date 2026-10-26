@@ -1426,6 +1426,149 @@ fn policy_as_text_shows_the_layout_absent_beside_the_channels_and_exits_0() {
         "    may be asked for by any asker",
         "{printed}"
     );
+    assert!(
+        !lines.contains(&"held off"),
+        "a policy holding nothing off showed a held part: {printed}"
+    );
+}
+
+/// The host's repository with `channels` written beneath an acceptance
+/// requiring nothing, committed and landed.
+fn landed_with(host: &Host, channels: &str) {
+    fs::write(
+        host.repo.join(".config/tailrace.toml"),
+        format!(
+            "{POLICY}\n[signers.gate]\nssh = \"ssh-ed25519 GGGG\"\nkinds = [\"acceptance\"]\n\n\
+             [acceptance]\nrequire = []\n\n{channels}"
+        ),
+    )
+    .unwrap();
+    git(&host.repo, &["commit", "-q", "-am", "chore: the policy"]);
+    let head = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
+    host.fakes.landing.land(&Branch::new("main"), &head);
+}
+
+/// The lines `tailrace policy` prints over the host's policy file, and
+/// its JSON compared value for value with the core's answer.
+fn policy_lines(host: &Host) -> (Vec<String>, Value) {
+    let (code, printed) = run_over(host, over_the_file(host), &["policy"]);
+    assert_eq!(code, 0, "{printed}");
+    let (code, json) = run_over(host, over_the_file(host), &["policy", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let history = History::open(&host.repo).unwrap();
+    let core = in_force(
+        &over_the_file(host).seams,
+        &history,
+        &InForceAsk {
+            branch: Branch::new("main"),
+        },
+    );
+    assert_eq!(json, answer_json(&core));
+    (printed.lines().map(str::to_string).collect(), json)
+}
+
+#[test]
+fn policy_shows_the_givens_held_off_beneath_the_table_with_their_lines() {
+    let host = Host::new();
+    landed_with(&host, "");
+    let (lines, json) = policy_lines(&host);
+    let printed = lines.join("\n");
+    let at = |line: &str| {
+        lines
+            .iter()
+            .position(|l| l == line)
+            .unwrap_or_else(|| panic!("no line {line:?}: {printed}"))
+    };
+    let held = at("held off");
+    assert!(at("  beta, each publish") < held, "{printed}");
+    assert!(at("  stable, bound to beta") < held, "{printed}");
+    assert_eq!(
+        lines[held + 1..],
+        [
+            "  alpha, each publish, prereleases too, switch on with [channels.alpha]",
+            "  lts, bound to stable, switch on with [channels.lts]",
+        ],
+        "{printed}"
+    );
+
+    let channels = &json["value"]["channels"]["value"];
+    assert_eq!(
+        channels["held"],
+        serde_json::json!([
+            {
+                "channel": { "component": null, "name": "alpha" },
+                "moves": { "by": "each_publish", "prereleases": true },
+                "switch": "[channels.alpha]",
+            },
+            {
+                "channel": { "component": null, "name": "lts" },
+                "moves": { "by": "bound", "to": "stable" },
+                "switch": "[channels.lts]",
+            },
+        ])
+    );
+}
+
+#[test]
+fn an_unreadable_channels_answer_is_shown_once_in_place_of_the_channels_and_the_held_part() {
+    let host = Host::new();
+    host.fakes.policy.holds(
+        &ChannelId::new(None, ChannelName::new("canary")),
+        tailrace_seams::Moves::Promotion,
+        "[channels.canary]",
+    );
+    host.fakes.policy.fault(
+        tailrace_fakes::PolicyOp::Channels,
+        Fault::Unreadable("the channels' table cannot be read".into()),
+        Times::Once,
+    );
+    let (code, printed) = host.run(&["policy"]);
+    assert_eq!(code, 0, "{printed}");
+    assert_eq!(
+        printed
+            .matches("the channels' table cannot be read")
+            .count(),
+        1,
+        "{printed}"
+    );
+    assert!(printed.contains("\nchannels\n"), "{printed}");
+    assert!(!printed.contains("held off"), "{printed}");
+    assert!(!printed.contains("canary"), "{printed}");
+    assert!(
+        printed.contains("acceptance\n  requires no claim"),
+        "{printed}"
+    );
+}
+
+#[test]
+fn a_given_switched_on_leaves_the_held_part() {
+    let host = Host::new();
+    landed_with(&host, "[channels.alpha]\n");
+    let (lines, json) = policy_lines(&host);
+    let printed = lines.join("\n");
+    let held = lines
+        .iter()
+        .position(|l| l == "held off")
+        .unwrap_or_else(|| panic!("no held part: {printed}"));
+    assert!(
+        lines[..held]
+            .iter()
+            .any(|l| l == "  alpha, each publish, prereleases too"),
+        "{printed}"
+    );
+    assert_eq!(
+        lines[held + 1..],
+        ["  lts, bound to stable, switch on with [channels.lts]"],
+        "{printed}"
+    );
+    let held: Vec<&Value> = json["value"]["channels"]["value"]["held"]
+        .as_array()
+        .expect("the held givens")
+        .iter()
+        .map(|h| &h["channel"]["name"])
+        .collect();
+    assert_eq!(held, [&Value::from("lts")]);
 }
 
 #[test]
