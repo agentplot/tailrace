@@ -43,8 +43,8 @@ out SHALL bind its given binding (118): the store the layout at
 `$XDG_DATA_HOME/tailrace/layout`, or `~/.local/share/tailrace/layout`
 (C.2); the ledger the git ref on the landing's remote, written or
 given, or the repository's own refs where it has none (C.13); the
-signer the given host key (C.8); the gate told by the host's own
-publish (130).
+signer the given host key at `tailrace/host/signing.key` under the same
+data directory (C.8); the gate told by the host's own publish (130).
 
 #### Scenario: A registry and nothing else
 
@@ -58,8 +58,8 @@ publish (130).
 
 #### Scenario: The data directory set
 
-- **WHEN** `XDG_DATA_HOME` names a directory and the file names no `[store]`
-- **THEN** the store is the layout at `tailrace/layout` under that directory
+- **WHEN** `XDG_DATA_HOME` names a directory and the file names no `[store]` and no `[signing]`
+- **THEN** the store is the layout at `tailrace/layout` under that directory, and a publish's given host key is `tailrace/host/signing.key` under it
 
 #### Scenario: A promote with no ledger table
 
@@ -144,7 +144,7 @@ same remote (114).
 
 The built binary, on a host with no bindings file, SHALL publish a
 landed revision into the given layout with a host key it makes. Once
-the policy lists the key's `signing.pub` line for provenance only and
+the policy lists the key's `signing.key.pub` line for provenance only and
 writes no channel, a later landing's publish SHALL be accepted as one
 host and move the given `beta` through the given ledger, on the
 repository's remote, in the same run, and verify SHALL count its
@@ -157,7 +157,7 @@ provenance (S1, 80, 95, 108, 118, C.10).
 
 #### Scenario: beta moves on the next landing
 
-- **WHEN** the repository's policy then lists the host's name with the line `signing.pub` holds, for provenance only, names no other signer and writes no channel, a later revision that changes the component lands, and the built binary runs `tailrace publish` on the same host
+- **WHEN** the repository's policy then lists the host's name with the line `signing.key.pub` holds, for provenance only, names no other signer and writes no channel, a later revision that changes the component lands, and the built binary runs `tailrace publish` on the same host
 - **THEN** the same run accepts that version, the acceptance saying one host offered and accepted, `beta`'s chain in `refs/tailrace/ledger/` holds one promotion to its index, the repository's remote holds the same chain, and the exit code is 0
 
 #### Scenario: Verify after listing the made key

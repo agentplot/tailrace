@@ -32,6 +32,14 @@ the policy answers the host's own signer, the one it names for
 provenance, as the repository's gate for acceptance and for the given
 channels' promotion, its acceptance claim saying one host, and the gate
 reads this from the policy's answer and decides nothing of it (core.7).
+C.10 at blueprints 53f6d44 adds that where the file names several
+signers for provenance and none for acceptance, 108 admits no host,
+nothing is accepted, and the refusal says so in those words: several
+publishers and no gate, name an accepting signer (58). The design
+agent's batch 18 rulings place the given key at
+`$XDG_DATA_HOME/tailrace/host/signing.key`, its public half beside it,
+and name its signer by the host's short name at first use, fixed in the
+public half.
 
 What is there on this bolt:
 
@@ -47,7 +55,9 @@ What is there on this bolt:
   names a given table `[store] layout (given)`.
 - The host key profile makes its key on first sign where it is bound
   as the given key (`HostKey::given`), and the signer family gives the
-  given signer's name (`signing.pub`'s comment, else the host's name).
+  given signer's name (the public half's comment, else the host's
+  name); `signer::given` places the key at `signing` beside the
+  bindings file, which D2 moves to the data directory.
 - The gate (`crates/tailrace-core/src/gate.rs`) refuses a version whose
   provenance its own identity made, `WhyWanting::OfferedByGate`, unless
   the requirement names that identity for both provenance and
@@ -67,11 +77,12 @@ What is there on this bolt:
 
 Rules this change keeps: core.1 (the bindings module names no tool, so
 each default lives in its family), core.7 (a claim counts only through
-a signer the policy names), core.7 (a claim counts only through a signer the policy names: the
-given gate is a signer the policy's answer names), core.14 (the one
+a signer the policy names: the given gate is a signer the policy's
+answer names), core.14 (the one
 host is the only host that both offers and accepts),
 core.19 (a broken file is still unreadable, never replaced by a
-default), core.21 (the made key is the host's file, read at use, kept
+default; the several-publishers refusal carries the policy file's own
+words), core.21 (the made key is the host's file, read at use, kept
 nowhere of tailrace's), core.22 (sluice's file is read from a commit,
 never the working tree), core.32 (verify, sync, rebuild and status make
 nothing).
@@ -144,10 +155,12 @@ needs passed in:
   does not. A written `[ledger]` binds what it names, its `remote` or
   none, exactly as written.
 - `profiles::signer`: for publish and promote, the host key at
-  `<config>/tailrace/signing`, `<config>` being the bindings file's own
-  directory's parent (the file is `<config>/tailrace/config.toml`), bound
-  as the given key (D3); for every other command, `plan(None)`, every
-  signer profile verify-only.
+  `<data>/tailrace/host/signing.key`, `<data>` being the same data
+  directory the given layout is under, passed in, bound as the given key
+  (D3); for every other command, `plan(None)`, every signer profile
+  verify-only. The key is the host's and not the configuration's, so it
+  sits beside the host's other made state and not beside the bindings
+  file (the design agent's batch 18 ruling).
 - what tells the gate: `Teller::of` already binds `Teller::Publish`
   where the file holds no `[gate]`, so an empty `Bindings` binds it with
   no change there (D6).
@@ -171,16 +184,18 @@ the layout is made, so a file that cannot bind leaves nothing behind.
 key, `HostKey::given(signer, path)`. It differs from a named key in one
 place: where sign finds no file at its path, it makes one.
 
-1. Make the directory with its parents, mode 0700 where it makes it.
+1. Make the directory, `<data>/tailrace/host`, with its parents, mode
+   0700 where it makes it.
 2. Make the key, `PrivateKey::random(&mut OsRng, Algorithm::Ed25519)`,
    its comment the signer's name.
 3. Write it to a fresh temporary file in the same directory, mode 0600,
    and hard-link it into place: `fs::hard_link` fails where a file is
    already there, so a second first use finds the first's key, drops
    its own, and reads that one. Remove the temporary file either way.
-4. Write `signing.pub` the same way, the public half's OpenSSH line,
-   `ssh-ed25519 <base64> <signer>`, mode 0644. A `signing.pub` already
-   there is left as it is.
+4. Write `signing.key.pub` the same way, the public half's OpenSSH
+   line, `ssh-ed25519 <base64> <signer>`, mode 0644: the key's path with
+   `.pub` added, as ssh-keygen names it and `host_key::public_half`
+   already does. A `signing.key.pub` already there is left as it is.
 5. Read the key back through `read_key`, the same checks as any key, and
    sign.
 
@@ -188,7 +203,7 @@ A key file that is there is never replaced, whatever it holds: a key
 others may read is refused as for any key, so a mistake is the person's
 to see, not tailrace's to overwrite.
 
-`signing.pub` is the line a policy lists under `[signers.<name>]`
+`signing.key.pub` is the line a policy lists under `[signers.<name>]`
 (`listed.rs` reads `keytype base64 [comment]`), so the site tells the
 person to copy it as it stands.
 
@@ -199,18 +214,18 @@ answers that nothing is landed.
 ### D4. The given signer's name
 
 The signer's name is fixed when the key is made and never moves after:
-where `signing.pub` is there, its comment, the last word of its one line;
-otherwise the host's name. The host's name is read with `gethostname`
+where `signing.key.pub` is there, its comment, the last word of its one
+line; otherwise the host's short name. The host's name is read with `gethostname`
 through the `libc` crate, cut at its first `.` and lower-cased, so
 `Laptop.local` is `laptop`. A macOS host's name can change with the
-network it is on; reading it once and keeping it in `signing.pub` keeps
+network it is on; reading it once and keeping it in `signing.key.pub` keeps
 the name a policy lists true.
 
 The name is resolved at bind, for publish and promote only, since the
 binding's `signer` is the identity a publish signs as and the gate signs
-as. An empty name, a `gethostname` error, or a `signing.pub` with no key
-line or no comment is unreadable, naming the host's name or
-`signing.pub`.
+as. An empty name, a `gethostname` error, or a `signing.key.pub` with no
+key line or no comment is unreadable, naming the host's name or
+`signing.key.pub`.
 
 `libc` is a direct dependency of `crates/tailrace`, already in
 `Cargo.lock` through other crates; the call is one `unsafe` block over a
@@ -276,14 +291,14 @@ answer follows from it with no other code:
   their gate and their promoter (32, C.10).
 - `gate_named` finds that signer for `already`, so a second telling of
   the same version answers the acceptance the first made (94).
-- `verify` and `tailrace policy` read the same answer (core.31).
+- `verify` reads the same answer (core.31).
 
 Where `[signers]` names a signer that may claim acceptance, the answer
 is the file as written: a build host running the gate signing as its
 own identity is refused as offered by the gate (27, 96, S9). Where it
-names several that may claim provenance, 108's one publisher is not
-there, and the answer is the file as written; where it names none, or
-the revision holds no file, there is no signer to name.
+names none that may claim provenance, or the revision holds no file,
+there is no signer to name, and the answer is the file as written. Where
+it names several that may claim provenance, D7a answers.
 
 The gate's code is as the units before this one leave it: this unit
 takes out `names_a_gate`, `signer_named` and the `names_a_gate` field
@@ -301,6 +316,39 @@ claim acceptance, its acceptance claim saying one host (118, C.10).
 Rejected: the gate reading a policy that names no gate as naming its
 own identity. C.10 places the default in the policy's answer so the
 gate decides nothing of whom the policy names (core.7).
+
+### D7a. Several publishers and no gate
+
+Where `[signers]` at the revision names no signer that may claim
+`acceptance` and two or more that may claim `provenance`, 108 admits no
+host (C.10). The profile answers `policy_for` for `Audience::Acceptance`,
+and for each given or made channel, whose gate is the acceptance's, as
+
+```rust
+Not::refused(
+    self.source(),
+    Why::Wanting { kind: ClaimKind::Acceptance, check: None, signers: vec![] },
+    Some("several publishers and no gate, name an accepting signer".into()),
+)
+```
+
+`Why::Wanting` already says "no attestation of `kind` counts under the
+policy, which lets `signers` make it", and here the policy lets no
+signer make one; the words are the profile's own, carried verbatim
+(58, 59, core.19). A channel declared by hand, and `[layout]`, answer as
+written: they name their own signers. `channels` is unchanged, so
+`status` still lists every channel.
+
+Every reader follows with no other code: the gate's `required_at` for
+acceptance answers the refusal before any claim is read, so nothing is
+accepted and no channel moves, and the publish's `gate` member carries
+the refusal with its words; `verify` under acceptance shows the same
+answer (core.31).
+
+Rejected: a new `Why` variant, which would change the seam's shared type
+for one sentence the existing variant already carries. Rejected: the
+gate telling several publishers apart, which C.10 keeps out of the
+gate's code (core.7).
 
 ### D8. Status and the serving name through the same binding
 
@@ -328,8 +376,9 @@ profiles" (0018 is status-on-any-machine's, 0019 and 0020 the units'
 before this one), records D1 to D7: a missing file and a missing table
 bind the given bindings, how the landing and its remote are chosen,
 where the given key and its name come from, why `HEAD` and not the
-working tree, why the given ledger is on the landing's remote, and the given gate in
-the policy file's answer, citing C.10. It amends ADR 0013's decisions
+working tree, why the given ledger is on the landing's remote, the given
+gate in the policy file's answer and the refusal where several publish
+and none accepts, citing C.10. It amends ADR 0013's decisions
 for a missing file, a missing table and a host with no `[signing]`;
 0013's status line names it.
 
@@ -362,10 +411,9 @@ for a missing file, a missing table and a host with no `[signing]`;
 - **A checkout with several remotes and no `origin` is unreadable for
   every command with no file.** → 118 asks for that answer; it names the
   remotes and `[landing] remote`, the one line that fixes it.
-- **A repository with several publishers and no gate.** → Its policy
-  names no gate and nothing is accepted, as before; the gate's refusal
-  names the acceptance wanting. Telling such a repository more waits on
-  a design ruling.
+- **A repository with several publishers and no gate.** → Nothing is
+  accepted, and every answer says so in the policy's words, naming the
+  one fix: an accepting signer (D7a).
 - **Two commands racing to make the layout.** → The same as for a named
   layout; `Layout::create` over a missing path is not changed here.
 - **The overlapping units.** → the-publishs-host-tells-the-gate,
@@ -388,13 +436,10 @@ gate; each is what 118 asks. A
 repository whose policy names no gate and whose host publishes now has
 its versions accepted as one host where before they were refused as
 offered by the gate, where its policy file names one signer for
-provenance and none for acceptance.
+provenance and none for acceptance; one whose file names several for
+provenance and none for acceptance is refused in words where before it
+was refused as offered by the gate or wanting acceptance.
 
 ## Open Questions
 
-- The given key's path and the given signer's name are this change's
-  choices; the statement says only "a host key made on first use".
-- A policy file naming several signers for provenance and none for
-  acceptance: this change names no gate there (D7).
-
-Both go to the design agent with the commit.
+None.

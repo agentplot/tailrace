@@ -10,7 +10,7 @@ before anything works, and so does every plugin that runs a command for
 them; and even with a file, a laptop's publish cannot move `beta` unless
 the policy names the laptop as its own gate. The statement says
 otherwise (118, as amended at blueprints ab0dfea, 85bbf54 and b64d367;
-C.10 at 061bfa8): a host with no such file is bound to a layout under
+C.10 at 061bfa8 and 53f6d44): a host with no such file is bound to a layout under
 the user's own data directory, a host key made on first use, the branch
 or sluice, and the git ref on the landing's own remote, so two machines
 of one repository read one ledger with nothing written; its landing
@@ -18,7 +18,8 @@ remote is the checkout's `origin`, or its one remote; its publish tells
 its own gate; and where the policy
 file names no signer that may claim acceptance, the policy answers the
 host's own signer as the one host 108 admits, so `beta` moves on a
-laptop with nothing written. The file is for pointing a host at a
+laptop with nothing written; where it names several publishers and no
+gate, nothing is accepted and the refusal says so. The file is for pointing a host at a
 registry, a key service or a shared ledger. This change makes that
 true.
 
@@ -43,10 +44,11 @@ true.
     repository reads the chain the first appended; where the landing has
     no remote, the repository's own refs, where it keeps its branch, and
     nothing is pushed (C.13);
-  - the signer: a host key at `signing` beside where the bindings file
-    would be, `$XDG_CONFIG_HOME/tailrace/signing` or
-    `~/.config/tailrace/signing`, made the first time a claim is signed
-    (C.8);
+  - the signer: a host key in the user's data directory,
+    `$XDG_DATA_HOME/tailrace/host/signing.key`, or
+    `~/.local/share/tailrace/host/signing.key` where that variable is
+    unset or empty, made the first time a claim is signed (C.8, as the
+    design agent ruled in batch 18);
   - what tells the gate: the host's own publish, as `[gate] publish =
     {}` binds it (130).
 - **A file that names some seams leaves the rest at these.** Each of
@@ -62,9 +64,9 @@ true.
   `promote` on a host whose file names no `[signing]` makes an Ed25519
   key in OpenSSH's format with no passphrase, readable by its owner
   alone, the form sluice signs with, and writes its public half beside
-  it as `signing.pub`, a line a policy can list as it stands. The
-  signer's name is the host's own name, its first label in lower case,
-  fixed when the key is made and read back from `signing.pub` after
+  it as `signing.key.pub`, a line a policy can list as it stands. The
+  signer's name is the host's short name, its first label in lower case,
+  fixed when the key is made and read back from `signing.key.pub` after
   that. Nothing else makes the key: `verify`, `sync`, `rebuild`, `push`
   and `status` sign nothing, and bind the host key verify-only. Two
   first uses at once end with one key, and both sign with it.
@@ -73,13 +75,21 @@ true.
   signer that may claim provenance, the policy file profile answers that
   signer as one that may claim acceptance too: the repository's gate for
   acceptance and for the given channels' promotion, the one host 108
-  admits (C.10). Every audience, every verdict and `tailrace policy`
-  read that one answer. The gate decides nothing of it: it already
+  admits (C.10). Every audience and every verdict read that one
+  answer. The gate decides nothing of it: it already
   admits a signer the policy names for both provenance and acceptance,
   and already says one host in that acceptance claim (108, core.7), so
   the gate's code does not change. Where the file names a signer that
   may claim acceptance, its answer is the file as written, and a build
   host running the gate is still refused (27, 96, S9).
+- **Several publishers and no gate is refused in words.** Where
+  `[signers]` names several signers that may claim provenance and none
+  that may claim acceptance, 108 admits no host: the policy file profile
+  answers the policy for acceptance, and for each given or made channel,
+  refused, wanting acceptance by no signer, in its own words `several
+  publishers and no gate, name an accepting signer` (58, C.10). So the
+  gate accepts nothing there and its answer carries those words, no
+  channel moves, and `verify` shows the same refusal.
 - **So a laptop with nothing written moves `beta`.** A person who has
   written no bindings file, in a repository whose policy lists their
   host's key for provenance only and writes no channel, runs `tailrace
@@ -111,11 +121,6 @@ Out of scope:
   fragment that gives them, are the `the-channels-answer-says-how-each-moves`
   unit's. This unit comes after it and adds only the given gate to the
   policy file profile it leaves.
-- A policy file that names several signers for provenance and none for
-  acceptance: 108 admits one host of a repository with one publisher,
-  so the profile names no gate there and answers the file as written.
-  Whether such a repository should be told so, and how, waits on a
-  design ruling.
 - Telling the person, in the publish's own answer, that a key was just
   made and that their policy must list it before its claims count. The
   site's signer page says how. A later change can add that line to the
@@ -142,7 +147,7 @@ None.
   public half beside it, and its signer's name is the host's.
 - `policy-file`: where `[signers]` names no signer that may claim
   acceptance, the profile answers the one signer it names for
-  provenance as the gate.
+  provenance as the gate, and refuses in words where it names several.
 - `command-line`: an unbound host is bound to the defaults, and sync,
   push and promote on a host with no file are bound like publish.
 
@@ -159,7 +164,8 @@ None.
 - `crates/tailrace/src/profiles/signer/host_key/`: a host key that makes
   its key on first sign.
 - `crates/tailrace/src/profiles/policy/file/`: the given gate, where
-  `[signers]` names no signer that may claim acceptance.
+  `[signers]` names no signer that may claim acceptance and one that
+  may claim provenance, and the refusal where it names several.
 - `crates/tailrace/src/commands/serve/host.rs`: the serving address's
   repository named from the given landing remote.
 - `crates/tailrace-core/src/gate.rs` is not changed: the code this

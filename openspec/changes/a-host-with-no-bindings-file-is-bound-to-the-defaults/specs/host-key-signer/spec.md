@@ -2,17 +2,19 @@
 
 ### Requirement: The given host key is made on first use
 
-A host key bound as the given one, at `signing` in the host's tailrace
-configuration directory, SHALL, on a sign that finds no key file there,
-make an Ed25519 key in OpenSSH's format with no passphrase, mode 0600,
-write its public half beside it as `signing.pub`, one line naming the
-signer, and sign with it (118, C.8). Only sign makes it. A key file that
+A host key bound as the given one, at `tailrace/host/signing.key` in the
+user's data directory (`$XDG_DATA_HOME`, or `~/.local/share` where that
+variable is unset or empty), SHALL, on a sign that finds no key file
+there, make its directory with mode 0700 where it makes it, make an
+Ed25519 key in OpenSSH's format with no passphrase, mode 0600, write its
+public half beside it as `signing.key.pub`, one line naming the signer,
+and sign with it (118, C.8). Only sign makes it. A key file that
 is there SHALL be read as any bound key is, never replaced.
 
 #### Scenario: The first sign
 
 - **WHEN** the given host key is asked to sign a claim as the host's name and no file is at its path
-- **THEN** the key and `signing.pub` are made, the key's mode is 0600, the envelope verifies against the public half `signing.pub` holds, and that line, read as a policy listing, tells the envelope as made by the host's name
+- **THEN** `tailrace/host` is made under the data directory with mode 0700, the key and `signing.key.pub` are made in it, the key's mode is 0600, the envelope verifies against the public half `signing.key.pub` holds, and that line, read as a policy listing, tells the envelope as made by the host's name
 
 #### Scenario: The second sign
 
@@ -41,27 +43,27 @@ is there SHALL be read as any bound key is, never replaced.
 
 ### Requirement: The given host key signs as the host's name
 
-The given host key's signer SHALL be the name `signing.pub` gives where
+The given host key's signer SHALL be the name `signing.key.pub` gives where
 that file is there, and otherwise the host's own name as the operating
 system answers it, its first label in lower case, which becomes the
-name `signing.pub` gives once the key is made (11, 104). A host name
+name `signing.key.pub` gives once the key is made (11, 104). A host name
 that is empty or cannot be read SHALL be answered unreadable naming the
 host's name, carrying the operating system's words where it has them.
 
 #### Scenario: A fresh host
 
-- **WHEN** the host's name is `Laptop.local` and no `signing.pub` is there
-- **THEN** the given signer is `laptop`, and the key made on first use names `laptop` in `signing.pub`
+- **WHEN** the host's name is `Laptop.local` and no `signing.key.pub` is there
+- **THEN** the given signer is `laptop`, and the key made on first use names `laptop` in `signing.key.pub`
 
 #### Scenario: The host renamed after the key was made
 
-- **WHEN** `signing.pub` names `laptop` and the host is now named `desk`
+- **WHEN** `signing.key.pub` names `laptop` and the host is now named `desk`
 - **THEN** the given signer is still `laptop`
 
 #### Scenario: A public half that cannot be read
 
-- **WHEN** `signing.pub` is there and holds no OpenSSH public key line naming a signer
-- **THEN** a publish answers unreadable naming `signing.pub`, carrying the parser's words, and nothing is signed
+- **WHEN** `signing.key.pub` is there and holds no OpenSSH public key line naming a signer
+- **THEN** a publish answers unreadable naming `signing.key.pub`, carrying the parser's words, and nothing is signed
 
 ## MODIFIED Requirements
 
