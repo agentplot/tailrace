@@ -35,4 +35,4 @@ is `moon run ':#check-fast'`, the tools layer `moon run ':#check-tools'`.
 
 ## 6. The whole
 
-- [ ] 6.1 Run `moon run ':#check-fast'` and `moon run ':#check-tools'` and verify both pass.
+- [x] 6.1 Run `moon run ':#check-fast'` and `moon run ':#check-tools'` and verify both pass.
