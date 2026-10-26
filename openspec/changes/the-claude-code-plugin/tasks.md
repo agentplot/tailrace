@@ -2,7 +2,7 @@
 
 ## 1. The pinned Claude Code and the marketplace
 
-- [ ] 1.1 Pin Claude Code 2.1.296 in `devenv.nix` as sluice's `devenv.nix` on its main pins it (the four platforms' checksums copied from there, the binary unstripped and wrapped with the autoupdater and installation checks off), with a comment saying which tasks run it; verify `devenv shell -- claude --version` prints 2.1.296.
+- [x] 1.1 Pin Claude Code 2.1.296 in `devenv.nix` as sluice's `devenv.nix` on its main pins it (the four platforms' checksums copied from there, the binary unstripped and wrapped with the autoupdater and installation checks off), with a comment saying which tasks run it; verify `devenv shell -- claude --version` prints 2.1.296.
 - [ ] 1.2 Add `plugins/claude.sh`, the pinned `claude` under a scratch `HOME` (under `SLUICE_TMP` where set) with every `CLAUDE*` and `ANTHROPIC_*` variable unset and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` (core.38); verify `devenv shell -- plugins/claude.sh --version` prints 2.1.296 and treefmt's shellcheck and shfmt pass on it.
 - [ ] 1.3 Add `.claude-plugin/marketplace.json`, a marketplace named `tailrace` (owner agentplot) listing one plugin, `tailrace`, at `./plugins/claude-code`; add `plugins/check-marketplace.sh` (the marketplace validated with `--strict` through `plugins/claude.sh`, and every listed plugin's source holding `.claude-plugin/plugin.json`, a missing one named); add a root `marketplace` task to `moon.yml` tagged `check-fast`, its inputs the marketplace, both scripts, `/plugins/*/.claude-plugin/**/*`, `/devenv.nix` and `/devenv.lock`; verify `devenv shell -- moon run root:marketplace` passes once group 2's manifest exists, and fails naming the plugin when the manifest is moved aside.
 
