@@ -76,7 +76,8 @@ key = "~/.config/tailrace/signing"
                                  # kms = "arn:aws:kms:<region>:<account>:key/<key id>"
 
 [gate]                            # what tells the gate, C.16
-publish = {}                      # or: job = "<the job's words>"
+publish = {}                      # also with no [gate], 118
+                                 # or: job = "<the job's words>"
 ```
 
 - Each seam's table names its profile by its one key; a table naming
@@ -134,9 +135,9 @@ publish = {}                      # or: job = "<the job's words>"
   `job = "…"` names in your own words a job outside tailrace that a
   forge's or a store's event wakes; tailrace runs nothing for it, and a
   publish says the version is offered and the gate is told by those
-  words. A file with no `[gate]` tells no gate: each version stays
-  offered, and the publish says so, naming `[gate]` in the file. A
-  `[gate]` naming no key, two, or another is refused, naming it.
+  words. A file with no `[gate]` binds `publish`, the host's default
+  (118), so a host whose gate is elsewhere names its `job`. A `[gate]`
+  naming no key, two, or another is refused, naming it.
 - The build and the projections are the repository's to bind, not the
   host's: moon is the build, and the policy file names each output's task
   and the projection that packs it. A `[build]` or `[projections]` table
@@ -272,8 +273,9 @@ on_each_publish = true
 require = [{ kind = "acceptance", signers = ["laptop"] }]
 ```
 
-Beside that policy, the laptop's bindings file names its own publish as
-what tells its gate:
+Beside that policy, the laptop's bindings file needs no `[gate]` for
+`beta` to move: with none, the laptop's own publish tells its gate
+(118), as naming it does:
 
 ```toml
 [gate]
@@ -320,9 +322,11 @@ signer may accept and promote. Environments subscribe to the channels the
 gate moves, and converge through the
 [targets](/tailrace/guides/integrations/targets/) the repository binds.
 
-A host that only offers tells no gate itself. Its bindings file names
-the job that does, so each publish says where the version went to be
-judged:
+A host that only offers must name the job that tells the gate: without
+a `[gate]`, its publish asks its own gate, which refuses the version
+where the policy does not let the host's signer accept, and the publish
+exits as a refusal with the version still offered. With the job named,
+each publish says where the version went to be judged:
 
 ```toml
 [gate]
