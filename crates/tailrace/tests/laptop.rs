@@ -2,10 +2,14 @@
 //! built binary bound by a bindings file, over a scratch repository that
 //! sluice gates and whose builds moon runs, then a second clone with a
 //! copy of the layout and no key verifying what the laptop published
-//! (S1, S2, 80, 118; design D8). The binary runs with its home and its
-//! configuration in the scratch directory, and none of the `SLUICE_*` or
-//! `MOON_*` variables of a gate that may be running these tests. Needs
-//! moon, sluice and ssh-keygen, so it is in the tools layer.
+//! (S1, S2, 80, 118; design D8); and a laptop with nothing written, which
+//! publishes with the key its first publish makes and, once its policy
+//! lists that key for provenance alone, accepts as one host and moves the
+//! given `beta` in the same run (95, 108, 118, C.10). The binary runs
+//! with its home and its configuration and data directories in the
+//! scratch directory, and none of the `SLUICE_*` or `MOON_*` variables of
+//! a gate that may be running these tests. Needs moon, sluice and
+//! ssh-keygen, so it is in the tools layer.
 
 #![cfg(feature = "tools")]
 
@@ -20,11 +24,14 @@ use std::process::Command;
 
 use scratch::gate::{Gate, SIGNER};
 use scratch::recorder::Recorder;
-use scratch::{git_command, moon_workspace, policy_file, ssh_keygen, Repo, Scratch, Task};
+use scratch::{
+    git_command, moon_workspace, policy_file, ssh_keygen, Repo, Scratch, Task, POLICY_FILE,
+};
 use serde_json::{json, Value};
+use tailrace::profiles::ledger::git_ref::GitRef;
 use tailrace::profiles::store::layout::Layout;
 use tailrace_core::{History, Kept, Provenance};
-use tailrace_seams::{Claim, Digest, Store};
+use tailrace_seams::{ChannelId, ChannelName, Claim, Digest, Keeper, Promotion, Store};
 
 /// The identity the laptop signs as.
 const LAPTOP: &str = "laptop";
@@ -37,10 +44,12 @@ const OUTPUTS: [(&str, &str, &str); 2] = [
 ];
 
 /// A host as the binary sees it: a home and a configuration directory
-/// of its own, in the scratch directory.
+/// of its own, in the scratch directory, and a data directory where it
+/// names one.
 struct Host {
     home: PathBuf,
     config: PathBuf,
+    data: Option<PathBuf>,
 }
 
 impl Host {
@@ -48,9 +57,22 @@ impl Host {
         let host = Host {
             home: scratch.path().join(format!("{name}-home")),
             config: scratch.path().join(format!("{name}-config")),
+            data: None,
         };
         fs::create_dir_all(&host.home).unwrap();
         host
+    }
+
+    /// A host with a home in the scratch directory and its configuration
+    /// and data directories under it, holding nothing.
+    fn fresh(scratch: &Scratch, name: &str) -> Host {
+        let home = scratch.path().join(format!("{name}-home"));
+        fs::create_dir_all(&home).unwrap();
+        Host {
+            config: home.join("config"),
+            data: Some(home.join("data")),
+            home,
+        }
     }
 
     /// `text` as the host's bindings file.
@@ -77,6 +99,9 @@ impl Host {
                 Some(value) => command.env(name, value),
                 None => command.env_remove(name),
             };
+        }
+        if let Some(data) = &self.data {
+            command.env("XDG_DATA_HOME", data);
         }
         let out = command
             .args(args)
@@ -156,63 +181,74 @@ struct Laptop {
     landed: String,
 }
 
+/// The repository's moon tasks, the image's archive and a policy file
+/// naming the outputs and their projections with `tables` after them,
+/// committed and pushed, and sluice gating `main` on both tasks, its
+/// landing's verdicts signed by `recorder`'s key for [`SIGNER`].
+fn gated(scratch: &Scratch, recorder: &Recorder, tables: &str) -> Gate {
+    let repo = &scratch.repo;
+    // The shared history the version's name is claimed in (22).
+    repo.git(&["config", "branch.main.remote", "origin"]);
+    repo.git(&["config", "branch.main.merge", "refs/heads/main"]);
+    moon_workspace(
+        repo,
+        &[
+            Task::new("notes", "build", "notes.txt", true, 0),
+            Task::new("image", "build", "image.tar", true, 0),
+        ],
+    );
+    // The image task copies the archive the repository holds.
+    repo.write(
+        "image/moon.yml",
+        "tasks:\n  build:\n    command: 'sh -c \"mkdir -p dist && cp image.tar dist/image.tar\"'\n    \
+         inputs: ['moon.yml', 'image.tar']\n    outputs: ['dist/image.tar']\n    options: {shell: false}\n",
+    );
+    fs::write(
+        repo.path.join("image/image.tar"),
+        fixtures::image::archive(),
+    )
+    .unwrap();
+    let projections: String = OUTPUTS
+        .iter()
+        .map(|(output, _, ecosystem)| format!("{output} = \"{ecosystem}\"\n"))
+        .collect();
+    policy_file(
+        repo,
+        &OUTPUTS.map(|(output, task, _)| (output, task)),
+        &format!("\n[projections]\n{projections}\n{tables}"),
+    );
+    repo.commit("feat: the notes and the image");
+    repo.push();
+    Gate::new(scratch, recorder, &OUTPUTS.map(|(_, task, _)| task))
+}
+
 impl Laptop {
-    /// The repository's moon tasks and policy file, committed and pushed;
-    /// sluice gating `main` on both tasks lands a submission; and the
-    /// laptop's bindings file names a fresh layout, sluice with the
-    /// remote, the laptop's key, and the job that tells the gate, since
-    /// the policy lets the laptop offer and not accept (130, C.16).
+    /// The gated repository, its policy naming the laptop's key for
+    /// provenance, the landing's verdicts, and a gate of its own for
+    /// acceptance; sluice lands a submission; and the laptop's bindings
+    /// file names a fresh layout, sluice with the remote, the laptop's
+    /// key, and the job that tells the gate, since the policy lets the
+    /// laptop offer and not accept (130, C.16).
     fn new() -> Laptop {
         let scratch = Scratch::new();
-        let repo = &scratch.repo;
-        // The shared history the version's name is claimed in (22).
-        repo.git(&["config", "branch.main.remote", "origin"]);
-        repo.git(&["config", "branch.main.merge", "refs/heads/main"]);
-
         let host = Host::new(&scratch, LAPTOP);
         let key = host.home.join(".config/tailrace/signing");
         let laptop_key = keygen(&key, "host@laptop");
-        let recorder = Recorder::new(repo, true, &scratch.path().join("keys"));
-
-        moon_workspace(
-            repo,
-            &[
-                Task::new("notes", "build", "notes.txt", true, 0),
-                Task::new("image", "build", "image.tar", true, 0),
-            ],
-        );
-        // The image task copies the archive the repository holds.
-        repo.write(
-            "image/moon.yml",
-            "tasks:\n  build:\n    command: 'sh -c \"mkdir -p dist && cp image.tar dist/image.tar\"'\n    \
-             inputs: ['moon.yml', 'image.tar']\n    outputs: ['dist/image.tar']\n    options: {shell: false}\n",
-        );
-        fs::write(
-            repo.path.join("image/image.tar"),
-            fixtures::image::archive(),
-        )
-        .unwrap();
-        let projections: String = OUTPUTS
-            .iter()
-            .map(|(output, _, ecosystem)| format!("{output} = \"{ecosystem}\"\n"))
-            .collect();
+        let gate_key = keygen(&scratch.path().join("gate-key/signing"), "gate@box");
+        let recorder = Recorder::new(&scratch.repo, true, &scratch.path().join("keys"));
         let checks: Vec<String> = OUTPUTS.iter().map(|(_, t, _)| format!("\"{t}\"")).collect();
-        policy_file(
-            repo,
-            &OUTPUTS.map(|(output, task, _)| (output, task)),
+        let gate = gated(
+            &scratch,
+            &recorder,
             &format!(
-                "\n[projections]\n{projections}\n\
-                 [signers.{LAPTOP}]\nssh = \"{laptop_key}\"\nkinds = [\"provenance\"]\n\n\
+                "[signers.{LAPTOP}]\nssh = \"{laptop_key}\"\nkinds = [\"provenance\"]\n\n\
                  [signers.{SIGNER}]\nssh = \"{}\"\nkinds = [\"verdict\"]\nchecks = [{}]\n\n\
+                 [signers.gate]\nssh = \"{gate_key}\"\nkinds = [\"acceptance\", \"promotion\"]\n\n\
                  [acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"{LAPTOP}\"] }}]\n",
                 recorder.public_key(SIGNER),
                 checks.join(", ")
             ),
         );
-        repo.commit("feat: the notes and the image");
-        repo.push();
-
-        let gate = Gate::new(&scratch, &recorder, &OUTPUTS.map(|(_, task, _)| task));
         let landed = gate.land("x", &[("notes/x.txt", "x")]);
 
         let layout = host.home.join(".local/share/tailrace/layout");
@@ -392,4 +428,128 @@ fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() 
         before.0,
         "verify wrote to the copied layout"
     );
+}
+
+// Requirement: A laptop with nothing written publishes and moves beta
+
+/// The provenance signers of every artifact in publish's answer.
+fn provenance_signers(version: &Value) -> BTreeSet<String> {
+    version["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|a| a["claims"].as_array().unwrap())
+        .filter(|c| c["kind"] == "provenance")
+        .map(|c| c["signer"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[test]
+fn a_laptop_with_nothing_written_publishes_and_moves_beta_once_its_made_key_is_listed() {
+    let scratch = Scratch::new();
+    let host = Host::fresh(&scratch, "fresh");
+    let data = host.data.clone().unwrap();
+    let recorder = Recorder::new(&scratch.repo, true, &scratch.path().join("keys"));
+    // A policy that lists no signer and requires nothing of acceptance.
+    let gate = gated(&scratch, &recorder, "");
+    let repo = &scratch.repo;
+    assert_eq!(repo.git(&["remote"]), "origin");
+
+    // The first publish on the fresh laptop makes the layout and the key,
+    // both in the data directory, and nothing in the configuration's.
+    let landed = gate.land("x", &[("notes/x.txt", "x")]);
+    let (_, first) = host.tailrace(repo, &["publish", &landed, "--json"]);
+    let version = published(&first);
+    assert!(data.join("tailrace/layout/oci-layout").is_file(), "{first}");
+    let key = data.join("tailrace/host/signing.key");
+    assert_eq!(
+        fs::metadata(&key).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let line = fs::read_to_string(data.join("tailrace/host/signing.key.pub"))
+        .unwrap()
+        .trim()
+        .to_string();
+    let name = line.rsplit(' ').next().unwrap().to_string();
+    assert!(
+        !host.config.exists(),
+        "the publish wrote under XDG_CONFIG_HOME"
+    );
+    assert_eq!(provenance_signers(version), BTreeSet::from([name.clone()]));
+    let told = &first["value"]["components"][0]["gate"];
+    assert_eq!(told["told_by"], "publish", "{first}");
+    assert!(
+        told["answer"] != "ok" || told["value"]["judged"] == "refused",
+        "the gate accepted a version the policy does not list the host for: {told}"
+    );
+
+    // The policy lists the made key's line for provenance alone, names no
+    // other signer and writes no channel; a change to the notes task,
+    // which reads its own moon.yml, lands with it.
+    let mut policy = fs::read_to_string(repo.path.join(POLICY_FILE)).unwrap();
+    policy.push_str(&format!(
+        "\n[signers.{name}]\nssh = \"{line}\"\nkinds = [\"provenance\"]\n\n\
+         [acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"{name}\"] }}]\n"
+    ));
+    let mut notes = fs::read_to_string(repo.path.join("notes/moon.yml")).unwrap();
+    notes.push_str("# it grows\n");
+    let landed = gate.land(
+        "listed",
+        &[
+            (POLICY_FILE, policy.as_str()),
+            ("notes/moon.yml", notes.as_str()),
+        ],
+    );
+    let (code, second) = host.tailrace(repo, &["publish", &landed, "--json"]);
+    assert_eq!(code, Some(0), "{second}");
+    let version = published(&second);
+    let index = Digest::parse(version["index"].as_str().unwrap()).unwrap();
+    let told = &second["value"]["components"][0]["gate"];
+    assert_eq!(told["answer"], "ok", "{second}");
+    assert_eq!(told["value"]["judged"], "accepted", "{second}");
+    assert_eq!(told["value"]["one_host"], true, "{second}");
+
+    // beta's chain holds one promotion to the version's index, in the
+    // repository's ledger refs and the remote's alike.
+    let beta = ChannelId::new(None, ChannelName::new("beta"));
+    let chain = GitRef::new(&repo.path, Some("origin".into()))
+        .chain(&beta)
+        .unwrap();
+    let [promotion] = chain.claims.as_slice() else {
+        panic!("beta's chain holds {} promotions", chain.claims.len())
+    };
+    let promoted = Promotion::of(&Claim::from_envelope(promotion).unwrap()).unwrap();
+    assert_eq!(promoted.to.index, index);
+    assert_eq!(
+        repo.git(&[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/tailrace/ledger/"
+        ]),
+        "refs/tailrace/ledger/beta"
+    );
+    let remote = Repo {
+        path: scratch.remote.clone(),
+    };
+    assert_eq!(
+        remote.git(&["rev-parse", "refs/tailrace/ledger/beta"]),
+        repo.git(&["rev-parse", "refs/tailrace/ledger/beta"]),
+        "the remote holds another chain"
+    );
+
+    // verify counts every provenance as made by the host's name.
+    let asked = version["version"].as_str().unwrap();
+    let (code, verified) = host.tailrace(repo, &["verify", asked, "--json"]);
+    assert_eq!(code, Some(0), "{verified}");
+    let provenances: Vec<&Value> = verified["value"]["claims"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|t| t["kind"] == "provenance")
+        .collect();
+    assert!(!provenances.is_empty(), "{verified}");
+    for provenance in provenances {
+        assert_eq!(provenance["made_by"], name.as_str(), "{provenance}");
+        assert_eq!(provenance["counts"], true, "{provenance}");
+    }
 }
