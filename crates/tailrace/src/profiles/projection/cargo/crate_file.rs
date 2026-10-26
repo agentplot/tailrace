@@ -4,11 +4,13 @@
 
 use std::io::Read;
 
-/// A crate's normalized manifest: the package's name and version.
+/// A crate's normalized manifest: the package's name and version, and
+/// the whole of it, which an index line is written from.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct CrateManifest {
     pub name: String,
     pub version: String,
+    pub table: toml::Table,
 }
 
 /// The normalized manifest `bytes`, a crate, hold at
@@ -31,6 +33,7 @@ pub(super) fn manifest(bytes: &[u8]) -> Result<CrateManifest, String> {
     Ok(CrateManifest {
         name: text_of("name")?,
         version: text_of("version")?,
+        table: table.clone(),
     })
 }
 

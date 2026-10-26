@@ -10,6 +10,9 @@
 mod crate_file;
 #[cfg(test)]
 mod fixture;
+// Its lines are written by render, which its own task builds.
+#[allow(dead_code)]
+mod index;
 mod pack;
 
 use std::path::{Path, PathBuf};
