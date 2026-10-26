@@ -30,6 +30,14 @@ tasks:
     command: 'sh check-sccache.sh'
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true, cache: false}
+  # The Claude Code marketplace, which spans the plugins: it validates, and
+  # every plugin it lists has a manifest. Each plugin's own checks are its
+  # project's (plugins/*/moon.yml).
+  marketplace:
+    command: 'plugins/check-marketplace.sh'
+    inputs: ['/.claude-plugin/**/*', '/plugins/*/.claude-plugin/**/*', '/plugins/check-marketplace.sh', '/plugins/claude.sh', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]
+    options: {runFromWorkspaceRoot: true}
   # No two decision records share a number (check-adrs.sh).
   adrs:
     command: 'sh check-adrs.sh'
