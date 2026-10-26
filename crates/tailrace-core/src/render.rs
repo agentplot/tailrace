@@ -40,13 +40,13 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, Audience, Claim, ClaimKind, Contents, Digest, Ecosystem,
-    EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned, Policy, RequiredClaim,
-    Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
+    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim, ClaimKind, Contents, Digest,
+    Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned, Policy,
+    RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
-use crate::{answer_json, policy_at, History, Landed, Provenance, BOUND};
+use crate::{answer_json, policy_at, sync, Filled, History, Landed, Provenance, SyncAsk, BOUND};
 
 /// What every name of a version's index by ecosystem, name and version
 /// begins with (138).
@@ -812,4 +812,137 @@ pub fn refresh(seams: &Seams, layouts: &Layouts, ask: &RenderAsk) -> Answer<Refr
             kept(layouts, &ask.ecosystem, at, because)
         }
     }
+}
+
+/// What sync asks of a checkout: the revision whose verdicts name the
+/// cache entries and whose policy judges the layouts, the branch that
+/// landed it, the checkout's working tree, when, in seconds since the Unix
+/// epoch by the asker's clock, since the core reads none, and the signers
+/// the host trusts (C.10, 118; design D5).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckoutAsk {
+    pub branch: Branch,
+    pub revision: Revision,
+    pub tree: PathBuf,
+    pub when: u64,
+    pub trusted: Vec<NamedSigner>,
+}
+
+/// 57: what sync answers of a checkout: the cache's entries as the cache
+/// answers them, and each layout of a projection that pins something, in
+/// ecosystem order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CheckoutSynced {
+    pub branch: Branch,
+    pub revision: Revision,
+    pub entries: Vec<(BuildId, Answer<Filled>)>,
+    pub layouts: Vec<(Ecosystem, Answer<Refresh>)>,
+}
+
+impl Serialize for CheckoutSynced {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let entries: Vec<Value> = self
+            .entries
+            .iter()
+            .map(|(build, answer)| {
+                let mut value = answer_json(answer);
+                value["build"] = json!(build);
+                value
+            })
+            .collect();
+        let layouts: Vec<Value> = self
+            .layouts
+            .iter()
+            .map(|(ecosystem, answer)| {
+                let mut value = answer_json(answer);
+                value["ecosystem"] = json!(ecosystem);
+                value
+            })
+            .collect();
+        json!({
+            "branch": self.branch,
+            "revision": self.revision,
+            "entries": entries,
+            "layouts": layouts,
+        })
+        .serialize(serializer)
+    }
+}
+
+/// 47 to 51, 113: every layout of the checkout `ask` names: each bound
+/// projection asked what the working tree's lockfile pins, one answering
+/// absent passed over, so no layout of it is rendered or recorded (50).
+/// The consumer's policy is read at `landed` once, and only where
+/// something is pinned, and judges every layout (65, rule core.22). A
+/// layout whose pins or policy cannot be read is left as it was and
+/// answered from the record; every other is rendered (design D5, D6).
+pub fn layouts(
+    seams: &Seams,
+    record: &Layouts,
+    landed: &Landed,
+    ask: &CheckoutAsk,
+) -> Vec<(Ecosystem, Answer<Refresh>)> {
+    let tree = ask.tree.display().to_string();
+    let mut pinned: Vec<(Ecosystem, Answer<Vec<Pinned>>)> = Vec::new();
+    for (ecosystem, projection) in &seams.projections {
+        match projection.pinned(&tree) {
+            Err(Not::Absent(_)) => continue,
+            answer => pinned.push((ecosystem.clone(), answer)),
+        }
+    }
+    let any = pinned
+        .iter()
+        .any(|(_, pins)| pins.as_ref().is_ok_and(|p| !p.is_empty()));
+    let own = if any {
+        own_policy(seams.policy.as_ref(), landed)
+    } else {
+        Ok(None)
+    };
+    pinned
+        .into_iter()
+        .map(|(ecosystem, pins)| {
+            let answer = match (pins.as_ref(), &own) {
+                (Err(because), _) | (Ok(_), Err(because)) => {
+                    let at = place(&ask.tree, &ecosystem).display().to_string();
+                    kept(record, &ecosystem, at, because.clone())
+                }
+                (Ok(pins), Ok(own)) => refresh(
+                    seams,
+                    record,
+                    &RenderAsk {
+                        ecosystem: ecosystem.clone(),
+                        pins: pins.to_vec(),
+                        own: own.clone(),
+                        trusted: ask.trusted.clone(),
+                        tree: ask.tree.clone(),
+                        when: ask.when,
+                    },
+                ),
+            };
+            (ecosystem, answer)
+        })
+        .collect()
+}
+
+/// 52 to 54, 47 to 51: the one question sync asks of a checkout: the
+/// cache filled as the cache fills it, reading no policy (53), then the
+/// checkout's layouts rendered under the policy at the same landed
+/// revision (design D5). A revision its branch has not landed is the
+/// answer, before anything is read (rule core.11).
+pub fn sync_checkout(seams: &Seams, record: &Layouts, ask: &CheckoutAsk) -> Answer<CheckoutSynced> {
+    let synced = sync(
+        seams,
+        &SyncAsk {
+            branch: ask.branch.clone(),
+            revision: ask.revision.clone(),
+            at: ask.tree.display().to_string(),
+        },
+    )?;
+    let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &ask.revision)?;
+    Ok(CheckoutSynced {
+        branch: synced.branch,
+        revision: synced.revision,
+        entries: synced.entries,
+        layouts: layouts(seams, record, &landed, ask),
+    })
 }

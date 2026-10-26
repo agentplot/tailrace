@@ -10,8 +10,8 @@ use serde_json::json;
 use tailrace_core::render::Kept;
 use tailrace_core::{
     artifact_name, judge, layout_policy_body, locate, own_policy, place, policy_for, refresh,
-    render, Carried, HeldEntry, HeldPin, Landed, Layouts, Located, Own, PinAnswer, PolicyOf,
-    Provenance, Refresh, RenderAsk, Under, ARTIFACT,
+    render, sync_checkout, Carried, CheckoutAsk, HeldEntry, HeldPin, Landed, Layouts, Located, Own,
+    PinAnswer, PolicyOf, Provenance, Refresh, RenderAsk, Under, ARTIFACT, CACHE,
 };
 use tailrace_fakes::{FakeProjection, Fakes, Fault, PolicyOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
@@ -1187,5 +1187,219 @@ fn the_record_is_kept_under_the_checkouts_own_git_directory() {
     assert_eq!(
         Layouts::at(&history).dir(),
         history.git_dir().join("tailrace").join("layouts")
+    );
+}
+
+const LANDED: &str = "4f2a9c1";
+
+impl Checkout {
+    /// What sync asks of this checkout for the revision landed on `main`,
+    /// at `when`, on a host trusting `trusted`.
+    fn checkout_ask(&self, when: u64, trusted: Vec<NamedSigner>) -> CheckoutAsk {
+        CheckoutAsk {
+            branch: Branch::new("main"),
+            revision: Revision::new(LANDED),
+            tree: self.tree.clone(),
+            when,
+            trusted,
+        }
+    }
+
+    /// The revision landed, its policy for layouts requiring `claims`,
+    /// and the lockfile pinning `pins` where given.
+    fn landed(&self, claims: Vec<RequiredClaim>, pins: Option<&[Pinned]>) {
+        let revision = Revision::new(LANDED);
+        self.fakes.landing.land(&Branch::new("main"), &revision);
+        self.fakes
+            .policy
+            .require_at(&revision, Audience::Layout, Required::Layout { claims });
+        if let Some(pins) = pins {
+            self.projection
+                .lockfile(&self.tree.display().to_string(), pins);
+        }
+    }
+}
+
+/// A passing verdict of `test` on `build` at the landed revision, as the
+/// landing signs it.
+fn passing(build: &str) -> Verdict {
+    let claim = signed(
+        &Digest::of(build.as_bytes()),
+        ClaimKind::Verdict,
+        json!({ "check": "test", "outcome": "pass" }),
+        LANDING,
+    );
+    Verdict {
+        check: Check::new("test"),
+        build: BuildId::new(build),
+        outcome: Outcome::Pass,
+        signer: SignerId::new(LANDING),
+        envelope: claim,
+        found: format!("the fake landing's record of test on {build}"),
+    }
+}
+
+#[test]
+fn a_checkout_is_synced_its_cache_and_then_each_layout_under_the_policy_at_the_landed_revision() {
+    let checkout = Checkout::new();
+    checkout.landed(
+        vec![acceptance()],
+        Some(&[pin("pkg", "1.1.0"), pin("left-pad", "1.3.0")]),
+    );
+    checkout
+        .fakes
+        .landing
+        .verdict(&Revision::new(LANDED), passing("b7e1"));
+    let since = checkout.fakes.store.calls().len();
+    let synced = sync_checkout(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.checkout_ask(1_767_225_600, vec![]),
+    )
+    .unwrap();
+
+    assert_eq!(synced.entries.len(), 1, "{synced:?}");
+    let [(ecosystem, Ok(Refresh::Refreshed(refreshed)))] = synced.layouts.as_slice() else {
+        panic!("the layouts answered {:?}", synced.layouts)
+    };
+    assert_eq!(*ecosystem, eco());
+    assert_eq!(
+        refreshed.policy,
+        Under::Own {
+            revision: Revision::new(LANDED)
+        }
+    );
+    assert!(refreshed.pins[0].answer.is_ok(), "{refreshed:?}");
+    assert!(matches!(refreshed.pins[1].answer, Err(Not::Absent(_))));
+
+    let [asked] = <[_; 1]>::try_from(checkout.fakes.policy.calls()).unwrap();
+    assert_eq!(asked.given["revision"], LANDED);
+    assert_eq!(asked.given["audience"], "layout");
+    let resolved: Vec<String> = checkout
+        .fakes
+        .store
+        .calls()
+        .split_off(since)
+        .into_iter()
+        .filter(|c| c.op == StoreOp::Resolve)
+        .map(|c| c.given["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(
+        resolved[0],
+        format!("{CACHE}b7e1"),
+        "the cache was not filled first"
+    );
+    assert_eq!(
+        resolved[1..],
+        ["artifact/eco/pkg@1.1.0", "artifact/eco/left-pad@1.3.0"],
+        "the layouts resolved a name beginning {CACHE}"
+    );
+
+    let value = serde_json::to_value(&synced).unwrap();
+    let keys: Vec<&String> = value.as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["branch", "entries", "layouts", "revision"]);
+    assert_eq!(value["revision"], LANDED);
+    assert_eq!(value["entries"][0]["build"], "b7e1");
+    let layout = &value["layouts"][0];
+    assert_eq!(
+        (&layout["ecosystem"], &layout["answer"]),
+        (&json!("eco"), &json!("ok"))
+    );
+    let pins = &layout["value"]["refreshed"]["pins"];
+    assert_eq!(
+        (&pins[0]["name"], &pins[0]["answer"]),
+        (&json!("pkg"), &json!("ok"))
+    );
+    assert_eq!(
+        (&pins[1]["name"], &pins[1]["answer"]),
+        (&json!("left-pad"), &json!("absent"))
+    );
+}
+
+#[test]
+fn with_nothing_pinned_the_policy_is_not_asked() {
+    let checkout = Checkout::new();
+    checkout.landed(vec![acceptance()], None);
+    let synced = sync_checkout(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.checkout_ask(1, vec![]),
+    )
+    .unwrap();
+    assert_eq!(
+        synced.layouts,
+        [],
+        "a projection with no lockfile has a layout"
+    );
+    assert_eq!(checkout.fakes.policy.calls(), [], "the policy was asked");
+    assert!(
+        !checkout.layouts.path(&eco()).exists(),
+        "a layout was recorded"
+    );
+    assert!(
+        !checkout.tree.join(".tailrace").exists(),
+        "a layout was made"
+    );
+
+    checkout
+        .projection
+        .lockfile(&checkout.tree.display().to_string(), &[]);
+    let synced = sync_checkout(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.checkout_ask(2, vec![]),
+    )
+    .unwrap();
+    let [(_, Ok(Refresh::Refreshed(refreshed)))] = synced.layouts.as_slice() else {
+        panic!("an empty lockfile answered {:?}", synced.layouts)
+    };
+    assert_eq!(refreshed.pins, []);
+    assert_eq!(checkout.fakes.policy.calls(), [], "the policy was asked");
+}
+
+#[test]
+fn a_policy_that_cannot_be_read_leaves_every_layout_as_it_was() {
+    let checkout = Checkout::new();
+    checkout.landed(vec![acceptance()], Some(&[pin("pkg", "1.1.0")]));
+    let seams = checkout.fakes.seams();
+    sync_checkout(&seams, &checkout.layouts, &checkout.checkout_ask(1, vec![])).unwrap();
+    checkout.fakes.policy.fault(
+        PolicyOp::PolicyFor,
+        Fault::Unreadable("the policy file does not parse".into()),
+        Times::Once,
+    );
+    let synced =
+        sync_checkout(&seams, &checkout.layouts, &checkout.checkout_ask(2, vec![])).unwrap();
+    let [(_, Ok(Refresh::Kept(kept)))] = synced.layouts.as_slice() else {
+        panic!("an unread policy answered {:?}", synced.layouts)
+    };
+    assert_eq!(kept.rendered_at, Some(1));
+    assert_eq!(kept.holds.len(), 1);
+    assert!(
+        matches!(&kept.because, Not::Unreadable(u) if u.said.as_deref() == Some("the policy file does not parse")),
+        "{kept:?}"
+    );
+    assert_eq!(checkout.renders().len(), 1, "the layout was rendered again");
+}
+
+#[test]
+fn a_revision_not_landed_is_refused_before_a_lockfile_is_read() {
+    let checkout = Checkout::new();
+    checkout
+        .projection
+        .lockfile(&checkout.tree.display().to_string(), &[pin("pkg", "1.1.0")]);
+    let answer = sync_checkout(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.checkout_ask(1, vec![]),
+    );
+    assert!(matches!(answer, Err(Not::Refused(_))), "{answer:?}");
+    assert!(
+        checkout
+            .projection
+            .calls()
+            .iter()
+            .all(|c| c.op != ProjectionOp::Pinned),
+        "a lockfile was read"
     );
 }
