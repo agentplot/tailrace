@@ -12,12 +12,20 @@ ecosystem's own client with the base address it is served at, and a way
 to ask the core for a version the layout lacks, with the response to
 that request in the client's own protocol, or absent naming serving, for
 every request, from a projection whose ecosystem's clients read files
-(86, 115); and pinned, given a checkout, with the ecosystem names and
-versions its lockfile pins as the lockfile spells them, or absent where
-the checkout holds no lockfile of that ecosystem (137). A projection
-SHALL never reach the store but through the store it is handed, nor the
-policy or a version's claims at all: a version a served layout lacks is
-asked of the core, which judges it (core.2).
+(86, 115); pinned, given a checkout, with the ecosystem names and
+versions its lockfile pins as the lockfile spells them, and, for a name
+its manifest declares and no lockfile pins, the manifest's range as the
+manifest spells it, or absent where the checkout holds no lockfile of
+that ecosystem (137); and requires, given a held version's artifact,
+with the family's names and ranges its manifest requires of that
+ecosystem, as the manifest spells them, and whether one version is
+within a range and which of two is newer by the ecosystem's own order,
+or none from a projection whose ecosystem has no manifest (140, 23). A
+projection SHALL never reach the store but through the store it is
+handed, nor the policy or a version's claims at all: a version a served
+layout lacks is asked of the core, which judges it, and the core, never
+the projection, lists, judges and holds what a range or a requirement
+names (core.2, core.1).
 
 #### Scenario: A projection that cannot promise the same bytes
 - **WHEN** pack answers bytes it cannot promise to make again
@@ -46,6 +54,10 @@ asked of the core, which judges it (core.2).
 #### Scenario: A pin written and read back
 - **WHEN** a pin, an ecosystem name and a version, is written in its machine-readable form and read back
 - **THEN** it is the same pin
+
+#### Scenario: What a held version requires
+- **WHEN** a projection whose ecosystem has a manifest is asked what a held version requires
+- **THEN** it answers the family's names and ranges as the version's manifest spells them, and reads nothing but that version's bytes through the store it is handed
 
 #### Scenario: A request served
 - **WHEN** a projection whose clients read no files is asked to serve a request for a version its layout holds

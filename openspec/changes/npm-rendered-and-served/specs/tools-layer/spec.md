@@ -30,7 +30,7 @@ by a job that holds an identity of its own (core.38).
 #### Scenario: npm in the layer
 
 - **WHEN** `moon run ':#check-tools'` runs
-- **THEN** the npm projection's pack scenarios and its `npm install` against a served layout run with the npm the tree pins, under a home and an npm configuration of the test's own, and no registry but the served layout is asked for a family package
+- **THEN** the npm projection's pack scenarios and its `npm install` against a served layout, a first install with no lockfile among them, run with the npm the tree pins, under a home and an npm configuration of the test's own, and no registry but the served layout is asked for a family package
 
 #### Scenario: The ECR check outside the gate
 
