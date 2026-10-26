@@ -27,8 +27,8 @@
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Branch, ComponentName, Digest, Held, Manifest, Name, Not, Revision, Seams, Source,
-    Version,
+    Answer, Branch, ComponentName, Digest, Held, IsLanded, Manifest, Name, Not, Revision, Seams,
+    Source, Version,
 };
 
 use crate::{answer_json, Declared, Entry, History, Kept, Landed, Tag, Written};
@@ -89,8 +89,8 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
         });
         for tag in tags {
             match seams.landing.landed(&ask.branch, &tag.revision) {
-                Ok(true) => {}
-                Ok(false) | Err(Not::Absent(_)) => continue,
+                Ok(IsLanded { landed: true, .. }) => {}
+                Ok(IsLanded { landed: false, .. }) | Err(Not::Absent(_)) => continue,
                 Err(not) => return Err(not),
             }
             let index = match seams.store.resolve(&Name::new(&tag.name)) {

@@ -12,7 +12,9 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-use tailrace_seams::{Answer, Branch, Landing, Not, Revision, Seam, Source, Verdict};
+use tailrace_seams::{
+    Answer, Branch, IsLanded, Landing, Not, Read, Revision, Seam, Source, Verdicts,
+};
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
 
@@ -124,25 +126,32 @@ impl Landing for PlainBranch {
     /// 77: landed when the revision is the branch's head or one of its
     /// ancestors; a branch that does not exist, or a revision the
     /// repository does not hold, has landed nothing.
-    fn landed(&self, branch: &Branch, revision: &Revision) -> Answer<bool> {
+    fn landed(&self, branch: &Branch, revision: &Revision) -> Answer<IsLanded> {
+        let landed = |landed| IsLanded {
+            landed,
+            read: Read::Source,
+        };
         let listed = self.open()?;
         let Some(head) = self.head(branch, &listed)? else {
-            return Ok(false);
+            return Ok(landed(false));
         };
         let Some(commit) = self.commit(revision.as_str())? else {
-            return Ok(false);
+            return Ok(landed(false));
         };
         let ran = self.git(&["merge-base", "--is-ancestor", &commit, &head], &[0, 1])?;
-        Ok(ran.code == Some(0))
+        Ok(landed(ran.code == Some(0)))
     }
 
     /// 78: no landing records verdicts on a plain branch, so every
     /// revision the repository holds has an empty set, neither absent
     /// nor unreadable; one it does not hold is absent (C.6).
-    fn verdicts_of(&self, revision: &Revision) -> Answer<Vec<Verdict>> {
+    fn verdicts_of(&self, revision: &Revision) -> Answer<Verdicts> {
         self.open()?;
         match self.commit(revision.as_str())? {
-            Some(_) => Ok(vec![]),
+            Some(_) => Ok(Verdicts {
+                verdicts: vec![],
+                read: Read::Source,
+            }),
             None => Err(Not::absent(self.source(), format!("revision {revision}"))),
         }
     }

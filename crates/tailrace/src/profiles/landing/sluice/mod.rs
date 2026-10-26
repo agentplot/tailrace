@@ -14,7 +14,10 @@ use std::collections::BTreeMap;
 use std::ffi::OsStr;
 use std::path::PathBuf;
 
-use tailrace_seams::{Answer, Branch, Envelope, Landing, Not, Revision, Seam, Source, Verdict};
+use tailrace_seams::{
+    Answer, Branch, Envelope, IsLanded, Landing, Not, Read, Revision, Seam, Source, Verdict,
+    Verdicts,
+};
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
 
@@ -155,7 +158,28 @@ impl Landing for Sluice {
     /// commits, the first-parent line from the revision it moved the
     /// branch to back to the one it moved it from, include the revision
     /// (design D5).
-    fn landed(&self, branch: &Branch, revision: &Revision) -> Answer<bool> {
+    fn landed(&self, branch: &Branch, revision: &Revision) -> Answer<IsLanded> {
+        self.landed_in(branch, revision).map(|landed| IsLanded {
+            landed,
+            read: Read::Source,
+        })
+    }
+
+    /// 78: the verdicts of the signed run records, under every signer's
+    /// ref on the remote, of the combination the revision's
+    /// `Sluice-Tested` trailer names (design D6). With no remote bound,
+    /// sluice signed nothing, and a revision no trailer names was landed
+    /// on no verdict: both answer an empty set (sluice ADR 0032).
+    fn verdicts_of(&self, revision: &Revision) -> Answer<Verdicts> {
+        self.verdicts_in(revision).map(|verdicts| Verdicts {
+            verdicts,
+            read: Read::Source,
+        })
+    }
+}
+
+impl Sluice {
+    fn landed_in(&self, branch: &Branch, revision: &Revision) -> Answer<bool> {
         let listed = self.open()?;
         let log = self.log(&listed, branch)?;
         let done = log::landings(&log.bytes)
@@ -183,12 +207,7 @@ impl Landing for Sluice {
         Ok(false)
     }
 
-    /// 78: the verdicts of the signed run records, under every signer's
-    /// ref on the remote, of the combination the revision's
-    /// `Sluice-Tested` trailer names (design D6). With no remote bound,
-    /// sluice signed nothing, and a revision no trailer names was landed
-    /// on no verdict: both answer an empty set (sluice ADR 0032).
-    fn verdicts_of(&self, revision: &Revision) -> Answer<Vec<Verdict>> {
+    fn verdicts_in(&self, revision: &Revision) -> Answer<Vec<Verdict>> {
         let listed = self.open()?;
         let Some(remote) = &self.remote else {
             return Ok(vec![]);

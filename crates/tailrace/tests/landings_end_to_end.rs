@@ -184,7 +184,8 @@ fn the_landings_key_is_the_builds_identity() {
 
     let verdicts = Sluice::new(&world.scratch.repo.path, Some("origin".into()))
         .verdicts_of(&landed)
-        .unwrap();
+        .unwrap()
+        .verdicts;
     let [verdict] = <[_; 1]>::try_from(verdicts).unwrap();
     assert_eq!(verdict.check, Check::new("app:test"));
     let moon = world.moon();

@@ -140,10 +140,10 @@ mod tests {
     }
 
     impl Landing for Nowhere {
-        fn landed(&self, _: &Branch, _: &Revision) -> Answer<bool> {
+        fn landed(&self, _: &Branch, _: &Revision) -> Answer<IsLanded> {
             nothing(Seam::Landing, "landed")
         }
-        fn verdicts_of(&self, _: &Revision) -> Answer<Vec<Verdict>> {
+        fn verdicts_of(&self, _: &Revision) -> Answer<Verdicts> {
             nothing(Seam::Landing, "verdicts-of")
         }
     }

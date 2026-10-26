@@ -6,21 +6,21 @@ Every command runs inside `devenv shell -- <command>`.
 
 - [x] 1.1 Move `Read` from `crates/tailrace-seams/src/keeper.rs` to `answer.rs`, its form and JSON unchanged and its doc saying how any answer was read (design D1); the keeper's tests pass unchanged: `moon run seams:test`
 - [x] 1.2 Move the UTC rendering `render::utc` holds into `tailrace-seams` beside `Read`, `crates/tailrace/src/render.rs` calling it, with a test in the seams crate of an epoch time and a leap day rendered (design D5): `moon run seams:test cli:test`
-- [ ] 1.3 In `landing.rs`, add `IsLanded { landed, read }` and `Verdicts { verdicts, read }`, change `landed` and `verdicts_of` to answer them, and write the contract's docs from the landing's contract as the seam-contracts delta words it; round-trip tests for both, with `Read::Source` and `Read::Kept`: `moon run seams:test`
+- [x] 1.3 In `landing.rs`, add `IsLanded { landed, read }` and `Verdicts { verdicts, read }`, change `landed` and `verdicts_of` to answer them, and write the contract's docs from the landing's contract as the seam-contracts delta words it; round-trip tests for both, with `Read::Source` and `Read::Kept`: `moon run seams:test`
 - [x] 1.4 Add `Why::NotLandedAsFetched { branch, revision, fetched }`, its text naming the time in UTC and saying to ask again once the landing's remote answers (design D5); a test that it and `NotLanded` read back from JSON as made, told apart, the remote's words kept verbatim in `said`: `moon run seams:test`
-- [ ] 1.5 Bring `Nowhere` in `lib.rs` and `bind.rs` to the new signatures: `moon run seams:test`
+- [x] 1.5 Bring `Nowhere` in `lib.rs` and `bind.rs` to the new signatures: `moon run seams:test`
 
 ## 2. The fake landing answers as last fetched
 
-- [ ] 2.1 Change `FakeLanding` to the new answers, every answer while reachable `Read::Source`, and add `unreachable(words)`: the whole state copied at each answer with its time, every question answered from the copy once unreachable, unreadable with the words before any answer (design D7); tests for the three scenarios of the seam-fakes delta, scripted faults still answered first: `moon run fakes:test`
-- [ ] 2.2 Bring `crates/tailrace-fakes/src/lib.rs`'s tests to the new answers: `moon run fakes:test`
+- [x] 2.1 Change `FakeLanding` to the new answers, every answer while reachable `Read::Source`, and add `unreachable(words)`: the whole state copied at each answer with its time, every question answered from the copy once unreachable, unreadable with the words before any answer (design D7); tests for the three scenarios of the seam-fakes delta, scripted faults still answered first: `moon run fakes:test`
+- [x] 2.2 Bring `crates/tailrace-fakes/src/lib.rs`'s tests to the new answers: `moon run fakes:test`
 
 ## 3. The core: a landed revision says how it was read
 
-- [ ] 3.1 In `crates/tailrace-core/src/landed.rs`, give `Landed` its `read` and `read()`, and make `Landed::check` answer a yes from either read, `NotLanded` for a no from the landing itself and `NotLandedAsFetched` with the remote's words for a no from the copy (design D5); unit tests for all three: `moon run core:test`
+- [x] 3.1 In `crates/tailrace-core/src/landed.rs`, give `Landed` its `read` and `read()`, and make `Landed::check` answer a yes from either read, `NotLanded` for a no from the landing itself and `NotLandedAsFetched` with the remote's words for a no from the copy (design D5); unit tests for all three: `moon run core:test`
 - [ ] 3.2 In `publish.rs`, take `.verdicts` from verdicts-of's answer; tests in `crates/tailrace-core/tests/publish.rs` for the publishing delta's two new scenarios, no seam but the landing asked on the refusal and the published answer equal to a world's whose landing answers from itself: `moon run core:test`
 - [ ] 3.3 In `status.rs`, give `Channels` its `landing: Read` from the landed head (design D6); tests in `crates/tailrace-core/tests/status.rs` for the channel-status delta's scenarios over the fakes, the channels shown and the read carried, and the head refused from a copy as the channels' part's refusal with the record's part answering: `moon run core:test`
-- [ ] 3.4 Bring every other test of `crates/tailrace-core/tests/` that calls the landing or matches `NotLanded` to the new answers: `moon run core:test`
+- [x] 3.4 Bring every other test of `crates/tailrace-core/tests/` that calls the landing or matches `NotLanded` to the new answers: `moon run core:test`
 
 ## 4. The plain branch reads its copy where the remote does not answer
 

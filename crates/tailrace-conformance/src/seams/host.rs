@@ -113,7 +113,7 @@ fn the_hosts_bindings_beside_the_landings(rig: &dyn HostRig) {
 
     let (branch, revision) = rig.landed();
     assert_eq!(
-        seams.landing.landed(&branch, &revision),
+        seams.landing.landed(&branch, &revision).map(|l| l.landed),
         Ok(true),
         "the bound landing is not the landing the file names"
     );
