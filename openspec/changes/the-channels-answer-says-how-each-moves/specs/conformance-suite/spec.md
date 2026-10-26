@@ -17,7 +17,11 @@ none (125, 37), listed beside the channels the profile gives with
 nothing declared and like them (131). The group's rig SHALL declare
 components and channels, each with how it moves, at a landed revision
 as well as policies for audiences, and SHALL answer the channels its
-profile gives a set of components with nothing declared.
+profile gives a set of components with nothing declared. The group
+SHALL hold a profile to the three ways a channel moves and SHALL name
+no channel a profile gives, its declared channels bearing names no
+profile gives, so a profile whose givens bear other names passes alike
+(C.10).
 
 #### Scenario: The claims an audience requires
 

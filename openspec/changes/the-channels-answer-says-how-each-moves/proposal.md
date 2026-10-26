@@ -4,18 +4,20 @@
 
 A person who writes nothing about channels should still get `beta`,
 moved by the gate on every accepted publish, and `stable`, moved by
-promotion from what `beta` has held; and a person who marks an
+promotion from what `beta` has held; one who wants `alpha` or `lts`
+should write one line and have it; and a person who marks an
 environment `manual` should get a channel of its own that waits on
-their yes. Today none of that happens: a channel exists only where a
-`[channels.<name>]` line is written, the gate finds the channels that
-follow each publish by parsing the policy file itself, and two
-components' channels of one name share one chain and one store name.
-This unit makes the policy seam's channels answer say how each channel
-moves, gives every component its two channels, makes the channels an
-environment's words call for, and gives a channel its component
-wherever it travels, so the gate and the ledger learn every channel
-from that one answer (131, 125, 37, 83, 95, C.10, C.13, C.14, as
-amended at agentplot/blueprints 67f95da, 85bbf54 and 7749369).
+their yes. Today a channel exists only where a `[channels.<name>]`
+line is written, the gate finds the channels that follow each publish
+by parsing the policy file itself, and two components' channels of one
+name share one chain and one store name. This unit makes the policy
+seam's channels answer say how each channel moves, ships the given
+channels as a policy fragment in the file's own form laid beneath the
+repository's file, makes the channels an environment's words call for,
+and gives a channel its component wherever it travels, so the gate and
+the ledger learn every channel from that one answer and the core knows
+no channel's name (131, 125, 37, 83, 95, C.10, C.13, C.14, as amended
+at agentplot/blueprints 67f95da, 85bbf54, 7749369 and e18ba89).
 
 ## What Changes
 
@@ -40,24 +42,46 @@ amended at agentplot/blueprints 67f95da, 85bbf54 and 7749369).
   this bolt's `the-policy-seam-lists-the-channels` wrote: it becomes
   unreadable naming the table and the form to use. Nothing of it is on
   main.
-- **Every component has `beta` and `stable` with no line written.**
-  `beta` moves on each accepted publish; `stable` is bound to `beta`
-  (C.10). They are listed like any channel declared by hand, and the
-  policy for each answers like any channel's.
-- **A given channel is promoted by the gate's own signer.** With no line
-  written, `beta` and `stable` require the gate's acceptance and are
-  promoted by the signer the policy lets claim acceptance, the gate
-  (32). A line under one adds claims its versions must carry and never
-  widens who signs; one that would change how a given channel moves is
-  unreadable naming the table (C.10). So `tailrace promote` moves a
-  given channel when the host holds the gate's signer.
+- **The given channels are a fragment of the policy file, shipped as
+  data.** A file in the policy profile's directory, written in the
+  policy file's own form, holds `beta`, moving on each accepted publish,
+  and `stable`, bound to `beta`, both on for every component, and
+  `alpha`, moving on each accepted publish, and `lts`, bound to
+  `stable`, both held off (C.10). The profile lays it beneath the
+  repository's file and reads the two as one table in force, through
+  one path that the channels, each channel's policy and the policy
+  command all read. No Rust source names a given channel.
+- **One line switches a held channel on, and the same line overrides a
+  given.** Writing `[channels.alpha]` (or `[channels.<component>.alpha]`)
+  switches `alpha` on, since its keys are already written beneath. A
+  key the repository writes under a given replaces the fragment's: a
+  `bound_to` or `on_each_publish` changes how it moves, `on = false`
+  switches it off, and a `require` adds claims after the gate's
+  acceptance (C.10).
+- **A given channel is promoted by the gate's own signer.** Every
+  channel the fragment holds and the table in force has on requires the
+  gate's acceptance and is promoted by the signers the policy lets claim
+  acceptance, the gate (32), whatever a line under it names: a line
+  never widens who signs (C.10). So `tailrace promote` moves a given
+  channel when the host holds the gate's signer.
+- **`tailrace policy` shows the table in force.** At the governed
+  branch's landed head it prints the acceptance and layout policies and
+  every channel the channels answer lists, the givens beside the
+  repository's own, each with its component, how it moves, its claims
+  and its promoters, asked of the core like every command (core.31).
 - **An environment's words make its channels.** An environment's
   `policy = "manual"` gives it a channel of its own, named for the
   environment and bound to the channel it names; `after = [...]` gives
   it a channel of its own bound to the channel the named environments
   follow (C.10, 41, 97). These are listed like a channel declared by
-  hand, are promoted by the gate's signer as a given channel is, and a
-  reader may write a line under one as under a given channel.
+  hand and promoted by the gate's signer as a given channel is; a line
+  under one adds claims and never changes how it moves, since the
+  environment's words say that.
+- **The core knows three ways a channel moves and no channel's name.**
+  Nothing outside the fragment names `beta`, `stable`, `alpha` or `lts`
+  as a channel the code treats apart: the core, the seams and the fakes
+  name none, and the file profile reads every given from the fragment
+  (C.10).
 - **The gate and the ledger read no key of the policy file.** The gate
   finds the channels that follow each publish, and the signer it accepts
   as, from the channels answer and the policy for each, and no longer
@@ -67,12 +91,15 @@ amended at agentplot/blueprints 67f95da, 85bbf54 and 7749369).
   fake policy lists the channels scripted for it with how each moves;
   the fake keeper keeps a chain per component and channel. The policy's
   conformance group gains how each channel moves and what a profile
-  gives with nothing declared; the keeper's group, two components'
-  chains of one channel name kept apart.
+  gives with nothing declared, and names no channel a profile gives:
+  the policy file's rig reads what it gives from the shipped fragment.
+  The keeper's group gains two components' chains of one channel name
+  kept apart.
 - **ADR 0019** records the channel's identity and its three spellings,
-  the given channels and who signs their promotion, the environment's
-  table, and the gate's reading through the seam; the self-hosting,
-  ledgers and how-it-works pages say what is built.
+  the givens as a fragment beneath the file, switching on and
+  overriding by one line, who signs a given's promotion, the
+  environment's table, and the gate's reading through the seam; the
+  self-hosting, ledgers and how-it-works pages say what is built.
 
 Out of scope, and what each waits on:
 
@@ -83,10 +110,18 @@ Out of scope, and what each waits on:
   moves them yet but `tailrace promote`. 41 and 97 stay in the register
   with the target's unit.
 - The later word that names who may say yes to a `manual` environment,
-  and a line that narrows who may ask for a given channel (C.10): no
-  key is named for either, and the asker is the host's own signer in
-  phase 1 (129). They wait on a design ruling and the hosted gate's
-  approvals.
+  a line that narrows who may ask for a given channel, and `lts`'s
+  "by a person alone" (C.10): no key is named for any of them, and the
+  asker is the host's own signer in phase 1 (129). They wait on a
+  design ruling and the hosted gate's approvals.
+- `alpha` taking prereleases where `beta` does not: C.10 says `alpha`
+  follows every accepted version including prereleases, and nothing
+  says `beta` leaves them out or how a channel that moves on each
+  publish would. Here `alpha` moves on each accepted publish exactly as
+  `beta` does; it waits on a design ruling.
+- The other givens C.10 lists, the one component and the version rule,
+  moving into the fragment: the core's reading of `[[component]]` and
+  `[version]` stays as it is.
 - `tailrace status` rendering how each channel moves:
   `status-on-any-machine`, which reads the channels answer and the
   chains as this unit leaves them.
@@ -100,10 +135,11 @@ Out of scope, and what each waits on:
 
 ### New Capabilities
 
-- `channel-movement`: how each channel moves, the channels every
-  component is given, the channels an environment's words make, and
-  who signs a promotion of a given or made channel, as every policy
-  profile answers them and the gate and the ledger read them.
+- `channel-movement`: how each channel moves, the given channels as a
+  fragment beneath the file, switched on and overridden by one line,
+  the channels an environment's words make, and who signs a promotion
+  of a given or made channel, as every policy profile answers them and
+  the gate and the ledger read them.
 
 ### Modified Capabilities
 
@@ -116,11 +152,14 @@ Out of scope, and what each waits on:
   component carried by the channel itself; the fake keeper keeps a
   chain per component and channel.
 - `conformance-suite`: the policy's group holds how each channel moves
-  and what a profile gives with nothing declared; the keeper's group
-  holds two components' chains apart.
-- `policy-file`: the file's channel form per component, its given
-  channels, its environments' channels, and `on_each_publish` read by
-  the profile.
+  and what a profile gives with nothing declared, naming no channel a
+  profile gives; the keeper's group holds two components' chains apart.
+- `policy-file`: the file's channel form per component, the givens'
+  fragment laid beneath it as the table in force, its environments'
+  channels, and `on_each_publish`, `bound_to` and `on` read by the
+  profile.
+- `command-line`: `tailrace policy` shows the policy in force at the
+  branch's landed head.
 - `acceptance`: the gate learns the channels that follow each publish,
   and the signer it accepts as, through the policy seam alone.
 - `promotion`: a promotion finds its channel through the channels
@@ -141,13 +180,19 @@ Out of scope, and what each waits on:
 - `crates/tailrace-fakes/src/policy.rs`, `keeper.rs`, `target.rs`.
 - `crates/tailrace-core/src/gate.rs` (no file parsing), `ledger.rs`,
   `repair.rs`, `verify.rs`, `landed.rs`, and their tests.
-- `crates/tailrace/src/profiles/policy/file/`, `profiles/ledger/`,
-  `commands/promote.rs`, `commands/verify.rs`, and their tests.
+- `crates/tailrace/src/profiles/policy/file/` (the resolution, and the
+  fragment `givens.toml` beside it), `profiles/ledger/`,
+  `commands/promote.rs`, `commands/verify.rs`, a new
+  `commands/policy.rs` with its binding in `bindings/mod.rs`, `lib.rs`
+  and `main.rs`, and their tests.
+- `crates/tailrace-core/src/in_force.rs`, the policy in force asked of
+  the core.
 - `crates/tailrace-conformance/src/seams/policy.rs`, `seams/keeper.rs`,
   `core/gate.rs`, `core/ledger.rs`, `fakes.rs`, `world.rs` and the rest
   that name a channel.
 - ADR 0019 and three site pages.
-- No crate, dependency, language or file type is added.
+- No crate, dependency, language or file type is added: the fragment is
+  TOML, which taplo already formats.
 - Overlaps in flight on this bolt: `status-on-any-machine` reads the
   keeper's chain and the channels answer whose signatures change here,
   and `the-publishs-host-tells-the-gate` edits `gate.rs`.
@@ -170,13 +215,19 @@ crates/tailrace-core/src/ledger.rs
 crates/tailrace-core/src/repair.rs
 crates/tailrace-core/src/verify.rs
 crates/tailrace-core/src/landed.rs
+crates/tailrace-core/src/in_force.rs
 crates/tailrace-core/src/lib.rs
 crates/tailrace-core/tests/**
 crates/tailrace/src/profiles/policy/file/**
 crates/tailrace/src/profiles/ledger/**
 crates/tailrace/src/commands/promote.rs
 crates/tailrace/src/commands/verify.rs
+crates/tailrace/src/commands/policy.rs
+crates/tailrace/src/commands/mod.rs
+crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
+crates/tailrace/src/lib.rs
+crates/tailrace/src/main.rs
 crates/tailrace/tests/**
 crates/tailrace-conformance/src/**
 crates/tailrace-conformance/tests/fakes.rs
