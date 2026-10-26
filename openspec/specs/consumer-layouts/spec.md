@@ -3,9 +3,11 @@
 ## Purpose
 Fills a checkout's consumer layouts from the store with the versions its
 lockfiles pin, each judged under the consuming repository's own layout
-policy, else, through the signers the host trusts, the publisher's, else
-the given, so a client reads only what the policy admits, and keeps on
-the host what each layout holds (47 to 51, 61 to 63, 99, 113, C.10).
+policy, else the publisher's, else the given, every claim read through
+the signers the consumer's file names for it, else through the host's
+own signer and the signers its bindings name, so a client reads only
+what the policy admits, and keeps on the host what each layout holds
+(47 to 51, 61 to 63, 99, 113, 118, C.10).
 
 ## Requirements
 
@@ -61,24 +63,47 @@ the checkout (113, 65, core.22).
 - **THEN** the policy was asked at the landed revision, and a version lacking that claim is refused
 
 #### Scenario: The consumer's line over the publisher's
-- **WHEN** a consumer whose file writes a layout line requiring provenance syncs a version whose index carries a trusted publisher's layout-policy claim requiring acceptance
+- **WHEN** a consumer whose file writes a layout line requiring provenance syncs a version whose index carries a layout-policy claim requiring acceptance, by a signer the consumer reads one through
 - **THEN** the version is judged under the consumer's own line, and the answer and the record name it at the consumer's revision
+
+### Requirement: A consumer whose file names signers reads under its file alone
+A consumer whose policy file names signers SHALL read under its file
+alone: every claim it reads, the publisher's layout-policy claim and
+each claim a policy requires among them, SHALL count only through the
+signers its file names that may make that claim, verified by the keys
+its file names (C.10, 116, core.7).
+
+#### Scenario: The file's signers alone
+- **WHEN** a consumer whose file names `gate` for acceptance and writes no layout line, on a host that trusts `box`, syncs a version accepted by `box` alone
+- **THEN** the version is refused naming acceptance as the claim found wanting, checked against `gate` alone
+
+### Requirement: A claim the file names no signer for is read through the host's trust
+For a claim its file names no signer for, and for every claim where it
+has no policy file, a consumer SHALL read through the host's trusted
+signers: the host's own signer and the signers its bindings name, each
+allowed that one claim, so a host consumes what it published itself
+(C.10, 118). The one host 108 admits as the gate SHALL be the gate for
+publishing, never for reading.
+
+#### Scenario: A claim the file names no signer for
+- **WHEN** a consumer whose file names `curator` for layout policies and no signer for provenance, on a host that trusts `box` alone, syncs a version whose index carries `curator`'s layout-policy claim requiring provenance by `laptop` or `box`, and whose artifact carries a provenance by `laptop` alone
+- **THEN** the version is judged under the publisher's policy and refused naming provenance as the claim found wanting, checked against `box` alone
 
 ### Requirement: The publisher's policy where the consumer writes none
 Where the consuming repository writes no layout policy, with no policy
 file or a file with no layout line alike, each version SHALL be judged
 under the publisher's policy for layouts, read from the layout-policy
-claim on its index (113). Only such a claim by a signer the host's
-bindings trust SHALL count; any other is kept, never counted (C.10, 118,
-9). Two counted claims of different content SHALL be unreadable, naming
-both, neither chosen.
+claim on its index (113). Only such a claim by a signer the consumer
+reads layout-policy claims through SHALL count; any other is kept,
+never counted (C.10, 118, 9). Two counted claims of different content
+SHALL be unreadable, naming both, neither chosen.
 
 #### Scenario: Judged under the publisher's policy
 - **WHEN** a consumer with no policy file, on a host that trusts the signer `gate`, syncs a version whose index carries a layout-policy claim by `gate` requiring acceptance by `gate`, and an acceptance claim by `gate`
 - **THEN** the version is held, and the answer and the record say it was judged under the publisher's policy at the revision the claim names
 
 #### Scenario: A consumer file with no layout line
-- **WHEN** a consumer whose file names a gate and no layout line syncs a version whose index carries a trusted publisher's layout-policy claim
+- **WHEN** a consumer whose file names a gate, no signer for layout policies and no layout line, on a host that trusts `gate`, syncs a version whose index carries a layout-policy claim by `gate`
 - **THEN** the version is judged under the publisher's policy, not the consumer's given
 
 #### Scenario: A publisher's policy the host does not trust
@@ -86,26 +111,27 @@ both, neither chosen.
 - **THEN** the claim is not counted and stays attached, and the version is judged under the given
 
 #### Scenario: Two publisher's policies on one index
-- **WHEN** a version's index carries two layout-policy claims of different content, each by a trusted signer
+- **WHEN** a version's index carries two layout-policy claims of different content, each by a signer the consumer reads one through
 - **THEN** that version is answered unreadable naming both claims, and it is not held
 
-### Requirement: A publisher's required claim counts through a trusted signer
+### Requirement: A publisher's required claim counts through a signer the consumer reads it through
 Each claim the publisher's policy requires SHALL count only through a
-signer that policy names and the host trusts too, verified by the key
-the host trusts it by (C.10, core.7).
+signer that policy names and the consumer reads that claim through too,
+its file's signers for it, else the host's trusted signers, verified by
+the key the consumer reads it by (C.10, core.7).
 
 #### Scenario: A required claim by a signer the host does not trust
-- **WHEN** the trusted publisher's policy requires acceptance by `gate` or `box`, the host trusts `gate` alone, and the only acceptance claim is by `box`
+- **WHEN** a consumer with no policy file, on a host that trusts `gate` alone, syncs a version whose counted publisher's policy requires acceptance by `gate` or `box`, and the only acceptance claim is by `box`
 - **THEN** the version is refused naming acceptance as the claim found wanting, checked against `gate` alone
 
 ### Requirement: The given where neither writes a layout policy
 Where the consumer writes no layout policy and no layout-policy claim on
 the version's index counts, the version SHALL be judged under the given
-policy for a layout: acceptance by the gate (C.10). Where the consumer
-has a policy file, the gate SHALL be the one its file's given names,
-verified by the keys the file names (116); where it has none, the gate
-SHALL be the signers the host trusts (C.10, 118). Every version SHALL
-thus be judged under a policy, and none held with none (core.17).
+policy for a layout: acceptance by the signers the consumer's file lets
+claim acceptance (C.10, 116), else, where it names none or has no
+policy file, by the host's trusted signers (118), never by the file's
+one publisher. Every version SHALL thus be judged under a policy, and
+none held with none (core.17).
 
 #### Scenario: A consumer with no layout line, and no publisher's
 - **WHEN** a consumer whose policy file holds no layout line syncs, among versions whose indexes carry no layout-policy claim, one its file's gate accepted and one it did not
@@ -115,8 +141,16 @@ thus be judged under a policy, and none held with none (core.17).
 - **WHEN** a consumer with no policy file, on a host that trusts `gate`, syncs a version whose index carries no layout-policy claim and an acceptance by `gate`
 - **THEN** the version is held under the given, and the answer and the record name the given with no revision
 
+#### Scenario: A host reads what it accepted itself
+- **WHEN** a consumer with no policy file syncs on a host whose bindings file names `[signing]` for the signer `laptop` and no `[trust]`, a version whose index carries an acceptance by `laptop`
+- **THEN** the version is held under the given, read through the host's own signer
+
+#### Scenario: One publisher in the file is no reader's gate
+- **WHEN** a consumer whose file names one signer, `laptop`, for provenance, none for acceptance and no layout line, on a host whose own signer is `box`, syncs a version accepted by `laptop` and one accepted by `box`
+- **THEN** the version `box` accepted is held under the given at the consumer's revision, and the other is refused naming acceptance, checked against the host's trusted signers and not `laptop`
+
 #### Scenario: A host that trusts no signer
-- **WHEN** a consumer with no policy file syncs on a host whose bindings file names no `[trust]`
+- **WHEN** a consumer with no policy file syncs on a host whose bindings file names no `[signing]` and no `[trust]`
 - **THEN** every version the store names is refused naming acceptance with no signer checked, and the layout holds none
 
 ### Requirement: Only versions whose claims satisfy the policy are held

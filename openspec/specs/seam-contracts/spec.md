@@ -369,3 +369,14 @@ its own line (113, C.10). No other audience's answer SHALL carry it.
 #### Scenario: A given layout policy written and read back
 - **WHEN** a policy for a layout marked as given is written in its machine-readable form and read back
 - **THEN** it is the same policy, still marked as given, and a written one reads back unmarked
+
+### Requirement: The policy for a layout carries the file's signers
+The policy's answer for a layout SHALL carry the signers the file names,
+each with what it may claim, so a consumer reads a claim through its
+file's signers alone where the file names one for it, and through its
+host's trusted signers only where the file names none (C.10, 118). No
+other audience's answer SHALL carry them.
+
+#### Scenario: A layout policy's signers written and read back
+- **WHEN** a policy for a layout carrying the file's signers is written in its machine-readable form and read back
+- **THEN** it carries the same signers, and one carrying none reads back carrying none
