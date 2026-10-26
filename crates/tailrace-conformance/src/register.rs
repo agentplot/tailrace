@@ -29,7 +29,6 @@ const PHASE_2: &str = "phase 2";
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 36, unit: ACROSS, why: "A channel resolves to one version for every reader, read across machines." },
     Pending { clause: 98, unit: ACROSS, why: "What each environment should run and runs is told to every asker across machines." },
     Pending { clause: 47, unit: RENDER, why: "A consumer layout holds only versions its policy satisfies, and bolt 1 renders under no policy." },
     Pending { clause: 51, unit: RENDER, why: "A layout that cannot be refreshed answers what it holds, and bolt 1 keeps no layout." },
