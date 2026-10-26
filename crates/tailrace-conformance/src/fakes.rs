@@ -13,9 +13,10 @@ use tailrace_fakes::{
 };
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
-    Digest, Ecosystem, EcosystemName, Envelope, Environment, EnvironmentName, Keeper, Landing,
-    NamedSigner, Outcome, Output, OutputName, Policy, Projection, Report, Required, Revision,
-    Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
+    ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope, Environment,
+    EnvironmentName, Keeper, Landing, NamedSigner, Outcome, Output, OutputName, Policy, Projection,
+    Report, Required, Revision, Seams, Signature, Signer, SignerId, Store, Target, Verdict,
+    Verified, Version, IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
@@ -401,9 +402,29 @@ impl PolicyRig for FakePolicyRig {
         at
     }
 
+    fn declaring(&self, _: &[ComponentName], channels: &[DeclaredChannel]) -> Revision {
+        let at = revision(&self.revisions);
+        for channel in channels {
+            self.policy.require_at(
+                &at,
+                Audience::Channel(channel.name.clone()),
+                Required::Channel {
+                    claims: vec![],
+                    bound_to: channel.bound_to.clone(),
+                },
+            );
+            self.policy
+                .belongs_at(&at, &channel.name, &channel.component);
+        }
+        at
+    }
+
     fn unreachable(&self) -> String {
         let policy = &self.policy;
-        unreachable(|op, f, t| policy.fault(op, f, t), &[PolicyOp::PolicyFor])
+        unreachable(
+            |op, f, t| policy.fault(op, f, t),
+            &[PolicyOp::PolicyFor, PolicyOp::Channels],
+        )
     }
 }
 

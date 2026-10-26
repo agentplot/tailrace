@@ -18,18 +18,17 @@ pub struct Pending {
     pub why: &'static str,
 }
 
-const CHANNELS: &str = "bolt 4 · the policy seam lists the channels";
 const ACROSS: &str = "bolt 4 · status across machines";
 const RENDER: &str = "bolt 5 · render under a policy";
 const SERVED: &str = "bolt 5 · the first served projection";
 const TARGET: &str = "phase 2 · the first target";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
+const PHASE_2: &str = "phase 2";
 
 // One entry per line, as the module says, wider than the formatter's
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 125, unit: CHANNELS, why: "A channel belongs to one component, which the policy seam's list of channels gives it (131)." },
     Pending { clause: 36, unit: ACROSS, why: "A channel resolves to one version for every reader, read across machines." },
     Pending { clause: 98, unit: ACROSS, why: "What each environment should run and runs is told to every asker across machines." },
     Pending { clause: 47, unit: RENDER, why: "A consumer layout holds only versions its policy satisfies, and bolt 1 renders under no policy." },
@@ -46,6 +45,11 @@ pub const PENDING: &[Pending] = &[
     Pending { clause: 44, unit: TARGET, why: "Pushed to or pulling is the environment's own, and phase 1 leaves every target to phase 2." },
     Pending { clause: 45, unit: TARGET, why: "A reconciler acts with the environment's own credentials, and phase 1 leaves every target to phase 2." },
     Pending { clause: 119, unit: TARGET, why: "A reconciler leaves a marker of what it applied, and phase 1 leaves every target to phase 2." },
+    Pending { clause: 126, unit: TARGET, why: "The roster is a target's, and phase 1 leaves every target to phase 2." },
     Pending { clause: 55, unit: REBUILD, why: "A verifier's rebuild reads no cache entry it did not write, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 112, unit: REBUILD, why: "A verifier compares the digests of outputs, and phase 1 leaves the rebuild to phase 2." },
+    Pending { clause: 127, unit: PHASE_2, why: "A channel declared by a pattern over branch names, which no unit of phase 1 carves." },
+    Pending { clause: 128, unit: PHASE_2, why: "Several promotions in one act, which no unit of phase 1 carves." },
+    Pending { clause: 129, unit: PHASE_2, why: "The asker named by an identity the owner's identity provider issued, and phase 1 binds none." },
+    Pending { clause: 130, unit: PHASE_2, why: "What runs a publish and tells the gate, named in the host's bindings file, which no unit of phase 1 carves." },
 ];
