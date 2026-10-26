@@ -1,10 +1,23 @@
 //! The policy seam (B.5) bound to the policy file (C.10):
 //! `.config/tailrace.toml` read with git from the tree of the revision
 //! asked, never from a checkout (65, rule core.22; design D3). It reads
-//! its own tables and leaves the core's (`outputs`, `[version]`,
-//! `[projections]`, `[[component]]`) and every other reader's alone:
+//! its own tables and the `name` of each `[[component]]`, and leaves the
+//! core's other keys (`outputs`, `[version]`, `[projections]`, the rest
+//! of `[[component]]`) and every other reader's alone:
 //!
 //! ```toml
+//! [[component]]
+//! name = "web"
+//! outputs = ["site"]
+//! paths = ["site/**"]
+//! prefix = "web-v"
+//!
+//! [[component]]
+//! name = "cli"
+//! outputs = ["cli"]
+//! paths = ["crates/**"]
+//! prefix = "cli-v"
+//!
 //! [signers.laptop]
 //! ssh = "ssh-ed25519 AAAA… host@laptop"
 //! kinds = ["provenance"]
@@ -23,7 +36,12 @@
 //! [layout]
 //! require = [{ kind = "provenance", signers = ["laptop"] }]
 //!
+//! [channels.beta]
+//! component = "web"
+//! require = [{ kind = "provenance", signers = ["laptop"] }]
+//!
 //! [channels.stable]
+//! component = "web"
 //! bound_to = "beta"
 //! require = [{ kind = "acceptance", signers = ["gate"] }]
 //! ```
@@ -32,8 +50,17 @@
 //! whose text is what its signer profile verifies it by, handed on whole
 //! so each signer profile reads its own (82, 116). Each audience's
 //! `require` keeps its order, which fixes the first claim found wanting
-//! (58). A channel's keys other than `require` and `bound_to` are left
-//! to the reader that owns them.
+//! (58).
+//!
+//! A channel's table names the component it belongs to with
+//! `component`, one a `[[component]]` declares, and may leave it out
+//! where one is declared, or none, the one then named `repository` (123,
+//! 125, 131); its `bound_to` names a channel of `[channels]` in the same
+//! component (37). A file whose channel breaks either is unreadable
+//! naming the table, read alike for the channels listed and for one
+//! channel's policy, so the two never disagree (83). A channel's keys
+//! other than `require`, `bound_to` and `component` are left to the
+//! reader that owns them.
 //!
 //! Every operation begins by resolving the revision in the repository,
 //! so a repository that cannot be read answers unreadable with git's
@@ -45,8 +72,8 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 use tailrace_seams::{
-    Answer, Audience, ChannelName, Check, ClaimKind, NamedSigner, Not, Policy, Required,
-    RequiredClaim, Revision, Seam, SignerId, Source,
+    Answer, Audience, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel, NamedSigner,
+    Not, Policy, Required, RequiredClaim, Revision, Seam, SignerId, Source, REPOSITORY_COMPONENT,
 };
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
@@ -64,8 +91,8 @@ pub struct PolicyFile {
     git: Tool,
 }
 
-/// What this profile reads of the file: the signers, and each
-/// audience's table.
+/// What this profile reads of the file: the signers, each audience's
+/// table, and the components' names.
 #[derive(Deserialize)]
 struct File {
     #[serde(default)]
@@ -74,14 +101,31 @@ struct File {
     layout: Option<AudienceTable>,
     #[serde(default)]
     channels: BTreeMap<ChannelName, AudienceTable>,
+    #[serde(default)]
+    component: Vec<ComponentEntry>,
+}
+
+/// A `[[component]]` table, of which this profile reads the name alone
+/// (123).
+#[derive(Deserialize)]
+struct ComponentEntry {
+    name: ComponentName,
 }
 
 /// An audience's table: the claims it requires, in order, and for a
-/// channel the channel it is bound to (83).
+/// channel the channel it is bound to (83) and the component it belongs
+/// to (125).
 #[derive(Deserialize)]
 struct AudienceTable {
     require: Vec<Entry>,
     bound_to: Option<ChannelName>,
+    component: Option<ComponentName>,
+}
+
+/// The file at a revision, parsed whole, with its signers read.
+struct Read {
+    file: File,
+    signers: BTreeMap<String, NamedSigner>,
 }
 
 /// One claim an audience requires, its signers by their names in
@@ -151,6 +195,34 @@ impl PolicyFile {
         };
         Ok(Some(self.git(&["cat-file", "blob", &blob], &[0])?.stdout))
     }
+
+    /// Unreadable naming the file and the revision, with `said`.
+    fn unreadable(&self, revision: &Revision, said: String) -> Not {
+        Not::unreadable(
+            self.source(),
+            format!("{POLICY_FILE} at {revision}"),
+            Some(said),
+        )
+    }
+
+    /// The policy file at `revision` parsed whole, its signers read,
+    /// `None` where the revision's tree holds none; unreadable with git's
+    /// or the parser's words where it cannot be read, so a file one
+    /// operation cannot read no other reads either.
+    fn read(&self, revision: &Revision) -> Answer<Option<Read>> {
+        let commit = self.commit(revision)?;
+        let unreadable = |said: String| self.unreadable(revision, said);
+        let Some(bytes) = self.text(&commit)? else {
+            return Ok(None);
+        };
+        let text = String::from_utf8(bytes).map_err(|e| unreadable(e.to_string()))?;
+        let file: File = toml::from_str(&text).map_err(|e| unreadable(e.to_string()))?;
+        let mut signers = BTreeMap::new();
+        for (name, table) in &file.signers {
+            signers.insert(name.clone(), signer(name, table).map_err(unreadable)?);
+        }
+        Ok(Some(Read { file, signers }))
+    }
 }
 
 /// The audience as an answer names it.
@@ -160,6 +232,71 @@ fn audience_name(audience: &Audience) -> String {
         Audience::Layout => "layout".into(),
         Audience::Channel(channel) => format!("the channel {channel}"),
     }
+}
+
+/// The components the file declares: each `[[component]]`'s name, or
+/// the one named `repository` where it declares none (123).
+fn components(file: &File) -> Vec<ComponentName> {
+    if file.component.is_empty() {
+        vec![ComponentName::new(REPOSITORY_COMPONENT)]
+    } else {
+        file.component.iter().map(|c| c.name.clone()).collect()
+    }
+}
+
+/// The component `[channels.<name>]` belongs to: the one it names, which
+/// the file must declare, or the one declared where it names none and
+/// one is (125), in the gate's words where the gate has words for it.
+fn component_of(
+    file: &File,
+    name: &ChannelName,
+    table: &AudienceTable,
+) -> Result<ComponentName, String> {
+    let declared = components(file);
+    let listed = || {
+        declared
+            .iter()
+            .map(ComponentName::as_str)
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    match (&table.component, declared.as_slice()) {
+        (Some(named), _) if declared.contains(named) => Ok(named.clone()),
+        (Some(named), _) => Err(format!(
+            "[channels.{name}] names the component {named}, which {POLICY_FILE} does not declare; it declares {}",
+            listed()
+        )),
+        (None, [one]) => Ok(one.clone()),
+        (None, _) => Err(format!(
+            "[channels.{name}] names no component, and several are declared: {}",
+            listed()
+        )),
+    }
+}
+
+/// 125, 131: `[channels.<name>]` as the channel the policy declares, its
+/// component, and the channel of that component it is bound to (37), or
+/// the words that make the file unreadable; one reading for the channels
+/// listed and for one channel's policy (83).
+fn resolve(file: &File, name: &ChannelName) -> Result<DeclaredChannel, String> {
+    let table = &file.channels[name];
+    let component = component_of(file, name, table)?;
+    if let Some(bound) = &table.bound_to {
+        let bound_table = file.channels.get(bound).ok_or_else(|| {
+            format!("[channels.{name}] is bound to {bound}, which [channels] does not declare")
+        })?;
+        let bound_component = component_of(file, bound, bound_table)?;
+        if bound_component != component {
+            return Err(format!(
+                "[channels.{name}] is bound to {bound}, a channel of {bound_component}, and a channel is bound only within its component, {component} (125)"
+            ));
+        }
+    }
+    Ok(DeclaredChannel {
+        name: name.clone(),
+        component,
+        bound_to: table.bound_to.clone(),
+    })
 }
 
 /// `[signers.<name>]` read as the signer a policy names: its one
@@ -218,25 +355,16 @@ impl Policy for PolicyFile {
     /// unreadable naming the file and the revision, with git's or the
     /// parser's words, where it cannot be read.
     fn policy_for(&self, revision: &Revision, audience: &Audience) -> Answer<Required> {
-        let commit = self.commit(revision)?;
         let absent = || {
             Not::absent(
                 self.source(),
                 format!("policy for {} in {POLICY_FILE}", audience_name(audience)),
             )
         };
-        let what = format!("{POLICY_FILE} at {revision}");
-        let unreadable = |said: String| Not::unreadable(self.source(), &what, Some(said));
-        let Some(bytes) = self.text(&commit)? else {
+        let unreadable = |said: String| self.unreadable(revision, said);
+        let Some(Read { file, signers }) = self.read(revision)? else {
             return Err(absent());
         };
-        let text = String::from_utf8(bytes).map_err(|e| unreadable(e.to_string()))?;
-        let file: File = toml::from_str(&text).map_err(|e| unreadable(e.to_string()))?;
-
-        let mut signers = BTreeMap::new();
-        for (name, table) in &file.signers {
-            signers.insert(name.clone(), signer(name, table).map_err(&unreadable)?);
-        }
 
         let (table, name) = match audience {
             Audience::Acceptance => (file.acceptance.as_ref(), "[acceptance]".to_string()),
@@ -251,6 +379,10 @@ impl Policy for PolicyFile {
                 "{name} names bound_to, and only a channel is bound to another"
             )));
         }
+        let bound_to = match audience {
+            Audience::Channel(channel) => resolve(&file, channel).map_err(unreadable)?.bound_to,
+            Audience::Acceptance | Audience::Layout => None,
+        };
         let mut claims = Vec::new();
         for entry in &table.require {
             let mut named = Vec::new();
@@ -271,10 +403,22 @@ impl Policy for PolicyFile {
         Ok(match audience {
             Audience::Acceptance => Required::Acceptance { claims },
             Audience::Layout => Required::Layout { claims },
-            Audience::Channel(_) => Required::Channel {
-                claims,
-                bound_to: table.bound_to.clone(),
-            },
+            Audience::Channel(_) => Required::Channel { claims, bound_to },
         })
+    }
+
+    /// 131: every `[channels.<name>]` of the policy file at `revision`, by
+    /// name, each with its component and the channel it is bound to; an
+    /// empty list where the file or its `[channels]` is missing, and
+    /// unreadable naming the file and the revision, with the words of
+    /// the first channel that breaks 125 or 37, where one does.
+    fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>> {
+        let Some(Read { file, .. }) = self.read(revision)? else {
+            return Ok(Vec::new());
+        };
+        file.channels
+            .keys()
+            .map(|name| resolve(&file, name).map_err(|said| self.unreadable(revision, said)))
+            .collect()
     }
 }

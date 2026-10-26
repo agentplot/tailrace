@@ -1,8 +1,9 @@
-//! The policy's group: 82 and 83, and 116 as a policy keeps it (B.5).
+//! The policy's group: 82, 83 and 131, and 116 and 125 as a policy keeps
+//! them (B.5).
 
 use tailrace_seams::{
-    Audience, ChannelName, Check, ClaimKind, NamedSigner, Policy, Required, RequiredClaim,
-    Revision, Seam, SignerId,
+    Audience, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel, NamedSigner, Policy,
+    Required, RequiredClaim, Revision, Seam, SignerId, REPOSITORY_COMPONENT,
 };
 
 use crate::seams::{absent, unreadable};
@@ -15,8 +16,15 @@ pub trait PolicyRig: Rig {
     fn policy(&self) -> &dyn Policy;
 
     /// A landed revision at which the policy declares what each audience
-    /// of `policies` requires, and nothing for any other audience.
+    /// of `policies` requires, and nothing for any other audience but a
+    /// channel one of them is bound to, which a profile that binds a
+    /// channel only to one it declares (37) declares requiring no claim.
     fn at(&self, policies: &[(Audience, Required)]) -> Revision;
+
+    /// A landed revision at which the repository declares `components`
+    /// (none: the one component of its own) and each of `channels`, in the
+    /// component it names, bound where it is bound and requiring no claim.
+    fn declaring(&self, components: &[ComponentName], channels: &[DeclaredChannel]) -> Revision;
 
     /// The policy made unreachable, every operation answering unreadable,
     /// and the words it answers with.
@@ -50,6 +58,30 @@ pub fn scenarios() -> Vec<Scenario<dyn PolicyRig>> {
             run: a_policy_that_cannot_be_reached,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "the channels a policy declares",
+            plays: None,
+            cites: &[131, 125, 37, 83],
+            run: the_channels_a_policy_declares,
+        },
+        Scenario {
+            name: "one component has every channel",
+            plays: None,
+            cites: &[131, 125, 123],
+            run: one_component_has_every_channel,
+        },
+        Scenario {
+            name: "a policy declaring no channel",
+            plays: None,
+            cites: &[131],
+            run: a_policy_declaring_no_channel,
+        },
+        Scenario {
+            name: "the channels of a policy that cannot be reached",
+            plays: None,
+            cites: &[131, 58, 59],
+            run: the_channels_of_a_policy_that_cannot_be_reached,
+        },
     ]
 }
 
@@ -168,4 +200,84 @@ fn a_policy_that_cannot_be_reached(rig: &dyn PolicyRig) {
         &words,
         "policy-for",
     );
+}
+
+/// `name` of `component`, bound to `bound_to` where it names one.
+fn declared(name: &str, component: &str, bound_to: Option<&str>) -> DeclaredChannel {
+    DeclaredChannel {
+        name: ChannelName::new(name),
+        component: ComponentName::new(component),
+        bound_to: bound_to.map(ChannelName::new),
+    }
+}
+
+fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
+    let channels = [
+        declared("beta", "lib", None),
+        declared("edge", "web", None),
+        declared("stable", "lib", Some("beta")),
+    ];
+    // Declared in another order than the answer's, which is by name.
+    let at = rig.declaring(
+        &[ComponentName::new("lib"), ComponentName::new("web")],
+        &[
+            channels[2].clone(),
+            channels[0].clone(),
+            channels[1].clone(),
+        ],
+    );
+    let listed = ok(rig.policy().channels(&at), "channels");
+    assert_eq!(
+        listed, channels,
+        "the policy answered other channels, components or bindings than it declares, or not by name"
+    );
+    let stable = ok(
+        rig.policy()
+            .policy_for(&at, &Audience::Channel(ChannelName::new("stable"))),
+        "policy-for a bound channel",
+    );
+    assert_eq!(
+        stable.bound_to(),
+        Some(&ChannelName::new("beta")),
+        "policy-for and channels disagree on the channel stable is bound to"
+    );
+}
+
+fn one_component_has_every_channel(rig: &dyn PolicyRig) {
+    for (components, component) in [
+        (vec![], REPOSITORY_COMPONENT),
+        (vec![ComponentName::new("lib")], "lib"),
+    ] {
+        let channels = [
+            declared("beta", component, None),
+            declared("stable", component, None),
+        ];
+        let at = rig.declaring(&components, &channels);
+        assert_eq!(
+            ok(rig.policy().channels(&at), "channels"),
+            channels,
+            "a repository declaring {components:?} has a channel outside its one component"
+        );
+    }
+}
+
+fn a_policy_declaring_no_channel(rig: &dyn PolicyRig) {
+    let at = rig.at(&[(
+        Audience::Acceptance,
+        Required::Acceptance { claims: claims() },
+    )]);
+    assert_eq!(
+        ok(rig.policy().channels(&at), "channels"),
+        [],
+        "a policy declaring no channel answered channels"
+    );
+}
+
+fn the_channels_of_a_policy_that_cannot_be_reached(rig: &dyn PolicyRig) {
+    let at = rig.at(&[(
+        Audience::Acceptance,
+        Required::Acceptance { claims: claims() },
+    )]);
+    let words = rig.unreachable();
+    unreadable(rig.policy().channels(&at), Seam::Policy, &words, "channels");
 }

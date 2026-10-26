@@ -1,9 +1,9 @@
-//! B.5 The policy: the authors' rule for an audience, read at a landed
-//! revision (82, 83).
+//! B.5 The policy: the authors' rule for an audience, and the channels
+//! they declare, read at a landed revision (82, 83, 131).
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Answer, ChannelName, Check, ClaimKind, NamedSigner, Revision};
+use crate::{Answer, ChannelName, Check, ClaimKind, ComponentName, NamedSigner, Revision};
 
 /// Whom a policy is for (82): the gate's acceptance, a channel, or a
 /// consumer layout.
@@ -62,11 +62,27 @@ impl Required {
     }
 }
 
+/// 131: a channel the policy declares, the one component it belongs to
+/// (125), and the channel it is bound to where it is one (37, 83).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeclaredChannel {
+    pub name: ChannelName,
+    pub component: ComponentName,
+    pub bound_to: Option<ChannelName>,
+}
+
 pub trait Policy {
     /// 82: the claims `audience` requires, read from the repository at
     /// `revision`, a landed revision of the branch the policy governs
     /// (65, 107); absent where no policy is declared for it.
     fn policy_for(&self, revision: &Revision, audience: &Audience) -> Answer<Required>;
+
+    /// 131: every channel the policy at `revision` declares, by name, each
+    /// with its component (125) and the channel of that component it is
+    /// bound to where it is one (37, 83); in the one component of a
+    /// repository that declares one or none (123), and an empty list,
+    /// never absent, where the policy declares no channel.
+    fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>>;
 }
 
 #[cfg(test)]
@@ -117,5 +133,28 @@ mod tests {
             bound_to: None,
         });
         round_trip(Required::Layout { claims: vec![] });
+    }
+
+    fn stable(bound_to: Option<&str>) -> DeclaredChannel {
+        DeclaredChannel {
+            name: ChannelName::new("stable"),
+            component: ComponentName::new("lib"),
+            bound_to: bound_to.map(ChannelName::new),
+        }
+    }
+
+    #[test]
+    fn a_declared_channel_round_trips_bound_or_not() {
+        round_trip(stable(Some("beta")));
+        round_trip(stable(None));
+    }
+
+    #[test]
+    fn a_declared_channel_names_its_component_and_that_it_is_bound_to_none() {
+        let json = serde_json::to_value(stable(None)).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({ "name": "stable", "component": "lib", "bound_to": null })
+        );
     }
 }

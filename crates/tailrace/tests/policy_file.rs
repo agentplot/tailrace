@@ -12,7 +12,9 @@ use scratch::{git_fails, Scratch, POLICY_FILE};
 use tailrace::profiles::policy::file::PolicyFile;
 use tailrace_conformance::seams::policy::{self, PolicyRig};
 use tailrace_conformance::{run, Rig};
-use tailrace_seams::{Audience, NamedSigner, Policy, Required, Revision};
+use tailrace_seams::{
+    Audience, ChannelName, ComponentName, DeclaredChannel, NamedSigner, Policy, Required, Revision,
+};
 
 /// A scratch repository and the policy file over it.
 struct PolicyFileRig {
@@ -40,7 +42,9 @@ fn list<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
 
 /// The policy file declaring what each of `policies` requires: every
 /// signer they name under `[signers]`, verified by the text each is
-/// named with, and each audience's table.
+/// named with, each audience's table, and a channel one of them is bound
+/// to and `policies` names no policy for, requiring nothing, since the
+/// file binds a channel only to one it declares (37).
 fn policy_file(policies: &[(Audience, Required)]) -> String {
     let mut signers: BTreeMap<String, &NamedSigner> = BTreeMap::new();
     for named in policies
@@ -87,6 +91,46 @@ fn policy_file(policies: &[(Audience, Required)]) -> String {
         }
         text.push_str("]\n\n");
     }
+    let declared: Vec<&Audience> = policies.iter().map(|(audience, _)| audience).collect();
+    let mut bound: Vec<&ChannelName> = policies
+        .iter()
+        .filter_map(|(_, required)| required.bound_to())
+        .filter(|channel| !declared.contains(&&Audience::Channel((*channel).clone())))
+        .collect();
+    bound.sort_unstable();
+    bound.dedup();
+    for channel in bound {
+        text.push_str(&format!("[channels.{channel}]\nrequire = []\n\n"));
+    }
+    text
+}
+
+/// The policy file declaring `components`, each with every key the core
+/// requires, and each of `channels` requiring nothing, naming its
+/// component only where several are declared.
+fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) -> String {
+    let mut text = String::new();
+    for name in components {
+        text.push_str(&format!(
+            "[[component]]\nname = {}\noutputs = []\npaths = {}\nprefix = {}\n\n",
+            quoted(name.as_str()),
+            list([format!("{name}/**").as_str()]),
+            quoted(&format!("{name}-v")),
+        ));
+    }
+    for channel in channels {
+        text.push_str(&format!("[channels.{}]\nrequire = []\n", channel.name));
+        if components.len() > 1 {
+            text.push_str(&format!(
+                "component = {}\n",
+                quoted(channel.component.as_str())
+            ));
+        }
+        if let Some(bound_to) = &channel.bound_to {
+            text.push_str(&format!("bound_to = {}\n", quoted(bound_to.as_str())));
+        }
+        text.push('\n');
+    }
     text
 }
 
@@ -106,6 +150,13 @@ impl PolicyRig for PolicyFileRig {
         let repo = &self.scratch.repo;
         repo.write(POLICY_FILE, &policy_file(policies));
         Revision::new(repo.commit("chore: the policy"))
+    }
+
+    /// The policy file declaring `components` and `channels`, committed.
+    fn declaring(&self, components: &[ComponentName], channels: &[DeclaredChannel]) -> Revision {
+        let repo = &self.scratch.repo;
+        repo.write(POLICY_FILE, &declaring_file(components, channels));
+        Revision::new(repo.commit("chore: the channels"))
     }
 
     /// The repository removed, and git's words for reading it.
