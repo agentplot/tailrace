@@ -5,24 +5,50 @@
 The Cargo projection SHALL pack an output given a version from the one
 crate file the output's packaging task left: the package that crate
 names, at the place it was packed from, SHALL be packed by `cargo
-package --no-verify` after the version is set on it and on every crate of
-its workspace it reaches by path dependency, each such dependency
+package --no-verify` after the version is set on it and on every crate
+of its own component it reaches by path dependency, each such dependency
 rewritten to that version's requirement in the registry `tailrace`, so a
 path dependency on a sibling crate becomes a dependency of the registry
-as Cargo does for any publish (84, 110, C.11). It SHALL answer the
-package's crate with metadata naming the ecosystem `cargo`, the package's
-name and the version, SHALL answer `same_again` true (87), and SHALL
-never open the archive to edit it.
+as Cargo does for any publish (84, 110, C.11). A crate SHALL be of the
+component whose paths hold its manifest, as the core matches them (123).
+It SHALL answer the package's crate with metadata naming the ecosystem
+`cargo`, the package's name and the version, and SHALL never open the
+archive to edit it.
 
 #### Scenario: Packed the same again
 
-- **WHEN** one crate output is packed twice at one version
-- **THEN** both packs answer the same bytes and the same metadata, the conformance group's "packed the same again" passing
+- **WHEN** one crate output whose dependencies are all of its own component is packed twice at one version
+- **THEN** both packs answer the same bytes and the same metadata, and `same_again` true, the conformance group's "packed the same again" passing
 
 #### Scenario: A sibling becomes a registry dependency
 
-- **WHEN** a crate depending by path on a sibling crate of its workspace is packed at a version
-- **THEN** the crate's own manifest names the sibling at that version's requirement in the registry the checkout's cargo configuration names `tailrace`, and no path
+- **WHEN** a crate depending by path on a crate of its own component is packed at a version
+- **THEN** the crate's own manifest names the sibling at that version's requirement in the registry the checkout's cargo configuration names `tailrace`, and no path, and its own lockfile names the sibling at that version with that registry's address
+
+### Requirement: A crate of another component is depended on as the manifest writes
+
+A path dependency on a crate of another component SHALL be packed as a
+dependency on the version requirement the manifest writes for it, in the
+registry `tailrace`, the crate's own lockfile resolving it from the
+versions the store holds of that crate within the requirement; that
+crate's manifest SHALL never be given this component's version (C.11,
+123, 124). Where the store holds no version within the requirement, the
+pack SHALL be refused naming the crate, the requirement and the versions
+the store holds; a path dependency on a crate of another component that
+writes no version requirement SHALL be refused naming the crate (C.11,
+138). A pack whose crate reaches a crate of another component SHALL
+answer `same_again` false, since its lockfile names the newest version
+the store held within the requirement (87).
+
+#### Scenario: Another component's crate at the version the store holds
+
+- **WHEN** a crate depending by path on a crate of another component with the requirement `0.3` is packed, and the store holds that crate at 0.3.1
+- **THEN** the packed crate's manifest names the dependency at `0.3` in the registry `tailrace` and no path, its lockfile names 0.3.1 with the stored crate's checksum, the other crate's manifest holds its bytes, and the answer's `same_again` is false
+
+#### Scenario: Another component's crate the store holds no version of
+
+- **WHEN** the same crate is packed and the store holds that crate only at 0.4.0
+- **THEN** the pack is refused naming the crate, the requirement `0.3` and the version 0.4.0, and no cargo package ran
 
 ### Requirement: A pack leaves the checkout as it was and refuses what it cannot promise
 
@@ -32,8 +58,10 @@ manifest names another name or version than the one given SHALL be
 refused naming both. An output with no crate file among its files, or
 several, SHALL be refused naming the output and its files, and a crate
 file that names no place in the repository SHALL be refused naming it.
-Cargo that cannot be run, or that fails, SHALL answer unreadable with the
-operating system's or cargo's own words (58, 59).
+A checkout whose cargo configuration names no registry `tailrace` SHALL
+be refused naming it and the files read. Cargo that cannot be run, or
+that fails, SHALL answer unreadable with the operating system's or
+cargo's own words (58, 59).
 
 #### Scenario: The checkout is left as it was
 
@@ -119,11 +147,12 @@ registry protocol under the base the client reached (86, 114): the
 registry's configuration naming where its crates download from under
 that base, each name's index file from the layout, and each crate's
 bytes. A crate the layout lacks SHALL be asked of the core once and
-answered once the core renders it (115, 50). A crate the core answers
-absent, refused or unreadable SHALL be answered with a not-found, a
-forbidden or a bad-gateway status, the response carrying the answer's
-own words verbatim (58, 59, 99). Every request SHALL be answered with a
-response, so the projection is read as serving.
+answered once the core renders it (115, 50); an index file SHALL be
+answered from the layout alone. A crate the core answers absent, refused
+or unreadable SHALL be answered with a not-found, a forbidden or a
+bad-gateway status, the response carrying the answer's own words
+verbatim (58, 59, 99). Every request SHALL be answered with a response,
+so the projection is read as serving.
 
 #### Scenario: A crate held, served
 
@@ -134,6 +163,19 @@ response, so the projection is read as serving.
 
 - **WHEN** a layout is asked for a crate it lacks and the core answers it refused with the words `acceptance wanting`
 - **THEN** the core was asked once for that crate's name and version, and the response is a forbidden status carrying `acceptance wanting` verbatim
+
+### Requirement: A refused version reaches Cargo three ways
+
+A version the layout's policy refuses SHALL be left out of the index
+file Cargo lists for its name, a request for its bytes SHALL be answered
+with the refusal naming the version and the claim found wanting, and the
+sync that rendered the layout SHALL have answered the same refusal, so
+Cargo's own words are never the only ones (99).
+
+#### Scenario: A pinned version the policy refuses
+
+- **WHEN** a consumer's `Cargo.lock` pins a family crate at a version its policy refuses, and the consumer syncs and builds
+- **THEN** sync's answer names the version and the claim found wanting, the name's index file served holds no line for that version, the build fails, and a request for that version's download answers a forbidden status carrying the same words
 
 ### Requirement: Cargo builds from the host's serving process
 
