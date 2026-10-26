@@ -22,10 +22,10 @@ use serde_json::Value;
 use tailrace::commands::serve::host::{find_or_start, name, Host, SERVING};
 use tailrace::commands::serve::{serve_on, Served};
 use tailrace::{run, Cli, REVISION};
-use tailrace_core::{Entry, History, Kept, RepositoryName};
+use tailrace_core::{answer_json, Entry, History, Kept, OverviewAsk, RepositoryName};
 use tailrace_fakes::FakeSigner;
 use tailrace_seams::{
-    Answer, Branch, ChannelName, ComponentName, Digest, Moved, Promotion, Revision, Satisfied,
+    Answer, Branch, ChannelName, ComponentName, Digest, Moved, Not, Promotion, Revision, Satisfied,
     Seam, Signer, SignerId, Source, Version,
 };
 
@@ -64,6 +64,19 @@ struct World {
 
 impl World {
     fn new() -> World {
+        World::on(|dir| {
+            let host = host_in(dir);
+            bind(&host, "origin");
+            host
+        })
+    }
+
+    /// A second repository, of its own remote, on `host`.
+    fn beside(host: &Host) -> World {
+        World::on(|_| host.clone())
+    }
+
+    fn on(host: impl FnOnce(&Path) -> Host) -> World {
         let scratch = Scratch::new();
         let repo = &scratch.repo;
         repo.write(
@@ -73,8 +86,7 @@ impl World {
         );
         let head = Revision::new(repo.commit("feat: the channels"));
         repo.push();
-        let host = host_in(&scratch.path());
-        bind(&host, "origin");
+        let host = host(&scratch.path());
         let history = History::open(&repo.path).unwrap();
         Kept::at(&history)
             .write(&Entry {
@@ -100,12 +112,37 @@ impl World {
 
     /// The checkout named to the host as `o/r`.
     fn named(&self) -> RepositoryName {
+        self.named_as("o", "r")
+    }
+
+    /// The checkout named to the host as `owner/name`.
+    fn named_as(&self, owner: &str, name: &str) -> RepositoryName {
         let repository = RepositoryName {
-            owner: "o".into(),
-            name: "r".into(),
+            owner: owner.into(),
+            name: name.into(),
         };
-        name(&self.host, &repository, &self.repo().path).unwrap();
+        self::name(&self.host, &repository, &self.repo().path).unwrap();
         repository
+    }
+
+    /// The core's row of `repository` from the status answer in the
+    /// checkout, as a program reads it.
+    fn row(&self, repository: &RepositoryName) -> Value {
+        let at = &self.repo().path;
+        let binding = self.host.bind(at).expect("the host binds");
+        let history = History::open(at).unwrap();
+        let overview = tailrace_core::overview(
+            &binding.seams,
+            &history,
+            &Kept::at(&history),
+            &OverviewAsk {
+                branch: Branch::new(MAIN),
+                component: None,
+                revision: None,
+                at: 0,
+            },
+        );
+        answer_json(&Ok::<_, Not>(tailrace_core::row(repository, &overview)))
     }
 
     /// `channel` promoted in the ledger to each version in turn, from the
@@ -406,6 +443,8 @@ fn no_request_writes_a_file_of_the_record_or_the_repository() {
     let (address, _) = serving(&world.host, Duration::from_secs(60));
     for path in [
         "/serving.json",
+        "/",
+        "/status.json",
         "/o/r/status.json",
         "/o/r/status",
         "/x/y/status.json",
@@ -422,6 +461,99 @@ fn no_request_writes_a_file_of_the_record_or_the_repository() {
         before,
         "a request wrote a file of the record or the repository"
     );
+}
+
+// Requirement: The root answers every repository it knows together
+
+#[test]
+fn two_repositories_named_are_answered_together_at_the_root() {
+    let first = World::new();
+    let second = World::beside(&first.host);
+    let two = second.named_as("b", "two");
+    let one = first.named_as("a", "one");
+    first.promote("stable", &["0.1.0", "0.2.0"]);
+    second.promote("beta", &["0.3.0"]);
+    let (address, _) = serving(&first.host, Duration::from_secs(60));
+    let before = now();
+    let (status, served) = json(address, "/status.json");
+    let after = now();
+    assert_eq!(status, 200, "{served}");
+    assert_eq!(served["answer"], "ok", "{served}");
+    let asked = served["value"]["asked_at"].as_u64().unwrap();
+    assert!((before..=after).contains(&asked), "{asked}");
+    let rows = served["value"]["repositories"].as_array().unwrap();
+    assert_eq!(rows.len(), 2, "{served}");
+    assert_eq!(rows[0], first.row(&one));
+    assert_eq!(rows[1], second.row(&two));
+    assert_eq!(rows[0]["value"]["repository"]["owner"], "a");
+
+    let (status, page) = get(address, "/");
+    assert_eq!(status, 200, "{page}");
+    for linked in ["href=\"/a/one/status\"", "href=\"/b/two/status\""] {
+        assert!(page.contains(linked), "{linked}: {page}");
+    }
+    for head in [
+        "repository/beta empty",
+        "repository/stable 0.2.0",
+        "repository/beta 0.3.0",
+        "repository/stable empty",
+    ] {
+        assert!(page.contains(head), "{head}: {page}");
+    }
+    assert_eq!(page.matches("no target is read").count(), 2, "{page}");
+}
+
+#[test]
+fn a_row_whose_checkout_is_gone_is_unreadable_naming_the_path_beside_the_other() {
+    let first = World::new();
+    let second = World::beside(&first.host);
+    first.named_as("a", "one");
+    second.named_as("b", "two");
+    let gone = second.repo().path.clone();
+    fs::remove_dir_all(&gone).unwrap();
+    let (address, _) = serving(&first.host, Duration::from_secs(60));
+    let (status, served) = json(address, "/status.json");
+    assert_eq!(status, 200, "{served}");
+    let rows = &served["value"]["repositories"];
+    assert_eq!(rows[0]["answer"], "ok", "{served}");
+    assert_eq!(rows[1]["answer"], "unreadable", "{served}");
+    let what = rows[1]["unreadable"]["what"].as_str().unwrap();
+    assert!(what.contains(&gone.display().to_string()), "{what}");
+    let (_, page) = get(address, "/");
+    assert!(page.contains("href=\"/a/one/status\""), "{page}");
+    assert!(page.contains(&gone.display().to_string()), "{page}");
+}
+
+#[test]
+fn a_host_that_named_nothing_answers_an_empty_list_and_says_how_to_name_one() {
+    let world = World::new();
+    let (address, _) = serving(&world.host, Duration::from_secs(60));
+    let (status, served) = json(address, "/status.json");
+    assert_eq!(status, 200, "{served}");
+    assert_eq!(served["value"]["repositories"], serde_json::json!([]));
+    let (status, page) = get(address, "/");
+    assert_eq!(status, 200);
+    assert!(page.contains("tailrace status --page"), "{page}");
+}
+
+#[test]
+fn a_file_of_repositories_that_does_not_parse_is_the_roots_unreadable_answer() {
+    let world = World::new();
+    world.named();
+    fs::write(
+        world.host.state.join("repositories"),
+        "[\"o/r\"\ncheckout = 3\n",
+    )
+    .unwrap();
+    let (address, _) = serving(&world.host, Duration::from_secs(60));
+    let (status, served) = json(address, "/status.json");
+    assert_eq!(status, 500, "{served}");
+    assert_eq!(served["answer"], "unreadable", "{served}");
+    let said = served["unreadable"]["said"].as_str().unwrap();
+    assert!(said.contains("TOML parse error"), "{said}");
+    let (status, page) = get(address, "/");
+    assert_eq!(status, 500);
+    assert!(page.contains("TOML parse error"), "{page}");
 }
 
 // Requirement: The first asker that finds none starts it, and one lock

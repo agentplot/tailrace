@@ -8,8 +8,11 @@
 //! for (60, rule core.31): `/serving.json` names the process,
 //! `/<owner>/<name>/status.json` is the status answer in the checkout
 //! that last named the repository, as `tailrace status --json` prints it
-//! there, and `/<owner>/<name>/status` its page. Its working directory
-//! is the state directory, never a checkout (114).
+//! there, and `/<owner>/<name>/status` its page; `/status.json` is every
+//! repository the host's file names, one row each made by the core from
+//! its status answer, and `/` their page. No row is kept between
+//! requests and no timer renders one (132). Its working directory is the
+//! state directory, never a checkout (114).
 
 use std::io::{self, BufRead as _, BufReader, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
@@ -20,10 +23,12 @@ use std::time::{Duration, Instant};
 
 use clap::Args;
 use serde::Serialize;
-use tailrace_core::{answer_json, Overview, RepositoryName, SERVING_HOST, SERVING_PORT};
+use tailrace_core::{
+    answer_json, row, Overview, Repositories, RepositoryName, SERVING_HOST, SERVING_PORT,
+};
 use tailrace_seams::{Answer, Not, Seam, Source};
 
-use crate::commands::status::overview_in;
+use crate::commands::status::{now, overview_in};
 use crate::{render, Binding, REVISION};
 
 pub mod host;
@@ -287,6 +292,14 @@ pub fn respond_with(
             },
         );
     }
+    if path == "/status.json" {
+        let answer = repositories(host, bind);
+        return Response::json(status_of(&answer), &answer_json(&answer));
+    }
+    if path == "/" {
+        let answer = repositories(host, bind);
+        return Response::html(status_of(&answer), page::root(&answer));
+    }
     let parts: Vec<&str> = path.strip_prefix('/').unwrap_or(path).split('/').collect();
     match parts[..] {
         [owner, name, last] if !owner.is_empty() && !name.is_empty() => {
@@ -323,4 +336,25 @@ fn overview_of(
 ) -> Answer<Overview> {
     let checkout = host::checkout_of(host, repository)?;
     overview_in(&bind(&checkout), &checkout, "main", None, None)
+}
+
+/// 132: every repository the host's file names, in turn, each row made
+/// by the core from its checkout's status answer, or that row's own
+/// answer where its checkout is gone or its status cannot be asked; none
+/// where the file is not there, and unreadable with the parser's words
+/// where it cannot be read.
+fn repositories(host: &Host, bind: &dyn Fn(&Path) -> Answer<Binding>) -> Answer<Repositories> {
+    let asked_at = now();
+    let repositories = host::named(host)?
+        .into_iter()
+        .map(|(repository, checkout)| {
+            let checkout = checkout?;
+            let overview = overview_in(&bind(&checkout), &checkout, "main", None, None)?;
+            Ok(row(&repository, &overview))
+        })
+        .collect();
+    Ok(Repositories {
+        asked_at,
+        repositories,
+    })
 }

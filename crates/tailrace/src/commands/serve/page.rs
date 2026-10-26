@@ -7,7 +7,8 @@
 use std::fmt::Write as _;
 
 use tailrace_core::{
-    Channel, ChannelStatus, Channels, EnvironmentCounts, Overview, RepositoryName, Status,
+    Channel, ChannelStatus, Channels, EnvironmentCounts, HeadAt, Overview, Repositories,
+    RepositoryName, Row, Status,
 };
 use tailrace_seams::{Answer, ComponentName, Digest, Not, Promotion, Read};
 
@@ -60,6 +61,91 @@ pub fn not(not: &Not) -> String {
         let _ = write!(html, "<pre>{}</pre>", escape(&said));
     }
     html
+}
+
+/// A link to the page of `repository`.
+fn link(repository: &RepositoryName) -> String {
+    format!(
+        "<a href=\"{}/status\">{}</a>",
+        escape(&repository.path()),
+        escape(&repository.to_string())
+    )
+}
+
+/// 132: the root's page, from every repository the host knows: one row
+/// each, the repository linked to its own page, every channel's head,
+/// and the environments' four counts or the answer given in their place;
+/// a row's own answer spanning the row.
+pub fn root(answer: &Answer<Repositories>) -> String {
+    let mut body = String::from("<h1>Every repository on this host</h1>\n");
+    match answer {
+        Err(not) => {
+            let _ = writeln!(body, "<p>{}</p>", self::not(not));
+        }
+        Ok(repositories) => {
+            let _ = writeln!(body, "<p>As of {}</p>", utc(repositories.asked_at));
+            if repositories.repositories.is_empty() {
+                body.push_str(
+                    "<p>No checkout on this host has named a repository yet. \
+                     <code>tailrace status --page</code>, run in a checkout, names its \
+                     repository here.</p>\n",
+                );
+            } else {
+                body.push_str(
+                    "<table>\n<tr><th>repository</th><th>channels</th><th>environments</th></tr>\n",
+                );
+                for row in &repositories.repositories {
+                    match row {
+                        Ok(row) => row_html(&mut body, row),
+                        Err(not) => {
+                            let _ = writeln!(
+                                body,
+                                "<tr><td colspan=\"3\">{}</td></tr>",
+                                self::not(not)
+                            );
+                        }
+                    }
+                }
+                body.push_str("</table>\n");
+            }
+        }
+    }
+    document("tailrace on this host", &body)
+}
+
+fn row_html(body: &mut String, row: &Row) {
+    let heads = match &row.heads {
+        Err(not) => self::not(not),
+        Ok(heads) if heads.is_empty() => "no channel declared".to_string(),
+        Ok(heads) => {
+            let mut list = String::from("<ul class=\"chain\">");
+            for head in heads {
+                let at = match &head.at {
+                    Ok(HeadAt::Empty) => "empty".to_string(),
+                    Ok(HeadAt::At { version, index }) => format!(
+                        "{} <code>{}</code>",
+                        escape(version.as_str()),
+                        escape(index.as_str())
+                    ),
+                    Err(not) => self::not(not),
+                };
+                let _ = write!(
+                    list,
+                    "<li>{}/{} {at}</li>",
+                    escape(head.component.as_str()),
+                    escape(head.channel.as_str())
+                );
+            }
+            list.push_str("</ul>");
+            list
+        }
+    };
+    let _ = writeln!(
+        body,
+        "<tr><td>{}</td><td>{heads}</td><td>{}</td></tr>",
+        link(&row.repository),
+        environments(&row.environments)
+    );
 }
 
 /// 132: `repository`'s page, from its status answer: its channels by
