@@ -121,8 +121,8 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use tailrace_seams::{
     Answer, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
-    Moves, NamedSigner, Not, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam,
-    SignerId, Source,
+    HeldChannel, Moves, NamedSigner, Not, Policy, PolicyChannels, Required, RequiredClaim,
+    Revision, Seam, SignerId, Source,
 };
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
@@ -1208,17 +1208,34 @@ impl Policy for PolicyFile {
     /// 131, C.10: every channel the table in force at `revision` has on,
     /// given, made or declared, once each by name and then component,
     /// each with its component and how it moves; the givens that are on,
-    /// of the one component, where the revision holds no file; and
-    /// unreadable naming the file and the revision, with the words of the
-    /// first table that breaks 125, 37 or C.10, where one does.
+    /// of the one component, where the revision holds no file; and apart
+    /// from them, from the same table in force, every channel the
+    /// fragment marks held whose table the file does not write, of every
+    /// component, by name and then component, moving as the fragment's
+    /// table says, with that table's header as the line that switches it
+    /// on. Unreadable naming the file and the revision, with the words of
+    /// the first table that breaks 125, 37 or C.10, where one does.
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         let read = self.read(revision)?;
         let file = match &read {
             Some(Read { file, .. }) => file,
             None => &File::none(),
         };
-        let resolved = resolve(&in_force(file, self.givens()?))
-            .map_err(|said| self.unreadable(revision, said))?;
+        let unreadable = |said: String| self.unreadable(revision, said);
+        let table = in_force(file, self.givens()?);
+        let resolved = resolve(&table).map_err(unreadable)?;
+        let mut held = Vec::new();
+        for (channel, switch, given) in table.off {
+            let keys: ChannelTable = toml::Value::Table(given)
+                .try_into()
+                .map_err(|e: toml::de::Error| unreadable(format!("{switch}: {}", e.message())))?;
+            let moves = moves_of(&switch, &keys).map_err(unreadable)?;
+            held.push(HeldChannel {
+                channel: DeclaredChannel { channel, moves },
+                switch,
+            });
+        }
+        held.sort_by(|a, b| a.channel.channel.cmp(&b.channel.channel));
         Ok(PolicyChannels {
             in_force: resolved
                 .into_iter()
@@ -1227,7 +1244,7 @@ impl Policy for PolicyFile {
                     moves: entry.moves,
                 })
                 .collect(),
-            held: vec![],
+            held,
         })
     }
 }

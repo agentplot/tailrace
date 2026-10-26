@@ -16,9 +16,9 @@ use tailrace_core::{
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
-    Audience, Branch, BuildId, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
-    Digest, Ecosystem, NamedSigner, Outcome, Output, OutputName, Promotion, Report, Required,
-    RequiredClaim, Revision, Seam, Signer, SignerId, Source, Verdict, Version,
+    Answer, Audience, Branch, BuildId, ChannelId, ChannelName, Check, Claim, ClaimKind,
+    ComponentName, Digest, Ecosystem, NamedSigner, Outcome, Output, OutputName, Promotion, Report,
+    Required, RequiredClaim, Revision, Seam, Signer, SignerId, Source, Verdict, Version,
 };
 use tempfile::TempDir;
 
@@ -1186,22 +1186,22 @@ fn a_version_and_back_together_are_arguments_promote_cannot_take() {
 
 // Requirement: A prerelease moves only the channels that take prereleases
 
-#[test]
-fn a_prerelease_accepted_with_alpha_written_moves_alpha_and_not_beta() {
+/// The version published over the fakes at a commit with `subject`,
+/// tagged after `v0.1.0`, whose policy file switches `line` on, and what
+/// the gate accepting it over that file moved, each channel having moved
+/// to its index, and the fakes.
+fn accepted_with(line: &str, subject: &str) -> (Version, Vec<(ChannelId, Answer<Moved>)>, Fakes) {
     let host = Host::new();
     git(&host.repo, &["tag", "v0.1.0", host.head.as_str()]);
     fs::write(
         host.repo.join(".config/tailrace.toml"),
         format!(
             "{POLICY}\n[signers.host]\nssh = \"ssh-ed25519 HHHH\"\nkinds = [\"acceptance\"]\n\n\
-             [acceptance]\nrequire = []\n\n[channels.alpha]\n"
+             [acceptance]\nrequire = []\n\n{line}\n"
         ),
     )
     .unwrap();
-    git(
-        &host.repo,
-        &["commit", "-q", "-am", "chore: alpha switched on"],
-    );
+    git(&host.repo, &["commit", "-q", "-am", subject]);
     let head = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
     let fakes = fakes_at(&head);
     let history = History::open(&host.repo).unwrap();
@@ -1222,10 +1222,6 @@ fn a_prerelease_accepted_with_alpha_written_moves_alpha_and_not_beta() {
     else {
         panic!("nothing was published: {published:?}")
     };
-    assert!(
-        version.as_str().contains("-pre."),
-        "{version} is no prerelease"
-    );
 
     let mut seams = fakes.seams();
     seams.policy = Box::new(PolicyFile::new(&host.repo));
@@ -1244,25 +1240,55 @@ fn a_prerelease_accepted_with_alpha_written_moves_alpha_and_not_beta() {
         },
     );
     let Ok(Judged::Accepted { channels, .. }) = judged else {
-        panic!("the prerelease was not accepted: {judged:?}")
+        panic!("{version} was not accepted: {judged:?}")
     };
+    for (channel, moved) in &channels {
+        assert!(
+            matches!(moved, Ok(Moved::Promoted { to, .. }) if to == index),
+            "{channel} did not move to {version}: {channels:?}"
+        );
+    }
+    (version.clone(), channels, fakes)
+}
+
+/// Whether the fake keeper holds a chain of `name`.
+fn holds_chain(fakes: &Fakes, name: &str) -> bool {
+    !matches!(
+        tailrace_seams::Keeper::chain(&fakes.keeper, &ChannelId::new(None, ChannelName::new(name))),
+        Err(tailrace_seams::Not::Absent(_))
+    )
+}
+
+#[test]
+fn a_prerelease_accepted_with_alpha_written_moves_alpha_and_not_beta() {
+    let (version, channels, fakes) = accepted_with("[channels.alpha]", "chore: alpha switched on");
+    assert!(
+        version.as_str().contains("-pre."),
+        "{version} is no prerelease"
+    );
     let alpha = ChannelId::new(None, ChannelName::new("alpha"));
     assert_eq!(
         channels.iter().map(|(c, _)| c).collect::<Vec<_>>(),
         [&alpha],
         "{channels:?}"
     );
-    assert!(
-        matches!(&channels[0].1, Ok(Moved::Promoted { to, .. }) if to == index),
+    assert!(!holds_chain(&fakes, "beta"));
+}
+
+// Requirement: Who may ask for a channel
+
+#[test]
+fn lts_written_is_moved_by_no_publish_and_beta_is() {
+    let (version, channels, fakes) = accepted_with("[channels.lts]", "feat: lts switched on");
+    assert!(!version.as_str().contains('-'), "{version} is no release");
+    let beta = ChannelId::new(None, ChannelName::new("beta"));
+    assert_eq!(
+        channels.iter().map(|(c, _)| c).collect::<Vec<_>>(),
+        [&beta],
         "{channels:?}"
     );
-    assert!(matches!(
-        tailrace_seams::Keeper::chain(
-            &fakes.keeper,
-            &ChannelId::new(None, ChannelName::new("beta"))
-        ),
-        Err(tailrace_seams::Not::Absent(_))
-    ));
+    assert!(holds_chain(&fakes, "beta"));
+    assert!(!holds_chain(&fakes, "lts"), "a publish moved lts");
 }
 
 // Requirement: Policy shows the policy in force
@@ -1322,7 +1348,9 @@ fn policy_through_the_command_line_prints_the_givens_beside_a_line_value_for_val
 
     let value = &printed["value"];
     assert_eq!(value["revision"], head.as_str());
-    let channels = value["channels"]["value"].as_array().expect("the channels");
+    let channels = value["channels"]["value"]["in_force"]
+        .as_array()
+        .expect("the channels");
     let beta = &channels[0];
     assert_eq!(
         (&beta["channel"]["name"], &beta["moves"]["by"]),
@@ -1448,7 +1476,7 @@ fn policy_shows_alpha_taking_prereleases_and_stables_approvers_value_for_value()
         },
     );
     assert_eq!(printed, answer_json(&core));
-    let channels = printed["value"]["channels"]["value"]
+    let channels = printed["value"]["channels"]["value"]["in_force"]
         .as_array()
         .expect("the channels");
     assert_eq!(
