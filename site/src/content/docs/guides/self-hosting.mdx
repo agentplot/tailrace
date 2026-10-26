@@ -344,14 +344,20 @@ gate's signers as a given channel is. Who may say yes to a manual
 environment is its own `approvers`, which the channel it makes takes as
 who may ask for it. A line under a made channel adds claims; one that
 changes how it moves, or names `approvers`, is unreadable naming its
-table, since the environment's words say both. An environment's other
-keys are its target's. `policy` other than `auto` or `manual`, a made
-channel named as any channel the fragment holds, held or not,
-environments named in
-`after` that follow two channels, an environment not declared, or one
-that comes after itself, is unreadable naming the table. Nothing moves
-an `after` channel, or converges an environment, until a target is
-bound; `tailrace promote` moves them as any channel.
+table, since the environment's words say both.
+
+An environment's table holds `channel`, `policy`, `after`, `target`,
+and `approvers` where the environment is manual, and no other key: a
+target's own settings sit in the target's table, and a key such as
+`bucket` written on the environment is unreadable naming the table and
+the key (C.10). `approvers` on an environment that is not manual is
+unreadable the same way, since no one says yes to it. `policy` other
+than `auto` or `manual`, a made channel named as any channel the
+fragment holds, held or not, environments named in `after` that follow
+two channels, an environment not declared, or one that comes after
+itself, is unreadable naming the table. Nothing moves an `after`
+channel, or converges an environment, until a target is bound; `tailrace
+promote` moves them as any channel.
 
 The policy lists a repository's channels, each with its component and
 how it moves, read the same way as the policy for one channel, so the
