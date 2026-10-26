@@ -1,5 +1,5 @@
 ---
-number: 19
+number: 20
 title: The host names what tells its gate, and its publish step tells its own
 status: proposed
 date: 2026-10-25
