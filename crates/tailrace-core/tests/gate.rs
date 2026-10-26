@@ -133,6 +133,14 @@ fn ask(version: &str, told: ToldBy) -> AcceptAsk {
     }
 }
 
+/// Told by `published`, a publish's answer naming the index it offered.
+fn told(published: &Published) -> ToldBy {
+    let (_, index) = version_of(published);
+    ToldBy::Publish {
+        index: index.clone(),
+    }
+}
+
 /// The world's fakes bound, with a signer of its own holding each of
 /// `holding` after the host's.
 fn holding(world: &World, holding: &[&str]) -> Seams {
@@ -301,6 +309,64 @@ fn the_answer_names_the_index_the_name_resolves_to_and_reads_nothing_before() {
         .map(|c| c.op)
         .collect();
     assert_eq!(ops[0], StoreOp::Resolve, "{ops:?}");
+}
+
+#[test]
+fn told_the_index_the_name_resolves_to_the_gate_judges_it() {
+    let (world, published) = beta_world();
+    let (_, index) = version_of(&published);
+    let answer = judged(&world, &ask("0.2.0", told(&published)));
+    let Ok(Judged::Accepted {
+        index: judged,
+        channels,
+        ..
+    }) = answer
+    else {
+        panic!("the version a publish told of was not accepted: {answer:?}")
+    };
+    assert_eq!(&judged, index);
+    assert_eq!(channels.len(), 1, "{channels:?}");
+    acceptance_by(&world, index, GATE);
+}
+
+#[test]
+fn told_an_index_the_name_does_not_resolve_to_is_unreadable_naming_both_and_writes_nothing() {
+    let (world, published) = beta_world();
+    let (_, index) = version_of(&published);
+    let other = Digest::of(b"an index the publish did not offer");
+    let claims_before = world.fakes.store.claims_of(index).unwrap().len();
+    let before = counts(&world);
+
+    let answer = judged(
+        &world,
+        &ask(
+            "0.2.0",
+            ToldBy::Publish {
+                index: other.clone(),
+            },
+        ),
+    );
+    let Err(Not::Unreadable(u)) = answer else {
+        panic!("a told index the name does not resolve to was answered {answer:?}")
+    };
+    assert_eq!(u.source.seam, Seam::Store);
+    assert!(u.what.contains("lib-v0.2.0"), "{}", u.what);
+    let said = u.said.unwrap_or_default();
+    assert!(said.contains(index.as_str()), "{said}");
+    assert!(said.contains(other.as_str()), "{said}");
+
+    let read: Vec<StoreOp> = world.fakes.store.calls()[before.0..]
+        .iter()
+        .map(|c| c.op)
+        .collect();
+    assert_eq!(read, [StoreOp::Resolve], "more than the name was read");
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+    assert!(world.fakes.keeper.calls().is_empty());
+    assert_eq!(
+        world.fakes.store.claims_of(index).unwrap().len(),
+        claims_before
+    );
+    assert_eq!(named_at(&world, "beta"), None);
 }
 
 #[test]
@@ -818,12 +884,12 @@ fn an_accepted_version_holds_one_more_claim_on_its_index_and_no_byte_changes() {
 
 #[test]
 fn a_host_with_no_gate_key_answers_absent_naming_the_identity_and_writes_nothing() {
-    let (world, _) = published_under(acceptance());
+    let (world, published) = published_under(acceptance());
     let before = counts(&world);
     let Err(Not::Absent(a)) = accept(
         &world.fakes.seams(),
         &world.history(),
-        &ask("0.2.0", ToldBy::Publish),
+        &ask("0.2.0", told(&published)),
     ) else {
         panic!("a host with no gate key accepted")
     };
@@ -860,7 +926,7 @@ fn a_build_host_running_the_gate_is_refused_as_offered_by_the_gate() {
     let before = counts(&world);
     let as_host = AcceptAsk {
         gate: SignerId::new(HOST),
-        ..ask("0.2.0", ToldBy::Publish)
+        ..ask("0.2.0", told(&published))
     };
     let (artifact, wanting, why) =
         refusal(accept(&world.fakes.seams(), &world.history(), &as_host));
@@ -1108,7 +1174,7 @@ fn a_build_host_running_the_gate_over_its_own_acceptance_is_refused_not_accepted
     world.fakes.store.attach(index, &forged).unwrap();
     let as_host = AcceptAsk {
         gate: SignerId::new(HOST),
-        ..ask("0.2.0", ToldBy::Publish)
+        ..ask("0.2.0", told(&published))
     };
     let (_, _, why) = refusal(accept(&world.fakes.seams(), &world.history(), &as_host));
     assert_eq!(
@@ -1162,7 +1228,7 @@ fn a_channel_requiring_a_review_the_version_lacks_stays_while_the_version_is_acc
         signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
     };
     beta_requires(&world, vec![from_gate(), review.clone()]);
-    let answer = judged(&world, &ask("0.2.0", ToldBy::Publish));
+    let answer = judged(&world, &ask("0.2.0", told(&published)));
     let Ok(Judged::Accepted {
         already: false,
         channels,
@@ -1256,7 +1322,7 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
     let moved = beta_moved(accept(
         &seams,
         &world.history(),
-        &ask("0.2.0", ToldBy::Publish),
+        &ask("0.2.0", told(&published)),
     ));
     let Ok(Moved::Promoted {
         from,
@@ -1329,7 +1395,7 @@ fn a_promotion_names_the_chains_head_and_moves_the_name_from_where_it_left_it() 
         .name(&channel_name(&beta()), &before, None)
         .unwrap();
 
-    let moved = beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish)));
+    let moved = beta_moved(judged(&world, &ask("0.2.0", told(&published))));
     let Ok(Moved::Promoted { from, name, .. }) = moved else {
         panic!("beta was not promoted: {moved:?}")
     };
@@ -1396,7 +1462,7 @@ fn a_chain_moved_between_read_and_append_is_refused_naming_its_head_and_nothing_
     let moved = beta_moved(accept(
         &seams,
         &world.history(),
-        &ask("0.2.0", ToldBy::Publish),
+        &ask("0.2.0", told(&published)),
     ));
     let Err(Not::Refused(r)) = moved else {
         panic!("an append after another was answered {moved:?}")
@@ -1423,7 +1489,7 @@ fn a_chain_moved_between_read_and_append_is_refused_naming_its_head_and_nothing_
 
 #[test]
 fn a_forked_chain_is_reported_and_nothing_is_appended_or_moved() {
-    let (world, _) = beta_world();
+    let (world, published) = beta_world();
     let root = promotion_to(&world, &Digest::of(b"the first"));
     world.fakes.keeper.append(&beta(), &root, None).unwrap();
     let (a, b) = (
@@ -1433,7 +1499,7 @@ fn a_forked_chain_is_reported_and_nothing_is_appended_or_moved() {
     world.fakes.keeper.fork(&beta(), &a, &b);
     let before = appends(&world);
 
-    let moved = beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish)));
+    let moved = beta_moved(judged(&world, &ask("0.2.0", told(&published))));
     let Err(Not::Refused(r)) = moved else {
         panic!("a forked chain was answered {moved:?}")
     };
@@ -1452,10 +1518,10 @@ fn a_forked_chain_is_reported_and_nothing_is_appended_or_moved() {
 fn a_channel_already_at_the_version_is_there_and_nothing_is_written() {
     let (world, published) = beta_world();
     let (_, index) = version_of(&published);
-    beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish))).unwrap();
+    beta_moved(judged(&world, &ask("0.2.0", told(&published)))).unwrap();
     let before = counts(&world);
 
-    let answer = judged(&world, &ask("0.2.0", ToldBy::Publish));
+    let answer = judged(&world, &ask("0.2.0", told(&published)));
     let Ok(Judged::Accepted { already: true, .. }) = &answer else {
         panic!("a version accepted was not answered accepted already: {answer:?}")
     };
@@ -1472,7 +1538,7 @@ fn a_version_the_gate_moved_beta_to_is_taken_by_stable_bound_to_beta() {
     beta_moved(accept(
         &seams,
         &world.history(),
-        &ask("0.2.0", ToldBy::Publish),
+        &ask("0.2.0", told(&published)),
     ))
     .unwrap();
     let Ok(Channel::At { head, .. }) = channel(seams.keeper.as_ref(), &beta()) else {
