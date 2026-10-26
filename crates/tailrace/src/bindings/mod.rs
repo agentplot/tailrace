@@ -48,10 +48,11 @@
 //! for a sync, the one command that reads through them, and from the repository the command runs in the
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
-//! through a second binding of `[store]`, opened and never made (design
-//! D6). No ledger and no target are bound yet. Only a publish and a push
-//! make the layout they name, and a push needs no `[signing]`, since it
-//! signs nothing (60, rule core.32).
+//! through a second binding of `[store]`, and Cargo's projection crates
+//! through a third, each opened and never made (design D6). No ledger and
+//! no target are bound yet. Only a publish and a push make the layout
+//! they name, and a push needs no `[signing]`, since it signs nothing
+//! (60, rule core.32).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -469,6 +470,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
     // After the seams' own store, so a publish or a push has made the
     // layout.
     let cache = profiles::store::bind(store, false)?;
+    let crates = profiles::store::bind(store, false)?;
     Ok(Binding {
         seams: Seams {
             store: bound,
@@ -477,7 +479,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
             policy: profiles::policy::bind(repository),
             keeper: Box::new(NoLedger),
             signers: profiles::signer::bind(signing),
-            projections: profiles::projection::bound(cache, repository),
+            projections: profiles::projection::bound(cache, crates, repository),
             targets: BTreeMap::new(),
         },
         store: named,

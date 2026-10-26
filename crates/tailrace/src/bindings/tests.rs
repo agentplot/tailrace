@@ -491,7 +491,7 @@ fn the_ledger_is_bound_to_nothing() {
         .keys()
         .map(|e| e.as_str())
         .collect();
-    assert_eq!(ecosystems, ["file", "image", "moon-cache"]);
+    assert_eq!(ecosystems, ["cargo", "file", "image", "moon-cache"]);
 }
 
 #[test]
