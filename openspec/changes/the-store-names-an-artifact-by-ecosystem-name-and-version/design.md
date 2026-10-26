@@ -22,9 +22,10 @@ declares and escapes every name into a tag of it
 (`profiles/store/registry/tag.rs`: bytes outside `[A-Za-z0-9.-]`, and a
 leading `.` or `-`, become `_` and two hex digits; past 128 characters
 refused), a cache entry's bytes named through a cache manifest (ADR
-0014). C.1 at 4c14235 maps the store's names into three spaces a
-credential can be scoped to apart: a component's indexes and channels
-under the component's own repository, the channel's name a tag of it;
+0014). C.1 at f90f5fd maps the store's names into three spaces a
+credential can be scoped to apart, hung under the declared repository: a
+component's indexes, its version tags (`<prefix><version>`) and its
+channels under the component's own repository, each a tag of it;
 cache entries under `cache/<build>`, one repository per build profile,
 the build identity the tag; and an artifact's pointer as the repository
 `artifact/<ecosystem>/<name>` with the version as its tag. On a registry
@@ -41,9 +42,14 @@ gate moves it through the store seam, and the ledger held in the store
 then name `cache/<build identity>`); a sync reads one by resolve and
 read, through the moon cache projection's second binding of `[store]`
 (`crates/tailrace/src/bindings/mod.rs`). Moon is the one build profile
-(`profiles/build/mod.rs`).
+(`profiles/build/mod.rs`). A version's store name today is its tag,
+`<prefix><version>`, built as `Name::new(<prefix><version>)` wherever a
+version is made or read: the publish (`publish.rs`), the gate's
+acceptance (`gate.rs`, `accept`), a promotion (`ledger.rs`), the host's
+record rebuilt from the store (`record.rs`) and verify (`verify.rs`);
+each of them knows the component it names.
 
-The statement is `agentplot/blueprints` 4c14235: 138, read with 3, 13,
+The statement is `agentplot/blueprints` f90f5fd: 138, read with 3, 13,
 49, 60, 109, 113, 125, 135, 137, B.6 and C.1, with the design agent's
 batch 25, 26 and 27 rulings and the planner's settlement of batch 26's
 collisions, proposal 153, which puts the component's own repository
@@ -56,7 +62,9 @@ under the policy, hold, ask what each held version requires again until
 nothing held requires a name the layout lacks) and the range types; B.6's
 requires (140) is built by the-projection-answers-what-an-artifact-requires;
 cache entries leave the declared repository for `cache/<build>`; 138's
-scenario is this unit's.
+scenario is this unit's; and batch 29's ruling on store naming, which
+amends C.1 (f90f5fd) so a component's version tags live in its own
+repository beside its channels, the tag moving there in this unit.
 
 This change's code starts once two things are on its branch:
 
@@ -77,16 +85,15 @@ the layout policy and before the version's tag; a repeat publish fills
 in a missing name; the index names its revision and repository; the
 store lists a name's versions on every profile; a registry holds a
 declared component's channels as tags of its own repository, which
-holds its indexes, each artifact name as a repository with its versions
-as tags, and each cache entry in its build profile's cache repository,
+holds its indexes and its versions' tags, each artifact name as a
+repository with its versions as tags, and each cache entry in its build profile's cache repository,
 written there by a push; a component's name names one repository;
 a missing repository refused naming it; no component's tag enters a
 reserved space; 138 cited by the suite.
 
 **Non-Goals:** the core's loop that resolves a manifest's range by the
 listing and closes a layout over what its versions require, and the
-range types (cargos-registry); requires (140, the projection unit); a
-version's tag in its component's repository (D10);
+range types (cargos-registry); requires (140, the projection unit);
 pack given the component (cargos-registry); a
 copy carrying the names (later work); serving.
 
@@ -112,9 +119,9 @@ profile parsing its own spelling; refused, two spellings of one name.
 ### D2. The order: index, layout policy, artifact names, the version's tag
 
 After the index is put, `Run::component` calls `layout_policy(&index)`,
-then `name_artifacts(&index, &artifacts)`, then moves the version's tag,
-then writes the record. `name_artifacts` first resolves every artifact's
-name. A name absent is to be made; a name at this index is left as it
+then `name_artifacts(&index, &artifacts)`, then makes the version's name
+(D18) from nothing at the index, then writes the record.
+`name_artifacts` first resolves every artifact's name. A name absent is to be made; a name at this index is left as it
 is; a name at any other digest refuses the version before any name is
 made: `Not::refused(&self.ask.store, Why::NameAt { at: Some(other) },
 Some("<name> names <other>, and this publish's index is <index>"))`.
@@ -150,6 +157,18 @@ S2 holds. A version published before this change: the layout-policy
 claim where the file writes one and the index lacks it, then each name
 made from nothing at the held index. The record and the answer are as
 before.
+
+A declared component's version held under its bare tag, as every
+publish before this change named it, is found here too: where the
+version's name (D18) resolves absent and the component is a declared
+one, step 8 resolves the bare tag, and where that names an index, the
+index is the held one and the repeat path runs on it as above, then
+makes the version's name from nothing at it, after the artifacts' names.
+The bare tag is left as it is. Without this read, the next publish of
+such a revision would take the first-publish path, put an index that now
+names its revision, a different digest, and name the version at a second
+index (18). Only the publish reads the bare tag; every other reader of a
+version's name reads D18's alone.
 
 ### D4. Index metadata names its revision and repository
 
@@ -283,8 +302,8 @@ entries live apart from every component and a credential scoped to
 core's name is unchanged, `cache/<build identity>` on every profile
 (52), so `cache.rs`, the layout store and the fakes are untouched; only
 the registry splits it. Every other name that is no artifact's, no
-cache entry's and no declared component's channel (D10), a version's
-tag and the channel of a repository that declares no component among
+cache entry's and no declared component's version or channel (D10), the
+versions and channels of a repository that declares no component among
 them, stays a tag of the declared repository as `tag::of` writes it
 today, a name at bytes
 through a cache manifest there as ADR 0014 has it.
@@ -320,52 +339,51 @@ name `cache/<build>/<identity>`; refused, it would change 52's name on
 every profile and make the core carry the build profile's name for a
 registry's credential scoping alone.
 
-### D10. A declared component's channels and indexes in its own repository
+### D10. A declared component's versions, channels and indexes in its own repository
 
-`channel/<component>/<name>`, the store name of a declared component's
-channel, is held as the tag `<name>`, by `tag::of`, of the repository
-`<declared path>/<component>`, the component written as one path
-component (D12): `channel/lib/beta` is the tag `beta` of
-`<declared path>/lib`. `channel/<name>`, the channel of the one
-component of a repository that declares none, stays the tag of the
-declared repository it is today: that component's own repository is the
-declared one, and nothing changes for it (125). The registry reads a
-channel's name back through one seams function beside `channel_name`,
-`Name::as_channel(&self) -> Option<ChannelId>`: after `channel/`, the
-component up to the first `/` and the channel's name after it, or the
-channel's name alone with no component where no `/` follows; none for a
-name outside `channel/` or with an empty part. D14 keeps a component's
-name free of `/`, so the reading is `channel_name`'s inverse.
+Two of the store's names belong to a declared component and say which:
+its version's, `<component>:<prefix><version>` (D18), and its
+channel's, `channel/<component>/<name>`. The registry holds each as a
+tag, by `tag::of`, of the repository `<declared path>/<component>`, the
+component written as one path component (D12): `lib:lib-v1.2.0` is the
+tag `lib-v1.2.0` and `channel/lib/beta` the tag `beta`, both of
+`<declared path>/lib`. A version's bare tag and `channel/<name>`, the
+names of the one component of a repository that declares none, stay the
+tags of the declared repository they are today: that component's own
+repository is the declared one, and nothing changes for it (125). The
+registry reads the component back through two seams functions:
+`Name::as_version` (D18) and `Name::as_channel(&self) ->
+Option<ChannelId>`, beside `channel_name` in `keeper.rs`: after
+`channel/`, the component up to the first `/` and the channel's name
+after it, or the channel's name alone with no component where no `/`
+follows; none for a name outside `channel/` or with an empty part. D14
+keeps a component's name free of `/` and `:`, so each reading is its
+spelling's inverse. The registry reads a name as the artifact space's,
+then the cache space's, then a channel's, then a version's, so a `:` in
+a build identity or a version under `artifact/` or `cache/` is never
+read as a component's.
 
 The component's indexes live there. When the registry puts an image
 index whose metadata names a component other than `repository`
 (`REPOSITORY_COMPONENT`, the undeclared one's), it holds it in the
 component's repository after putting it in the declared one, by D8's
-`hold`. Before a channel's tag is put, `hold` runs again for the index
-the channel moves to, writing only what a HEAD finds missing, so an
-index put before this change is held there before a tag names it. The
-tag is then put with the expected digest and read back as `name` does
-today (109, ADR 0015), in the component's repository; resolve reads it
-there, and a repository or tag the registry does not hold is absent.
-The gate's promotion and the ledger held in the store reach all of it
-through the store seam unchanged: the ledger walks from the index the
-channel resolves to and reads claims by digest, in the declared
+`hold`. Before a version's or a channel's tag is put, `hold` runs again
+for the index the tag names, writing only what a HEAD finds missing, so
+an index put before this change is held there before a tag names it.
+The tag is then put with the expected digest and read back as `name`
+does today (109, ADR 0015), in the component's repository; resolve reads
+it there, and a repository or tag the registry does not hold is absent.
+The gate's acceptance, its promotion and the ledger held in the store
+reach all of it through the store seam: the ledger walks from the index
+the channel resolves to and reads claims by digest, in the declared
 repository where they were attached.
 
-A version's tag, `<prefix><version>`, stays a tag of the declared
-repository. C.1 places a component's indexes and channels in its
-repository and does not place the version's tag, and the tag's spelling
-does not carry its component, so the registry could not tell which
-repository it belongs in without the components the policy declares,
-which no store is bound with (core.2, 65). Alternative: spell a
-declared component's version in the store with its component and hold
-it in the component's repository; refused here, it renames every
-version in every store for a placement the statement does not ask, and
-is named for the design agent.
-
-A publish then writes the declared repository and its components'
-repositories, and a promotion writes the channel's component's
-repository; the self-hosting guide says so for an operator scoping
+A publish then writes the declared repository, its component's
+repository and the artifacts' repositories, and a promotion writes the
+channel's component's repository and, for its claim, the declared one;
+a credential scoped to one component's repository makes that
+component's versions and moves its channels and no other's, as C.1
+says. The self-hosting guide says so for an operator scoping
 credentials (D13).
 
 ### D11. A registry lists a name's versions by its repository's tags
@@ -410,9 +428,9 @@ repository the put was for, which `NAME_UNKNOWN` on a put, or a body
 naming a repository not found, gives, so an operator reads which one to
 make (58, 59). A refused artifact name leaves the version's tag unmade
 (D2); a refused cache entry is the push's answer for that output, as any
-store refusal is, naming `cache/<build>`; a refused channel's tag is
-the promotion's answer, as any refused move is, naming the component's
-repository; and a push bound for the cache
+store refusal is, naming `cache/<build>`; a refused version's tag is the
+publish's answer and a refused channel's tag the promotion's, as any
+refused move is, naming the component's repository; and a push bound for the cache
 space never falls back to the declared repository, which its credential
 may not write (135). Nothing is retried. The self-hosting guide says what
 an ECR operator makes before the first publish: the declared repository,
@@ -432,15 +450,15 @@ before anything is derived. A prefix is followed by a version, which
 begins with a digit, so a prefix only enters a space by beginning with
 it; `artifact-v` is fine. 138 says no component's tag may enter
 `artifact/`, beside `cache/` and `channel/`; the three are kept by one
-check. On a registry, a version's tag is a tag of the declared
-repository, so a reserved prefix would also have reached the tag the
-artifact or cache space is not.
+check. On a registry, the undeclared component's version's tag is a tag
+of the declared repository, so a reserved prefix there would also have
+reached a tag the artifact or cache space is not.
 
 `Declared::read` refuses too, before anything is derived, a declared
 component whose name would not name a repository of its own on a
-registry (D10): a name holding `/`, which `as_channel` could not read
-back; `artifact` or `cache`, whose repository would sit at the root of a
-reserved space; `repository`, the undeclared component's name, whose
+registry (D10): a name holding `/` or `:`, which `as_channel` or
+`as_version` could not read back; `artifact` or `cache`, whose
+repository would sit at the root of a reserved space; `repository`, the undeclared component's name, whose
 indexes the registry leaves in the declared repository; each with
 `Why::Reserved { component, what, space }`, `what` the prefix or the
 name spelled as `DeclaredTwice` spells it (`prefix "cache/"`, `name
@@ -486,19 +504,67 @@ and `url.<fixture path>.insteadOf` that URL, so git still reaches the
 fixture while `remote_url` reads the URL as written. Seams: round trips
 of `IndexMeta` with and without the new fields and the form without them
 unchanged; `artifact_name` and `as_artifact` inverse on names with `@`
-and `/`; `as_channel` the inverse of `channel_name` with and without a
+and `/`; `version_name` and `as_version` inverse for a declared
+component, the bare tag for `repository` reading back as none, and none
+for `cache/sha256:ab`, `artifact/eco/site@1:2`, `:v1` and `lib:`; `as_channel` the inverse of `channel_name` with and without a
 component, and none for `cache/x`, `channel/` and `channel/lib/`. Store: layout unit tests for the annotations, the unchanged
 bytes and the listing; registry unit tests for the component escape and
 `tag::read`, and, against a stub registry in the style of `client.rs`'s
 tests, the declined mount, the push-bound put, the read that falls
 through to the cache repository, and a declared component's index held
-in its repository at put and its channel's tag put there; the
+in its repository at put and its version's and channel's tags put
+there; core tests that the gate's acceptance, a promotion, the record
+and verify find a declared component's version by `version_name`; the
 registry's mount, put, tag, resolve, listing, component repository and
 cache repository in
 `crates/tailrace/tests/registry_store.rs` against zot and the reference
 distribution, in check-tools; bindings tests that a push binds the store
 for the cache space and every other command does not. Everything else
 runs in check-fast through the crates' `test` tasks.
+
+### D18. A declared component's version named with its component
+
+The registry is bound with no component (core.2, 65), and a version's
+bare tag does not say whose it is, so a store name that is to be placed
+in its component's repository must carry its component. `tailrace-seams`
+gains, beside `REPOSITORY_COMPONENT` in `artifact.rs`,
+
+```rust
+/// 22, 123, C.1: the name a version takes in the store, its tag as the
+/// authors spell it where the repository declares no component, and
+/// `<component>:<tag>` where it declares one.
+pub fn version_name(component: &ComponentName, tag: &str) -> Name;
+```
+
+and its inverse, `Name::as_version(&self) -> Option<(ComponentName,
+String)>`: for a name outside `artifact/`, `cache/` and `channel/`
+holding a `:`, the component before the first `:` and the tag after it;
+none otherwise, and none where either part is empty. The core's five
+paths that make or read a version's name, `publish.rs`, `gate.rs`,
+`ledger.rs`, `record.rs` and `verify.rs`, build it with `version_name`
+from the component they already hold and the tag, and none builds it any
+other way.
+
+`:` because git's reference names never hold one (`git
+check-ref-format`), so `<component>:<tag>` can never be the bare tag of
+a repository that declares no component, and no prefix need be refused
+to keep the two apart; it reads as an image reference does, the
+repository then the tag. The layout store and the fake keep the name as
+written; `:` is a separator the OCI layout's ref-name grammar allows.
+Alternatives: a reserved space, `version/<component>/<tag>`; refused,
+138 names the reserved spaces and a fourth would refuse authors'
+prefixes the statement allows. Binding the store with the declared
+components, so the registry maps a prefix to its component; refused, the
+components are read from a landed revision (65) and the store is bound
+per host. A component argument on the store's `name` and `resolve`;
+refused, every profile and caller would change for what only the
+registry places, where `channel_name` already sets the pattern of a name
+carrying its component (125).
+
+The name changes for a declared component's versions on every store, so
+a version already held under its bare tag is named again by the next
+publish of its revision (D3), and the record, the gate and verify find
+it absent until then.
 
 ## Risks / Trade-offs
 
@@ -530,10 +596,13 @@ runs in check-fast through the crates' `test` tasks.
   repository and its component's] → a mount copies no bytes where the
   registry allows it, and the declared repository stays the one place
   claims are read.
-- [A version's tag is not in its component's repository, so a
-  credential scoped to one component cannot make that component's
-  versions] → C.1 does not place the tag; D10 names it for the design
-  agent.
+- [A declared component's version takes a new name in every store, so
+  versions held under their bare tags are absent to the gate, a
+  promotion, the record and verify until their revision is published
+  again] → the publish finds the bare tag and names the version anew at
+  the same index (D3), writing nothing else; the self-hosting guide says
+  to publish each held version's revision once after upgrading, before
+  accepting or promoting it.
 - [Cache entries a push wrote into the declared repository before this
   change are not found under `cache/<build>`] → an entry gone is a build
   again and no worse (54); the next push writes it where it now lives.
@@ -563,4 +632,7 @@ this change (D13). A declared component's channel tags already in the
 declared repository are put, by the operator, as tags of the component's
 repository at the digests they name before the first promotion after
 this change (Risks); its indexes put before this change are held
-there by the first promotion to each (D10).
+there by the first promotion to each (D10). A declared component's
+versions held under their bare tags are named `<component>:<tag>` by
+the next publish of each revision, at the index the bare tag names
+(D3); the bare tags are left where they are and read by nothing else.

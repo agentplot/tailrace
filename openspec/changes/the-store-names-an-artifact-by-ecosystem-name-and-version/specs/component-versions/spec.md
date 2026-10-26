@@ -28,7 +28,7 @@ artifact's, a cache entry's or a channel's name (138).
 The policy file SHALL be refused, naming the component and what its
 name would enter, before any version is derived, when a declared
 component is named `artifact`, `cache` or `repository`, or its name
-holds a `/`; and SHALL be refused naming both when two declared
+holds a `/` or a `:`; and SHALL be refused naming both when two declared
 components' names are equal once lowercased, so every declared
 component has a repository of its own on a registry, apart from the
 store's other spaces and from the one component of a repository that
@@ -46,7 +46,7 @@ declares none (125, C.1).
 
 #### Scenario: A name holding a slash
 
-- **WHEN** a policy file declares a component named `web/app`
+- **WHEN** a policy file declares a component named `web/app`, or one named `web:app`
 - **THEN** reading the policy file is refused naming the component
 
 #### Scenario: Two names differing only by case

@@ -62,6 +62,24 @@ name no repository, and the publish SHALL go on.
 - **WHEN** a revision of a repository whose branch names no remote is published
 - **THEN** the index names the revision and no repository, and the publish answers as it otherwise would
 
+### Requirement: A declared component's version is named with its component
+
+A publish of a declared component SHALL make the version's store name
+`<component>:<tag>`, and a publish of a repository that declares none
+the bare tag, as it did before; the gate's acceptance, a promotion, the
+host's record and verify SHALL resolve a version by the same name (22,
+125, C.1, core.4).
+
+#### Scenario: A declared component published and accepted
+
+- **WHEN** the component `lib` with prefix `lib-v` is published at 1.2.0, and the gate is asked to accept `lib` 1.2.0
+- **THEN** the fake store's name `lib:lib-v1.2.0` resolves to the index, the store holds no name `lib-v1.2.0`, and the gate resolves `lib:lib-v1.2.0` to that index
+
+#### Scenario: A version held under its bare tag
+
+- **WHEN** the store holds a declared component's index under the bare tag `lib-v1.2.0`, as a publish before this change left it, and the revision is published again with projections that pack the same
+- **THEN** `lib:lib-v1.2.0` is made from nothing at that index after the artifacts' names, no index is put, the bare tag still names the index, and the answer names the same index
+
 ## MODIFIED Requirements
 
 ### Requirement: The index is offered last, then the version is named
@@ -86,8 +104,9 @@ has published nothing (6, 17, 113, 138, core.12, core.6).
 
 ### Requirement: A second publish of a revision ends at the same index
 
-A publish of a revision whose version's name already names an index
-SHALL compare each packed artifact's digest with the digest the index
+A publish of a revision whose version's name already names an index,
+or for a declared component whose bare tag does, as a publish before
+version names carried their component left it, SHALL compare each packed artifact's digest with the digest the index
 names for that ecosystem name. All the same, it SHALL attach the
 publisher's layout policy where the index lacks it, make each artifact's
 name the store lacks at that index, write nothing else, and answer the

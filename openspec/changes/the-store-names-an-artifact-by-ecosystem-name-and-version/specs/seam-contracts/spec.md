@@ -17,6 +17,30 @@ which every writer and reader of the name uses (138).
 - **WHEN** `cache/b7e1`, `artifact/npm` or `artifact/npm/site@` is read back as an artifact's store name
 - **THEN** each answers none
 
+### Requirement: A version's store name names its declared component
+
+The store name of a version SHALL be spelled by one function of the
+seams from its component and its tag: the tag alone for the one
+component of a repository that declares none, and `<component>:<tag>`
+for a declared component; its one inverse SHALL read a name back into
+the component and the tag, and every writer and reader of a version's
+name SHALL use them (22, 123, 125, C.1, core.37).
+
+#### Scenario: A declared component's version
+
+- **WHEN** the store name of the component `lib`'s tag `lib-v1.2.0` is spelled and read back
+- **THEN** it is `lib:lib-v1.2.0`, and reading it back answers `lib` and `lib-v1.2.0`
+
+#### Scenario: A repository that declares no component
+
+- **WHEN** the store name of the undeclared component's tag `v1.2.0` is spelled and read back
+- **THEN** it is `v1.2.0`, and reading it back answers none
+
+#### Scenario: Names that hold a colon elsewhere
+
+- **WHEN** `cache/sha256:ab`, `artifact/eco/site@1:2`, `:v1` or `lib:` is read back as a version's store name
+- **THEN** each answers none
+
 ## MODIFIED Requirements
 
 ### Requirement: An artifact says what its bytes are

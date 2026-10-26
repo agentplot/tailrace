@@ -9,11 +9,13 @@ name and its version, and lets the store list the versions a name holds,
 so a consumer finds what its lockfile pins by those alone and reads the
 version's claims from the index it lands on. On a registry it also keeps
 three spaces a credential can be scoped to apart: each component's own
-repository for its indexes and channels, a space for cache entries, so a
-credential that writes cache entries and nothing else can push them, and
-a space for the artifacts' names
-(`agentplot/blueprints:design/tailrace/requirements.md` at 4c14235: 138,
-with 3, 13, 49, 60, 109, 113, 125, 135, 137, B.6 and C.1).
+repository for its indexes, its versions and its channels, so a
+credential scoped to one component makes that component's versions and
+nothing of another's; a space for cache entries, so a credential that
+writes cache entries and nothing else can push them; and a space for the
+artifacts' names (`agentplot/blueprints:design/tailrace/requirements.md`
+at f90f5fd: 138, with 3, 13, 49, 60, 109, 113, 125, 135, 137, B.6 and
+C.1).
 
 ## What Changes
 
@@ -31,6 +33,18 @@ with 3, 13, 49, 60, 109, 113, 125, 135, 137, B.6 and C.1).
   version's tag is not made. Only once every artifact's name stands is
   the version's tag made, so a version the store names by its tag is
   always findable by name and version (138, 70, 109, core.6).
+- **A declared component's version is named with its component.** In
+  a repository that declares components, a version's name in the store
+  is the component's name, a `:` and its tag, `lib:lib-v1.2.0`, so every
+  store can tell whose version it is; a repository that declares none
+  keeps the bare tag, `v1.2.0`, and nothing changes for it (125, C.1).
+  No git tag can hold a `:`, so this spelling is never another
+  version's, and no new space is reserved. Every path that makes or
+  reads a version's name, the publish, the gate's acceptance, a
+  promotion, the host's record and verify, spells it through one
+  function. A version a store already holds under its bare tag is found
+  by the next publish of its revision, which names it the new way at the
+  same index; until then the gate, a promotion and verify find it absent.
 - **The publisher's layout policy is on the index before any name.** The
   layout-policy claim a publish already attaches to the index, the
   claims a layout must require as the repository declared them at that
@@ -57,14 +71,16 @@ with 3, 13, 49, 60, 109, 113, 125, 135, 137, B.6 and C.1).
   three spaces of repositories under the one the binding declares, each
   name lowercased and escaped into a path component as the distribution
   protocol allows:
-  - **A component's own repository.** A declared component's channels
-    are tags of the repository named for the component (`lib` for the
-    component `lib`), the channel's name the tag (`beta`), and each of
-    its indexes, with every artifact and blob it names, is held there
-    from the publish that puts it. A repository that declares no
-    component has the declared repository as its component's own, and
-    nothing changes for it (125). A promotion moves the channel's tag
-    in the component's repository, reading it back there (109).
+  - **A component's own repository.** A declared component's versions
+    and channels are tags of the repository named for the component
+    (`lib` for the component `lib`): the version's tag as the authors
+    spell it (`lib-v1.2.0`), the channel's name (`beta`). Each of its
+    indexes, with every artifact and blob it names, is held there from
+    the publish that puts it. A repository that declares no component
+    has the declared repository as its component's own, and nothing
+    changes for it (125). A publish makes the version's tag, and a
+    promotion moves the channel's, in the component's repository,
+    reading each back there (109).
   - **Cache entries.** A cache entry, `cache/<build identity>`, moves
     out of the declared repository into `cache/<build>` under it, one
     repository per build profile (`cache/moon`), its build identity the
@@ -79,12 +95,12 @@ with 3, 13, 49, 60, 109, 113, 125, 135, 137, B.6 and C.1).
     repository before its tag is put.
 
   Bytes, artifacts, indexes and claims are put in the declared
-  repository, where the seam reads every digest, and a version's tag
-  stays a tag of it (C.1, 135). An ADR records this, in part in place of
-  ADR 0014's one repository.
+  repository, the root the three spaces hang under, where the seam reads
+  every digest (C.1, 135). An ADR records this, in part in place of ADR
+  0014's one repository.
 - **A component's name names one repository.** A policy file that
   declares a component named `artifact`, `cache` or `repository`, or
-  holding a `/`, or two components whose names differ only by case, is
+  holding a `/` or a `:`, or two components whose names differ only by case, is
   refused when it is read, naming the components, so every declared
   component has a repository of its own apart from the other spaces and
   from the undeclared component's (125, C.1).
@@ -135,18 +151,22 @@ None.
 ### Modified Capabilities
 
 - `publishing`: a publish names each artifact by ecosystem, name and
-  version after the layout policy and before the version's tag; a second
-  publish fills in missing names and a missing layout policy; the answer
-  names them; a publish moves no other name.
+  version after the layout policy and before the version's tag; a
+  declared component's version is named with its component; a second
+  publish fills in missing names and a missing layout policy, and names
+  a version held under its bare tag the new way; the answer names them;
+  a publish moves no other name.
 - `seam-contracts`: index metadata names its revision and repository;
   the store's contract gains the listing of a name's versions; an
-  artifact's store name is spelled once.
+  artifact's store name and a version's store name are each spelled
+  once.
 - `component-versions`: a component's prefix may not enter `artifact/`,
-  `cache/` or `channel/`, and a component's name names one repository.
+  `cache/` or `channel/`, and a component's name names one repository
+  and holds no `:`.
 - `layout-store`: an index's revision and repository are held in its
   bytes; a name's versions are listed from the index's names.
-- `registry-store`: a declared component's channels are tags of its own
-  repository, which holds its indexes; an artifact's name is a tag of a
+- `registry-store`: a declared component's versions and channels are
+  tags of its own repository, which holds its indexes; an artifact's name is a tag of a
   repository of its own, and its versions are that repository's tags; a
   cache entry is a tag of its build profile's cache repository; a
   missing repository is refused naming it.
@@ -158,17 +178,23 @@ None.
 ## Impact
 
 - `crates/tailrace-seams`: index metadata gains the revision and the
-  repository; a channel's store name is read back to its channel;
+  repository; a channel's store name is read back to its channel; a
+  version's store name is spelled with its declared component and read
+  back;
   `RepositoryName` moves here from `tailrace-core`'s `served.rs`, which
   re-exports it; the artifact space's spelling and
   its reading back; the store seam's listing.
-- `crates/tailrace-core`: publish makes the artifact names and reads the
-  repository from the landed branch's remote; the policy file reader
+- `crates/tailrace-core`: publish makes the artifact names, names a
+  declared component's version with its component, and reads the
+  repository from the landed branch's remote; the gate's acceptance, a
+  promotion, the record and verify resolve a version by the same
+  spelling; the policy file reader
   refuses a reserved prefix and a component's name that names no
   repository of its own; `render.rs` re-exports the moved spelling.
 - `crates/tailrace/src/profiles/store`: the OCI encoding writes and reads
   the index's revision and repository; the layout store lists; the
-  registry maps a declared component's channel, an artifact name and a
+  registry maps a declared component's version and channel, an artifact
+  name and a
   cache entry to their repositories, mounts what each needs, and lists
   an artifact name's tags.
 - `crates/tailrace/src/bindings` and `profiles/build`: the store binding
@@ -186,9 +212,10 @@ None.
   and registers 138 as this unit's.
 - Overlaps cargos-registry at the store seam: it reads this change's
   listing, and this change lands first.
-- Rules kept: core.1 and core.2 (the core spells the name; only the
-  registry profile turns it into a repository and tag, and the bindings
-  name no tool), core.4 (every name resolved before it is acted on),
+- Rules kept: core.1 and core.2 (the core spells every name; only the
+  registry profile turns it into a repository and tag, the store is
+  bound with no component, and the bindings name no tool), core.37 (a
+  version's name in the store names its component), core.4 (every name resolved before it is acted on),
   core.5 (a mount copies bytes under their own digest), core.6 (a name
   made only from nothing, a refused make reported and never retried),
   core.9 (the index names its revision), core.12 (the index is still
@@ -207,6 +234,10 @@ crates/tailrace-seams/src/store.rs
 crates/tailrace-seams/src/keeper.rs
 crates/tailrace-seams/src/lib.rs
 crates/tailrace-core/src/publish.rs
+crates/tailrace-core/src/gate.rs
+crates/tailrace-core/src/ledger.rs
+crates/tailrace-core/src/record.rs
+crates/tailrace-core/src/verify.rs
 crates/tailrace-core/src/declared.rs
 crates/tailrace-core/src/served.rs
 crates/tailrace-core/src/history.rs
