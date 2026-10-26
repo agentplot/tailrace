@@ -364,8 +364,9 @@ An environment's table holds `channel`, `policy`, `after`, `target`,
 and `approvers` where the environment is manual, and no other key: a
 target's own settings sit in the target's table, and a key such as
 `bucket` written on the environment is unreadable naming the table and
-the key (C.10). `approvers` on an environment that is not manual is
-unreadable the same way, since no one says yes to it. `policy` other
+the key (C.10). `approvers` on an environment whose policy is `auto` is
+unreadable the same way, naming the field, since it names no one who
+could be asked (C.10). `policy` other
 than `auto` or `manual`, a made channel named as any channel the
 fragment holds, held or not, environments named in `after` that follow
 two channels, an environment not declared, or one that comes after
