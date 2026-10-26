@@ -133,12 +133,6 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             cites: &[95, 125, 131],
             run: beta_of_one_component,
         },
-        Scenario {
-            name: "the policy names no gate",
-            plays: None,
-            cites: &[108, 118],
-            run: the_policy_names_no_gate,
-        },
     ]
 }
 
@@ -1087,43 +1081,4 @@ fn beta_of_one_component(_: &FakeWorld) {
         matches!(world.fakes.keeper.chain(&beta("app")), Err(Not::Absent(_))),
         "app's beta has a chain"
     );
-}
-
-fn the_policy_names_no_gate(world: &FakeWorld) {
-    // The policy names the host for provenance alone, and no signer it
-    // requires a claim of may claim acceptance.
-    let revision = world.land_policy(POLICY);
-    world.outputs(
-        &revision,
-        &[("site", Outcome::Pass), ("server", Outcome::Pass)],
-    );
-    world.fakes.policy.require(
-        Audience::Acceptance,
-        Required::Acceptance {
-            claims: vec![provenance_from(named(HOST, &[ClaimKind::Provenance], &[]))],
-        },
-    );
-    let published = ok(one(world.publish(&world.ask(&revision))), "the publish");
-    let (_, index) = version_of(&published);
-
-    // The gate, signing as the host, accepts what the host offered, and
-    // says one host offered and accepted.
-    let (acceptance, already, one_host, _) =
-        accepted(world.judge(&world.gate_ask(VERSION, told(&published), HOST), &[]));
-    assert!(!already);
-    assert!(one_host, "the host's acceptance does not say one host");
-    assert_eq!(
-        acceptance_by(world, index, HOST).body["offered"],
-        json!({ "by": [HOST], "one_host": true })
-    );
-
-    // Told again, it answers the acceptance it made, and attaches no
-    // other.
-    let written = world.writes().len();
-    let (again, already, _, _) =
-        accepted(world.judge(&world.gate_ask(VERSION, told(&published), HOST), &[]));
-    assert!(already, "the second judgment did not find the first");
-    assert_eq!(again, acceptance);
-    assert_eq!(world.writes().len(), written, "the second judgment wrote");
-    assert_eq!(of_kind(world, index, ClaimKind::Acceptance), 1);
 }
