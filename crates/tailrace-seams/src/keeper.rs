@@ -109,11 +109,13 @@ pub trait Keeper {
     ) -> Answer<Digest>;
 
     /// 121: every promotion claim of `channel` in order from the first;
-    /// absent when none is held, and refused
-    /// [`Why::Fork`](crate::Why::Fork) naming the claims when two name
-    /// one predecessor, never answered by choosing one (105). Where the
-    /// source does not answer, the chain as this host last read it,
-    /// [`Read::Kept`] saying when and with the source's words (60, 61).
+    /// absent only where the source itself answers that it holds none,
+    /// and refused [`Why::Fork`](crate::Why::Fork) naming the claims when
+    /// two name one predecessor, never answered by choosing one (105).
+    /// Where the source does not answer, the chain as this host last read
+    /// it, [`Read::Kept`] saying when and with the source's words, a
+    /// channel last read holding none answered as a chain of no claims so
+    /// read, never absent (60, 61).
     fn chain(&self, channel: &ChannelId) -> Answer<Chain>;
 }
 
