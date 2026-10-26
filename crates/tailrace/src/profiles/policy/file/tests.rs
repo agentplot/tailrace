@@ -669,7 +669,7 @@ fn a_following_channel_that_is_bound_is_unreadable_naming_it() {
     );
 }
 
-// Requirement: A line under a given channel never changes how it moves
+// Requirement: The same line overrides a given
 
 #[test]
 fn a_line_under_stable_adds_its_claims_after_the_gates_acceptance() {
@@ -701,23 +701,6 @@ fn a_line_under_stable_adds_its_claims_after_the_gates_acceptance() {
         })
     );
     assert_eq!(repo.policy().channels(&at), Ok(givens(None)));
-}
-
-#[test]
-fn a_line_that_would_unbind_stable_is_unreadable_naming_it() {
-    let repo = Repo::new();
-    let at = repo.at("[channels.stable]\non_each_publish = true\n");
-    let said = both_unreadable(&repo, &at, &id(None, "stable"));
-    assert_eq!(
-        said,
-        "[channels.stable] would change how stable moves, and stable is bound to beta: a line under a channel given or made never changes how it moves (C.10)"
-    );
-    let at = repo.at("[channels.beta]\nbound_to = \"stable\"\n");
-    let said = both_unreadable(&repo, &at, &id(None, "beta"));
-    assert!(
-        said.starts_with("[channels.beta] would change how beta moves"),
-        "{said}"
-    );
 }
 
 // Requirement: The given channels' policy names the gate
@@ -899,7 +882,7 @@ fn a_manual_environment_named_beta_is_unreadable_naming_it() {
     let said = unreadable(repo.policy().channels(&at), &at);
     assert_eq!(
         said,
-        "[environments.beta] makes a channel named beta, which every component is given (C.10)"
+        "[environments.beta] makes a channel named beta, which the givens hold, on or off (C.10)"
     );
 }
 
@@ -938,6 +921,6 @@ fn a_line_under_prod_that_rebinds_it_is_unreadable_naming_it() {
     let said = both_unreadable(&repo, &at, &id(None, "prod"));
     assert_eq!(
         said,
-        "[channels.prod] would change how prod moves, and prod is bound to stable: a line under a channel given or made never changes how it moves (C.10)"
+        "[channels.prod] would change how prod moves, and prod is bound to stable by its environment's words: a line under a channel an environment makes never changes how it moves (C.10)"
     );
 }

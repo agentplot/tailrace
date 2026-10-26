@@ -1,0 +1,26 @@
+# The given channels (C.10): a policy fragment in the policy file's own
+# form, for a repository that declares no component, laid beneath the
+# repository's `.config/tailrace.toml` for every component it declares.
+# A key the repository writes under one of these channels replaces the
+# key here; a table it writes is on unless it writes `on = false`.
+
+# C.10: every component has beta, moved by the gate on each accepted
+# publish (95).
+[channels.beta]
+on_each_publish = true
+
+# C.10: and stable, moved by promotion from among what beta has held (37).
+[channels.stable]
+bound_to = "beta"
+
+# C.10: alpha, held until a line switches it on. It moves on each
+# accepted publish as beta does, until a ruling says how a channel leaves
+# prereleases out.
+[channels.alpha]
+on = false
+on_each_publish = true
+
+# C.10: lts, held until a line switches it on, promoted from stable.
+[channels.lts]
+on = false
+bound_to = "stable"
