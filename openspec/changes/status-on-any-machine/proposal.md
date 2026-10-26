@@ -64,7 +64,7 @@ S12, as amended at `agentplot/blueprints` 85bbf54 and 157c828).
     every channel's head version, and how many of its environments run
     what they should, are behind, wait on a person or cannot be read;
     `/status.json` is that answer.
-  - `/<owner>/<name>/` shows that repository whole, its channels, their
+  - `/<owner>/<name>/status` shows that repository whole, its channels, their
     chains, its environments and what this host published, the owner
     and name being those its landing's remote gives it;
     `/<owner>/<name>/status.json` is the same answer `tailrace status

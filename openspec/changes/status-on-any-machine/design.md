@@ -270,7 +270,7 @@ a one-segment path is never a repository's:
 | `/status.json` | `render::json` of the root's answer (D14) |
 | `/` | the root's page (D8) of the same answer |
 | `/<owner>/<name>/status.json` | `render::json` of the overview in the named checkout |
-| `/<owner>/<name>/`, and without its last `/` | the repository's page (D8) of the same overview |
+| `/<owner>/<name>/status` | the repository's page (D8) of the same overview |
 | anything else | 404 |
 
 The repository's answer: `checkout_of` (D5), then `bindings::load(
@@ -311,7 +311,7 @@ environment and the `start` below:
    answering is unreadable naming the address and what it answered. A
    process that has not answered in five seconds is unreadable naming
    the address and saying it was started and did not answer.
-4. The answer: `Ok("http://127.0.0.1:7420/<owner>/<name>/")`, the
+4. The answer: `Ok("http://127.0.0.1:7420/<owner>/<name>/status")`, the
    repository's own page; the root is one link away on it.
 
 `start` runs `std::env::current_exe()` with `serve`, `stdin`, `stdout`
