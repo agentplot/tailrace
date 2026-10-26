@@ -1073,3 +1073,105 @@ fn the_landings_remote_is_the_files_or_origin_with_no_file_or_none() {
         Ok(None)
     );
 }
+
+// Requirement: The given landing is sluice where the repository is set up
+// for it
+
+/// git in `repo` under a fixed author and none of the host's
+/// configuration; panics with git's words where it fails.
+fn git_in(repo: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_AUTHOR_NAME", "A. Uthor")
+        .env("GIT_AUTHOR_EMAIL", "author@example.com")
+        .env("GIT_COMMITTER_NAME", "A. Uthor")
+        .env("GIT_COMMITTER_EMAIL", "author@example.com")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+/// sluice's policy file written into `repo`'s working tree.
+fn sluice_file(repo: &Path) {
+    fs::create_dir_all(repo.join(".config")).unwrap();
+    fs::write(repo.join(".config/sluice.toml"), "[branches.main]\n").unwrap();
+}
+
+/// Which profile `landing` is, by the source of its answer once the
+/// repository at `repo` is moved away and git cannot open it.
+fn landing_source(landing: &dyn tailrace_seams::Landing, repo: &Path) -> Source {
+    let moved = repo.with_extension("moved");
+    fs::rename(repo, &moved).unwrap();
+    let answer = landing.landed(
+        &tailrace_seams::Branch::new("main"),
+        &tailrace_seams::Revision::new("HEAD"),
+    );
+    fs::rename(&moved, repo).unwrap();
+    match answer {
+        Err(Not::Unreadable(u)) => u.source,
+        other => panic!("a landing over no repository answered {other:?}"),
+    }
+}
+
+fn sluice() -> Source {
+    Source::new(Seam::Landing, "sluice")
+}
+
+fn branch() -> Source {
+    Source::new(Seam::Landing, "branch")
+}
+
+#[test]
+fn sluices_file_in_the_head_commit_binds_sluice() {
+    let host = Host::new();
+    let repo = repository(&host);
+    sluice_file(&repo);
+    git_in(&repo, &["add", ".config/sluice.toml"]);
+    git_in(&repo, &["commit", "-q", "-m", "chore: sluice gates main"]);
+    let landing = profiles::landing::given(&repo).unwrap();
+    assert_eq!(landing_source(landing.as_ref(), &repo), sluice());
+}
+
+#[test]
+fn sluices_file_only_in_the_working_tree_no_file_and_no_commit_bind_a_branch() {
+    let host = Host::new();
+    let repo = repository(&host);
+    // No commit yet, sluice's file in the working tree alone.
+    sluice_file(&repo);
+    let landing = profiles::landing::given(&repo).unwrap();
+    assert_eq!(landing_source(landing.as_ref(), &repo), branch());
+    // A commit that holds no sluice file, with one in the working tree.
+    git_in(
+        &repo,
+        &["commit", "-q", "--allow-empty", "-m", "feat: a start"],
+    );
+    let landing = profiles::landing::given(&repo).unwrap();
+    assert_eq!(landing_source(landing.as_ref(), &repo), branch());
+    // No file anywhere.
+    fs::remove_dir_all(repo.join(".config")).unwrap();
+    let landing = profiles::landing::given(&repo).unwrap();
+    assert_eq!(landing_source(landing.as_ref(), &repo), branch());
+}
+
+#[test]
+fn a_directory_git_cannot_open_is_unreadable_in_gits_words() {
+    let host = Host::new();
+    let dir = host.dir.path().join("plain");
+    fs::create_dir(&dir).unwrap();
+    match profiles::landing::given(&dir) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, sluice());
+            let said = u.said.unwrap();
+            assert!(said.starts_with("fatal: not a git repository"), "{said}");
+        }
+        other => panic!("no repository answered {:?}", other.err()),
+    }
+}
