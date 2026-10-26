@@ -361,13 +361,16 @@ fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() 
     assert_eq!(verified["answer"], "ok", "{verified}");
     let value = &verified["value"];
     assert_eq!(value["index"], index.as_str());
+    // Each output's artifact and the notes, one provenance each.
+    let notes = version["notes"]["digest"].as_str().expect("the notes");
     let on: BTreeSet<&str> = artifacts
         .iter()
         .map(|a| a["digest"].as_str().unwrap())
+        .chain([notes])
         .collect();
     let told = value["claims"].as_array().unwrap();
     let provenances: Vec<&Value> = told.iter().filter(|t| t["kind"] == "provenance").collect();
-    assert_eq!(provenances.len(), artifacts.len(), "{verified}");
+    assert_eq!(provenances.len(), on.len(), "{verified}");
     for provenance in &provenances {
         assert!(
             on.contains(provenance["on"].as_str().unwrap()),
