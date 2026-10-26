@@ -1,5 +1,7 @@
 //! The publish group: a landed revision offered as a version, S1 and S2,
-//! and what publish refuses (2 to 20, 102, 110, 111).
+//! and what publish refuses (2 to 20, 102, 110, 111); and, below the
+//! marker, a landing read from its copy as last fetched, a no refused
+//! saying when and a yes published as from the remote (14, 59, 77).
 
 use tailrace_core::{answer_json, publish, Provenance, Publish, Published};
 use tailrace_fakes::{FakeStore, PROFILE};
@@ -77,6 +79,18 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             run: attestations_beside_their_digest,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "a revision not landed as last fetched",
+            plays: None,
+            cites: &[14, 59, 77],
+            run: a_revision_not_landed_as_last_fetched,
+        },
+        Scenario {
+            name: "a revision landed as last fetched",
+            plays: None,
+            cites: &[14, 59, 77],
+            run: a_revision_landed_as_last_fetched,
+        },
     ]
 }
 
@@ -797,4 +811,116 @@ fn attestations_beside_their_digest(world: &FakeWorld) {
             );
         }
     }
+}
+
+/// The landing's remote's words, once the world's landing is cut off.
+const UNREACHABLE: &str = "fatal: unable to access 'https://forge.example/o/r.git/': \
+                           Could not resolve host: forge.example\n";
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+/// 77: a revision the landing answers not landed from its copy, because
+/// it landed after the copy was fetched, is refused naming the branch,
+/// the revision, the copy's time and the remote's words, saying to ask
+/// again, before any seam but the landing is asked (14, 59, rule
+/// core.11).
+fn a_revision_not_landed_as_last_fetched(world: &FakeWorld) {
+    let since = now();
+    let landing = &world.fakes.landing;
+    ok(
+        tailrace_seams::Landing::landed(landing, &world.main, &world.head),
+        "the landing's first read",
+    );
+    let until = now();
+    passing(world, &world.head);
+    landing.unreachable(UNREACHABLE);
+
+    let r = refused(
+        one(world.publish(&world.ask(&world.head))),
+        "a publish of a revision not landed as last fetched",
+    );
+    let Why::NotLandedAsFetched {
+        branch,
+        revision,
+        fetched,
+    } = &r.why
+    else {
+        panic!("the refusal is not one as last fetched: {}", r.why)
+    };
+    assert_eq!(
+        (branch, revision),
+        (&world.main, &world.head),
+        "the refusal names another branch or revision"
+    );
+    assert!(
+        (since..=until).contains(fetched),
+        "the refusal names {fetched}, not when the copy was fetched"
+    );
+    assert_eq!(
+        r.said.as_deref(),
+        Some(UNREACHABLE),
+        "the refusal did not carry the remote's words unchanged"
+    );
+    assert!(
+        r.why.to_string().contains("ask again"),
+        "the refusal does not say to ask again: {}",
+        r.why
+    );
+    let landing = world.fakes.landing.calls().len();
+    assert_eq!(
+        world.asked(),
+        landing,
+        "a seam but the landing was asked: store {:?}, build {:?}, signer {:?}, policy {:?}",
+        world.fakes.store.calls(),
+        world.fakes.build.calls(),
+        world.fakes.signer.calls(),
+        world.fakes.policy.calls()
+    );
+    nothing_offered(world, "a revision not landed as last fetched");
+}
+
+/// 77: a revision the landing answers landed from its copy is published
+/// as in a world alike whose landing answers from itself (14, 59).
+fn a_revision_landed_as_last_fetched(world: &FakeWorld) {
+    passing(world, &world.head);
+    let landing = &world.fakes.landing;
+    ok(
+        tailrace_seams::Landing::landed(landing, &world.main, &world.head),
+        "the landing's first read",
+    );
+    landing.unreachable(UNREACHABLE);
+    let from_copy = world.publish(&world.ask(&world.head));
+    let read: Vec<_> = landing
+        .calls()
+        .into_iter()
+        .skip(1)
+        .map(|c| c.answer.map(|a| a["read"].clone()))
+        .collect();
+    assert!(
+        !read.is_empty()
+            && read
+                .iter()
+                .all(|r| r.as_ref().is_ok_and(|r| r["kept"]["said"] == UNREACHABLE)),
+        "the publish was not answered from the landing's copy: {read:?}"
+    );
+
+    let alike = FakeWorld::new();
+    assert_eq!(alike.head, world.head, "the world alike has another head");
+    passing(&alike, &alike.head);
+    let from_remote = alike.publish(&alike.ask(&alike.head));
+    assert_eq!(
+        answer_json(&from_copy),
+        answer_json(&from_remote),
+        "a revision landed as last fetched was published otherwise than one landed on the remote"
+    );
+    assert!(from_copy.is_ok(), "{from_copy:?}");
+    assert_eq!(
+        world.writes(),
+        alike.writes(),
+        "the store was offered otherwise"
+    );
 }
