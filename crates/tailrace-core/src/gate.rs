@@ -3,8 +3,6 @@
 //! the gate's own or refused whole naming the claim found wanting, and
 //! each channel that follows each publish moved by the gate itself (25
 //! to 30, 94 to 96, 107, 108, rules core.4, core.7, core.14; design D1).
-//! Where the policy names no gate, the gate's own identity, as the policy
-//! names it for provenance, is the one host 108 admits (118).
 //! A publish's answer tells it of the index it offered, and the gate
 //! judges that index or nothing (95, 130). It imports nothing of publish,
 //! and publish nothing of it: what calls one and then the other is the
@@ -222,12 +220,9 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         let claims = seams.store.claims_of(&artifact.digest)?;
         artifacts.push((artifact.digest.clone(), claims));
     }
-    // Whether the policy names a gate, once for the judgment (118).
-    let names_a_gate = names_a_gate(seams, &at_head, &required)?;
     let mut judging = Judging {
         seams,
         gate: &ask.gate,
-        names_a_gate,
         component: &component.name,
         version: &ask.version,
         revision: &revision,
@@ -237,20 +232,10 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     };
 
     // 6: an acceptance the gate's identity made already answers the
-    // version accepted, whatever the head's policy now requires (94); where
-    // the policy names no gate, the gate's identity is read as the policy
-    // names it, letting it claim acceptance for this reading alone (118).
+    // version accepted, whatever the head's policy now requires (94).
     let mut found = None;
     if judging.holds_acceptance() {
-        let named = if names_a_gate {
-            gate_named(seams, &at_head, &required, &ask.gate)?
-        } else {
-            signer_named(seams, &at_head, &required, |s| s.id == ask.gate)?.map(|mut named| {
-                named.kinds.push(ClaimKind::Acceptance);
-                named
-            })
-        };
-        if let Some(named) = named {
+        if let Some(named) = gate_named(seams, &at_head, &required, &ask.gate)? {
             found = judging.already(&named)?;
         }
     }
@@ -356,46 +341,22 @@ fn required_at(seams: &Seams, at_head: &Landed, audience: &Audience) -> Answer<R
 }
 
 /// 94: the signer the policy at the head names by the gate's identity
-/// and lets claim acceptance; none where no policy names one (rule
-/// core.7).
+/// and lets claim acceptance, looked for in what acceptance requires and
+/// then in what each channel the policy lists requires, since a channel
+/// is what asks for the gate's acceptance; none where no policy names
+/// one (131, rule core.7).
 fn gate_named(
     seams: &Seams,
     at_head: &Landed,
     acceptance: &Required,
     gate: &SignerId,
 ) -> Answer<Option<NamedSigner>> {
-    signer_named(seams, at_head, acceptance, |s| {
-        s.id == *gate && s.kinds.contains(&ClaimKind::Acceptance)
-    })
-}
-
-/// 118: whether the policy at the head names a gate: some signer it
-/// requires a claim of, for acceptance or for any channel, may claim
-/// acceptance (design D7).
-fn names_a_gate(seams: &Seams, at_head: &Landed, acceptance: &Required) -> Answer<bool> {
-    Ok(signer_named(seams, at_head, acceptance, |s| {
-        s.kinds.contains(&ClaimKind::Acceptance)
-    })?
-    .is_some())
-}
-
-/// The first signer the policy at the head names that `fits`, looked for
-/// in what acceptance requires and then in what each channel the policy
-/// lists requires, since a channel is what asks for the gate's
-/// acceptance; none where no policy names one (131). A channel with no
-/// policy is passed over, and one that cannot be read is answered.
-fn signer_named(
-    seams: &Seams,
-    at_head: &Landed,
-    acceptance: &Required,
-    fits: impl Fn(&NamedSigner) -> bool,
-) -> Answer<Option<NamedSigner>> {
     let named = |required: &Required| {
         required
             .claims()
             .iter()
             .flat_map(|c| &c.signers)
-            .find(|s| fits(s))
+            .find(|s| s.id == *gate && s.kinds.contains(&ClaimKind::Acceptance))
             .cloned()
     };
     if let Some(found) = named(acceptance) {
@@ -443,8 +404,7 @@ fn named_in(required: &Required) -> Vec<NamedSigner> {
 }
 
 /// 108: whether `wanted` names `signer` as one that may claim both
-/// provenance and acceptance, the one host that offers and accepts; the
-/// other is the gate's own identity where the policy names no gate (118).
+/// provenance and acceptance, the one host that offers and accepts.
 fn offers_and_accepts(wanted: &RequiredClaim, signer: &SignerId) -> bool {
     wanted.signers.iter().any(|s| {
         s.id == *signer
@@ -454,13 +414,11 @@ fn offers_and_accepts(wanted: &RequiredClaim, signer: &SignerId) -> bool {
 }
 
 /// One version of `component` being judged by the gate signing as
-/// `gate`, under a policy that names a gate or none: its revision, its
-/// index, the claims attached to the index, and each artifact in the
-/// index's order with the claims attached to it.
+/// `gate`: its revision, its index, the claims attached to the index,
+/// and each artifact in the index's order with the claims attached to it.
 struct Judging<'a> {
     seams: &'a Seams,
     gate: &'a SignerId,
-    names_a_gate: bool,
     component: &'a ComponentName,
     version: &'a Version,
     revision: &'a Revision,
@@ -568,9 +526,8 @@ impl Judging<'_> {
     /// that has expired (81). A rebuild counts only from a signer other
     /// than the provenance's maker, saying the digests matched (30). A
     /// provenance the gate's own identity made refuses the version unless
-    /// the policy lets that signer claim acceptance too (27, 96, 108) or
-    /// names no gate (118), so every provenance is read before the first
-    /// that counts is answered.
+    /// the policy lets that signer claim acceptance too (27, 96, 108), so
+    /// every provenance is read before the first that counts is answered.
     fn found(
         &self,
         wanted: &RequiredClaim,
@@ -646,7 +603,7 @@ impl Judging<'_> {
                 if wanted.kind != ClaimKind::Provenance {
                     return Ok(Ok((told.envelope, maker)));
                 }
-                if maker == *self.gate && self.names_a_gate && !offers_and_accepts(wanted, &maker) {
+                if maker == *self.gate && !offers_and_accepts(wanted, &maker) {
                     return Ok(Err(WhyWanting::OfferedByGate { signer: maker }));
                 }
                 first.get_or_insert((told.envelope, maker));
