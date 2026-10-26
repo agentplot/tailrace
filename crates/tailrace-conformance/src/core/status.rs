@@ -1,14 +1,27 @@
 //! The status group: what the host published, answered from its own
-//! record with no seam asked and nothing written (58, 60 to 62).
+//! record with no seam asked and nothing written (58, 60 to 62); and,
+//! below the marker, status-on-any-machine's channels read from the
+//! ledger beside it, each channel's answer its own, as last read where
+//! the keeper no longer answers, the same with everything kept deleted,
+//! and the environments not yet read, each asking the landing, the
+//! policy and the keeper alone (31, 36, 58 to 61, 63, 101, 105, 125,
+//! 131).
 
 use std::fs;
 
 use serde_json::Value;
-use tailrace_core::{status, Entry, Published, StatusAsk};
-use tailrace_seams::{Branch, ComponentName, Not, Source};
+use tailrace_core::{
+    overview, rebuild, status, Channel, ChannelStatus, Entry, Overview, OverviewAsk, Published,
+    RebuildAsk, StatusAsk,
+};
+use tailrace_fakes::{Fault, KeeperOp, StoreOp, Times};
+use tailrace_seams::{
+    channel_name, Branch, ChannelName, ComponentName, IndexMeta, Manifest, Name, Not, Read, Seam,
+    Signer, SignerId, Source, Store, Version, Why,
+};
 
 use crate::core::publish::{one, passing, TAG, VERSION};
-use crate::world::FakeWorld;
+use crate::world::{FakeWorld, GATE, PROMOTED, STABLE};
 use crate::{ok, Scenario};
 
 pub const GROUP: &str = "status";
@@ -34,6 +47,36 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             run: nothing_kept_and_an_entry_that_cannot_be_read,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "every channel at its version or empty",
+            plays: None,
+            cites: &[31, 101, 125, 131],
+            run: every_channel_at_its_version_or_empty,
+        },
+        Scenario {
+            name: "S10 a channel read as last read, the store unreachable",
+            plays: Some("S10"),
+            cites: &[36, 60, 61],
+            run: s10_a_channel_read_as_last_read_the_store_unreachable,
+        },
+        Scenario {
+            name: "one channel's answer beside another's",
+            plays: None,
+            cites: &[58, 59, 105],
+            run: one_channels_answer_beside_anothers,
+        },
+        Scenario {
+            name: "S12 everything kept deleted, the channels the same",
+            plays: Some("S12"),
+            cites: &[63],
+            run: s12_everything_kept_deleted_the_channels_the_same,
+        },
+        Scenario {
+            name: "the environments not yet read, a fake target bound",
+            plays: None,
+            cites: &[58, 60],
+            run: the_environments_not_yet_read_a_fake_target_bound,
+        },
     ]
 }
 
@@ -149,4 +192,351 @@ fn nothing_kept_and_an_entry_that_cannot_be_read(world: &FakeWorld) {
         }
         other => panic!("status of an entry that cannot be read answered {other:?}"),
     }
+}
+
+const BETA: &str = "beta";
+
+/// The moment status is asked at in the status group's scenarios.
+const ASKED: u64 = PROMOTED + 3_600;
+
+/// The head published as 0.2.0, and an index of 0.3.0 put and named
+/// `v0.3.0` beside it, so a channel has two versions to move to.
+fn two_versions(world: &FakeWorld) {
+    published(world);
+    let meta = IndexMeta::new(ComponentName::new(COMPONENT), Version::new("0.3.0"), vec![])
+        .expect("an index of no artifact");
+    let index = ok(
+        world.fakes.store.put_artifact(&Manifest::Index(meta)),
+        "the other index's put",
+    )
+    .digest;
+    ok(
+        world.fakes.store.name(&Name::new("v0.3.0"), &index, None),
+        "the other index's name",
+    );
+}
+
+/// The whole of status over the world's binding, asked at [`ASKED`].
+fn asked(world: &FakeWorld) -> Overview {
+    let history = world.history();
+    overview(
+        &world.seams(),
+        &history,
+        &world.kept(),
+        &OverviewAsk {
+            branch: world.main.clone(),
+            component: None,
+            revision: None,
+            at: ASKED,
+        },
+    )
+}
+
+fn channels_of(overview: &Overview) -> &[ChannelStatus] {
+    match &overview.channels {
+        Ok(channels) => &channels.channels,
+        Err(not) => panic!("the channels' part answered {not:?}"),
+    }
+}
+
+/// How many operations the store, the signers, the targets and the
+/// projections have been asked, all told: what status asks none of.
+fn reached(world: &FakeWorld) -> usize {
+    let fakes = &world.fakes;
+    fakes.store.calls().len()
+        + fakes.signer.calls().len()
+        + world.target_calls().len()
+        + fakes
+            .projections
+            .values()
+            .map(|p| p.calls().len())
+            .sum::<usize>()
+}
+
+/// How many appends the keeper has been asked.
+fn appends(world: &FakeWorld) -> usize {
+    world
+        .keeper_calls()
+        .iter()
+        .filter(|op| **op == KeeperOp::Append)
+        .count()
+}
+
+fn every_channel_at_its_version_or_empty(world: &FakeWorld) {
+    two_versions(world);
+    world.declare_channels(&[(BETA, None), (STABLE, Some(BETA))]);
+    let first = world.promote_fake(STABLE, VERSION);
+    let second = world.promote_fake(STABLE, "0.3.0");
+    // A name in the store that says otherwise is not where the channel is
+    // (101).
+    let elsewhere = ok(
+        world.fakes.store.resolve(&Name::new(TAG)),
+        "the published version's name",
+    );
+    ok(
+        world
+            .fakes
+            .store
+            .name(&channel_name(&ChannelName::new(STABLE)), &elsewhere, None),
+        "another name for stable",
+    );
+    let (before, appended, record) = (reached(world), appends(world), world.record());
+
+    let answer = asked(world);
+    assert_eq!(
+        answer.channels.as_ref().map(|c| &c.revision),
+        Ok(&world.head),
+        "the channels were read at another revision than the landed head"
+    );
+    let channels = channels_of(&answer);
+    let names: Vec<&str> = channels.iter().map(|c| c.name().as_str()).collect();
+    assert_eq!(names, [BETA, STABLE], "the policy's channels, in its order");
+    for channel in channels {
+        assert_eq!(
+            channel.declared.component,
+            ComponentName::new(COMPONENT),
+            "{} names another component",
+            channel.name()
+        );
+    }
+    assert_eq!(
+        channels[0].at,
+        Ok(Channel::Empty),
+        "beta was never promoted"
+    );
+    assert_eq!(channels[1].declared.bound_to, Some(ChannelName::new(BETA)));
+    let Ok(Channel::At { head, chain, read }) = &channels[1].at else {
+        panic!("stable answered {:?}", channels[1].at)
+    };
+    assert_eq!(
+        head.to.version.as_str(),
+        "0.3.0",
+        "stable is at its head's version"
+    );
+    let newest_first: Vec<_> = chain.iter().rev().map(|(d, _)| d.clone()).collect();
+    assert_eq!(
+        newest_first,
+        [second, first],
+        "both promotions, newest first"
+    );
+    assert_eq!(
+        chain[1].1.from.as_ref().map(|f| f.version.as_str()),
+        Some(VERSION),
+        "the second promotion moved from the first's version"
+    );
+    assert_eq!(*read, Read::Source);
+    assert_eq!(
+        reached(world),
+        before,
+        "status asked the store, a signer, a target or a projection"
+    );
+    assert_eq!(appends(world), appended, "status appended to the ledger");
+    assert_eq!(world.record(), record, "status wrote to the record");
+}
+
+fn s10_a_channel_read_as_last_read_the_store_unreachable(world: &FakeWorld) {
+    two_versions(world);
+    world.declare_channels(&[(BETA, None), (STABLE, None)]);
+    world.promote_fake(BETA, "0.3.0");
+    world.promote_fake(STABLE, VERSION);
+    let first = asked(world);
+    for op in [
+        StoreOp::PutBytes,
+        StoreOp::PutArtifact,
+        StoreOp::Attach,
+        StoreOp::ClaimsOf,
+        StoreOp::Name,
+        StoreOp::Resolve,
+        StoreOp::Read,
+    ] {
+        world.fakes.store.fault(
+            op,
+            Fault::Unreadable("connection refused".into()),
+            Times::UntilHealed,
+        );
+    }
+    world
+        .fakes
+        .keeper
+        .unreachable("fatal: unable to access the ledger");
+    let store = world.store_calls().len();
+
+    let again = asked(world);
+    let (before, after) = (channels_of(&first), channels_of(&again));
+    assert_eq!(after.len(), before.len());
+    for (was, is) in before.iter().zip(after) {
+        let (
+            Ok(Channel::At {
+                head,
+                chain,
+                read: Read::Source,
+            }),
+            Ok(Channel::At {
+                head: kept_head,
+                chain: kept_chain,
+                read: Read::Kept { at, said },
+            }),
+        ) = (&was.at, &is.at)
+        else {
+            panic!(
+                "{} answered {:?} and then {:?}, not as last read",
+                is.name(),
+                was.at,
+                is.at
+            )
+        };
+        assert_eq!(
+            (kept_head, kept_chain),
+            (head, chain),
+            "{} moved",
+            is.name()
+        );
+        assert!(*at > 0, "{} was last read at no time", is.name());
+        assert_eq!(
+            said, "fatal: unable to access the ledger",
+            "the keeper's words"
+        );
+    }
+    assert!(
+        !matches!(again.published, Err(Not::Refused(_))),
+        "the record's part was refused: {:?}",
+        again.published
+    );
+    assert_eq!(
+        first.published, again.published,
+        "the record answered otherwise"
+    );
+    assert_eq!(world.store_calls().len(), store, "status asked the store");
+}
+
+fn one_channels_answer_beside_anothers(world: &FakeWorld) {
+    two_versions(world);
+    let edge = "edge";
+    world.declare_channels(&[(BETA, None), (edge, None), (STABLE, None)]);
+    world.promote_fake(BETA, VERSION);
+    let held = world.promote_fake(STABLE, VERSION);
+    let gate = tailrace_fakes::FakeSigner::new();
+    gate.hold(&SignerId::new(GATE));
+    let sealed = |version: &str| {
+        let claim = tailrace_seams::Claim {
+            subject: ok(
+                world.fakes.store.resolve(&Name::new(format!("v{version}"))),
+                "the version's name",
+            ),
+            kind: tailrace_seams::ClaimKind::Promotion,
+            revision: world.head.clone(),
+            build: None,
+            body: serde_json::json!({ "channel": edge, "version": version }),
+        };
+        ok(gate.sign(&claim, &SignerId::new(GATE)), "the gate's seal")
+    };
+    let (a, b) = (sealed(VERSION), sealed("0.3.0"));
+    world.fakes.keeper.fork(&ChannelName::new(edge), &a, &b);
+    world.fakes.keeper.fault(
+        KeeperOp::Chain,
+        Fault::Unreadable("connection reset".into()),
+        Times::Once,
+    );
+    let before = reached(world);
+
+    let answer = asked(world);
+    let channels = channels_of(&answer);
+    match &channels[0].at {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Keeper, "{u:?}");
+            assert_eq!(
+                u.said.as_deref(),
+                Some("connection reset"),
+                "the keeper's words were not carried verbatim"
+            );
+        }
+        other => panic!("the first channel asked answered {other:?}, not unreadable"),
+    }
+    match &channels[1].at {
+        Err(Not::Refused(r)) => assert_eq!(
+            r.why,
+            Why::Fork {
+                predecessor: None,
+                claims: vec![a.digest(), b.digest()],
+            },
+            "the fork names other claims"
+        ),
+        other => panic!("the forked channel answered {other:?}, not refused"),
+    }
+    match &channels[2].at {
+        Ok(Channel::At { chain, .. }) => assert_eq!(chain[0].0, held),
+        other => panic!("stable answered {other:?} beside the others"),
+    }
+    assert_eq!(
+        reached(world),
+        before,
+        "status asked the store, a signer, a target or a projection"
+    );
+}
+
+fn s12_everything_kept_deleted_the_channels_the_same(world: &FakeWorld) {
+    two_versions(world);
+    world.declare_channels(&[(BETA, None), (STABLE, Some(BETA))]);
+    world.promote_fake(BETA, VERSION);
+    world.promote_fake(STABLE, VERSION);
+    let before = asked(world);
+    assert!(before.published.is_ok(), "{:?}", before.published);
+
+    world.delete_record();
+    let deleted = asked(world);
+    assert_eq!(
+        deleted.channels, before.channels,
+        "the channels answered otherwise with what tailrace keeps deleted"
+    );
+    assert!(
+        matches!(deleted.published, Err(Not::Absent(_))),
+        "the record's part answered {:?} once deleted",
+        deleted.published
+    );
+
+    let history = world.history();
+    ok(
+        rebuild(
+            &world.seams(),
+            &history,
+            &world.kept(),
+            &RebuildAsk {
+                branch: world.main.clone(),
+                revision: world.head.clone(),
+                store: world.store(),
+            },
+        ),
+        "the rebuild",
+    );
+    let rebuilt = asked(world);
+    assert_eq!(rebuilt.channels, before.channels);
+    assert_eq!(
+        rebuilt.published, before.published,
+        "the record's part answered otherwise once rebuilt"
+    );
+}
+
+fn the_environments_not_yet_read_a_fake_target_bound(world: &FakeWorld) {
+    assert!(
+        world.fakes.targets.contains_key(&world.environment.name),
+        "the world binds no target"
+    );
+    published(world);
+    world.declare_channels(&[(STABLE, None)]);
+    world.promote_fake(STABLE, VERSION);
+    let targets = world.target_calls();
+
+    let answer = asked(world);
+    match &answer.environments {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Target, "{u:?}");
+            assert!(u.what.contains("no target is read"), "{u:?}");
+        }
+        other => panic!("the environments answered {other:?}, not unreadable"),
+    }
+    assert!(
+        matches!(&channels_of(&answer)[0].at, Ok(Channel::At { .. })),
+        "the channels were not shown beside the environments"
+    );
+    assert_eq!(world.target_calls(), targets, "status asked the target");
 }
