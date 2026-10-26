@@ -10,8 +10,8 @@ mod pack;
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    Answer, BuildId, Contents, Layout, Output, Packed, Projection, Rendered, Seam, Serving, Source,
-    Store, Version,
+    no_cache_entries, Answer, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName, Layout,
+    Not, Output, Packed, Projection, Rendered, Seam, Serving, Source, Store, Version, Why,
 };
 
 use super::not_built;
@@ -22,8 +22,7 @@ pub const ECOSYSTEM: &str = "cargo";
 
 /// The Cargo projection of one checkout, reading crates from the store it
 /// is handed and running `cargo`.
-// The store and cargo are read by pack and render, which their own tasks
-// build.
+// The store is read by render, which its own task builds.
 #[allow(dead_code)]
 pub struct CargoProjection {
     root: PathBuf,
@@ -65,9 +64,27 @@ impl CargoProjection {
 }
 
 impl Projection for CargoProjection {
-    fn pack(&self, output: &Output, _: &BuildId, _: Option<&Version>) -> Answer<Packed> {
-        self.package_manifest(output)?;
-        Err(not_built("pack", ECOSYSTEM, &CargoProjection::source()))
+    /// 84, 87: the crate `cargo package` makes of the output's package at
+    /// `version`, named by the package's name and the version, packing
+    /// the same again (design D3).
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+        let source = CargoProjection::source();
+        let Some(version) = version else {
+            return Err(no_cache_entries(&source));
+        };
+        let manifest = self.package_manifest(output)?;
+        let (name, bytes) = self.packed(&manifest, version)?;
+        let meta = ArtifactMeta::new(
+            Ecosystem::new(ECOSYSTEM),
+            EcosystemName::new(name),
+            version.clone(),
+        )
+        .map_err(|bad| Not::refused(&source, Why::Said, Some(bad.to_string())))?;
+        Ok(Packed {
+            bytes,
+            meta: Some(meta),
+            same_again: true,
+        })
     }
 
     fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
