@@ -5,8 +5,11 @@
 //! component's prefix are the record of claimed versions (22); a tag
 //! whose revision the branch landed and whose name the store resolves to
 //! that component's index at that version is one entry, the same file a
-//! publish of it writes. A tag whose name the store does not hold gets no
-//! entry, as a publish that stopped before its index keeps none.
+//! publish of it writes. Where that index names notes, the entry's
+//! commits are those the version rule derives the version from again at
+//! the tag's revision, under the policy file there (21, 134; design D8).
+//! A tag whose name the store does not hold gets no entry, as a publish
+//! that stopped before its index keeps none.
 //!
 //! Every read comes before any write: the landing first, then the policy
 //! file, the tags and the store, and an answer that cannot be read, a
@@ -27,11 +30,18 @@
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Branch, ComponentName, Digest, Held, Manifest, Name, Not, Revision, Seams, Source,
-    Version,
+    Answer, Branch, ComponentName, Digest, Held, IndexMeta, Manifest, Name, Not, Revision, Seams,
+    Source, Version, Why,
 };
 
-use crate::{answer_json, Declared, Entry, History, Kept, Landed, Tag, Written};
+// `derive` by its module's path: imported through the root's globs,
+// which take in this module's own, the compiler cannot settle the
+// attribute of the same name.
+use crate::version::{derive, Derived};
+use crate::{
+    answer_json, Declared, Entry, History, Kept, Landed, Noted, Tag, Written, LOCAL, NOTES,
+    POLICY_FILE,
+};
 
 /// What a rebuild is asked: the landed revision whose policy file
 /// declares the components, the branch that landed it, and the store as
@@ -88,11 +98,12 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
                 .then_with(|| a.version.cmp(&b.version))
         });
         for tag in tags {
-            match seams.landing.landed(&ask.branch, &tag.revision) {
-                Ok(true) => {}
-                Ok(false) | Err(Not::Absent(_)) => continue,
+            let at = match Landed::check(seams.landing.as_ref(), &ask.branch, &tag.revision) {
+                Ok(at) => at,
+                Err(Not::Refused(r)) if matches!(r.why, Why::NotLanded { .. }) => continue,
+                Err(Not::Absent(_)) => continue,
                 Err(not) => return Err(not),
-            }
+            };
             let index = match seams.store.resolve(&Name::new(&tag.name)) {
                 Ok(index) => index,
                 Err(Not::Absent(_)) => continue,
@@ -104,7 +115,16 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
                 Err(not) => return Err(not),
             };
             let version = Version::new(tag.version.to_string());
-            indexed(ask, &component.name, &version, &tag, &index, held)?;
+            let meta = indexed(ask, &component.name, &version, &tag, &index, held)?;
+            let notes = if meta
+                .artifacts()
+                .iter()
+                .any(|a| a.meta.ecosystem().as_str() == NOTES)
+            {
+                Some(noted(history, &at, &component.name, &tag)?)
+            } else {
+                None
+            };
             entries.push(Entry {
                 component: component.name.clone(),
                 version,
@@ -113,6 +133,7 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
                 branch: ask.branch.clone(),
                 index,
                 store: ask.store.clone(),
+                notes,
             });
         }
     }
@@ -129,9 +150,37 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
     })
 }
 
+/// 134, 21: the commits `tag`'s notes were rendered from, derived again
+/// at its landed revision under the policy file there, as the publish of
+/// it derived them (design D8).
+fn noted(history: &History, at: &Landed, name: &ComponentName, tag: &Tag) -> Answer<Noted> {
+    let declared = Declared::read(history, at)?;
+    let component = declared
+        .components
+        .iter()
+        .find(|c| c.name == *name)
+        .ok_or_else(|| {
+            Not::absent(
+                &Source::history(LOCAL),
+                format!("component {name} in {POLICY_FILE} at {}", tag.revision),
+            )
+        })?;
+    match derive(history, at, &declared.rule, component)? {
+        Derived::Versioned(versioned) => Ok(Noted::of(&versioned)),
+        Derived::Unchanged { .. } => Err(Not::unreadable(
+            &Source::history(LOCAL),
+            format!("the commits the notes of {} were rendered from", tag.name),
+            Some(format!(
+                "no version of {name} is derived at {}",
+                tag.revision
+            )),
+        )),
+    }
+}
+
 /// Whether `held`, what the digest `tag`'s name resolves to holds, is
-/// the index of `component` at `version`; unreadable naming the tag and
-/// the digest when it is anything else (rule core.4).
+/// the index of `component` at `version`, answering it; unreadable
+/// naming the tag and the digest when it is anything else (rule core.4).
 fn indexed(
     ask: &RebuildAsk,
     component: &ComponentName,
@@ -139,7 +188,7 @@ fn indexed(
     tag: &Tag,
     index: &Digest,
     held: Held,
-) -> Answer<()> {
+) -> Answer<IndexMeta> {
     let what = format!(
         "the index of {component} {version} that {} names, {index}",
         tag.name
@@ -148,7 +197,7 @@ fn indexed(
         Held::Manifest(Manifest::Index(meta))
             if meta.component() == component && meta.version() == version =>
         {
-            return Ok(())
+            return Ok(meta)
         }
         Held::Manifest(Manifest::Index(meta)) => {
             format!("the index of {} {}", meta.component(), meta.version())

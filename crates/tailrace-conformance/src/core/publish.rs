@@ -1,7 +1,7 @@
-//! The publish group: a landed revision offered as a version, S1 and S2,
-//! and what publish refuses (2 to 20, 102, 110, 111).
+//! The publish group: a landed revision offered as a version with its
+//! notes, S1 and S2, and what publish refuses (2 to 22, 102, 110, 111).
 
-use tailrace_core::{answer_json, publish, Provenance, Publish, Published};
+use tailrace_core::{answer_json, publish, Provenance, Publish, Published, NOTES};
 use tailrace_fakes::{FakeStore, PROFILE};
 use tailrace_seams::{
     Answer, Audience, BuildId, ChannelName, Claim, ClaimKind, Digest, Ecosystem, EcosystemName,
@@ -19,7 +19,7 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         Scenario {
             name: "a landed revision published",
             plays: Some("S1"),
-            cites: &[6, 7, 11, 12, 13, 17, 19, 20, 22, 110],
+            cites: &[6, 7, 11, 12, 13, 17, 19, 20, 21, 22, 110],
             run: a_landed_revision_published,
         },
         Scenario {
@@ -170,6 +170,7 @@ fn a_landed_revision_published(world: &FakeWorld) {
         revision,
         index,
         artifacts,
+        notes,
         ..
     } = &published
     else {
@@ -181,16 +182,21 @@ fn a_landed_revision_published(world: &FakeWorld) {
         "the version is not the one history derives"
     );
     assert_eq!(revision, &world.head);
+    let notes = notes.as_ref().expect("the publish answered no notes");
 
     // 6, 110: the index names the version's artifacts, each at its one
-    // version.
+    // version, the notes last.
     let store = &world.fakes.store;
     let Ok(Held::Manifest(Manifest::Index(meta))) = store.read(index) else {
         panic!("{index} holds no index")
     };
     assert_eq!((meta.component(), meta.version()), (component, version));
     let named: Vec<&Digest> = meta.artifacts().iter().map(|a| &a.digest).collect();
-    let answered: Vec<&Digest> = artifacts.iter().map(|a| &a.digest).collect();
+    let answered: Vec<&Digest> = artifacts
+        .iter()
+        .map(|a| &a.digest)
+        .chain(std::iter::once(&notes.digest))
+        .collect();
     assert_eq!(named, answered, "the index names other artifacts");
     let mut ecosystems: Vec<&str> = meta
         .artifacts()
@@ -201,7 +207,41 @@ fn a_landed_revision_published(world: &FakeWorld) {
         })
         .collect();
     ecosystems.sort_unstable();
-    assert_eq!(ecosystems, [FILE, IMAGE], "two packages, one per ecosystem");
+    assert_eq!(
+        ecosystems,
+        [FILE, IMAGE, NOTES],
+        "two packages, one per ecosystem, and the notes"
+    );
+
+    // 6, 21: the notes, an artifact named by the component, whose one
+    // layer is the notes rendered from the commits since the last release
+    // the version is derived from: the head's feature.
+    let held = &meta.artifacts()[2];
+    assert_eq!(held.meta.name().as_str(), component.as_str());
+    let Ok(Held::Manifest(Manifest::Artifact { layers, .. })) = store.read(&notes.digest) else {
+        panic!("{} holds no artifact", notes.digest)
+    };
+    assert_eq!(
+        layers,
+        std::slice::from_ref(&notes.bytes),
+        "the notes hold other bytes"
+    );
+    let Ok(Held::Bytes(bytes)) = store.read(&notes.bytes) else {
+        panic!("{} holds no bytes", notes.bytes)
+    };
+    assert_eq!(
+        bytes,
+        notes.text.as_bytes(),
+        "the answer's notes are not the bytes the store holds"
+    );
+    let short = &world.head.as_str()[..7];
+    assert_eq!(
+        notes.text,
+        format!(
+            "## {VERSION}\n\nSince v0.1.0.\n\n### Features\n\n- the server answers ({short})\n"
+        ),
+        "the notes are not the commits the version is derived from"
+    );
 
     // 17: every artifact and its claims before the index, the index
     // before the name.
@@ -221,8 +261,8 @@ fn a_landed_revision_published(world: &FakeWorld) {
             .iter()
             .filter(|w| matches!(w, Write::Attach { .. }))
             .count(),
-        2,
-        "the index was put before every artifact's claim: {writes:?}"
+        3,
+        "the index was put before every artifact's claim and the notes': {writes:?}"
     );
     assert!(
         writes[..at]
@@ -275,6 +315,26 @@ fn a_landed_revision_published(world: &FakeWorld) {
         assert_eq!(artifact.claims[0].on, artifact.digest);
         assert_eq!(artifact.claims[0].envelope, envelope.digest());
     }
+
+    // 11, 13: the notes' one provenance, in the host's identity, about the
+    // notes, naming the revision and no build, carrying no verdict.
+    let held = ok(store.claims_of(&notes.digest), "claims-of the notes");
+    assert_eq!(held.len(), 1, "the notes carry {held:?}");
+    assert_eq!(held[0].sole().map(|s| &s.signer), Some(&world.host));
+    let claim = Claim::from_envelope(&held[0]).expect("a claim of tailrace's form");
+    assert_eq!(
+        (claim.kind, &claim.subject, &claim.revision, &claim.build),
+        (ClaimKind::Provenance, &notes.digest, &world.head, &None),
+        "the notes' claim is another"
+    );
+    assert_eq!(Provenance::of(&claim), None, "the notes carry a verdict");
+    assert_eq!(
+        claim.body["notes"]["commits"],
+        serde_json::json!([world.head.as_str()]),
+        "the notes' claim names other commits"
+    );
+    assert_eq!(notes.claims.len(), 1);
+    assert_eq!(notes.claims[0].envelope, held[0].digest());
     for call in world.fakes.signer.calls() {
         assert_eq!(
             call.given["claim"]["kind"], "provenance",
@@ -308,6 +368,12 @@ fn a_landed_revision_published(world: &FakeWorld) {
         assert_eq!(answered["name"], artifact.name.as_str());
         assert_eq!(answered["claims"][0]["on"], artifact.digest.as_str());
     }
+    assert_eq!(value["notes"]["digest"], notes.digest.as_str());
+    assert_eq!(value["notes"]["text"], notes.text.as_str());
+    assert_eq!(
+        value["notes"]["claims"][0]["envelope"],
+        notes.claims[0].envelope.as_str()
+    );
 
     // 6: the host keeps the index and nothing it names.
     for (path, bytes, _) in world.record() {
@@ -317,13 +383,22 @@ fn a_landed_revision_published(world: &FakeWorld) {
             "{} names no index",
             path.display()
         );
-        for artifact in artifacts {
+        for digest in artifacts
+            .iter()
+            .map(|a| &a.digest)
+            .chain([&notes.digest, &notes.bytes])
+        {
             assert!(
-                !text.contains(artifact.digest.as_str()),
+                !text.contains(digest.as_str()),
                 "{} keeps an artifact apart from the index",
                 path.display()
             );
         }
+        assert!(
+            !text.contains("the server answers"),
+            "{} keeps the notes' text",
+            path.display()
+        );
     }
 
     // 20: nothing else moved.
@@ -343,6 +418,15 @@ fn the_same_revision_again(world: &FakeWorld) {
 
     let second = ok(world.publish(&ask), "the second publish");
     assert_eq!(second, first, "the second publish answered otherwise");
+    let notes = |p: &Publish| match p.components[0].1.as_ref() {
+        Ok(Published::Version { notes, .. }) => notes.clone(),
+        other => panic!("not published: {other:?}"),
+    };
+    assert!(
+        notes(&first).is_some(),
+        "the first publish carried no notes"
+    );
+    assert_eq!(notes(&second), notes(&first), "the notes changed");
     assert_eq!(
         &world.writes()[writes..],
         [],
@@ -768,7 +852,11 @@ fn attestations_beside_their_digest(world: &FakeWorld) {
         .filter_map(|c| c.answer.ok())
         .map(|e| serde_json::from_value(e).expect("an envelope"))
         .collect();
-    assert_eq!(signed.len(), 2, "one claim per artifact");
+    assert_eq!(
+        signed.len(),
+        3,
+        "one claim per artifact, the notes among them"
+    );
     for envelope in &signed {
         let subject = Claim::from_envelope(envelope)
             .expect("a claim of tailrace's form")

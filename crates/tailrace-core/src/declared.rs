@@ -8,7 +8,7 @@ use semver::{Prerelease, Version};
 use serde::Deserialize;
 use tailrace_seams::{Answer, Component, ComponentName, Ecosystem, Not, OutputName, Source, Why};
 
-use crate::{History, Landed, LOCAL};
+use crate::{History, Landed, LOCAL, NOTES};
 
 /// The policy file, at the root of the repository's tree.
 pub const POLICY_FILE: &str = ".config/tailrace.toml";
@@ -68,7 +68,9 @@ impl Default for Rule {
 /// named `repository` over the paths `["**"]`, with the rule's prefix,
 /// the top-level `outputs` and the top-level `projections`. A
 /// projections key naming an output its component does not declare is
-/// unreadable naming it.
+/// unreadable naming it. A projections key naming the ecosystem `notes`,
+/// which a version's notes are carried in, is refused naming the
+/// component and the output (design D9).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declared {
     pub rule: Rule,
@@ -130,7 +132,7 @@ impl Declared {
     /// landed revision; unreadable naming the file and the revision, with
     /// the parser's words, when it is not well formed (58, 59); refused
     /// [`Why::DeclaredTwice`] when two components share a name or a
-    /// prefix.
+    /// prefix, and [`Why::Said`] when an output is packed as `notes`.
     pub fn read(history: &History, landed: &Landed) -> Answer<Declared> {
         let what = format!("{POLICY_FILE} at {}", landed.revision());
         let unreadable = |said: String| Not::unreadable(&Source::history(LOCAL), &what, Some(said));
@@ -180,11 +182,24 @@ impl Declared {
                 None => Ok(()),
             }
         };
+        let reserved = |name: &ComponentName, projections: &BTreeMap<OutputName, Ecosystem>| {
+            match projections.iter().find(|(_, e)| e.as_str() == NOTES) {
+                Some((output, _)) => Err(Not::refused(
+                    &Source::history(LOCAL),
+                    Why::Said,
+                    Some(format!(
+                        "component {name}: projections packs {output} as {NOTES}, the ecosystem of a version's notes, which no output is packed in"
+                    )),
+                )),
+                None => Ok(()),
+            }
+        };
 
         if file.component.is_empty() {
             let name = ComponentName::new(REPOSITORY);
             let packed_by = ecosystems(file.projections);
             undeclared(&name, &file.outputs, &packed_by)?;
+            reserved(&name, &packed_by)?;
             return Ok(Declared {
                 components: vec![Component {
                     name: name.clone(),
@@ -202,6 +217,7 @@ impl Declared {
         for raw in file.component {
             let packed_by = ecosystems(raw.projections);
             undeclared(&raw.name, &raw.outputs, &packed_by)?;
+            reserved(&raw.name, &packed_by)?;
             if raw.paths.is_empty() {
                 return Err(unreadable(format!(
                     "component {} declares no paths",

@@ -318,7 +318,10 @@ fn s13_over_a_plain_branch_and_moon() {
         .iter()
         .filter(|t| t.kind == Some(ClaimKind::Provenance))
         .collect();
-    assert_eq!(counted.len(), 1, "{counted:?}");
-    assert!(counted[0].counts, "the host's provenance did not count");
-    assert_eq!(counted[0].made_by, Some(SignerId::new(HOST)), "{counted:?}");
+    // The site's provenance and the notes'.
+    assert_eq!(counted.len(), 2, "{counted:?}");
+    for told in counted {
+        assert!(told.counts, "the host's provenance did not count");
+        assert_eq!(told.made_by, Some(SignerId::new(HOST)), "{told:?}");
+    }
 }

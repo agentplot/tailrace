@@ -7,8 +7,12 @@ mod world;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tailrace_core::{status, Entry, Filter, History, Kept, Published, StatusAsk, Written};
-use tailrace_seams::{Branch, ComponentName, Digest, Not, Outcome, Revision, Source, Version};
+use tailrace_core::{
+    status, Entry, Filter, History, Kept, Noted, Published, Shown, StatusAsk, Written, NOTES,
+};
+use tailrace_seams::{
+    Branch, ComponentName, Digest, Held, Manifest, Not, Outcome, Revision, Source, Version,
+};
 use world::{World, HOST};
 
 fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>, std::time::SystemTime)> {
@@ -42,6 +46,7 @@ fn entry(component: &str, version: &str, revision: &str) -> Entry {
         branch: Branch::new("main"),
         index: Digest::of(version.as_bytes()),
         store: world::store(),
+        notes: None,
     }
 }
 
@@ -51,6 +56,27 @@ fn published(world: &World) -> (Version, Digest) {
         panic!("{answer:?}")
     };
     (version, index)
+}
+
+/// The bytes of the notes the index at `index` names, as the fake store
+/// holds them, as text.
+fn notes_held(world: &World, index: &Digest) -> String {
+    let held = world.fakes.store.contents().held;
+    let Held::Manifest(Manifest::Index(meta)) = &held[index] else {
+        panic!("no index under {index}")
+    };
+    let notes = meta
+        .artifacts()
+        .iter()
+        .find(|a| a.meta.ecosystem().as_str() == NOTES)
+        .expect("the index names notes");
+    let Held::Manifest(Manifest::Artifact { layers, .. }) = &held[&notes.digest] else {
+        panic!("no artifact under {}", notes.digest)
+    };
+    let Held::Bytes(bytes) = &held[&layers[0]] else {
+        panic!("no bytes under {}", layers[0])
+    };
+    String::from_utf8(bytes.clone()).unwrap()
 }
 
 // Requirement: The host keeps which versions it published from which revisions
@@ -71,12 +97,25 @@ fn an_entry_after_a_publish_names_the_version_and_nothing_the_store_holds() {
             branch: Branch::new("main"),
             index: index.clone(),
             store: world::store(),
+            notes: Some(Noted {
+                last: Some("lib-v0.1.0".into()),
+                commits: vec![world.head.clone()],
+            }),
         }]
     );
     let held = files(kept.dir());
     assert_eq!(held.len(), 1);
     assert_eq!(held[0].0, kept.dir().join("lib").join("lib-v0.2.0.json"));
     let text = String::from_utf8(held[0].1.clone()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        json["notes"],
+        serde_json::json!({ "last": "lib-v0.1.0", "commits": [world.head.as_str()] })
+    );
+    assert!(
+        !text.contains("lib grows") && !text.contains("##"),
+        "{text}"
+    );
     let store = world.fakes.store.contents();
     for (digest, _) in store.held.iter().filter(|(d, _)| **d != index) {
         assert!(!text.contains(digest.as_str()), "{text}");
@@ -142,6 +181,40 @@ fn a_second_publish_leaves_the_entry_untouched() {
 }
 
 #[test]
+fn an_entry_written_before_notes_reads_back_naming_none_and_is_answered_held() {
+    let world = World::new();
+    world::published_before_notes(&world);
+    let path = world.kept().dir().join("lib").join("lib-v0.2.0.json");
+    let text = fs::read_to_string(&path).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        json.as_object().unwrap().keys().collect::<Vec<_>>(),
+        [
+            "branch",
+            "component",
+            "index",
+            "revision",
+            "store",
+            "tag",
+            "version"
+        ],
+        "{text}"
+    );
+    let entry: Entry = serde_json::from_str(&text).unwrap();
+    assert_eq!(entry.notes, None);
+
+    let before = files(world.kept().dir());
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(world.kept().write(&entry), Ok(Written::Held));
+    let again = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert!(
+        matches!(&again, Published::Version { notes: None, .. }),
+        "{again:?}"
+    );
+    assert_eq!(files(world.kept().dir()), before);
+}
+
+#[test]
 fn an_entry_held_with_other_content_is_refused_and_left_as_it_is() {
     let world = World::new();
     let kept = world.kept();
@@ -181,8 +254,8 @@ fn two_worktrees_of_one_repository_share_one_record() {
     let (version, _) = published(&world);
     let there = Kept::at(&History::open(&other).unwrap());
     assert_eq!(there, world.kept());
-    let answer = status(&there, &StatusAsk::default()).unwrap();
-    assert_eq!(answer.components[0].versions[0].version, version);
+    let answer = status(&world.history(), &there, &StatusAsk::default()).unwrap();
+    assert_eq!(answer.components[0].versions[0].entry.version, version);
 }
 
 // Requirement: Status answers from the record alone
@@ -197,14 +270,16 @@ fn status_after_a_publish_answers_its_version_and_asks_no_seam() {
         world.fakes.landing.calls().len(),
         world.fakes.build.calls().len(),
     );
-    let answer = status(&world.kept(), &StatusAsk::default()).unwrap();
+    let answer = status(&world.history(), &world.kept(), &StatusAsk::default()).unwrap();
     assert_eq!(answer.components.len(), 1);
     assert_eq!(answer.components[0].component, ComponentName::new("lib"));
-    let kept = &answer.components[0].versions[0];
+    let shown = &answer.components[0].versions[0];
+    let kept = &shown.entry;
     assert_eq!(
         (&kept.version, &kept.revision, &kept.index),
         (&version, &world.head, &index)
     );
+    assert_eq!(shown.notes, Some(Ok(notes_held(&world, &index))));
     assert_eq!(answer.record, world.kept().dir().display().to_string());
     assert_eq!(
         calls,
@@ -217,6 +292,71 @@ fn status_after_a_publish_answers_its_version_and_asks_no_seam() {
     );
 }
 
+// Requirement: Status shows each version's notes from git
+
+#[test]
+fn the_notes_status_shows_are_the_notes_the_version_carries() {
+    let world = World::new();
+    let (_, index) = published(&world);
+    let answer = status(&world.history(), &world.kept(), &StatusAsk::default()).unwrap();
+    let shown = &answer.components[0].versions[0];
+    let held = notes_held(&world, &index);
+    assert_eq!(shown.notes, Some(Ok(held.clone())));
+
+    let json = serde_json::to_value(shown).unwrap();
+    assert_eq!(json["notes"]["answer"], "ok");
+    assert_eq!(json["notes"]["value"], held.as_str());
+    assert_eq!(json["version"], "0.2.0");
+    assert_eq!(json["index"], index.as_str());
+}
+
+#[test]
+fn a_version_with_no_notes_shows_none_and_one_whose_commit_is_gone_shows_them_unreadable() {
+    let world = World::new();
+    let kept = world.kept();
+    kept.write(&entry("lib", "0.1.0", world.start.as_str()))
+        .unwrap();
+    let gone = Revision::new("4f2a9c1e0b7d3a5f6c8e9d0a1b2c3d4e5f6a7b8c");
+    let lost = Entry {
+        notes: Some(Noted {
+            last: Some("web-v0.1.0".into()),
+            commits: vec![world.start.clone(), gone.clone()],
+        }),
+        ..entry("web", "0.2.0", world.start.as_str())
+    };
+    kept.write(&lost).unwrap();
+
+    let answer = status(&world.history(), &kept, &StatusAsk::default()).unwrap();
+    let shown: Vec<&Shown> = answer
+        .components
+        .iter()
+        .flat_map(|c| c.versions.iter())
+        .collect();
+    assert_eq!(shown.len(), 2, "{answer:?}");
+    assert_eq!(shown[0].entry, entry("lib", "0.1.0", world.start.as_str()));
+    assert_eq!(shown[0].notes, None);
+    assert_eq!(shown[1].entry, lost);
+    let Some(Err(Not::Unreadable(u))) = &shown[1].notes else {
+        panic!(
+            "notes rendered from a commit the history lacks: {:?}",
+            shown[1]
+        )
+    };
+    assert!(u.what.contains(gone.as_str()), "{u:?}");
+    assert!(u.said.as_deref().unwrap().contains(gone.as_str()), "{u:?}");
+
+    let json = serde_json::to_value(&answer).unwrap();
+    let versions: Vec<&serde_json::Value> = json["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|c| c["versions"].as_array().unwrap())
+        .collect();
+    assert!(versions[0].get("notes").is_none(), "{json}");
+    assert_eq!(versions[1]["notes"]["answer"], "unreadable", "{json}");
+    assert_eq!(versions[1]["revision"], world.start.as_str());
+}
+
 #[test]
 fn status_writes_nothing() {
     let world = World::new();
@@ -226,8 +366,9 @@ fn status_writes_nothing() {
         .unwrap();
     let before = files(kept.dir());
     let parent = files(kept.dir().parent().unwrap());
-    status(&kept, &StatusAsk::default()).unwrap();
+    status(&world.history(), &kept, &StatusAsk::default()).unwrap();
     status(
+        &world.history(),
         &kept,
         &StatusAsk {
             component: Some(ComponentName::new("web")),
@@ -249,6 +390,7 @@ fn status_for_one_revision_answers_the_versions_it_became_and_no_other() {
         .unwrap();
     published(&world);
     let at_start = status(
+        &world.history(),
         &kept,
         &StatusAsk {
             component: None,
@@ -260,10 +402,11 @@ fn status_for_one_revision_answers_the_versions_it_became_and_no_other() {
         .components
         .iter()
         .flat_map(|c| c.versions.iter())
-        .map(|e| (e.component.as_str(), e.version.as_str()))
+        .map(|s| (s.entry.component.as_str(), s.entry.version.as_str()))
         .collect();
     assert_eq!(versions, [("lib", "0.1.0"), ("web", "0.1.0")]);
     let at_head = status(
+        &world.history(),
         &kept,
         &StatusAsk {
             component: None,
@@ -273,7 +416,10 @@ fn status_for_one_revision_answers_the_versions_it_became_and_no_other() {
     .unwrap();
     assert_eq!(at_head.components.len(), 1);
     assert_eq!(at_head.components[0].versions.len(), 1);
-    assert_eq!(at_head.components[0].versions[0].version.as_str(), "0.2.0");
+    assert_eq!(
+        at_head.components[0].versions[0].entry.version.as_str(),
+        "0.2.0"
+    );
 }
 
 #[test]
@@ -283,11 +429,11 @@ fn versions_are_ordered_by_the_version_rules() {
     for version in ["1.10.0", "1.9.0", "1.10.0-pre.2", "1.2.0"] {
         kept.write(&entry("lib", version, "4f2a9c1")).unwrap();
     }
-    let answer = status(&kept, &StatusAsk::default()).unwrap();
+    let answer = status(&world.history(), &kept, &StatusAsk::default()).unwrap();
     let order: Vec<&str> = answer.components[0]
         .versions
         .iter()
-        .map(|e| e.version.as_str())
+        .map(|s| s.entry.version.as_str())
         .collect();
     assert_eq!(order, ["1.2.0", "1.9.0", "1.10.0-pre.2", "1.10.0"]);
 }
@@ -298,7 +444,7 @@ fn versions_are_ordered_by_the_version_rules() {
 fn nothing_kept_is_absent_naming_the_record() {
     let world = World::new();
     let kept = world.kept();
-    let Err(Not::Absent(a)) = status(&kept, &StatusAsk::default()) else {
+    let Err(Not::Absent(a)) = status(&world.history(), &kept, &StatusAsk::default()) else {
         panic!("a record holding nothing answered")
     };
     assert_eq!(a.source, Source::host(kept.dir()));
@@ -313,7 +459,7 @@ fn an_entry_that_cannot_be_read_is_unreadable_with_the_parsers_words() {
     let bad = kept.dir().join("lib").join("lib-v9.0.0.json");
     let text = "{\"component\": \"lib\", \"version\": 9";
     fs::write(&bad, text).unwrap();
-    let Err(Not::Unreadable(u)) = status(&kept, &StatusAsk::default()) else {
+    let Err(Not::Unreadable(u)) = status(&world.history(), &kept, &StatusAsk::default()) else {
         panic!("an entry that cannot be read was answered")
     };
     assert_eq!(u.what, bad.display().to_string());

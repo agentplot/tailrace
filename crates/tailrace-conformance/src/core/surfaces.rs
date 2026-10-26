@@ -139,6 +139,10 @@ fn the_command_line_answers_what_the_core_answers(surface: &dyn Surface) {
     alike(
         surface,
         &Question::Status,
-        answer_json(&status(&world.kept(), &StatusAsk::default())),
+        answer_json(&status(
+            &world.history(),
+            &world.kept(),
+            &StatusAsk::default(),
+        )),
     );
 }

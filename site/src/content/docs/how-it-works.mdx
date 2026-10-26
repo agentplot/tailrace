@@ -69,11 +69,16 @@ quarantine and goes nowhere.
 has landed, it puts each output's artifact in the store with one
 provenance signed in the publisher's own identity, carrying the landing's
 verdicts for that build exactly as the landing made them, and puts the
-version's index last, once every artifact and its claims are held. It
-accepts nothing and moves no channel; acceptance is the gate's.
-`tailrace verify` reads a version's attestations back and says which
-signer the policy names made each one, and counts none that another
-signer made, for anyone who wants to read the evidence.
+version's index last, once every artifact and its claims are held. Each
+version carries its notes: git-cliff, the version rule's own tool,
+renders the commits the version was derived from, and the notes are an
+artifact the index names, with one provenance of the publisher's.
+`tailrace publish`, `tailrace status` and `tailrace verify` show them
+beside the version. A publish accepts nothing and moves no channel;
+acceptance is the gate's. `tailrace verify` reads a version's
+attestations back and says which signer the policy names made each one,
+and counts none that another signer made, for anyone who wants to read
+the evidence.
 
 ## Channels moved only by proof
 

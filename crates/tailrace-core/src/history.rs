@@ -1,8 +1,8 @@
 //! The repository's history, which the core reads itself through git
 //! (section 9): the files of a landed revision's tree, the commits that
-//! touch a component's paths and the tags that carry its prefix, read
-//! from the local history and the shared one (21 to 23, 65, 123; design
-//! D3, D6).
+//! touch a component's paths, a commit's message, and the tags that carry
+//! its prefix, read from the local history and the shared one (21 to 23,
+//! 65, 123, 134; design D3, D6).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -148,6 +148,20 @@ impl History {
                 message: String::from_utf8_lossy(c.message_bytes()).into_owned(),
             })
             .collect())
+    }
+
+    /// 134: the message of the commit `revision` names, as written, read
+    /// from the local history alone and never a remote; absent naming the
+    /// revision when the history holds no such commit (58; design D7).
+    pub fn message(&self, revision: &Revision) -> Answer<String> {
+        let what = format!("the commit {revision}");
+        let absent = || Not::absent(&local(), what.clone());
+        let oid = Oid::from_str(revision.as_str()).map_err(|_| absent())?;
+        match self.git.find_commit(oid) {
+            Ok(commit) => Ok(String::from_utf8_lossy(commit.message_bytes()).into_owned()),
+            Err(e) if e.code() == ErrorCode::NotFound => Err(absent()),
+            Err(e) => Err(Not::unreadable(&local(), what.clone(), words(&e))),
+        }
     }
 
     /// Every tag carrying `prefix` then a semantic version, in the local

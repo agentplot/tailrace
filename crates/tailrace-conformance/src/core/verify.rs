@@ -277,8 +277,9 @@ fn no_landing_gate(world: &FakeWorld) {
         },
     );
     let requiring_provenance = verified(world);
+    // The two outputs' provenances and the notes'.
     let counted = provenances(&requiring_provenance);
-    assert_eq!(counted.len(), 2, "{counted:?}");
+    assert_eq!(counted.len(), 3, "{counted:?}");
     for told in counted {
         assert!(told.counts, "the host's provenance did not count: {told:?}");
     }
@@ -362,8 +363,9 @@ fn an_expired_signer(world: &FakeWorld) {
     published(world);
     world.fakes.signer.expire(&SignerId::new(HOST));
     let verified = verified(world);
+    // The two outputs' provenances and the notes'.
     let told = provenances(&verified);
-    assert_eq!(told.len(), 2, "{told:?}");
+    assert_eq!(told.len(), 3, "{told:?}");
     for told in told {
         assert_eq!(told.made_by, Some(SignerId::new(HOST)), "{told:?}");
         assert!(told.expired, "an expired signer was not told as expired");

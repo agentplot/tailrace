@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use tailrace_core::{
-    answer_json, rebuild, Ask, Entry, Filter, Published, RebuildAsk, Rebuilt, Written, BOUND,
+    answer_json, rebuild, Ask, Entry, Filter, Noted, Published, RebuildAsk, Rebuilt, Written, BOUND,
 };
 use tailrace_fakes::{Fault, StoreOp, Times};
 use tailrace_seams::{Branch, Digest, Name, Not, Outcome, Report, Revision, Store, Why};
@@ -128,6 +128,20 @@ fn a_published_versions_entry_deleted_and_rebuilt_is_the_file_publish_wrote() {
     rebuilt.sort_by(|a, b| a.component.cmp(&b.component));
     assert_eq!(rebuilt, entries);
     assert_eq!(bytes(kept.dir()), before, "the rebuilt record differs");
+    let noted: Vec<Option<Noted>> = rebuilt.iter().map(|e| e.notes.clone()).collect();
+    assert_eq!(
+        noted,
+        [
+            Some(Noted {
+                last: Some("lib-v0.1.0".into()),
+                commits: vec![world.head.clone()],
+            }),
+            Some(Noted {
+                last: None,
+                commits: vec![world.start.clone()],
+            }),
+        ]
+    );
 
     let json = answer_json(&Ok::<_, Not>(answer));
     assert_eq!(json["answer"], "ok");
@@ -137,6 +151,20 @@ fn a_published_versions_entry_deleted_and_rebuilt_is_the_file_publish_wrote() {
     assert_eq!(entries[0]["value"], "wrote");
     assert_eq!(entries[0]["entry"]["tag"], "lib-v0.2.0");
     assert_eq!(entries[1]["entry"]["tag"], "web-v0.1.0");
+}
+
+#[test]
+fn a_version_published_before_notes_is_rebuilt_naming_no_notes() {
+    let world = World::new();
+    world::published_before_notes(&world);
+    let kept = world.kept();
+    let before = bytes(kept.dir());
+    fs::remove_dir_all(kept.dir()).unwrap();
+
+    let answer = rebuilt(&world);
+    assert_eq!(versions(&answer), [("lib", "0.2.0")]);
+    assert_eq!(answer.entries[0].0.notes, None);
+    assert_eq!(bytes(kept.dir()), before, "the rebuilt record differs");
 }
 
 #[test]

@@ -18,9 +18,10 @@ use tailrace_seams::{
     Verdict, Version, Why,
 };
 
+use crate::notes::{self, Rendered};
 use crate::{
     claim, derive, layout_policy_body, policy_at, touched, Carried, Declared, Derived, Entry,
-    History, Kept, Landed, Provenance, Versioned, BOUND, LOCAL, POLICY_FILE,
+    History, Kept, Landed, Noted, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
 };
 
 /// What a publish is asked: the revision, the branch that landed it, the
@@ -58,6 +59,10 @@ pub enum Published {
         branch: Branch,
         index: Digest,
         artifacts: Vec<PublishedArtifact>,
+        /// The notes the index names; none for an index offered before
+        /// notes were carried (134).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        notes: Option<PublishedNotes>,
         store: Source,
     },
     /// No commit since the component's last release tag touched it, and
@@ -81,6 +86,17 @@ pub struct PublishedArtifact {
     pub output: OutputName,
     pub build: BuildId,
     pub same_again: bool,
+    pub claims: Vec<Attached>,
+}
+
+/// 134: a version's notes as a publish answers them: their artifact's
+/// digest, their bytes' digest, their text, and every claim this host
+/// attached to them (design D5).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PublishedNotes {
+    pub digest: Digest,
+    pub bytes: Digest,
+    pub text: String,
     pub claims: Vec<Attached>,
 }
 
@@ -323,9 +339,17 @@ impl<'a> Run<'a> {
         }
 
         // 7: the name claimed after judging and before any pack (22, rule
-        // core.13).
+        // core.13), then the version's notes rendered from the commits it
+        // is derived from, so nothing of them exists before the claim
+        // (134; design D5).
         let claimed = claim(self.history, self.landed, versioned)?;
         let name = Name::new(&versioned.name);
+        let rendered = notes::render(
+            &component.name,
+            &versioned.version,
+            versioned.last.as_ref().map(|t| t.name.as_str()),
+            &versioned.since,
+        )?;
 
         // 8: a name already held makes this a repeat (18).
         let held = match self.seams.store.resolve(&name) {
@@ -364,22 +388,32 @@ impl<'a> Run<'a> {
             });
         }
 
-        let artifacts = match held {
+        let (artifacts, (notes, answered)) = match held {
             Some((index, artifacts)) => {
-                let artifacts = self.again(&outputs, &packed, &artifacts)?;
-                return self.record(versioned, component, &claimed.revision, index, artifacts);
+                let (artifacts, notes) =
+                    self.again(versioned, &outputs, &packed, &rendered, &artifacts)?;
+                return self.record(
+                    versioned,
+                    component,
+                    &claimed.revision,
+                    index,
+                    artifacts,
+                    notes,
+                );
             }
-            None => self.offer(versioned, &outputs, &packed, &claimed.revision)?,
+            None => self.offer(versioned, &outputs, &packed, &rendered, &claimed.revision)?,
         };
 
-        // 11: the index last, then the version's name moved from nothing
-        // to it (6, 17, 70, rule core.6).
+        // 11: the index last, naming the notes after the outputs'
+        // artifacts, then the version's name moved from nothing to it (6,
+        // 17, 70, 134, rule core.6).
         let meta = IndexMeta::new(
             component.name.clone(),
             versioned.version.clone(),
             artifacts
                 .iter()
                 .map(|(artifact, _)| artifact.clone())
+                .chain(std::iter::once(notes))
                 .collect(),
         )
         .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))?;
@@ -391,7 +425,14 @@ impl<'a> Run<'a> {
         self.layout_policy(&index)?;
         self.seams.store.name(&name, &index, None)?;
         let artifacts = artifacts.into_iter().map(|(_, a)| a).collect();
-        self.record(versioned, component, &claimed.revision, index, artifacts)
+        self.record(
+            versioned,
+            component,
+            &claimed.revision,
+            index,
+            artifacts,
+            Some(answered),
+        )
     }
 
     /// The index a held name names and each artifact it names, with the
@@ -419,16 +460,20 @@ impl<'a> Run<'a> {
         Ok((index.clone(), artifacts))
     }
 
-    /// 18, 87: a repeat publish's packs compared with what the index
-    /// holds, before anything is put; all the same, the artifacts as the
-    /// index names them with the claims this host attached to them, read
-    /// and not signed again (design D6).
+    /// 18, 87: a repeat publish's packs, and the notes rendered again,
+    /// compared with what the index holds, before anything is put; all
+    /// the same, the artifacts as the index names them with the claims
+    /// this host attached to them, read and not signed again (design D5,
+    /// D6). An index naming no notes was offered before notes were
+    /// carried, and none are added (134).
     fn again(
         &self,
+        versioned: &Versioned,
         outputs: &[Judged],
         packed: &[PackedArtifact],
+        rendered: &Rendered,
         held: &[(Artifact, Vec<Digest>)],
-    ) -> Answer<Vec<PublishedArtifact>> {
+    ) -> Answer<(Vec<PublishedArtifact>, Option<PublishedNotes>)> {
         let mut same = Vec::new();
         for (output, packed) in outputs.iter().zip(packed) {
             let now = Digest::of(&packed.bytes);
@@ -454,60 +499,110 @@ impl<'a> Run<'a> {
             }
             same.push((output, packed, artifact.digest.clone(), now));
         }
+
+        let meta = notes_meta(versioned)?;
+        let now = Digest::of(rendered.bytes());
+        let found = held.iter().find(|(a, _)| {
+            a.meta.ecosystem().as_str() == NOTES && a.meta.name().as_str() == meta.name().as_str()
+        });
+        let notes = match found {
+            None => None,
+            Some((artifact, layers)) if *layers == [now.clone()] && artifact.meta == meta => {
+                Some(artifact.digest.clone())
+            }
+            Some((_, layers)) => {
+                return Err(Not::refused(
+                    &Source::history(LOCAL),
+                    Why::Differed {
+                        artifact: meta,
+                        first: layers.first().cloned(),
+                        now,
+                    },
+                    None,
+                ))
+            }
+        };
+
         let mut artifacts = Vec::new();
         for (output, packed, digest, bytes) in same {
-            let mut claims = Vec::new();
-            for envelope in self.seams.store.claims_of(&digest)? {
-                let ours = envelope.sole().is_some_and(|s| s.signer == self.ask.signer)
-                    && tailrace_seams::Claim::from_envelope(&envelope)
-                        .is_some_and(|c| c.kind == ClaimKind::Provenance && c.subject == digest);
-                if ours {
-                    claims.push(Attached {
-                        kind: ClaimKind::Provenance,
-                        signer: self.ask.signer.clone(),
-                        envelope: envelope.digest(),
-                        on: digest.clone(),
-                    });
-                }
-            }
+            let claims = self.ours(&digest)?;
             artifacts.push(answered(output, packed, digest, bytes, claims));
         }
-        Ok(artifacts)
+        let notes = match notes {
+            Some(digest) => Some(PublishedNotes {
+                claims: self.ours(&digest)?,
+                digest,
+                bytes: now,
+                text: rendered.text.clone(),
+            }),
+            None => None,
+        };
+        Ok((artifacts, notes))
+    }
+
+    /// The provenance claims this host attached to `digest`, as the store
+    /// holds them.
+    fn ours(&self, digest: &Digest) -> Answer<Vec<Attached>> {
+        let mut claims = Vec::new();
+        for envelope in self.seams.store.claims_of(digest)? {
+            let ours = envelope.sole().is_some_and(|s| s.signer == self.ask.signer)
+                && Claim::from_envelope(&envelope)
+                    .is_some_and(|c| c.kind == ClaimKind::Provenance && c.subject == *digest);
+            if ours {
+                claims.push(Attached {
+                    kind: ClaimKind::Provenance,
+                    signer: self.ask.signer.clone(),
+                    envelope: envelope.digest(),
+                    on: digest.clone(),
+                });
+            }
+        }
+        Ok(claims)
+    }
+
+    /// `bytes` put and checked against their own digest, then an artifact
+    /// of `meta` naming them as its one layer (2, 66, 67, rule core.5);
+    /// the artifact's digest and the bytes'.
+    fn put(&self, bytes: &[u8], meta: &ArtifactMeta) -> Answer<(Digest, Digest)> {
+        let store = &self.seams.store;
+        let expected = Digest::of(bytes);
+        let answered = store.put_bytes(bytes)?.digest;
+        if answered != expected {
+            return Err(Not::refused(
+                &self.ask.store,
+                Why::OtherBytes { expected, answered },
+                None,
+            ));
+        }
+        let digest = store
+            .put_artifact(&Manifest::Artifact {
+                meta: meta.clone(),
+                layers: vec![expected.clone()],
+            })?
+            .digest;
+        Ok((digest, expected))
     }
 
     /// A first publish's offer: each output's bytes and artifact put,
-    /// checked against their own digest (2, 66, 67), then each artifact's
-    /// provenance signed and attached beside it (8, 11 to 13).
+    /// then the notes', each checked against their own digest (2, 66,
+    /// 67), then each output's provenance signed and attached beside its
+    /// artifact (8, 11 to 13), and the notes' claim last (134; design D3
+    /// to D5).
     fn offer(
         &self,
         versioned: &Versioned,
         outputs: &[Judged],
         packed: &[PackedArtifact],
+        rendered: &Rendered,
         revision: &Revision,
-    ) -> Answer<Vec<(Artifact, PublishedArtifact)>> {
+    ) -> Answer<Offered> {
         let store = &self.seams.store;
         let mut put = Vec::new();
         for packed in packed {
-            let bytes = Digest::of(&packed.bytes);
-            let answered = store.put_bytes(&packed.bytes)?.digest;
-            if answered != bytes {
-                return Err(Not::refused(
-                    &self.ask.store,
-                    Why::OtherBytes {
-                        expected: bytes,
-                        answered,
-                    },
-                    None,
-                ));
-            }
-            let digest = store
-                .put_artifact(&Manifest::Artifact {
-                    meta: packed.meta.clone(),
-                    layers: vec![bytes.clone()],
-                })?
-                .digest;
-            put.push((digest, bytes));
+            put.push(self.put(&packed.bytes, &packed.meta)?);
         }
+        let meta = notes_meta(versioned)?;
+        let (notes, notes_bytes) = self.put(rendered.bytes(), &meta)?;
 
         let signer = self
             .seams
@@ -549,12 +644,46 @@ impl<'a> Run<'a> {
                 answered(output, packed, digest, bytes, claims),
             ));
         }
-        Ok(artifacts)
+
+        // 134: the notes' claim, the publisher's own, naming the revision
+        // and the commits they were rendered from and no build, since no
+        // build made them (rules core.8, core.9; design D4).
+        let claim = Claim {
+            subject: notes.clone(),
+            kind: ClaimKind::Provenance,
+            revision: revision.clone(),
+            build: None,
+            body: notes_body(versioned),
+        };
+        let envelope = signer.sign(&claim, &self.ask.signer)?;
+        let attached = store.attach(&notes, &envelope)?;
+        let claims = vec![Attached {
+            kind: ClaimKind::Provenance,
+            signer: self.ask.signer.clone(),
+            envelope: attached.digest,
+            on: notes.clone(),
+        }];
+        Ok((
+            artifacts,
+            (
+                Artifact {
+                    digest: notes.clone(),
+                    meta,
+                },
+                PublishedNotes {
+                    digest: notes,
+                    bytes: notes_bytes,
+                    text: rendered.text.clone(),
+                    claims,
+                },
+            ),
+        ))
     }
 
     /// 12: the host's record of the version, its last write, then the
     /// answer, each naming the store as the host's bindings name it (61,
-    /// 118, design D9).
+    /// 118, design D9); the record names the notes' commits exactly when
+    /// the index names notes (134; design D6).
     fn record(
         &self,
         versioned: &Versioned,
@@ -562,6 +691,7 @@ impl<'a> Run<'a> {
         revision: &Revision,
         index: Digest,
         artifacts: Vec<PublishedArtifact>,
+        notes: Option<PublishedNotes>,
     ) -> Answer<Published> {
         let store = self.ask.store.clone();
         self.kept.write(&Entry {
@@ -572,6 +702,7 @@ impl<'a> Run<'a> {
             branch: self.ask.branch.clone(),
             index: index.clone(),
             store: store.clone(),
+            notes: notes.as_ref().map(|_| Noted::of(versioned)),
         })?;
         Ok(Published::Version {
             component: component.name.clone(),
@@ -581,9 +712,42 @@ impl<'a> Run<'a> {
             branch: self.ask.branch.clone(),
             index,
             artifacts,
+            notes,
             store,
         })
     }
+}
+
+/// What a first publish offered: each output's artifact with its
+/// answer, and the notes' artifact with theirs.
+type Offered = (
+    Vec<(Artifact, PublishedArtifact)>,
+    (Artifact, PublishedNotes),
+);
+
+/// The notes' metadata: the ecosystem reserved for them, named by the
+/// component, at the version (design D3).
+fn notes_meta(versioned: &Versioned) -> Answer<ArtifactMeta> {
+    ArtifactMeta::new(
+        Ecosystem::new(NOTES),
+        EcosystemName::new(versioned.component.as_str()),
+        versioned.version.clone(),
+    )
+    .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))
+}
+
+/// The body of the notes' claim: the component, the version, the last
+/// release tag and every commit the notes were rendered from, by its full
+/// revision (design D4).
+fn notes_body(versioned: &Versioned) -> Value {
+    json!({
+        "notes": {
+            "component": versioned.component,
+            "version": versioned.version,
+            "last": versioned.last.as_ref().map(|t| &t.name),
+            "commits": versioned.since.iter().map(|c| &c.revision).collect::<Vec<_>>(),
+        }
+    })
 }
 
 fn answered(

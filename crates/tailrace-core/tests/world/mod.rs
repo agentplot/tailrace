@@ -7,12 +7,13 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use serde_json::json;
-use tailrace_core::{publish, Ask, History, Kept, Publish, Published, POLICY_FILE};
-use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, Fakes};
+use tailrace_core::{publish, Ask, Entry, History, Kept, Publish, Published, NOTES, POLICY_FILE};
+use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
     Answer, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem,
-    Envelope, Layout, Outcome, Output, OutputName, Packed, Pinned, Projection, Rendered, Report,
-    Revision, Seam, Serving, SignerId, Source, Verdict, Version,
+    Envelope, Held, IndexMeta, Layout, Manifest, Name, Outcome, Output, OutputName, Packed, Pinned,
+    Projection, Put, Rendered, Report, Revision, Seam, Serving, SignerId, Source, Store, Verdict,
+    Version,
 };
 
 use crate::common::{Fixture, Repo};
@@ -246,4 +247,64 @@ pub fn by_host(envelopes: &[Envelope]) -> Vec<&Envelope> {
         .iter()
         .filter(|e| e.signatures.iter().any(|s| s.signer.as_str() == HOST))
         .collect()
+}
+
+/// A store that puts as its fake does, but an index with no artifact of
+/// the notes' ecosystem, as a publisher before notes put it.
+pub struct BeforeNotes(pub FakeStore);
+
+impl Store for BeforeNotes {
+    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
+        self.0.put_bytes(bytes)
+    }
+    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
+        let Manifest::Index(meta) = manifest else {
+            return self.0.put_artifact(manifest);
+        };
+        let outputs = meta
+            .artifacts()
+            .iter()
+            .filter(|a| a.meta.ecosystem().as_str() != NOTES)
+            .cloned()
+            .collect();
+        let index = IndexMeta::new(meta.component().clone(), meta.version().clone(), outputs);
+        self.0.put_artifact(&Manifest::Index(index.unwrap()))
+    }
+    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
+        self.0.attach(subject, attestation)
+    }
+    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
+        self.0.claims_of(digest)
+    }
+    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        self.0.name(name, to, expected)
+    }
+    fn resolve(&self, name: &Name) -> Answer<Digest> {
+        self.0.resolve(name)
+    }
+    fn read(&self, digest: &Digest) -> Answer<Held> {
+        self.0.read(digest)
+    }
+}
+
+/// `world`'s `lib` published by a publisher before notes: its index names
+/// the two outputs' artifacts and no notes, and its entry in the host's
+/// record names no notes' commits, as that publisher wrote it.
+pub fn published_before_notes(world: &World) -> Published {
+    let history = world.history();
+    let mut seams = world.fakes.seams();
+    seams.store = Box::new(BeforeNotes(world.fakes.store.clone()));
+    let kept = Kept::at(&history);
+    let publish = publish(&seams, &history, &kept, &world.ask_for("lib")).unwrap();
+    let first = publish.components.into_iter().next().unwrap().1.unwrap();
+    let Published::Version { tag, .. } = &first else {
+        panic!("{first:?}")
+    };
+    let path = kept.dir().join("lib").join(format!("{tag}.json"));
+    let mut entry: Entry = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    entry.notes = None;
+    let mut text = serde_json::to_string_pretty(&entry).unwrap();
+    text.push('\n');
+    std::fs::write(&path, text).unwrap();
+    first
 }

@@ -624,6 +624,7 @@ fn a_push_offers_and_keeps_nothing(world: &FakeWorld) {
             branch: Branch::new(crate::fixture::MAIN),
             index: Digest::of(b"an index published before"),
             store: world.store(),
+            notes: None,
         }),
         "the record's entry",
     );
