@@ -1,0 +1,34 @@
+# Tasks
+
+## 1. The build answers what a checkout left
+
+- [ ] 1.1 Add `Left` and `Build::left(&self, at: &str)` to `crates/tailrace-seams/src/build.rs`, exported from its `lib.rs`, with a JSON round-trip test beside `Report`'s (design D1); verify with `moon run tailrace-seams:test`.
+- [ ] 1.2 Add `BuildOp::Left` and `left_in(at, lefts)` to the fake build, answering an empty list for an unscripted checkout and recording each asking with its checkout (seam-fakes spec); verify with the fakes' tests under `moon run tailrace-fakes:test`.
+- [ ] 1.3 Implement `left` for moon in `profiles/build/moon/`: the run report's tasks with a hash whose archive the outputs directory holds, grouped by hash, with declared files present, an empty list with no run report, running no task (moon-build spec, design D1); verify with unit tests in the moon profile for a passed and a failed task, a task with no outputs, no run report and a removed archive, under `moon run tailrace:test`.
+- [ ] 1.4 Add the build group's scenarios "what an ensure left" and "a checkout that ran nothing" below its marker, citing 74 and 75, with `BuildRig::ran_in` and `fresh_checkout` for the fake rig and the moon rig (conformance-suite spec, design D1); verify with `moon run tailrace-conformance:test` and the moon rig's run in `moon run tailrace:tools`.
+
+## 2. A check job pushes before the landing
+
+- [ ] 2.1 Add `LeftAsk`, `PushedLeft` and `push_left` to `crates/tailrace-core/src/push.rs`, writing each passing build identity once through `cache::write`, asking no landing, verdict, policy, signer or record (cache-push spec, design D2); verify with `crates/tailrace-core/tests/push.rs` cases for passing and failed identities, an empty run, an entry held already, an absent archive and nothing offered or kept, under `moon run tailrace-core:test`.
+- [ ] 2.2 Add the cache group's scenarios for the push before a landing below the push's, citing 52, 53 and 54: pushed in one world and published in a second whose build holds nothing, and a failed identity not written (conformance-suite spec); verify with `moon run tailrace-conformance:test` and the coverage check, `moon run tailrace-conformance:coverage`.
+- [ ] 2.3 Add `For::Left` and `NoLanding` to `crates/tailrace/src/bindings/mod.rs`, so a file naming only `[store]` binds for `push --left` and every other command still answers absent naming `[landing]` (host-bindings spec, design D3); verify with cases in `bindings/tests.rs` under `moon run tailrace:test`.
+- [ ] 2.4 Add `--left` to `commands/push.rs`, conflicting with the revision and `--branch`, rendering text and JSON as `tailrace push` does, and wire it in `lib.rs` and `main.rs` (command-line spec, design D2); verify with `crates/tailrace/tests/cli.rs` cases for the JSON over the fakes and a revision beside `--left` exiting 2, under `moon run tailrace:test`.
+- [ ] 2.5 Say on the surfaces page that the command line has `push --left`, and on the builds page's moon row that `left` reads moon's run report and outputs directory; verify with `moon run site:build`.
+
+## 3. Publish takes the outputs from the store
+
+- [ ] 3.1 Add `Why::NotInStore { output, build }` to `crates/tailrace-seams/src/answer.rs` with its JSON round-trip test, and its line in `crates/tailrace/src/render.rs` (seam-contracts spec, design D4); verify with `moon run tailrace-seams:test` and a render test under `moon run tailrace:test`.
+- [ ] 3.2 Make `cache::fill` callable from publish, add `Ask::tree`, and in `publish.rs` fill the passing verdicts' entries from the store once before the first ensure, then refuse an output whose build identity was not filled after judge and before claim, skipping both where the landing carries no verdicts (publishing spec, design D4); verify with `crates/tailrace-core/tests/publish.rs` cases for entries rendered before ensure, a failed verdict's identity not resolved, one entry missing refusing with no tag and no put, and a plain branch building as before, under `moon run tailrace-core:test`.
+- [ ] 3.3 Seed the store with each passing build identity's entry wherever the core's tests and the conformance world publish a landing with verdicts (`World::pushed`), and add the publish group's scenarios below its marker, S1 read from the cache and an entry missing, citing 15, 16, 52 and 58 (conformance-suite spec, design D6); verify with `moon run tailrace-core:test` and `moon run tailrace-conformance:test` passing with every earlier scenario unchanged in what it asserts.
+- [ ] 3.4 Set `Ask::tree` in `commands/publish.rs` from the checkout's working tree, absent naming it where there is none before the core is asked (command-line spec); verify with a `cli.rs` case in a bare repository under `moon run tailrace:test`.
+- [ ] 3.5 Link the revision's checkout's `.moon/cache/outputs` to the bound repository's outputs directory at every ensure, making the target where missing and replacing a real directory (moon-build spec, design D5); verify with a moon profile test that an archive placed in the bound checkout is replayed with no task run, under `moon run tailrace:tools`.
+- [ ] 3.6 Make the tools-layer tests that publish a sluice landing push it first (`laptop.rs`, `landings_end_to_end.rs`, and `cli.rs` where it publishes one), and add `crates/tailrace/tests/pool_run_publish.rs` to the `tools` task in `crates/tailrace/moon.yml`: moon run in a clone, `push --left` with only a layout bound, the clone deleted, sluice landing, and a fresh clone's publish offering the first clone's bytes with each task `cached`, plus one archive deleted refusing naming its output (cache-push spec, design D6); verify with `moon run tailrace:tools`.
+- [ ] 3.7 Say in how it works that a publish reads the landing's outputs from the store's cache and refuses one it lacks, and on the builds page that the revision's checkout shares the outputs directory; verify with `moon run site:build`.
+
+## 4. The self-hosting guide
+
+- [ ] 4.1 Add "After a landing" to `site/src/content/docs/guides/self-hosting.mdx` as design D7 lays out: which of the two ways applies; the driver's push then publish; the pool run job's step with its cache-only key; the IAM policy on the cache repository alone; `.github/workflows/tailrace.yml` to copy; the publisher's signer in the policy file; and that the cache's own repository and sluice's room for the step come from their units. Verify with `moon run site:build`, and by running each YAML block of the page through actionlint as `treefmt` runs it on a copy, since the page's blocks are no workflow the gate checks.
+
+## 5. Integration
+
+- [ ] 5.1 Run `moon run ':#check-fast'` and `moon run ':#check-tools'` in the devenv shell and verify both pass, the coverage check reporting no clause newly uncited.
