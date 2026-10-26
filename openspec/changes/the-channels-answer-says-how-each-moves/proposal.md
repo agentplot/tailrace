@@ -17,7 +17,8 @@ repository's file, makes the channels an environment's words call for,
 and gives a channel its component wherever it travels, so the gate and
 the ledger learn every channel from that one answer and the core knows
 no channel's name (131, 125, 37, 83, 95, C.10, C.13, C.14, as amended
-at agentplot/blueprints 67f95da, 85bbf54, 7749369 and e18ba89).
+at agentplot/blueprints 67f95da, 85bbf54, 7749369, e18ba89, 061bfa8
+and b64d367).
 
 ## What Changes
 
@@ -63,7 +64,9 @@ at agentplot/blueprints 67f95da, 85bbf54, 7749369 and e18ba89).
   gate's acceptance and is promoted by the signers the policy lets claim
   acceptance, the gate (32), whatever a line under it names: a line
   never widens who signs (C.10). So `tailrace promote` moves a given
-  channel when the host holds the gate's signer.
+  channel when the host holds the gate's signer. The gate and
+  `tailrace promote` read a channel's promoters from the policy's answer
+  alone and decide nothing of who they are (core.7).
 - **`tailrace policy` shows the table in force.** At the governed
   branch's landed head it prints the acceptance and layout policies and
   every channel the channels answer lists, the givens beside the
@@ -76,7 +79,17 @@ at agentplot/blueprints 67f95da, 85bbf54, 7749369 and e18ba89).
   follow (C.10, 41, 97). These are listed like a channel declared by
   hand and promoted by the gate's signer as a given channel is; a line
   under one adds claims and never changes how it moves, since the
-  environment's words say that.
+  environment's words say that. An environment's table holds C.10's
+  words and no others: `channel`, `policy` (`auto` or `manual`, `auto`
+  unless written), `after` and `target`; any other key is unreadable
+  naming the table and the key, since a target's own settings sit in the
+  target's table and nowhere else (C.10).
+- **An empty channel read as last read says when.** Where the ledger
+  does not answer and the host's copy holds a channel with no promotion,
+  the chain is answered empty with the time the copy was read and the
+  ledger's words, like any other chain as last read, never as an
+  absence that has lost its time (60, as amended at agentplot/blueprints
+  b64d367).
 - **The core knows three ways a channel moves and no channel's name.**
   Nothing outside the fragment names `beta`, `stable`, `alpha` or `lts`
   as a channel the code treats apart: the core, the seams and the fakes
@@ -122,6 +135,15 @@ Out of scope, and what each waits on:
 - The other givens C.10 lists, the one component and the version rule,
   moving into the fragment: the core's reading of `[[component]]` and
   `[version]` stays as it is.
+- A file that names no signer that may claim acceptance: C.10 has the
+  policy answer the host's own signer as the gate, for acceptance and
+  for the given channels' promotion, so `beta` moves on a laptop with
+  nothing written. That default lives in the policy file profile and is
+  `a-host-with-no-bindings-file-is-bound-to-the-defaults`'s, after this
+  unit lands; until then such a file names no gate, as on main, and its
+  given channels name no promoter. Neither the gate nor `tailrace
+  promote` changes for it, since both read the gate and the promoters
+  from the answer.
 - `tailrace status` rendering how each channel moves:
   `status-on-any-machine`, which reads the channels answer and the
   chains as this unit leaves them.
@@ -147,42 +169,48 @@ Out of scope, and what each waits on:
   moves; a channel's identity is its component and name across the
   policy, keeper and target seams; the channel's store name carries its
   component where components are declared; the policy for a channel
-  names who may sign its promotion.
+  names who may sign its promotion; an empty chain read as last read
+  says when.
 - `seam-fakes`: the fake policy scripts how a channel moves, its
   component carried by the channel itself; the fake keeper keeps a
-  chain per component and channel.
+  chain per component and channel, and an empty chain as last read.
 - `conformance-suite`: the policy's group holds how each channel moves
   and what a profile gives with nothing declared, naming no channel a
-  profile gives; the keeper's group holds two components' chains apart.
+  profile gives; the keeper's group holds two components' chains apart,
+  and an empty chain as last read saying when.
 - `policy-file`: the file's channel form per component, the givens'
   fragment laid beneath it as the table in force, its environments'
-  channels, and `on_each_publish`, `bound_to` and `on` read by the
-  profile.
+  channels and the four keys an environment's table holds, and
+  `on_each_publish`, `bound_to` and `on` read by the profile.
 - `command-line`: `tailrace policy` shows the policy in force at the
   branch's landed head.
 - `acceptance`: the gate learns the channels that follow each publish,
   and the signer it accepts as, through the policy seam alone.
 - `promotion`: a promotion finds its channel through the channels
   answer and is signed by whom the channel's policy names, the gate's
-  signer for a given or made channel.
+  signer for a given or made channel; an empty channel read as last
+  read says when.
 - `git-ref-ledger`: the ref carries the component where components are
-  declared.
+  declared; an empty channel read from the copy says when.
 - `store-ledger`: the walk starts from the channel's name with its
-  component.
+  component; an empty channel read from the kept copy says when.
 
 ## Impact
 
 - `crates/tailrace-seams/src/policy.rs` (how a channel moves, the
   promotion's signers), a channel identity type in `artifact.rs`,
-  `keeper.rs` (append, chain and the store name by identity),
+  `keeper.rs` (append, chain and the store name by identity, an empty
+  chain as last read),
   `answer.rs` (the promotion refusals naming the identity),
   `target.rs`, `lib.rs`.
 - `crates/tailrace-fakes/src/policy.rs`, `keeper.rs`, `target.rs`.
-- `crates/tailrace-core/src/gate.rs` (no file parsing), `ledger.rs`,
-  `repair.rs`, `verify.rs`, `landed.rs`, and their tests.
+- `crates/tailrace-core/src/gate.rs` (no file parsing), `ledger.rs`
+  (an empty channel carrying how it was read), `repair.rs`, `verify.rs`,
+  `landed.rs`, `status.rs`, and their tests.
 - `crates/tailrace/src/profiles/policy/file/` (the resolution, and the
   fragment `givens.toml` beside it), `profiles/ledger/`,
-  `commands/promote.rs`, `commands/verify.rs`, a new
+  `commands/promote.rs`, `commands/verify.rs`, `commands/status.rs`
+  (an empty channel as last read), a new
   `commands/policy.rs` with its binding in `bindings/mod.rs`, `lib.rs`
   and `main.rs`, and their tests.
 - `crates/tailrace-core/src/in_force.rs`, the policy in force asked of
