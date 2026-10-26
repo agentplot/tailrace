@@ -467,6 +467,33 @@ fn the_remote_gone_after_a_read_answers_the_chain_as_last_fetched_with_gits_word
 }
 
 #[test]
+fn an_empty_channel_read_then_the_remote_gone_answers_no_claims_as_last_fetched() {
+    let rig = GitRefRig::new();
+    let beta = ChannelId::new(None, ChannelName::new("beta"));
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert!(matches!(rig.keeper.chain(&beta), Err(Not::Absent(_))));
+    let words = rig.unreachable();
+    match rig.keeper.chain(&beta) {
+        Ok(Chain {
+            claims,
+            read: Read::Kept { at, said },
+        }) => {
+            assert_eq!(claims, []);
+            assert!(at >= before, "kept at {at}, read at {before}");
+            assert_eq!(said, words);
+        }
+        other => panic!("an empty channel with the remote gone answered {other:?}"),
+    }
+    match rig.keeper.append(&beta, &promotion(&beta, 1), None) {
+        Err(Not::Unreadable(u)) => assert_eq!(u.said.as_deref(), Some(words.as_str())),
+        other => panic!("an append with the remote gone answered {other:?}"),
+    }
+}
+
+#[test]
 fn the_profile_names_no_credential_and_writes_only_its_own_refs() {
     let rig = GitRefRig::new();
     let first = promotion(&stable(), 1);
