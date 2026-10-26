@@ -949,12 +949,14 @@ fn a_separated_gates_acceptance_names_the_offerer() {
 
 // Requirement: The channels that follow each publish come from the policy seam
 
-/// What `following` answers for `component` at the world's head.
+/// What `following` answers for a release of `component` at the
+/// world's head.
 fn followers(world: &World, component: &str) -> Answer<Vec<ChannelId>> {
     following(
         &world.fakes.seams(),
         &common::landed(&world.head),
         &ComponentName::new(component),
+        &Version::new("0.2.0"),
     )
 }
 
@@ -1081,6 +1083,92 @@ fn an_unreadable_channels_answer_accepts_nothing() {
     };
     assert_eq!(u.said.as_deref(), Some("the policy cannot be read"));
     assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+// Requirement: A prerelease moves only the channels that take prereleases
+
+/// `channel` of `lib` follows each publish, taking prereleases where
+/// `prereleases`, requires the gate's acceptance, is promoted by the gate
+/// and may be asked for by `approvers` alone where any are named (95, 32,
+/// C.10).
+fn follows_publishes(world: &World, name: &str, prereleases: bool, approvers: &[&str]) {
+    let channel = of("lib", name);
+    world.fakes.policy.require(
+        Audience::Channel(channel.clone()),
+        Required::Channel {
+            claims: vec![from_gate()],
+            bound_to: None,
+            promoted_by: vec![the_gate()],
+            approvers: approvers.iter().map(|a| named(a, &[], &[])).collect(),
+        },
+    );
+    world.fakes.policy.follows(&channel, prereleases);
+}
+
+/// Each channel a judgment that accepted answered, with whether it moved.
+fn moved_of(answer: Answer<Judged>) -> Vec<(ChannelId, bool)> {
+    let Ok(Judged::Accepted {
+        already: false,
+        channels,
+        ..
+    }) = answer
+    else {
+        panic!("the version was not accepted: {answer:?}")
+    };
+    channels
+        .into_iter()
+        .map(|(c, m)| (c, matches!(m, Ok(Moved::Promoted { .. }))))
+        .collect()
+}
+
+#[test]
+fn a_prerelease_moves_the_channel_that_takes_prereleases_alone() {
+    let world = World::with_head(world::POLICY, "chore: lib tidies");
+    let (world, published) = published_in(world, acceptance());
+    let (version, index) = version_of(&published);
+    assert!(version.as_str().contains('-'), "{version} is no prerelease");
+    follows_publishes(&world, "alpha", true, &[]);
+    follows_publishes(&world, "beta", false, &[]);
+
+    let moved = moved_of(judged(&world, &ask(version.as_str(), ToldBy::Publish)));
+    assert_eq!(moved, [(of("lib", "alpha"), true)]);
+    assert_eq!(named_at(&world, &of("lib", "alpha")).as_ref(), Some(index));
+    assert_eq!(named_at(&world, &beta()), None);
+    assert!(matches!(
+        world.fakes.keeper.chain(&beta()),
+        Err(Not::Absent(_))
+    ));
+}
+
+#[test]
+fn a_release_moves_both_the_channel_that_takes_prereleases_and_the_one_that_does_not() {
+    let (world, published) = published_under(acceptance());
+    let (version, index) = version_of(&published);
+    assert_eq!(version.as_str(), "0.2.0");
+    follows_publishes(&world, "alpha", true, &[]);
+    follows_publishes(&world, "beta", false, &[]);
+
+    let moved = moved_of(judged(&world, &ask("0.2.0", ToldBy::Publish)));
+    assert_eq!(moved, [(of("lib", "alpha"), true), (beta(), true)]);
+    assert_eq!(named_at(&world, &of("lib", "alpha")).as_ref(), Some(index));
+    assert_eq!(named_at(&world, &beta()).as_ref(), Some(index));
+}
+
+// Requirement: The gate's move on a publish is no asking
+
+#[test]
+fn a_following_channel_whose_approvers_exclude_the_gate_is_moved_by_a_publish_the_gate_asking() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    follows_publishes(&world, "beta", false, &["ci"]);
+
+    let moved = beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish)));
+    assert!(matches!(moved, Ok(Moved::Promoted { .. })), "{moved:?}");
+    assert_eq!(named_at(&world, &beta()).as_ref(), Some(index));
+    let chain = world.fakes.keeper.chain(&beta()).unwrap().claims;
+    let claim = Claim::from_envelope(&chain[0]).unwrap();
+    let made = Promotion::of(&claim).expect("the gate's promotion is not of the one body");
+    assert_eq!(made.asked_by, SignerId::new(GATE));
 }
 
 // Requirement: Nothing accepted is un-accepted
@@ -1292,7 +1380,7 @@ fn promotion_to(world: &World, subject: &Digest) -> Envelope {
         to: at("0.1.0", subject),
         from: None,
         predecessor: None,
-        asked_by: SignerId::new("each publish"),
+        asked_by: SignerId::new(GATE),
         policy: Satisfied {
             revision: world.head.clone(),
             claims: vec![],
@@ -1372,7 +1460,7 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
             to: at("0.2.0", index),
             from: None,
             predecessor: None,
-            asked_by: SignerId::new("each publish"),
+            asked_by: SignerId::new(GATE),
             policy: Satisfied {
                 revision: world.head.clone(),
                 claims: made.policy.claims.clone(),

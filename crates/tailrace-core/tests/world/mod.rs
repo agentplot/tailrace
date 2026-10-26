@@ -81,6 +81,13 @@ impl World {
     }
 
     pub fn with_policy(policy: &str) -> World {
+        World::with_head(policy, "feat: lib grows")
+    }
+
+    /// The world under `policy` whose head is one commit on `lib` with
+    /// the message `subject`: a feature makes `lib` a release, and a chore
+    /// a prerelease (21).
+    pub fn with_head(policy: &str, subject: &str) -> World {
         let fixture = Fixture::new();
         let shared = fixture.bare("shared.git");
         let repo = fixture.clone_of(&shared, "repo");
@@ -88,7 +95,7 @@ impl World {
         let start = repo.touch("feat: start", &["crates/lib", "site"]);
         repo.tag("lib-v0.1.0", &start);
         repo.tag("web-v0.1.0", &start);
-        let head = repo.touch("feat: lib grows", &["crates/lib"]);
+        let head = repo.touch(subject, &["crates/lib"]);
         repo.git(&["push", "-q", "origin", "main", "lib-v0.1.0", "web-v0.1.0"]);
 
         let main = Branch::new("main");
