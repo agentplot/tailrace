@@ -79,13 +79,15 @@ pub enum Command {
 
 /// What a host binds (92): the seams; the store as the host's bindings
 /// name it, which the host's record keeps of each version (61, 118);
-/// and the identity of the party running tailrace, which signs what it
+/// the identity of the party running tailrace, which signs what it
 /// observed (11, 79), `None` on a host that binds no key and only
-/// verifies.
+/// verifies; and what tells the host's gate of a version a publish
+/// offered, which only publish reads (130).
 pub struct Binding {
     pub seams: Seams,
     pub store: Source,
     pub signer: Option<SignerId>,
+    pub gate: bindings::Teller,
 }
 
 /// `cli` asked in the repository at `at`, over the binding the host's

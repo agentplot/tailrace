@@ -4,9 +4,11 @@
 
 use clap::Parser;
 use serde_json::Value;
+use tailrace::bindings::Teller;
 use tailrace::{run, Binding, Cli};
 use tailrace_conformance::core::surfaces::{self, Question, Surface};
 use tailrace_conformance::world::FakeWorld;
+use tailrace_seams::{Not, Seam, Source};
 
 /// The command line over a world of fakes, asked as a program asks it.
 struct CommandLine {
@@ -39,6 +41,10 @@ impl Surface for CommandLine {
             seams: self.world.seams(),
             store: self.world.store(),
             signer: Some(self.world.host.clone()),
+            gate: Teller::Nothing(Not::absent(
+                &Source::new(Seam::Host, "bindings"),
+                "binding of what tells the gate, [gate] in the bindings file",
+            )),
         };
         let mut out = Vec::new();
         run(&cli, &Ok(binding), &self.world.repo().path, &mut out);
