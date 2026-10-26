@@ -1068,12 +1068,18 @@ fn committed(host: &Host, origin: Option<&Path>) -> (PathBuf, tailrace_seams::Re
 }
 
 #[test]
-fn the_landings_remote_is_the_files_or_origin_with_no_file_or_none() {
+fn the_landings_remote_is_the_files_or_the_given_one_with_the_file_there_or_not() {
     let host = Host::new();
     let gone = host.dir.path().join("gone.git");
     let (repo, _) = committed(&host, Some(&gone));
     let remote = || landing_remote(&host.file(), Some(&host.home()), &repo);
     assert_eq!(remote(), Ok(Some("origin".to_string())));
+    host.write("[store]\nlayout = \"/layout\"\n");
+    assert_eq!(
+        remote(),
+        Ok(Some("origin".to_string())),
+        "a file naming no [landing]"
+    );
     host.write("[landing]\nbranch = { remote = \"upstream\" }\n");
     assert_eq!(remote(), Ok(Some("upstream".to_string())));
     host.write("[landing]\nsluice = {}\n");
@@ -1081,6 +1087,24 @@ fn the_landings_remote_is_the_files_or_origin_with_no_file_or_none() {
     host.write("[landing]\nqueue = {}\n");
     assert!(matches!(remote(), Err(Not::Unreadable(_))));
 
+    let one = Host::new();
+    let (repo, _) = with_remotes(&one, &["github"]);
+    assert_eq!(
+        landing_remote(&one.file(), Some(&one.home()), &repo),
+        Ok(Some("github".to_string()))
+    );
+    let several = Host::new();
+    let (repo, _) = with_remotes(&several, &["github", "gitlab"]);
+    match landing_remote(&several.file(), Some(&several.home()), &repo) {
+        Err(Not::Unreadable(u)) => {
+            let said = u.said.unwrap_or_default();
+            assert!(
+                said.contains("github, gitlab") && said.contains("[landing]"),
+                "{said}"
+            );
+        }
+        other => panic!("several remotes answered {other:?}"),
+    }
     let bare = Host::new();
     let (repo, _) = committed(&bare, None);
     assert_eq!(
@@ -1416,6 +1440,7 @@ fn no_ledger_table_keeps_the_chain_on_origin_and_a_second_clone_with_no_file_rea
             clone.to_str().unwrap(),
         ],
     );
+    let before = files(other.dir.path());
     let chain = other
         .bind(&clone, For::Status)
         .unwrap_or_else(|not| panic!("status bound nothing: {not}"))
@@ -1425,6 +1450,16 @@ fn no_ledger_table_keeps_the_chain_on_origin_and_a_second_clone_with_no_file_rea
         .unwrap_or_else(|not| panic!("the second clone read no chain: {not}"));
     assert_eq!(chain.claims, vec![promotion]);
     assert_eq!(chain.read, tailrace_seams::Read::Source);
+    // Status wrote nothing but the refs it fetched into the clone's copy.
+    let git = clone.join(".git");
+    let outside = |all: Vec<(PathBuf, Vec<u8>)>| -> Vec<(PathBuf, Vec<u8>)> {
+        all.into_iter()
+            .filter(|(p, _)| !p.starts_with(&git))
+            .collect()
+    };
+    assert_eq!(outside(files(other.dir.path())), outside(before));
+    assert!(ref_at(&clone, "refs/tailrace/fetched/stable").is_some());
+    assert!(!other.data().exists() && !other.file().exists());
 }
 
 #[test]
@@ -1496,8 +1531,8 @@ fn given_signer(host: &Host) -> SignerId {
 /// That `binding`, in `repo`, a repository with no remote and no file
 /// of the landing's own, at `head`, is bound to the given profiles: the
 /// given layout, a plain branch reading the repository's own refs, the
-/// git ref with no remote, both signers, and the host's own publish
-/// telling its gate.
+/// git ref in the repository's own refs, the landing having no remote,
+/// both signers, and the host's own publish telling its gate.
 fn assert_given(host: &Host, binding: &Binding, repo: &Path, head: &tailrace_seams::Revision) {
     assert_eq!(binding.store, given_store(host));
     assert_eq!(
@@ -1613,12 +1648,25 @@ fn a_registry_alone_binds_it_and_the_given_rest() {
 }
 
 #[test]
-fn the_given_layout_is_under_the_data_directory_or_the_home() {
+fn the_given_layout_and_key_are_under_the_data_directory_or_the_home() {
     let host = Host::new();
     let (repo, _) = committed(&host, None);
     let binding = host.bind(&repo, For::Publish).unwrap();
     assert_eq!(binding.store, given_store(&host));
     assert!(host.given_layout().join("oci-layout").is_file());
+    let key = host.data().join(profiles::signer::HOST_KEY);
+    assert!(!key.exists(), "binding made {}", key.display());
+    let signer = binding.signer.clone().expect("a publish signs");
+    binding.seams.signers[0].sign(&claim(), &signer).unwrap();
+    assert!(
+        key.is_file(),
+        "the first sign made no key at {}",
+        key.display()
+    );
+    assert!(
+        !host.home().join(".local/share").exists(),
+        "the home's data directory was written"
+    );
     let home = host.home().join(".local/share/tailrace/layout");
     for data in [None, Some(OsStr::new(""))] {
         let binding = bind(&host.file(), Some(&host.home()), data, &repo, For::Publish).unwrap();
