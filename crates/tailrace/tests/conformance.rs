@@ -6,6 +6,7 @@
 
 use clap::Parser;
 use serde_json::Value;
+use tailrace::bindings::Teller;
 use tailrace::commands::serve::host::{name, Host};
 use tailrace::commands::serve::respond_with;
 use tailrace::{run, Binding, Cli};
@@ -13,6 +14,7 @@ use tailrace_conformance::core::surfaces::{self, Question, Surface};
 use tailrace_conformance::not_applicable;
 use tailrace_conformance::world::FakeWorld;
 use tailrace_core::RepositoryName;
+use tailrace_seams::{Not, Seam, Source};
 use tempfile::TempDir;
 
 /// The world's fakes as the one binding a surface is handed.
@@ -21,6 +23,10 @@ fn binding(world: &FakeWorld) -> Binding {
         seams: world.seams(),
         store: world.store(),
         signer: Some(world.host.clone()),
+        gate: Teller::Nothing(Not::absent(
+            &Source::new(Seam::Host, "bindings"),
+            "binding of what tells the gate, [gate] in the bindings file",
+        )),
     }
 }
 

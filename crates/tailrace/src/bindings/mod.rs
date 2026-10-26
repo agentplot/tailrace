@@ -20,13 +20,21 @@
 //! [signing]
 //! signer = "laptop"
 //! key = "~/.config/tailrace/signing"
+//!
+//! [gate]
+//! publish = {}                     # this host's publish tells its own gate
+//! # job = "the release job a push to main wakes"   # a gate told elsewhere
 //! ```
 //!
 //! `[store]`, `[landing]` and `[ledger]` each name their profile by their
 //! one key, so a later profile is a new key and not a new shape;
 //! `[signing]` names the host's signer and its key file, in the
 //! landing's own `[signing]` shape, or a key in a key service by the
-//! key's own name. A path is absolute or begins `~/`, expanded against
+//! key's own name. `[gate]` names what tells the host's gate of a
+//! version a publish offered, by one key in the same form (130, C.16):
+//! `publish`, this host's own publish step, or `job`, the operator's
+//! words for a job outside tailrace, which tailrace carries and never
+//! runs. A path is absolute or begins `~/`, expanded against
 //! the home directory. This module reads each table generically and names no
 //! tool or service (rule core.1): the key of each seam's table is
 //! matched to its profile by the `bind` function of that seam's profile
@@ -43,7 +51,9 @@
 //! policy file picks among (92, C.10); the moon cache reads cache entries
 //! through a second binding of `[store]`, opened and never made (design
 //! D6). The ledger is bound where the file names `[ledger]`, and answers
-//! absent naming it where it does not; no target is bound yet. Only a
+//! absent naming it where it does not; what tells the gate is bound for
+//! every command, and is absent naming `[gate]` where the file names
+//! none; no target is bound yet. Only a
 //! publish and a push make the layout they name, and a push needs no
 //! `[signing]`, since it signs nothing (60, rule core.32); a promote
 //! needs `[signing]` and `[ledger]` and makes nothing (C.13, C.14).
@@ -90,15 +100,58 @@ pub fn path(xdg_config_home: Option<&OsStr>, home: Option<&Path>) -> Option<Path
     Some(config.join(FILE))
 }
 
-/// What the bindings file names: the store's table, the landing's and
-/// the ledger's, where it holds them, and the host's signer.
+/// What the bindings file names: the store's table, the landing's, the
+/// ledger's and the gate's, where it holds them, and the host's signer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bindings {
     pub file: PathBuf,
     pub store: Option<Table>,
     pub landing: Option<Table>,
     pub ledger: Option<Table>,
+    pub gate: Option<Table>,
     pub signing: Option<Signing>,
+}
+
+/// What tells this host's gate of a version a publish offered (95, 130,
+/// C.16): the one key of `[gate]`, or nothing where the file holds none.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Teller {
+    /// `[gate] publish = {}`: this host's publish tells its own gate.
+    Publish,
+    /// `[gate] job = "<words>"`: a job outside tailrace tells it, the
+    /// words as written; tailrace runs nothing for it.
+    Job(String),
+    /// No `[gate]`: absent naming the table in the file.
+    Nothing(Not),
+}
+
+impl Teller {
+    /// The teller `gate`, the `[gate]` of the file at `file`, names:
+    /// `publish` an empty table, `job` a string with words in it, and
+    /// any other key unreadable naming the two the table reads.
+    pub fn of(file: &Path, gate: Option<&Table>) -> Answer<Teller> {
+        let Some(table) = gate else {
+            return Ok(Teller::Nothing(Not::absent(
+                &source(file),
+                format!(
+                    "binding of what tells the gate, [gate] in {}",
+                    file.display()
+                ),
+            )));
+        };
+        match table.key() {
+            "publish" => match table.value().as_table() {
+                Some(options) if options.is_empty() => Ok(Teller::Publish),
+                _ => Err(table.unreadable("[gate] publish takes no options: publish = {}")),
+            },
+            "job" => match table.value().as_str() {
+                Some(words) if !words.trim().is_empty() => Ok(Teller::Job(words.to_string())),
+                Some(_) => Err(table.unreadable("[gate] job holds no words naming the job")),
+                None => Err(table.unreadable("[gate] job is not the job's words in a string")),
+            },
+            _ => Err(table.unknown(&["publish", "job"])),
+        }
+    }
 }
 
 /// A seam's table: the one key naming its profile, and that key's value.
@@ -239,6 +292,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
         store: None,
         landing: None,
         ledger: None,
+        gate: None,
         signing: None,
     };
     for (name, value) in tables {
@@ -248,8 +302,8 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
                 file,
                 Some(&name),
                 format!(
-                    "{name} is not a table; the file binds [store], [landing], [ledger] \
-                     and [signing]"
+                    "{name} is not a table; the file binds [store], [landing], [ledger], \
+                     [signing] and [gate]"
                 ),
             ));
         };
@@ -257,6 +311,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
             "store" => bindings.store = Some(seam(file, home, "store", table)?),
             "landing" => bindings.landing = Some(seam(file, home, "landing", table)?),
             "ledger" => bindings.ledger = Some(seam(file, home, "ledger", table)?),
+            "gate" => bindings.gate = Some(seam(file, home, "gate", table)?),
             "signing" => bindings.signing = Some(profiles::signer::read(file, home, table)?),
             "build" | "projections" => {
                 return Err(unreadable(
@@ -274,7 +329,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
                     Some(&at),
                     format!(
                         "{at} is no table of the bindings file, which binds [store], \
-                         [landing], [ledger] and [signing]"
+                         [landing], [ledger], [signing] and [gate]"
                     ),
                 ))
             }
@@ -283,7 +338,8 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
     Ok(bindings)
 }
 
-/// A seam's table, `[store]`, `[landing]` or `[ledger]`, by its one key.
+/// A table naming its profile by one key: a seam's, `[store]`,
+/// `[landing]` or `[ledger]`, or `[gate]`, naming what tells the gate.
 fn seam(
     file: &Path,
     home: Option<&Path>,
@@ -426,7 +482,8 @@ fn unbound_store() -> Source {
 /// a promote on one whose file names no `[ledger]`, is absent naming it
 /// before anything is read; a file naming no `[store]` or no `[landing]`
 /// is absent naming the table. Every table is read before the
-/// layout is made, so a file that cannot bind leaves nothing behind. The
+/// layout is made, `[gate]` among them, so a file that cannot bind
+/// leaves nothing behind. The
 /// store is named as the file names it, its key and what it names, a
 /// path with `~/` expanded, so the record names a directory a reader
 /// finds whoever's home it was written under (61, 118; design D9). The
@@ -438,6 +495,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         return status(file, home, repository);
     }
     let bindings = read(file, home)?;
+    let gate = Teller::of(file, bindings.gate.as_ref())?;
     let signing = bindings.signing.as_ref();
     if matches!(command, For::Publish | For::Promote) && signing.is_none() {
         return Err(unsigned());
@@ -478,6 +536,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         },
         store: named,
         signer: signing.map(Signing::signer),
+        gate,
     })
 }
 
@@ -496,6 +555,7 @@ fn status(file: &Path, home: Option<&Path>, repository: &Path) -> Answer<Binding
         .landing
         .as_ref()
         .ok_or_else(|| missing(file, "landing"))?;
+    let gate = Teller::of(file, bindings.gate.as_ref())?;
     let landing = profiles::landing::bind(landing, repository)?;
     let named = match &bindings.store {
         Some(store) => profiles::store::named(store)?,
@@ -537,6 +597,7 @@ fn status(file: &Path, home: Option<&Path>, repository: &Path) -> Answer<Binding
         },
         store: named,
         signer: None,
+        gate,
     })
 }
 
@@ -565,6 +626,7 @@ fn unfiled(file: &Path, repository: &Path) -> Answer<Binding> {
         },
         store: unbound_store(),
         signer: None,
+        gate: Teller::of(file, None)?,
     })
 }
 

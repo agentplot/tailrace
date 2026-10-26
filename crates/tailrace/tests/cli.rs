@@ -7,6 +7,7 @@ use std::process::Command;
 
 use clap::Parser;
 use serde_json::Value;
+use tailrace::bindings::Teller;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{
     answer_json, promote, publish, push, sync, write, Ask, Entry, History, Kept, PromoteAsk,
@@ -15,7 +16,7 @@ use tailrace_core::{
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
     Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
-    Ecosystem, NamedSigner, Outcome, Output, OutputName, Promotion, Report, Required,
+    Ecosystem, NamedSigner, Not, Outcome, Output, OutputName, Promotion, Report, Required,
     RequiredClaim, Revision, Seam, Signer, SignerId, Source, Verdict, Version,
 };
 use tempfile::TempDir;
@@ -97,6 +98,10 @@ impl Host {
             seams: self.fakes.seams(),
             store: store(),
             signer: Some(SignerId::new("host")),
+            gate: Teller::Nothing(Not::absent(
+                &Source::new(Seam::Host, "bindings"),
+                "binding of what tells the gate, [gate] in the bindings file",
+            )),
         }
     }
 

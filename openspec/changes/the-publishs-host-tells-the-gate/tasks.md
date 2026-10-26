@@ -11,8 +11,8 @@ is `moon run ':#check-fast'`, the tools layer `moon run ':#check-tools'`.
 
 ## 2. The bindings file names what tells the gate
 
-- [ ] 2.1 In `crates/tailrace/src/bindings/mod.rs`, read `[gate]` through the generic one-key reader into `Teller` (`Publish`, `Job(String)`, `Nothing(Not)`, design D1, D4): `publish` takes only an empty table, `job` a string with words in it, any other key is `Table::unknown` naming `publish` and `job`. Add `gate: Teller` to `Binding` in `crates/tailrace/src/lib.rs`, set by `bind` for every command, and update the module doc's example and table list. Verify: `cargo test -p tailrace bindings` passes with a test for each scenario of the host-bindings spec, including that a broken `[gate]` leaves the layout unmade.
-- [ ] 2.2 Set `gate: Teller::Nothing(…)` in the test bindings of `crates/tailrace/tests/cli.rs` and `crates/tailrace/tests/conformance.rs`. Verify: `moon run cli:test` passes.
+- [x] 2.1 In `crates/tailrace/src/bindings/mod.rs`, read `[gate]` through the generic one-key reader into `Teller` (`Publish`, `Job(String)`, `Nothing(Not)`, design D1, D4): `publish` takes only an empty table, `job` a string with words in it, any other key is `Table::unknown` naming `publish` and `job`. Add `gate: Teller` to `Binding` in `crates/tailrace/src/lib.rs`, set by `bind` for every command, and update the module doc's example and table list. Verify: `cargo test -p tailrace bindings` passes with a test for each scenario of the host-bindings spec, including that a broken `[gate]` leaves the layout unmade.
+- [x] 2.2 Set `gate: Teller::Nothing(…)` in the test bindings of `crates/tailrace/tests/cli.rs` and `crates/tailrace/tests/conformance.rs`. Verify: `moon run cli:test` passes.
 
 ## 3. Publish tells the host's gate
 
