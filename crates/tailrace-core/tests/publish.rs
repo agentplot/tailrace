@@ -14,9 +14,9 @@ use tailrace_fakes::{
     BuildOp, FakeProjection, FakeStore, Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times,
 };
 use tailrace_seams::{
-    Answer, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest,
-    EcosystemName, Envelope, EnvironmentName, Held, Layout, Manifest, Name, NamedSigner, Not,
-    Outcome, Output, Packed, Pinned, Projection, Put, Rendered, Required, RequiredClaim, Seam,
+    Answer, Artifact, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest,
+    EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Layout, Manifest, Name, NamedSigner,
+    Not, Outcome, Output, Packed, Pinned, Projection, Put, Rendered, Required, RequiredClaim, Seam,
     Serving, SignerId, Source, Store, Version, Why,
 };
 use world::{build_of, build_ops, by_host, eco, output, version_of, Watched, World, HOST, LANDING};
@@ -1277,4 +1277,172 @@ fn no_identity_at_hand_puts_no_index_naming_the_notes() {
     assert!(indexes(&world).is_empty());
     assert!(world.fakes.store.contents().attached.is_empty());
     assert!(world.fakes.store.contents().names.is_empty());
+}
+
+// Requirement: Nothing writes a version's notes after it is offered
+
+#[test]
+fn the_same_notes_again_put_and_attach_nothing() {
+    let world = World::new();
+    let first = world.publish_one(&world.ask_for("lib")).unwrap();
+    let notes = notes_artifact(&world, &first);
+    let store = world.fakes.store.contents();
+    let calls_before = world.fakes.store.calls().len();
+
+    let second = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert_eq!(version_of(&second), version_of(&first));
+    let again = world.fakes.store.calls()[calls_before..].to_vec();
+    assert!(
+        again
+            .iter()
+            .all(|c| matches!(c.op, StoreOp::Resolve | StoreOp::Read | StoreOp::ClaimsOf)),
+        "{again:?}"
+    );
+    assert_eq!(world.fakes.store.contents(), store);
+    assert_eq!(notes_artifact(&world, &second), notes);
+}
+
+#[test]
+fn notes_that_render_differently_are_refused_naming_both_digests() {
+    let world = World::new();
+    let first = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&first);
+    let notes = notes_artifact(&world, &first);
+
+    // The index's notes replaced by an artifact of other bytes, and the
+    // name moved to the index naming it.
+    let store = &world.fakes.store;
+    let Held::Manifest(Manifest::Index(meta)) = store.read(index).unwrap() else {
+        panic!("no index under {index}")
+    };
+    let other = store
+        .put_bytes(b"## 0.2.0\n\nOther notes.\n")
+        .unwrap()
+        .digest;
+    let replaced = store
+        .put_artifact(&Manifest::Artifact {
+            meta: notes.meta.clone(),
+            layers: vec![other.clone()],
+        })
+        .unwrap()
+        .digest;
+    let artifacts = meta
+        .artifacts()
+        .iter()
+        .map(|a| match a.digest == notes.digest {
+            true => Artifact {
+                digest: replaced.clone(),
+                meta: a.meta.clone(),
+            },
+            false => a.clone(),
+        })
+        .collect();
+    let elsewhere = IndexMeta::new(meta.component().clone(), meta.version().clone(), artifacts);
+    let moved = store
+        .put_artifact(&Manifest::Index(elsewhere.unwrap()))
+        .unwrap()
+        .digest;
+    let name = Name::new("lib-v0.2.0");
+    store.name(&name, &moved, Some(index)).unwrap();
+    let calls_before = store.calls().len();
+
+    let r = refused(world.publish_one(&world.ask_for("lib")));
+    assert_eq!(
+        r.why,
+        Why::Differed {
+            artifact: notes.meta.clone(),
+            first: Some(other),
+            now: Digest::of(lib_notes(&world).as_bytes()),
+        }
+    );
+    let again = store.calls()[calls_before..].to_vec();
+    assert!(
+        again
+            .iter()
+            .all(|c| matches!(c.op, StoreOp::Resolve | StoreOp::Read)),
+        "{again:?}"
+    );
+    assert_eq!(store.resolve(&name).unwrap(), moved);
+}
+
+/// A store that puts as its fake does, but an index with no artifact of
+/// the notes' ecosystem, as a publisher before notes put it.
+struct BeforeNotes(FakeStore);
+
+impl Store for BeforeNotes {
+    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
+        self.0.put_bytes(bytes)
+    }
+    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
+        let Manifest::Index(meta) = manifest else {
+            return self.0.put_artifact(manifest);
+        };
+        let outputs = meta
+            .artifacts()
+            .iter()
+            .filter(|a| a.meta.ecosystem() != &eco(NOTES))
+            .cloned()
+            .collect();
+        let index = IndexMeta::new(meta.component().clone(), meta.version().clone(), outputs);
+        self.0.put_artifact(&Manifest::Index(index.unwrap()))
+    }
+    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
+        self.0.attach(subject, attestation)
+    }
+    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
+        self.0.claims_of(digest)
+    }
+    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        self.0.name(name, to, expected)
+    }
+    fn resolve(&self, name: &Name) -> Answer<Digest> {
+        self.0.resolve(name)
+    }
+    fn read(&self, digest: &Digest) -> Answer<Held> {
+        self.0.read(digest)
+    }
+}
+
+/// `world`'s `lib` published by a publisher before notes: its index names
+/// the two outputs' artifacts and no notes.
+fn published_before_notes(world: &World) -> Published {
+    let history = world.history();
+    let mut seams = world.fakes.seams();
+    seams.store = Box::new(BeforeNotes(world.fakes.store.clone()));
+    let publish = publish(&seams, &history, &Kept::at(&history), &world.ask_for("lib")).unwrap();
+    let first = publish.components.into_iter().next().unwrap().1.unwrap();
+    let ecosystems: Vec<String> = indexes(world)
+        .iter()
+        .flat_map(|i| i.artifacts().iter().map(|a| a.meta.ecosystem().to_string()))
+        .collect();
+    assert_eq!(ecosystems, ["eco-a", "eco-b"]);
+    first
+}
+
+#[test]
+fn a_version_published_before_notes_is_published_again_with_none_added() {
+    let world = World::new();
+    let first = published_before_notes(&world);
+    let store = world.fakes.store.contents();
+    let record = std::fs::read_dir(world.kept().dir().join("lib"))
+        .unwrap()
+        .map(|e| std::fs::read(e.unwrap().path()).unwrap())
+        .collect::<Vec<_>>();
+    let calls_before = world.fakes.store.calls().len();
+
+    let second = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert_eq!(version_of(&second), version_of(&first));
+    let again = world.fakes.store.calls()[calls_before..].to_vec();
+    assert!(
+        again
+            .iter()
+            .all(|c| matches!(c.op, StoreOp::Resolve | StoreOp::Read | StoreOp::ClaimsOf)),
+        "{again:?}"
+    );
+    assert_eq!(world.fakes.store.contents(), store);
+    let now = std::fs::read_dir(world.kept().dir().join("lib"))
+        .unwrap()
+        .map(|e| std::fs::read(e.unwrap().path()).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(now, record);
 }

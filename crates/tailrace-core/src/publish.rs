@@ -375,7 +375,8 @@ impl<'a> Run<'a> {
 
         let (artifacts, (notes, _)) = match held {
             Some((index, artifacts)) => {
-                let artifacts = self.again(&outputs, &packed, &artifacts)?;
+                let (artifacts, _notes) =
+                    self.again(versioned, &outputs, &packed, &rendered, &artifacts)?;
                 return self.record(versioned, component, &claimed.revision, index, artifacts);
             }
             None => self.offer(versioned, &outputs, &packed, &rendered, &claimed.revision)?,
@@ -430,16 +431,20 @@ impl<'a> Run<'a> {
         Ok((index.clone(), artifacts))
     }
 
-    /// 18, 87: a repeat publish's packs compared with what the index
-    /// holds, before anything is put; all the same, the artifacts as the
-    /// index names them with the claims this host attached to them, read
-    /// and not signed again (design D6).
+    /// 18, 87: a repeat publish's packs, and the notes rendered again,
+    /// compared with what the index holds, before anything is put; all
+    /// the same, the artifacts as the index names them with the claims
+    /// this host attached to them, read and not signed again (design D5,
+    /// D6). An index naming no notes was offered before notes were
+    /// carried, and none are added (134).
     fn again(
         &self,
+        versioned: &Versioned,
         outputs: &[Judged],
         packed: &[PackedArtifact],
+        rendered: &Rendered,
         held: &[(Artifact, Vec<Digest>)],
-    ) -> Answer<Vec<PublishedArtifact>> {
+    ) -> Answer<(Vec<PublishedArtifact>, Option<(Digest, Vec<Attached>)>)> {
         let mut same = Vec::new();
         for (output, packed) in outputs.iter().zip(packed) {
             let now = Digest::of(&packed.bytes);
@@ -465,25 +470,63 @@ impl<'a> Run<'a> {
             }
             same.push((output, packed, artifact.digest.clone(), now));
         }
+
+        let meta = notes_meta(versioned)?;
+        let now = Digest::of(rendered.bytes());
+        let found = held.iter().find(|(a, _)| {
+            a.meta.ecosystem().as_str() == NOTES && a.meta.name().as_str() == meta.name().as_str()
+        });
+        let notes = match found {
+            None => None,
+            Some((artifact, layers)) if *layers == [now.clone()] && artifact.meta == meta => {
+                Some(artifact.digest.clone())
+            }
+            Some((_, layers)) => {
+                return Err(Not::refused(
+                    &Source::history(LOCAL),
+                    Why::Differed {
+                        artifact: meta,
+                        first: layers.first().cloned(),
+                        now,
+                    },
+                    None,
+                ))
+            }
+        };
+
         let mut artifacts = Vec::new();
         for (output, packed, digest, bytes) in same {
-            let mut claims = Vec::new();
-            for envelope in self.seams.store.claims_of(&digest)? {
-                let ours = envelope.sole().is_some_and(|s| s.signer == self.ask.signer)
-                    && tailrace_seams::Claim::from_envelope(&envelope)
-                        .is_some_and(|c| c.kind == ClaimKind::Provenance && c.subject == digest);
-                if ours {
-                    claims.push(Attached {
-                        kind: ClaimKind::Provenance,
-                        signer: self.ask.signer.clone(),
-                        envelope: envelope.digest(),
-                        on: digest.clone(),
-                    });
-                }
-            }
+            let claims = self.ours(&digest)?;
             artifacts.push(answered(output, packed, digest, bytes, claims));
         }
-        Ok(artifacts)
+        let notes = match notes {
+            Some(digest) => {
+                let claims = self.ours(&digest)?;
+                Some((digest, claims))
+            }
+            None => None,
+        };
+        Ok((artifacts, notes))
+    }
+
+    /// The provenance claims this host attached to `digest`, as the store
+    /// holds them.
+    fn ours(&self, digest: &Digest) -> Answer<Vec<Attached>> {
+        let mut claims = Vec::new();
+        for envelope in self.seams.store.claims_of(digest)? {
+            let ours = envelope.sole().is_some_and(|s| s.signer == self.ask.signer)
+                && Claim::from_envelope(&envelope)
+                    .is_some_and(|c| c.kind == ClaimKind::Provenance && c.subject == *digest);
+            if ours {
+                claims.push(Attached {
+                    kind: ClaimKind::Provenance,
+                    signer: self.ask.signer.clone(),
+                    envelope: envelope.digest(),
+                    on: digest.clone(),
+                });
+            }
+        }
+        Ok(claims)
     }
 
     /// `bytes` put and checked against their own digest, then an artifact
