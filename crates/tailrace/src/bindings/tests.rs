@@ -932,6 +932,100 @@ fn sync_on_a_broken_trust_table_is_unreadable_and_makes_nothing() {
     assert!(!layout.exists(), "sync made {}", layout.display());
 }
 
+#[test]
+fn a_push_before_a_landing_binds_with_a_store_alone() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layouts").join("job");
+    host.write(&format!("[store]\nlayout = \"{}\"\n", layout.display()));
+    let binding = host.bind(host.dir.path(), For::Left).unwrap();
+    assert!(!layout.exists(), "binding the push made the layout");
+    assert_eq!(binding.signer, None);
+    let absent = Not::absent(
+        &Source::new(Seam::Landing, "unbound"),
+        "binding of the landing",
+    );
+    let main = tailrace_seams::Branch::new("main");
+    let revision = tailrace_seams::Revision::new("4f2a9c1");
+    assert_eq!(
+        binding.seams.landing.landed(&main, &revision),
+        Err(absent.clone())
+    );
+    assert_eq!(binding.seams.landing.verdicts_of(&revision), Err(absent));
+    let digest = binding.seams.store.put_bytes(b"an archive").unwrap().digest;
+    assert_eq!(digest, Digest::of(b"an archive"));
+    assert!(
+        profiles::store::layout::Layout::open(&layout).is_ok(),
+        "the push before a landing made no layout"
+    );
+    assert!(
+        binding
+            .seams
+            .projection(&tailrace_seams::Ecosystem::new("moon-cache"))
+            .is_some(),
+        "the moon cache is not bound"
+    );
+}
+
+#[test]
+fn a_registry_alone_binds_a_push_before_a_landing() {
+    let host = Host::new();
+    host.write("[store]\nregistry = \"localhost:5000/tailrace\"\n");
+    let binding = host.bind(host.dir.path(), For::Left).unwrap();
+    assert_eq!(
+        binding.store,
+        Source::new(Seam::Store, "registry localhost:5000/tailrace")
+    );
+}
+
+#[test]
+fn a_push_before_a_landing_binds_where_the_given_landing_cannot_and_no_other_command_does() {
+    let host = Host::new();
+    let (repo, _) = with_remotes(&host, &["github", "gitlab"]);
+    host.write("[store]\nregistry = \"localhost:5000/tailrace\"\n");
+    for command in [
+        For::Push,
+        For::Verify,
+        For::Sync,
+        For::Rebuild,
+        For::Publish,
+    ] {
+        match host.bind(&repo, command) {
+            Err(Not::Unreadable(u)) => assert_eq!(u.source, branch(), "{command:?}"),
+            other => panic!("{command:?} answered {:?}", other.err()),
+        }
+    }
+    let binding = host.bind(&repo, For::Left).unwrap();
+    assert_eq!(
+        binding.seams.landing.landed(
+            &tailrace_seams::Branch::new("main"),
+            &tailrace_seams::Revision::new("4f2a9c1")
+        ),
+        Err(Not::absent(
+            &Source::new(Seam::Landing, "unbound"),
+            "binding of the landing"
+        ))
+    );
+}
+
+#[test]
+fn a_push_before_a_landing_on_a_file_naming_a_landing_binds_it() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let binding = bound(&host, &layout, false, For::Left).unwrap();
+    let answer = binding.seams.landing.landed(
+        &tailrace_seams::Branch::new("main"),
+        &tailrace_seams::Revision::new("4f2a9c1"),
+    );
+    assert_ne!(
+        answer,
+        Err(Not::absent(
+            &Source::new(Seam::Landing, "unbound"),
+            "binding of the landing"
+        )),
+        "the file's landing was not bound"
+    );
+}
+
 /// A file binding the layout at `layout`, a branch with no remote, the
 /// signer `laptop` and `gate` as its `[gate]` where it is not empty; and
 /// the binding it makes for `command`.
