@@ -163,7 +163,7 @@ fn releases(commit: &Commit) -> bool {
     })
 }
 
-fn cliff_commit(commit: &Commit) -> CliffCommit<'static> {
+pub(crate) fn cliff_commit(commit: &Commit) -> CliffCommit<'static> {
     CliffCommit::new(
         commit.revision.to_string(),
         commit.message.trim_end().to_string(),
