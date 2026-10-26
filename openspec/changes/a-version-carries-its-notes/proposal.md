@@ -140,8 +140,11 @@ crates/tailrace-core/src/history.rs
 crates/tailrace-core/src/lib.rs
 crates/tailrace-core/src/notes.rs
 crates/tailrace-core/tests/**
+crates/tailrace-conformance/src/core/cache.rs
 crates/tailrace-conformance/src/core/publish.rs
+crates/tailrace-conformance/src/core/record.rs
 crates/tailrace-conformance/src/core/status.rs
+crates/tailrace-conformance/src/core/surfaces.rs
 crates/tailrace-conformance/src/core/verify.rs
 crates/tailrace/src/commands/publish.rs
 crates/tailrace/src/commands/status.rs
