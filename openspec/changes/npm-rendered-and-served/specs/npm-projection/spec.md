@@ -74,7 +74,10 @@ packument per package name listing exactly the versions given, each
 with the `package.json` its tarball holds, its tarball's path in the
 layout, its `integrity` and its `shasum`, and a `latest` tag naming the
 highest version given by npm's own version order (85, 23). A version not
-given SHALL not be in the layout after the render (47). Rendering the
+given SHALL not be in the layout after the render (47), so a version the
+policy refused is never listed in a packument, whose listing carries no
+words for it; its refusal SHALL reach npm in the response to the
+tarball's request (99). Rendering the
 same artifacts again SHALL give the same layout. The layout SHALL name no
 host, no store and no place on disk (49).
 
@@ -85,6 +88,10 @@ host, no store and no place on disk (49).
 #### Scenario: A version that left
 - **WHEN** a layout holding `1.2.0` and `1.4.0` is rendered again given only `1.4.0`
 - **THEN** the packument names only `1.4.0`, and the tarball of `1.2.0` is not in the layout
+
+#### Scenario: A refused version is not listed
+- **WHEN** a lockfile pins `@family/widget` at `1.2.0` and `1.4.0`, the policy refuses `1.2.0`, and the layout is rendered given `1.4.0` alone
+- **THEN** the packument names only `1.4.0`, and a request for the tarball of `1.2.0` is answered `403` naming `1.2.0` and the claim found wanting
 
 #### Scenario: A tarball the store does not hold
 - **WHEN** the store answers absent or unreadable for an artifact's bytes
@@ -122,7 +129,7 @@ words verbatim (99, 58, 59).
 
 #### Scenario: A package no layout holds
 - **WHEN** npm asks for the packument of a name the layout holds no version of
-- **THEN** the answer is `404` with an `error` naming the package, and the core was asked for nothing
+- **THEN** the answer is `404` with an `error` naming the package and saying the layout holds no version of it, and the core was asked for nothing
 
 ### Requirement: A lockfile npm writes names no host
 A family package installed from a served layout SHALL be recorded in the

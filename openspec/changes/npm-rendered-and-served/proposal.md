@@ -31,7 +31,10 @@ nowhere else, and the lockfile it writes names no host
 - **npm renders a registry read layout.** Given the versions the policy
   admits, the projection writes each tarball, read from the store by
   digest, and one packument per package name listing the versions held,
-  under the checkout's `.tailrace/layouts/npm/` (85, C.11).
+  under the checkout's `.tailrace/layouts/npm/` (85, C.11). A refused
+  version is never listed: a packument carries no words for a version it
+  lacks, so npm's refusal reaches the developer through the tarball's
+  response and through the refusal `tailrace sync` prints (99).
 - **The host's one process serves it.** The serving process
   `tailrace serve` gains a route for any served layout,
   `/<owner>/<name>/<ecosystem>/…`, the owner and name the consuming
@@ -51,7 +54,10 @@ nowhere else, and the lockfile it writes names no host
 - **A version the layout lacks is rendered on the request.** When npm
   asks for a tarball the layout does not hold, the process asks the core
   to render that one version into the layout from the store, under the
-  policy `tailrace sync` would use in that checkout, and answers from the
+  policy `tailrace sync` would use in that checkout, found as render
+  finds it: the consuming repository's own where its file writes one,
+  else the publisher's layout policy the version's index carries, else
+  the given policy of accepted versions (113, C.10); it answers from the
   layout (115, 50). A refused version is answered in the response to
   npm's own request, `403` with the version and the claim found wanting,
   which npm prints after the status line; an absent one `404`, and an
@@ -88,15 +94,15 @@ Out of scope, and what each waits on:
   status across machines, on which this unit's code waits.
 - A first install of a family package no lockfile pins yet, as `npm
   install @family/new` does, where 137 has pinned answer the manifest's
-  range and render hold the newest version the policy admits within it.
-  The store resolves a name only by its exact version
-  (`artifact/<ecosystem>/<name>@<version>`, 138) and has no operation
-  that lists a name's versions (B.1, 66 to 73), so render has nothing to
-  choose the newest from; it waits on the design's answer of how a range
-  is resolved against the store, and on the render-under-a-policy
-  change that would carry a range on the seam's pin. Until then pinned
-  answers the lockfile's pins alone and the process answers `404` for a
-  packument the layout holds no version of. Named for the design agent.
+  range and render hold the newest version the layout's policy admits
+  within it, found by listing the versions the store holds for the name
+  (138). The listing is the store's, and the range on the seam's pin and
+  its resolution in render are render-under-a-policy's, whose change
+  does not yet carry a range; npm's part, `package.json`'s ranges in
+  pinned and whether a version falls within one by npm's own rule, waits
+  on that pin's shape. Until then pinned answers the lockfile's pins
+  alone and the process answers `404` for a packument the layout holds
+  no version of: a packument names no version, so it is no miss (50).
 - `npm publish` refused in a tailrace repository: the Claude Code
   plugin unit.
 - Third-party packages, which stay the public registry's (section 8).

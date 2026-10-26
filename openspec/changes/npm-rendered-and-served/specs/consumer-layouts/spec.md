@@ -4,8 +4,11 @@
 When a served layout's client asks for a version the layout lacks, the
 core SHALL resolve that one version as a pin is resolved, judge it under
 the policy `tailrace sync` with no argument would use in the checkout the
-layout belongs to, and, where the policy admits it, render the layout
-holding what it held and that version, and record it; it SHALL answer
+layout belongs to, found as a sync finds it: the consuming repository's
+own where its file writes one, else the publisher's layout policy the
+version's index carries, else the given (113, C.10); and, where the
+policy admits it, render the layout holding what it held and that
+version, and record it; it SHALL answer
 the one version held, refused naming the claim found wanting, absent, or
 unreadable with the source's own words (115, 50, 47, 99, 51). A version
 refused, absent or unreadable SHALL leave the layout and its record as
