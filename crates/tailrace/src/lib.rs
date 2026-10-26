@@ -18,7 +18,10 @@
 //! host; a binding it cannot make is its channels' answer, and the
 //! host's record answers beside it (60). `policy` is bound as status is,
 //! with no store and no signer, and a binding it cannot make is its
-//! answer.
+//! answer. `tailrace serve` is the host's one serving process,
+//! tailrace's second surface: it binds nothing itself, and answers each
+//! request from the one core over the binding of the checkout that named
+//! the repository (57, 114, 132).
 
 use std::io::Write;
 use std::path::Path;
@@ -85,6 +88,9 @@ pub enum Command {
     /// and a layout require, and every channel, the givens among them,
     /// with how each moves, its claims and its promoters.
     Policy(commands::policy::PolicyArgs),
+    /// The host's one serving process: every repository a checkout named,
+    /// each as a page and as JSON, at the core's address, until idle.
+    Serve(commands::serve::ServeArgs),
 }
 
 /// What a host binds (92): the seams; the store as the host's bindings
@@ -111,6 +117,7 @@ pub fn run(cli: &Cli, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write)
         Command::Rebuild(args) => commands::rebuild::run(args, binding, at, out),
         Command::Promote(args) => commands::promote::run(args, binding, at, out),
         Command::Policy(args) => commands::policy::run(args, binding, at, out),
+        Command::Serve(args) => commands::serve::run(args, out),
     }
 }
 

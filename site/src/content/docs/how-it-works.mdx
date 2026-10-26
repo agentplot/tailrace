@@ -98,7 +98,21 @@ is the audit trail. `--from <version>` names where the asker expects the
 channel, and a channel that has moved since is refused naming where it
 is. A wrong move is undone by `tailrace promote --back --to stable`,
 one more promotion, to the version the channel moved from: the version
-left stays accepted and readable by its digest. The direction for `stable` is an independent rebuild by a builder
+left stays accepted and readable by its digest.
+
+**Where each channel is, and why.** On any machine, `tailrace status`
+shows each channel the policy declares at its version or empty, and
+under it the chain of promotions that put it there, newest first: the
+version each moved from, who asked, and when. It reads the channels
+from the ledger, never from a name in the store, so a clone on a
+machine that never published, with no bindings file, answers what the
+machine that promoted answers; where the ledger's remote cannot be
+reached, a chain is shown as this host last fetched it, saying when,
+with the remote's words. What this host published is shown beside it,
+from its own record, and is simply absent on a machine that never
+published.
+
+The direction for `stable` is an independent rebuild by a builder
 the first one does not control, with the shared cache off, whose matching
 digest is one more attestation, and two signatures before `stable` moves.
 
@@ -152,7 +166,8 @@ place; tailrace holds no credential that reaches a target.
 by digest, and when it last converged. `tailrace status` answers, for
 every environment, what it should run, what it runs, and that the two
 differ where they do; an environment whose state cannot be read is
-reported unread with the reason, never as converged. A rollback is a
+reported unread with the reason, never as converged. Until a target is
+read, status answers the environments unread, saying no target is read. A rollback is a
 promotion back to the earlier version, recorded like any other, and the
 same convergence in reverse.
 

@@ -670,6 +670,77 @@ impl FakeWorld {
     }
 }
 
+/// The moment the status group's first promotion was made at, in
+/// seconds since the Unix epoch; each after it a second later.
+pub const PROMOTED: u64 = 1_767_312_000;
+
+impl FakeWorld {
+    /// 131: each of `channels` declared through the fake policy in the
+    /// world's one component, `repository`, its policy requiring nothing,
+    /// bound to the channel beside it where one is named (37, 125).
+    pub fn declare_channels(&self, channels: &[(&str, Option<&str>)]) {
+        for (channel, bound_to) in channels {
+            self.fakes.policy.require(
+                Audience::Channel(ChannelId::new(None, ChannelName::new(*channel))),
+                tailrace_seams::Required::Channel {
+                    claims: vec![],
+                    bound_to: bound_to.map(ChannelName::new),
+                    promoted_by: vec![],
+                },
+            );
+        }
+    }
+
+    /// 33, 105: a promotion of `channel` to `version`, a version the
+    /// fake store names `v<version>`, appended to the fake keeper after
+    /// the chain's head, from the version the head moved to, asked by the
+    /// gate and sealed by a fake signer holding its identity; its
+    /// claim's digest. Each is made a second after the one before.
+    pub fn promote_fake(&self, channel: &str, version: &str) -> Digest {
+        let channel = ChannelId::new(None, ChannelName::new(channel));
+        let index =
+            tailrace_seams::Store::resolve(&self.fakes.store, &Name::new(format!("v{version}")))
+                .expect("the version is named in the store");
+        let read = tailrace_core::channel(&self.fakes.keeper, &channel).expect("the chain is read");
+        let (from, predecessor, made) = match read {
+            tailrace_core::Channel::Empty => (None, None, 0),
+            tailrace_core::Channel::At { head, chain, .. } => (
+                Some(head.to),
+                chain.last().map(|(d, _)| d.clone()),
+                chain.len() as u64,
+            ),
+        };
+        let promotion = tailrace_seams::Promotion {
+            channel: channel.name.clone(),
+            component: channel.component_name(),
+            to: tailrace_seams::Moved {
+                version: Version::new(version),
+                index,
+            },
+            from,
+            predecessor: predecessor.clone(),
+            asked_by: SignerId::new(GATE),
+            policy: tailrace_seams::Satisfied {
+                revision: self.head.clone(),
+                claims: vec![],
+            },
+            at: PROMOTED + made,
+        };
+        let gate = FakeSigner::new();
+        gate.hold(&SignerId::new(GATE));
+        let envelope = gate
+            .sign(&promotion.claim(self.head.clone()), &SignerId::new(GATE))
+            .expect("the gate's signer holds its identity");
+        tailrace_seams::Keeper::append(
+            &self.fakes.keeper,
+            &channel,
+            &envelope,
+            predecessor.as_ref(),
+        )
+        .expect("the keeper holds the promotion")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use tailrace_core::Landed;

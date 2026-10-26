@@ -141,6 +141,7 @@ impl Host {
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
             .env("HOME", &home)
             .env("XDG_CONFIG_HOME", self.root().join("config"))
+            .env("XDG_STATE_HOME", self.root().join("state"))
             .output()
             .expect("the binary runs")
     }
@@ -543,14 +544,16 @@ fn declared(fakes: &Fakes, channel: &str) {
 }
 
 /// `channel` promoted over `fakes`' keeper to each version in turn, each
-/// from the one before, signed by the host as the fake signer signs.
-fn chained(host: &Host, channel: &str, versions: &[&str]) {
+/// from the one before, signed by the host as the fake signer signs,
+/// each satisfied by its version's acceptance; every claim's digest.
+fn chained(host: &Host, channel: &str, versions: &[&str]) -> Vec<Digest> {
     let channel = ChannelId::new(None, ChannelName::new(channel));
     let moved = |v: &str| tailrace_seams::Moved {
         version: Version::new(v),
         index: Digest::of(format!("{v}'s index").as_bytes()),
     };
     let mut predecessor: Option<Digest> = None;
+    let mut claims = Vec::new();
     for (i, version) in versions.iter().enumerate() {
         let promotion = Promotion {
             channel: channel.name.clone(),
@@ -561,7 +564,7 @@ fn chained(host: &Host, channel: &str, versions: &[&str]) {
             asked_by: SignerId::new("host"),
             policy: tailrace_seams::Satisfied {
                 revision: host.head.clone(),
-                claims: vec![],
+                claims: vec![acceptance(version)],
             },
             at: 1_793_000_000 + i as u64,
         };
@@ -577,8 +580,16 @@ fn chained(host: &Host, channel: &str, versions: &[&str]) {
             predecessor.as_ref(),
         )
         .unwrap();
+        claims.push(digest.clone());
         predecessor = Some(digest);
     }
+    claims
+}
+
+/// The digest `chained` names as the claim that satisfied the policy for
+/// `version`'s promotion.
+fn acceptance(version: &str) -> Digest {
+    Digest::of(format!("{version}'s acceptance").as_bytes())
 }
 
 #[test]
@@ -623,7 +634,7 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
     for channel in ["edge", "preview", "stable"] {
         declared(&host.fakes, channel);
     }
-    chained(&host, "stable", &["0.1.0", "0.2.0"]);
+    let claims = chained(&host, "stable", &["0.1.0", "0.2.0"]);
     // The first chain asked, edge's, cannot be read.
     host.fakes.keeper.fault(
         tailrace_fakes::KeeperOp::Chain,
@@ -656,16 +667,27 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
         )),
         "{printed}"
     );
-    assert!(
-        lines[stable + 1]
-            .trim_start()
-            .starts_with("0.2.0 from 0.1.0, asked by host, 2026-10-26T07:33:21Z, claim sha256:"),
+    assert_eq!(
+        lines[stable + 1].trim_start(),
+        format!(
+            "0.2.0 from 0.1.0, asked by host, under the policy at {} satisfied by {}, \
+             2026-10-26T07:33:21Z, claim {} after {}",
+            host.head,
+            acceptance("0.2.0"),
+            claims[1],
+            claims[0]
+        ),
         "{printed}"
     );
-    assert!(
-        lines[stable + 2]
-            .trim_start()
-            .starts_with("0.1.0, the first, asked by host, 2026-10-26T07:33:20Z, claim sha256:"),
+    assert_eq!(
+        lines[stable + 2].trim_start(),
+        format!(
+            "0.1.0, the first, asked by host, under the policy at {} satisfied by {}, \
+             2026-10-26T07:33:20Z, claim {}",
+            host.head,
+            acceptance("0.1.0"),
+            claims[0]
+        ),
         "{printed}"
     );
     let environments = at("environments");
@@ -731,6 +753,35 @@ fn status_in_a_directory_that_is_no_repository_exits_3_naming_it() {
     assert_eq!(out.status.code(), Some(3), "{out:?}");
     let printed = String::from_utf8_lossy(&out.stdout);
     assert!(printed.contains("elsewhere"), "{printed}");
+}
+
+// Requirement: Status names the page
+
+#[test]
+fn status_page_where_the_remote_names_no_owner_and_name_is_unreadable_and_names_nothing() {
+    let host = Host::new();
+    let out = host.binary(&["status", "--page", "--json"]);
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["answer"], "unreadable", "{json}");
+    let what = json["unreadable"]["what"].as_str().unwrap();
+    assert!(
+        what.contains("remote origin") && what.contains("shared.git"),
+        "{what}"
+    );
+    assert!(!host.root().join("state").exists(), "an entry was written");
+}
+
+// Requirement: Serve is a command
+
+#[test]
+fn serve_takes_no_argument_that_would_move_it() {
+    let host = Host::new();
+    let out = host.binary(&["serve", "--port", "8080"]);
+    assert_eq!(out.status.code(), Some(2), "{out:?}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--port"), "{stderr}");
+    assert!(!host.root().join("state").exists(), "serve took the lock");
 }
 
 #[test]

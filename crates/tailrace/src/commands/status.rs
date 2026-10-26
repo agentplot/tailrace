@@ -6,18 +6,30 @@
 //! landing, the policy and the ledger alone, asks no store, signer or
 //! target, and writes nothing (60, rule core.32). It reads the asker's
 //! time from the clock and hands it to the core, which reads none.
+//!
+//! `--page` asks another question: where the repository's own page is.
+//! It names the checkout's repository to the host, by its landing's
+//! remote's owner and name, finds the host's serving process or starts
+//! one where none answers, and answers the page's address (57, 114, 132;
+//! design D7, D12).
 
 use std::io::{self, Write};
+use std::net::SocketAddr;
 use std::path::Path;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use tailrace_core::{
     overview, overview_unbound, Channel, ChannelStatus, Channels, EnvironmentCounts, History, Kept,
-    Overview, OverviewAsk, Status,
+    Overview, OverviewAsk, RepositoryName, Status,
 };
-use tailrace_seams::{Answer, Branch, ComponentName, Digest, Moves, Promotion, Read};
+use tailrace_seams::{
+    Answer, Branch, ComponentName, Digest, Moves, Not, Promotion, Read, Seam, Source,
+};
 
+use crate::bindings;
+use crate::commands::serve::{self, host, host::Host};
 use crate::{render, Binding};
 
 #[derive(Debug, Args)]
@@ -33,6 +45,10 @@ pub struct StatusArgs {
     /// commit.
     #[arg(long)]
     pub revision: Option<String>,
+    /// Print the address of the repository's own page on the host's
+    /// serving process, starting the process where none answers.
+    #[arg(long)]
+    pub page: bool,
     /// Print the answer as one JSON document.
     #[arg(long)]
     pub json: bool,
@@ -41,8 +57,18 @@ pub struct StatusArgs {
 /// Status asked over `binding` in the repository at `at`: exit 0
 /// whenever an overview is made, each part carrying its own answer, and
 /// the answer's own code only where the repository cannot be read at
-/// all.
+/// all. With `--page`, the page's address, with its answer's code.
 pub fn run(args: &StatusArgs, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write) -> i32 {
+    if args.page {
+        let answer = Host::of_environment()
+            .and_then(|host| page(at, &host, serve::address(), detached(&host)));
+        let _ = match (&answer, args.json) {
+            (_, true) => render::json(out, &answer),
+            (Ok(address), false) => writeln!(out, "{address}"),
+            (Err(not), false) => render::not(out, "", not),
+        };
+        return render::exit(&answer);
+    }
     let answer = ask(args, binding, at);
     let _ = match (&answer, args.json) {
         (_, true) => render::json(out, &answer),
@@ -60,11 +86,31 @@ pub(crate) fn now() -> u64 {
 }
 
 fn ask(args: &StatusArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Overview> {
+    overview_in(
+        binding,
+        at,
+        &args.branch,
+        args.component.as_deref(),
+        args.revision.as_deref(),
+    )
+}
+
+/// 36, 60: the whole of status in the repository at `at` over `binding`,
+/// or over none where the binding failed, for `branch`, of `component`
+/// and `revision` where they are named, as of now: what the command line
+/// prints and the serving process serves (57, rule core.31).
+pub(crate) fn overview_in(
+    binding: &Answer<Binding>,
+    at: &Path,
+    branch: &str,
+    component: Option<&str>,
+    revision: Option<&str>,
+) -> Answer<Overview> {
     let history = History::open(at)?;
     let ask = OverviewAsk {
-        branch: Branch::new(&args.branch),
-        component: args.component.as_ref().map(ComponentName::new),
-        revision: match &args.revision {
+        branch: Branch::new(branch),
+        component: component.map(ComponentName::new),
+        revision: match revision {
             Some(text) => Some(history.resolve(text)?),
             None => None,
         },
@@ -75,6 +121,74 @@ fn ask(args: &StatusArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Overvi
         Ok(binding) => overview(&binding.seams, &history, &kept, &ask),
         Err(not) => overview_unbound(not.clone(), &kept, &ask),
     })
+}
+
+/// 114, 132: the address of the page of the repository whose checkout is
+/// at `checkout`, on the host's serving process at `address`: the
+/// repository named by its landing's remote's owner and name and named
+/// to `host`, then the process found at `address`, or `start` run where
+/// none answers. Absent where the landing has no remote or the remote no
+/// address, and unreadable naming the remote and its address where it
+/// ends in no owner and name, writing nothing.
+pub fn page(
+    checkout: &Path,
+    host: &Host,
+    address: SocketAddr,
+    start: impl FnOnce() -> Answer<()>,
+) -> Answer<String> {
+    let remote = bindings::landing_remote(&host.config, host.home.as_deref(), checkout)?
+        .ok_or_else(|| {
+            Not::absent(
+                &Source::history(checkout.display()),
+                "remote of the landing, which neither [landing] nor the repository names",
+            )
+        })?;
+    let history = History::open(checkout)?;
+    let url = history.remote_url(&remote)?.ok_or_else(|| {
+        Not::absent(
+            &Source::history(&remote),
+            format!("address of the remote {remote}"),
+        )
+    })?;
+    let repository = RepositoryName::from_remote(&url).ok_or_else(|| {
+        Not::unreadable(
+            &Source::history(&remote),
+            format!("an owner and a name in the address of the remote {remote}, {url}"),
+            None,
+        )
+    })?;
+    let root = history.workdir().unwrap_or_else(|| history.common_dir());
+    host::name(host, &repository, &root)?;
+    host::find_or_start(address, start)?;
+    Ok(format!("http://{address}{}/status", repository.path()))
+}
+
+/// `tailrace serve` started from this binary, detached from the asker's
+/// terminal and its signals, its working directory the state directory,
+/// never a checkout, and not waited for (114).
+fn detached(host: &Host) -> impl FnOnce() -> Answer<()> + '_ {
+    move || {
+        let unstarted = |said: String| {
+            Not::unreadable(
+                &Source::new(Seam::Host, "serve"),
+                "tailrace serve, started from this binary",
+                Some(said),
+            )
+        };
+        let binary = std::env::current_exe().map_err(|e| unstarted(e.to_string()))?;
+        let mut command = Command::new(binary);
+        command
+            .arg("serve")
+            .current_dir(&host.state)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        std::os::unix::process::CommandExt::process_group(&mut command, 0);
+        // The process runs on alone; the asker ends without waiting.
+        let started = command.spawn().map(drop);
+        started.map_err(|e| unstarted(e.to_string()))
+    }
 }
 
 fn text(out: &mut dyn Write, overview: &Overview) -> io::Result<()> {
@@ -157,8 +271,9 @@ fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Re
     }
 }
 
-/// 33: one promotion of a chain: where it moved the channel from, who
-/// asked, when, and its claim.
+/// 33, 105: one promotion of a chain: where it moved the channel from,
+/// who asked, the policy revision it was judged under with the claims
+/// that satisfied it, when, and its claim and its predecessor's.
 fn promoted(
     out: &mut dyn Write,
     indent: &str,
@@ -169,13 +284,32 @@ fn promoted(
         || ", the first".to_string(),
         |f| format!(" from {}", f.version),
     );
+    let after = promotion
+        .predecessor
+        .as_ref()
+        .map(|p| format!(" after {p}"))
+        .unwrap_or_default();
     writeln!(
         out,
-        "{indent}{}{from}, asked by {}, {}, claim {claim}",
+        "{indent}{}{from}, asked by {}, under the policy at {} satisfied by {}, {}, claim \
+         {claim}{after}",
         promotion.to.version,
         promotion.asked_by,
+        promotion.policy.revision,
+        satisfied(promotion.policy.claims.iter().map(Digest::to_string)),
         render::utc(promotion.at)
     )
+}
+
+/// The claims that satisfied a promotion's policy, or `no claim` where
+/// it required none.
+pub(crate) fn satisfied(claims: impl Iterator<Item = String>) -> String {
+    let claims: Vec<String> = claims.collect();
+    if claims.is_empty() {
+        "no claim".to_string()
+    } else {
+        claims.join(" and ")
+    }
 }
 
 /// A source's own words, unchanged, on a line of their own (59).

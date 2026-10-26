@@ -49,9 +49,9 @@
 //! needs `[signing]` and `[ledger]` and makes nothing (C.13, C.14).
 //!
 //! Status asks the landing, the policy and the ledger alone (60): it
-//! needs `[landing]` and no `[signing]`, binds `[ledger]` and `[store]`
-//! where the file names them, the store opened and never made, and a
-//! store answering absent naming `[store]` where it names none. On a
+//! needs `[landing]` and no `[signing]`, binds `[ledger]` where the file
+//! names it, and opens `[store]` only for a ledger held in it, never
+//! making it; its store answers absent naming `[store]` otherwise. On a
 //! host with no bindings file status is bound as 118 binds such a host,
 //! as far as status asks: the landing and the ledger the landing and
 //! ledger families bind for a repository with no file, each with the
@@ -494,10 +494,11 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
 
 /// 60, 118: status's binding, of the landing, the policy and the ledger:
 /// from the file at `file` where there is one, needing `[landing]`, the
-/// ledger and the store bound where it names them, the store never made,
-/// and no signer; with no file there, as a host with no file is bound.
-/// The policy command's is the same with no store, since it asks the
-/// landing and the policy alone (design D11).
+/// ledger bound where it names one, the store named as the file names it
+/// and opened only for a ledger held in it, never made, and no signer;
+/// with no file there, as a host with no file is bound. The policy
+/// command's is the same with no store, since it asks the landing and the
+/// policy alone (design D11).
 fn status(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
     let bindings = match read(file, home) {
         Ok(bindings) => bindings,
@@ -509,18 +510,27 @@ fn status(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> 
         .as_ref()
         .ok_or_else(|| missing(file, "landing"))?;
     let landing = profiles::landing::bind(landing, repository)?;
-    let (store, named): (Box<dyn Store>, Source) = match (&bindings.store, command) {
-        (_, For::Policy) => (Box::new(policy_store()), unbound_store()),
-        (Some(store), _) => (
-            profiles::store::bind(store, false)?,
-            profiles::store::named(store)?,
-        ),
-        (None, _) => (
-            Box::new(NoStore {
-                what: format!("binding of the store, [store] in {}", file.display()),
-            }),
-            unbound_store(),
-        ),
+    let named = match (&bindings.store, command) {
+        (_, For::Policy) | (None, _) => unbound_store(),
+        (Some(store), _) => profiles::store::named(store)?,
+    };
+    // No part of status reads the store but a ledger held in it, so a
+    // store that is not there leaves every other ledger's chains read.
+    let store: Box<dyn Store> = match (&bindings.store, &bindings.ledger, command) {
+        (_, _, For::Policy) => Box::new(policy_store()),
+        (Some(store), Some(ledger), _) if profiles::ledger::in_store(ledger) => {
+            profiles::store::bind(store, false)?
+        }
+        (Some(_), _, _) => Box::new(NoStore {
+            what: format!(
+                "binding of the store, [store] in {}, which status opens only for a ledger \
+                 held in it",
+                file.display()
+            ),
+        }),
+        (None, _, _) => Box::new(NoStore {
+            what: format!("binding of the store, [store] in {}", file.display()),
+        }),
     };
     let keeper: Box<dyn Keeper> = match &bindings.ledger {
         Some(ledger) => profiles::ledger::bind(ledger, repository, bindings.store.as_ref())?,

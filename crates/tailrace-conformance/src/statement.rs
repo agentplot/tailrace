@@ -7,7 +7,7 @@
 //! until the statement renumbers the second (rule core.23).
 
 /// The statement's revision the clauses were read at.
-pub const READ_AT: &str = "agentplot/blueprints 673d334";
+pub const READ_AT: &str = "agentplot/blueprints 157c828";
 
 /// Each section of Parts A and B, and its clauses.
 pub const PARTS: &[(&str, &[u16])] = &[
@@ -37,7 +37,7 @@ pub const PARTS: &[(&str, &[u16])] = &[
         &[46, 47, 113, 99, 48, 49, 114, 50, 115, 51],
     ),
     ("A.9 The cache", &[52, 100, 53, 54, 55]),
-    ("A.10 Askers and surfaces", &[56, 57, 58, 59, 60, 129]),
+    ("A.10 Askers and surfaces", &[56, 57, 58, 59, 60, 132, 129]),
     ("A.11 What tailrace keeps", &[61, 62, 63, 64, 65]),
     ("B.1 The store", &[66, 67, 68, 69, 70, 71, 72, 73]),
     ("B.2 The build", &[74, 75, 76]),
@@ -55,12 +55,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_parts_hold_every_clause_from_1_to_131_once_in_20_sections() {
+    fn the_parts_hold_every_clause_from_1_to_132_once_in_20_sections() {
         assert_eq!(PARTS.len(), 20);
         let mut clauses: Vec<u16> = PARTS.iter().flat_map(|(_, c)| c.iter().copied()).collect();
-        assert_eq!(clauses.len(), 131);
+        assert_eq!(clauses.len(), 132);
         clauses.sort_unstable();
-        assert_eq!(clauses, (1..=131).collect::<Vec<u16>>());
+        assert_eq!(clauses, (1..=132).collect::<Vec<u16>>());
         let sections: Vec<&str> = PARTS
             .iter()
             .map(|(s, _)| s.split(' ').next().unwrap())

@@ -6,6 +6,7 @@ pub mod promote;
 pub mod publish;
 pub mod push;
 pub mod rebuild;
+pub mod serve;
 pub mod status;
 pub mod sync;
 pub mod verify;

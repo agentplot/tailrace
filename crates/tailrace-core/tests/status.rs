@@ -12,7 +12,7 @@ use tailrace_core::{
     overview, row, status, Channel, ChannelStatus, Entry, Filter, Head, HeadAt, History, Kept,
     Overview, OverviewAsk, Published, RepositoryName, StatusAsk, Written,
 };
-use tailrace_fakes::{FakeSigner, Fault, KeeperOp, Times};
+use tailrace_fakes::{FakeSigner, Fault, KeeperOp, LandingOp, Times};
 use tailrace_seams::{
     Audience, Branch, ChannelId, ChannelName, ComponentName, Digest, Envelope, EnvironmentName,
     Keeper, Moved, Moves, Not, Outcome, Promotion, Read, Required, Revision, Satisfied, Seam,
@@ -632,6 +632,43 @@ fn a_chain_answered_as_last_read_is_shown_with_its_time_and_words() {
             ..
         })
     ));
+}
+
+#[test]
+fn a_landing_that_cannot_be_read_is_the_channels_unreadable_answer_and_the_rest_still_answers() {
+    let world = World::new();
+    declare(&world, &stable(), None);
+    published(&world);
+    promoted(&world, &stable(), &["0.1.0"]);
+    let before = asked(&world, &ask(&world));
+    assert_eq!(channels_of(&before).len(), 1);
+    world.fakes.landing.fault(
+        LandingOp::Landed,
+        Fault::Unreadable("fatal: unable to access 'https://example.com/o/r.git/'".into()),
+        Times::Once,
+    );
+    let asked_of_keeper = world.fakes.keeper.calls().len();
+
+    let answer = asked(&world, &ask(&world));
+    let Err(Not::Unreadable(u)) = &answer.channels else {
+        panic!("the channels answered {:?}", answer.channels)
+    };
+    assert_eq!(u.source.seam, Seam::Landing);
+    assert_eq!(
+        u.said.as_deref(),
+        Some("fatal: unable to access 'https://example.com/o/r.git/'")
+    );
+    assert_eq!(answer.published, before.published);
+    assert!(answer.published.is_ok(), "{:?}", answer.published);
+    assert_eq!(answer.environments, before.environments);
+    unread(&answer.environments);
+    assert_eq!(
+        world.fakes.keeper.calls().len(),
+        asked_of_keeper,
+        "the keeper was asked with the landing unread"
+    );
+    let json = serde_json::to_value(&answer).unwrap();
+    assert_eq!(json["channels"]["answer"], "unreadable", "{json}");
 }
 
 // Requirement: Asking reaches no store, signer or target and writes nothing

@@ -963,6 +963,36 @@ fn the_policy_command_binds_no_store_and_no_signer_whatever_the_file_names() {
     assert_eq!(files(host.dir.path()), before, "binding policy made a file");
 }
 
+#[test]
+fn a_git_ref_ledger_binds_status_with_the_layout_it_names_missing_and_opens_no_store() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[ledger]\ngit_ref = {{}}\n",
+        layout.display()
+    ));
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status)
+        .unwrap_or_else(|not| panic!("a missing layout bound nothing: {not}"));
+    assert!(!layout.exists(), "status made {}", layout.display());
+    assert_eq!(
+        binding.store,
+        Source::new(Seam::Store, format!("layout {}", layout.display())),
+        "the store is named as the file names it"
+    );
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
+        other => panic!("a git ref ledger answered {other:?}"),
+    }
+    match binding.seams.store.resolve(&Name::new("v0.1.0")) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::new(Seam::Store, "unbound"));
+            assert!(a.what.contains("[store]"), "{a:?}");
+        }
+        other => panic!("status's store answered {other:?}"),
+    }
+}
+
 /// A repository in the host's directory with one commit on `main`, its
 /// remote `origin` at `origin` where one is given, and its path and the
 /// commit.
