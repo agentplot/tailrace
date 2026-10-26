@@ -10,8 +10,8 @@ use serde_json::Value;
 use tailrace::profiles::policy::file::PolicyFile;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{
-    answer_json, in_force, promote, publish, push, sync, write, Ask, Entry, History, InForceAsk,
-    Kept, PromoteAsk, PushAsk, SyncAsk, To,
+    accept, answer_json, in_force, promote, publish, push, sync, write, AcceptAsk, Ask, Entry,
+    History, InForceAsk, Judged, Kept, Moved, PromoteAsk, PushAsk, SyncAsk, To, ToldBy,
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
@@ -1102,6 +1102,85 @@ fn a_version_and_back_together_are_arguments_promote_cannot_take() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--back"), "{stderr}");
     assert_eq!(host.calls(), 0, "the core was asked");
+}
+
+// Requirement: A prerelease moves only the channels that take prereleases
+
+#[test]
+fn a_prerelease_accepted_with_alpha_written_moves_alpha_and_not_beta() {
+    let host = Host::new();
+    git(&host.repo, &["tag", "v0.1.0", host.head.as_str()]);
+    fs::write(
+        host.repo.join(".config/tailrace.toml"),
+        format!(
+            "{POLICY}\n[signers.host]\nssh = \"ssh-ed25519 HHHH\"\nkinds = [\"acceptance\"]\n\n\
+             [acceptance]\nrequire = []\n\n[channels.alpha]\n"
+        ),
+    )
+    .unwrap();
+    git(
+        &host.repo,
+        &["commit", "-q", "-am", "chore: alpha switched on"],
+    );
+    let head = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
+    let fakes = fakes_at(&head);
+    let history = History::open(&host.repo).unwrap();
+    let published = publish(
+        &fakes.seams(),
+        &history,
+        &Kept::at(&history),
+        &Ask {
+            branch: Branch::new("main"),
+            revision: head.clone(),
+            component: None,
+            signer: SignerId::new("host"),
+            store: store(),
+        },
+    )
+    .unwrap();
+    let Ok(tailrace_core::Published::Version { version, index, .. }) = &published.components[0].1
+    else {
+        panic!("nothing was published: {published:?}")
+    };
+    assert!(
+        version.as_str().contains("-pre."),
+        "{version} is no prerelease"
+    );
+
+    let mut seams = fakes.seams();
+    seams.policy = Box::new(PolicyFile::new(&host.repo));
+    let judged = accept(
+        &seams,
+        &history,
+        &AcceptAsk {
+            branch: Branch::new("main"),
+            component: None,
+            version: version.clone(),
+            told: ToldBy::Publish,
+            gate: SignerId::new("host"),
+            when: 1_793_000_000,
+        },
+    );
+    let Ok(Judged::Accepted { channels, .. }) = judged else {
+        panic!("the prerelease was not accepted: {judged:?}")
+    };
+    let alpha = ChannelId::new(None, ChannelName::new("alpha"));
+    assert_eq!(
+        channels.iter().map(|(c, _)| c).collect::<Vec<_>>(),
+        [&alpha],
+        "{channels:?}"
+    );
+    assert!(
+        matches!(&channels[0].1, Ok(Moved::Promoted { to, .. }) if to == index),
+        "{channels:?}"
+    );
+    assert!(matches!(
+        tailrace_seams::Keeper::chain(
+            &fakes.keeper,
+            &ChannelId::new(None, ChannelName::new("beta"))
+        ),
+        Err(tailrace_seams::Not::Absent(_))
+    ));
 }
 
 // Requirement: Policy shows the policy in force

@@ -362,3 +362,59 @@ fn a_given_stable_is_promoted_by_the_gate_with_no_channels_written() {
     let layout = Layout::open(a.layout()).unwrap();
     assert_eq!(layout.resolve(&channel_name(&stable())), Ok(first));
 }
+
+/// `[channels.rc]`, promoted by the gate, naming `approvers` as who may
+/// ask for it, beside a signer `ci` that may only ask.
+fn rc_asked_by(approvers: &str) -> String {
+    format!(
+        "[signers.ci]\nssh = \"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOv ci@desk\"\nkinds = []\n\n\
+         [channels.rc]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n\
+         approvers = {approvers}\n"
+    )
+}
+
+#[test]
+fn an_asker_the_approvers_do_not_name_is_refused_naming_both_and_nothing_is_appended() {
+    let Two {
+        scratch: _kept, a, ..
+    } = two_with("[\"acceptance\", \"promotion\"]", &rc_asked_by("[\"ci\"]"));
+    let binding = a.bind(For::Promote);
+    let (code, printed) = a.run(&binding, &["promote", "0.1.0", "--to", "rc"]);
+    assert_eq!(code, 1, "{printed}");
+    assert!(
+        printed.contains(&format!("{GATE} may not ask for rc; ask one of ci")),
+        "{printed}"
+    );
+    assert_eq!(
+        a.repo.git(&["for-each-ref", "refs/tailrace/ledger"]),
+        "",
+        "a ledger ref was written"
+    );
+    let layout = Layout::open(a.layout()).unwrap();
+    assert!(matches!(
+        layout.resolve(&channel_name(&rc())),
+        Err(Not::Absent(_))
+    ));
+}
+
+#[test]
+fn an_approvers_asking_moves_the_channel() {
+    let Two {
+        scratch: _kept,
+        a,
+        indexes: [first, _],
+        ..
+    } = two_with(
+        "[\"acceptance\", \"promotion\"]",
+        &rc_asked_by(&format!("[\"ci\", \"{GATE}\"]")),
+    );
+    let binding = a.bind(For::Promote);
+    let (code, printed) = a.run(&binding, &["promote", "0.1.0", "--to", "rc"]);
+    assert_eq!(code, 0, "{printed}");
+    let (head, _, _) = at_of(channel(
+        binding.as_ref().unwrap().seams.keeper.as_ref(),
+        &rc(),
+    ));
+    assert_eq!(head.to.index, first);
+    assert_eq!(head.asked_by, SignerId::new(GATE));
+}
