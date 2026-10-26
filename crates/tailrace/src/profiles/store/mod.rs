@@ -7,9 +7,12 @@ pub mod registry;
 
 use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use tailrace_seams::{Answer, Not, Seam, Source, Store};
+use tailrace_seams::{
+    Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store,
+};
 
 use crate::bindings::{self, Table};
 use layout::Layout;
@@ -51,20 +54,23 @@ pub fn given(file: &Path, xdg_data_home: Option<&OsStr>, home: Option<&Path>) ->
 
 /// The store `[store]` names (92, C.1, C.2): `layout`, the OCI layout at
 /// its path, made there when `make` and the path is missing or an empty
-/// directory, as a publish's is the first time, and opened otherwise, so
-/// a layout that is not there is unreadable in the operating system's
-/// words; `registry`, the repository it names, which no binding makes,
-/// whatever `make`; unreadable naming any other key.
+/// directory, as a publish's is the first time, at the first operation
+/// asked of it and never at its binding, so a publish refused before it
+/// asks the store anything leaves nothing behind (60, rule core.11); and
+/// opened otherwise, so a layout that is not there is unreadable in the
+/// operating system's words; `registry`, the repository it names, which
+/// no binding makes, whatever `make`; unreadable naming any other key.
 pub fn bind(table: &Table, make: bool) -> Answer<Box<dyn Store>> {
     match table.key() {
         "layout" => {
             let path = table.path()?;
-            let layout = if make && missing_or_empty(&path) {
-                Layout::create(&path)?
-            } else {
-                Layout::open(&path)?
-            };
-            Ok(Box::new(layout))
+            if make && missing_or_empty(&path) {
+                return Ok(Box::new(Unmade {
+                    path,
+                    layout: OnceLock::new(),
+                }));
+            }
+            Ok(Box::new(Layout::open(&path)?))
         }
         "registry" => Ok(Box::new(registry(table)?)),
         _ => Err(table.unknown(&KEYS)),
@@ -96,6 +102,60 @@ fn registry(table: &Table) -> Answer<Registry> {
     })
 }
 
+/// A layout a publish or a push makes at `path`, missing or an empty
+/// directory when it was bound, at the first operation asked of it: made
+/// there where the path is still missing or empty, and opened where
+/// another binding of it made it first.
+struct Unmade {
+    path: PathBuf,
+    layout: OnceLock<Answer<Layout>>,
+}
+
+impl Unmade {
+    fn layout(&self) -> Answer<&Layout> {
+        self.layout
+            .get_or_init(|| {
+                if missing_or_empty(&self.path) {
+                    Layout::create(&self.path)
+                } else {
+                    Layout::open(&self.path)
+                }
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
+}
+
+impl Store for Unmade {
+    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
+        self.layout()?.put_bytes(bytes)
+    }
+
+    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
+        self.layout()?.put_artifact(manifest)
+    }
+
+    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
+        self.layout()?.attach(subject, attestation)
+    }
+
+    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
+        self.layout()?.claims_of(digest)
+    }
+
+    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        self.layout()?.name(name, to, expected)
+    }
+
+    fn resolve(&self, name: &Name) -> Answer<Digest> {
+        self.layout()?.resolve(name)
+    }
+
+    fn read(&self, digest: &Digest) -> Answer<Held> {
+        self.layout()?.read(digest)
+    }
+}
+
 /// Whether nothing is at `path`, or an empty directory is; a directory
 /// that cannot be read is neither, and its open says why.
 fn missing_or_empty(path: &Path) -> bool {
@@ -107,8 +167,6 @@ fn missing_or_empty(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
     use super::*;
 
     fn file() -> PathBuf {
@@ -133,6 +191,28 @@ mod tests {
         }
         let table = given(&file(), Some(OsStr::new("/data")), None).unwrap();
         assert_eq!(table.path(), Ok(PathBuf::from("/data/tailrace/layout")));
+    }
+
+    #[test]
+    fn a_publishs_layout_is_made_at_its_first_operation_and_never_at_its_binding() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("data/tailrace/layout");
+        let text = path.to_str().unwrap();
+        let table = Table::given(&file(), "store", "layout", text.into());
+        let store = bind(&table, true).unwrap();
+        let cache = bind(&table, true).unwrap();
+        assert!(!path.exists(), "binding made {}", path.display());
+        assert!(matches!(
+            cache.resolve(&Name::new("v0.1.0")),
+            Err(Not::Absent(_))
+        ));
+        assert!(
+            path.join("oci-layout").is_file(),
+            "the first operation made no layout"
+        );
+        let put = store.put_bytes(b"abc").unwrap();
+        assert_eq!(cache.read(&put.digest), Ok(Held::Bytes(b"abc".to_vec())));
+        assert!(bind(&table, false).is_ok());
     }
 
     #[test]

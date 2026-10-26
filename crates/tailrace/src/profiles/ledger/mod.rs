@@ -32,9 +32,16 @@ struct StoreOptions {}
 /// holding the refs where it names none; or `store`, the chain held in
 /// the store `store` binds, written or given, through a binding of its
 /// own that never makes it, and kept under the repository's common git
-/// directory (61, 62). Unreadable naming any other key, or an option its
-/// profile does not read.
-pub fn bind(table: &Table, repository: &Path, store: &Table) -> Answer<Box<dyn Keeper>> {
+/// directory (61, 62); where `make`, a publish's or a push's, the layout
+/// that binding opens is the one the command makes at its first
+/// operation. Unreadable naming any other key, or an option its profile
+/// does not read.
+pub fn bind(
+    table: &Table,
+    repository: &Path,
+    store: &Table,
+    make: bool,
+) -> Answer<Box<dyn Keeper>> {
     match table.key() {
         "git_ref" => {
             let options: GitRefOptions = table.options()?;
@@ -43,7 +50,7 @@ pub fn bind(table: &Table, repository: &Path, store: &Table) -> Answer<Box<dyn K
         "store" => {
             let StoreOptions {} = table.options()?;
             let kept = common_dir(repository)?.join("tailrace").join("ledger");
-            let store = crate::profiles::store::bind(store, false)?;
+            let store = crate::profiles::store::bind(store, make)?;
             Ok(Box::new(InStore::new(store, kept)))
         }
         _ => Err(table.unknown(&["git_ref", "store"])),

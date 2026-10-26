@@ -423,6 +423,7 @@ fn a_key_service_alone_signs_through_it_into_the_given_layout_and_makes_no_host_
         binding.store,
         Source::new(Seam::Store, format!("layout {}", layout.display()))
     );
+    binding.seams.store.put_bytes(b"abc").unwrap();
     assert!(
         layout.join("oci-layout").is_file(),
         "publish made no layout"

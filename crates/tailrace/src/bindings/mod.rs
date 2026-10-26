@@ -65,8 +65,11 @@
 //! through a second binding of the store, opened and never made (design
 //! D6). What tells the gate is bound for every command; no target is
 //! bound yet. Only a publish and a push make the layout, the given one
-//! with its parents, and a push signs nothing (60, rule core.32); every
-//! other command opens it, and a promote makes nothing (C.13, C.14).
+//! with its parents, at the first operation asked of the store and never
+//! in binding it, so a publish refused before it asks the store anything
+//! leaves nothing behind; a push signs nothing (60, rules core.11,
+//! core.32); every other command opens it, and a promote makes nothing
+//! (C.13, C.14).
 //!
 //! Status asks the landing, the policy and the ledger alone (60; design
 //! D8): it is bound by the same path, with no signer but every profile
@@ -474,8 +477,9 @@ impl Store for Unopened {
 /// the given host key under the same data directory, signing as the name
 /// its public half gives (C.2, C.5, C.6, C.8, C.13); every other command
 /// binds both signers verify-only.
-/// Every table is read before the layout is made, `[gate]` among them,
-/// so a file that cannot bind leaves nothing behind. The store is named
+/// Every table is read, `[gate]` among them, and nothing is made: a
+/// publish or a push makes the layout at its store's first operation, so
+/// a file that cannot bind leaves nothing behind. The store is named
 /// as the file names it or as it is given, its key and what it names, a
 /// path with `~/` expanded, so the record names a directory a reader
 /// finds whoever's home it was written under (61, 118; design D9). The
@@ -532,8 +536,11 @@ pub fn bind(
         ),
         None => profiles::landing::given(file, repository)?,
     };
+    // A publish or a push makes the layout at its store's first
+    // operation, through whichever binding of it is asked first.
+    let make = matches!(command, For::Publish | For::Push);
     let ledger = |store: &Table| match &bindings.ledger {
-        Some(ledger) => profiles::ledger::bind(ledger, repository, store),
+        Some(ledger) => profiles::ledger::bind(ledger, repository, store, make),
         None => Ok(profiles::ledger::given(repository, remote.clone())),
     };
     let (bound, keeper, projections) = if matches!(command, For::Status | For::Policy) {
@@ -555,10 +562,8 @@ pub fn bind(
         };
         (bound, keeper, BTreeMap::new())
     } else {
-        let bound = profiles::store::bind(store, matches!(command, For::Publish | For::Push))?;
-        // After the seams' own store, so a publish or a push has made the
-        // layout.
-        let cache = profiles::store::bind(store, false)?;
+        let bound = profiles::store::bind(store, make)?;
+        let cache = profiles::store::bind(store, make)?;
         let keeper = ledger(store)?;
         (
             bound,

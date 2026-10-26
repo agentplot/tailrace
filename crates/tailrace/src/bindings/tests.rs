@@ -431,12 +431,17 @@ fn publish_makes_the_layout_it_names_and_verify_never_does() {
 
     let publish = bound(&host, &layout, true, For::Publish).unwrap();
     assert!(
-        profiles::store::layout::Layout::open(&layout).is_ok(),
-        "publish made no layout"
+        !layout.exists(),
+        "binding a publish made {}",
+        layout.display()
     );
     assert_eq!(publish.signer, Some(SignerId::new("laptop")));
     let held = publish.seams.store.put_bytes(b"abc").unwrap();
     assert_eq!(held.digest, Digest::of(b"abc"));
+    assert!(
+        profiles::store::layout::Layout::open(&layout).is_ok(),
+        "publish made no layout"
+    );
     assert!(bound(&host, &layout, false, For::Verify).is_ok());
 }
 
@@ -727,12 +732,13 @@ fn a_push_needs_no_signing_and_makes_a_missing_layout() {
     let layout = host.dir.path().join("layouts").join("landing");
     let binding = bound(&host, &layout, false, For::Push).unwrap();
     assert_eq!(binding.signer, None);
+    assert!(!layout.exists(), "binding a push made {}", layout.display());
+    let digest = binding.seams.store.put_bytes(b"an archive").unwrap().digest;
+    assert_eq!(digest, Digest::of(b"an archive"));
     assert!(
         profiles::store::layout::Layout::open(&layout).is_ok(),
         "push made no layout"
     );
-    let digest = binding.seams.store.put_bytes(b"an archive").unwrap().digest;
-    assert_eq!(digest, Digest::of(b"an archive"));
     assert!(
         binding
             .seams
@@ -828,6 +834,7 @@ fn a_job_tells_a_separated_gate_in_its_words_as_written() {
     let host = Host::new();
     let layout = host.dir.path().join("layout");
     let words = "the release job a push to main wakes";
+    profiles::store::layout::Layout::create(&layout).unwrap();
     for command in [For::Publish, For::Verify] {
         let binding =
             bound_telling(&host, &layout, &format!("job = \"{words}\""), command).unwrap();
@@ -912,6 +919,7 @@ fn a_file_naming_no_gate_binds_as_before_and_the_hosts_publish_tells_its_gate() 
     let layout = host.dir.path().join("layout");
     let binding = bound_telling(&host, &layout, "", For::Publish).unwrap();
     assert_eq!(binding.signer, Some(SignerId::new("laptop")));
+    binding.seams.store.put_bytes(b"abc").unwrap();
     assert!(profiles::store::layout::Layout::open(&layout).is_ok());
     assert_eq!(binding.gate, Teller::Publish);
     let named = bound_telling(&host, &layout, "publish = {}", For::Publish).unwrap();
@@ -1565,6 +1573,7 @@ fn no_file_and_an_empty_file_bind_the_given_profiles() {
         let publish = host.bind(&repo, For::Publish).unwrap();
         assert_given(&host, &publish, &repo, &head);
         assert_eq!(publish.signer, Some(given_signer(&host)), "{text:?}");
+        publish.seams.store.put_bytes(b"abc").unwrap();
         for command in [For::Verify, For::Sync, For::Rebuild, For::Push] {
             let binding = host.bind(&repo, command).unwrap();
             assert_given(&host, &binding, &repo, &head);
@@ -1653,6 +1662,7 @@ fn the_given_layout_and_key_are_under_the_data_directory_or_the_home() {
     let (repo, _) = committed(&host, None);
     let binding = host.bind(&repo, For::Publish).unwrap();
     assert_eq!(binding.store, given_store(&host));
+    binding.seams.store.put_bytes(b"abc").unwrap();
     assert!(host.given_layout().join("oci-layout").is_file());
     let key = host.data().join(profiles::signer::HOST_KEY);
     assert!(!key.exists(), "binding made {}", key.display());
@@ -1780,10 +1790,15 @@ fn publish_makes_the_given_layout_with_its_parents_and_verify_over_none_makes_no
     );
     let binding = host.bind(&repo, For::Publish).unwrap();
     assert!(
-        layout.join("oci-layout").is_file(),
-        "publish made no layout"
+        !host.data().exists(),
+        "binding a publish made {}",
+        host.data().display()
     );
     let held = binding.seams.store.put_bytes(b"abc").unwrap();
     assert_eq!(held.digest, Digest::of(b"abc"));
+    assert!(
+        layout.join("oci-layout").is_file(),
+        "publish made no layout"
+    );
     assert!(host.bind(&repo, For::Verify).is_ok());
 }
