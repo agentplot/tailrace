@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use serde_json::json;
 use tailrace_core::render::Kept;
 use tailrace_core::{
-    artifact_name, judge, layout_policy_body, locate, own_policy, place, policy_for, refresh,
-    render, sync_checkout, Carried, CheckoutAsk, HeldEntry, HeldPin, Landed, Layouts, Located, Own,
-    PinAnswer, PolicyOf, Provenance, Refresh, RenderAsk, Under, ARTIFACT, CACHE,
+    artifact_name, judge, layout_policy_body, locate, own_policy, place, policy_for, readers,
+    refresh, render, sync_checkout, Carried, CheckoutAsk, HeldEntry, HeldPin, Landed, Layouts,
+    Located, Own, PinAnswer, PolicyOf, Provenance, Refresh, RenderAsk, Under, ARTIFACT, CACHE,
 };
 use tailrace_fakes::{FakeProjection, Fakes, Fault, PolicyOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
@@ -268,14 +268,20 @@ fn the_consumers_policy_is_read_at_the_landed_revision() {
         Required::Layout {
             claims: vec![provenance()],
             given: false,
+            signers: vec![],
         },
     );
+    let files = vec![
+        named(GATE, &[ClaimKind::Acceptance], &[]),
+        named(HOST, &[ClaimKind::Provenance], &[]),
+    ];
     fakes.policy.require_at(
         at.revision(),
         Audience::Layout,
         Required::Layout {
             claims: vec![acceptance(), provenance()],
             given: false,
+            signers: files.clone(),
         },
     );
     assert_eq!(
@@ -284,6 +290,7 @@ fn the_consumers_policy_is_read_at_the_landed_revision() {
             revision: Revision::new("4f2a9c1"),
             claims: vec![acceptance(), provenance()],
             given: false,
+            signers: files.clone(),
         }))
     );
     let [asked] = <[_; 1]>::try_from(fakes.policy.calls()).unwrap();
@@ -297,6 +304,7 @@ fn the_consumers_policy_is_read_at_the_landed_revision() {
         Required::Layout {
             claims: vec![acceptance()],
             given: true,
+            signers: files.clone(),
         },
     );
     assert_eq!(
@@ -305,8 +313,9 @@ fn the_consumers_policy_is_read_at_the_landed_revision() {
             revision: Revision::new("4f2a9c1"),
             claims: vec![acceptance()],
             given: true,
+            signers: files,
         })),
-        "the file's given was read as a layout line it writes"
+        "the file's given was read as a layout line it writes, or without its signers"
     );
 }
 
@@ -326,14 +335,14 @@ fn a_consumer_with_no_policy_file_has_none_and_one_unread_answers_its_words() {
     ));
 }
 
-/// The signers the host trusts, each by the host's own key for it,
-/// allowed to claim a layout policy alone.
+/// The signers the host trusts, its own among them, each by the host's
+/// own key for it, with no claim of its own to make.
 fn trusts(ids: &[&str]) -> Vec<NamedSigner> {
     ids.iter()
         .map(|id| NamedSigner {
             id: SignerId::new(*id),
             verified_by: format!("the host's key for {id}"),
-            kinds: vec![ClaimKind::LayoutPolicy],
+            kinds: vec![],
             checks: vec![],
         })
         .collect()
@@ -357,12 +366,20 @@ fn as_trusted(claim: RequiredClaim, ids: &[&str]) -> RequiredClaim {
 }
 
 /// The consumer's policy for layouts at the landed revision requiring
-/// `claims`: a layout line its file writes, or its file's given.
+/// `claims`: a layout line its file writes, or its file's given, its file
+/// naming no signer.
 fn consumers(claims: Vec<RequiredClaim>, given: bool) -> Own {
+    naming(claims, given, vec![])
+}
+
+/// The consumer's policy as [`consumers`] has it, its file naming
+/// `signers`.
+fn naming(claims: Vec<RequiredClaim>, given: bool, signers: Vec<NamedSigner>) -> Own {
     Own {
         revision: Revision::new("4f2a9c1"),
         claims,
         given,
+        signers,
     }
 }
 
@@ -601,6 +618,212 @@ fn a_host_trusting_none_refuses_naming_acceptance_with_no_signer_checked() {
         ),
         other => panic!("a host trusting none judged {other:?}"),
     }
+}
+
+#[test]
+fn a_claim_is_read_through_the_files_signers_for_it_else_the_hosts_trust() {
+    let files = naming(
+        vec![],
+        true,
+        vec![
+            named(GATE, &[ClaimKind::Acceptance], &[]),
+            named("box", &[ClaimKind::Verdict], &["test"]),
+        ],
+    );
+    let trusted = trusts(&[HOST, "laptop"]);
+    let ids = |signers: Vec<NamedSigner>| -> Vec<String> {
+        signers
+            .into_iter()
+            .map(|s| s.id.as_str().to_string())
+            .collect()
+    };
+    assert_eq!(
+        ids(readers(Some(&files), &trusted, ClaimKind::Acceptance, None)),
+        [GATE],
+        "the host's trust was read for a claim the file names a signer for"
+    );
+    let test = Check::new("test");
+    assert_eq!(
+        ids(readers(
+            Some(&files),
+            &trusted,
+            ClaimKind::Verdict,
+            Some(&test)
+        )),
+        ["box"]
+    );
+    let lint = Check::new("lint");
+    let through_trust = readers(Some(&files), &trusted, ClaimKind::Verdict, Some(&lint));
+    assert_eq!(
+        through_trust,
+        [
+            named(HOST, &[ClaimKind::Verdict], &["lint"]),
+            named("laptop", &[ClaimKind::Verdict], &["lint"]),
+        ]
+        .map(|n| NamedSigner {
+            verified_by: format!("the host's key for {}", n.id),
+            ..n
+        }),
+        "a verdict of a check the file names no signer for was not read through the host's trust, \
+         allowed that claim alone"
+    );
+    assert_eq!(
+        ids(readers(
+            Some(&files),
+            &trusted,
+            ClaimKind::LayoutPolicy,
+            None
+        )),
+        [HOST, "laptop"]
+    );
+    assert_eq!(
+        ids(readers(None, &trusted, ClaimKind::Acceptance, None)),
+        [HOST, "laptop"],
+        "a consumer with no policy file read acceptance through another than the host's trust"
+    );
+}
+
+#[test]
+fn a_file_naming_signers_counts_a_publishers_policy_through_them_alone() {
+    let index = Digest::of(b"index");
+    let gate_or_box = RequiredClaim {
+        kind: ClaimKind::Acceptance,
+        check: None,
+        signers: vec![
+            named(GATE, &[ClaimKind::Acceptance], &[]),
+            named("box", &[ClaimKind::Acceptance], &[]),
+        ],
+    };
+    let files = naming(
+        vec![acceptance()],
+        true,
+        vec![
+            NamedSigner {
+                verified_by: "the consumer's key for gate".into(),
+                ..named(GATE, &[ClaimKind::Acceptance], &[])
+            },
+            named("curator", &[ClaimKind::LayoutPolicy], &[]),
+        ],
+    );
+    let fakes = Fakes::new();
+    let by_trusted = [publishers(&index, &[provenance()], HOST)];
+    let (policy, _) = policy_for(
+        &fakes.seams(),
+        Some(&files),
+        &trusts(&[HOST, "box"]),
+        &index,
+        &by_trusted,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        policy,
+        PolicyOf::Given {
+            revision: Some(Revision::new("4f2a9c1"))
+        },
+        "a layout policy by a signer the host trusts counted where the file names its own"
+    );
+
+    let curated = [publishers(
+        &index,
+        std::slice::from_ref(&gate_or_box),
+        "curator",
+    )];
+    let (policy, claims) = policy_for(
+        &fakes.seams(),
+        Some(&files),
+        &trusts(&[HOST, "box"]),
+        &index,
+        &curated,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(policy, PolicyOf::Publisher { .. }), "{policy:?}");
+    assert_eq!(
+        claims,
+        [RequiredClaim {
+            signers: vec![NamedSigner {
+                verified_by: "the consumer's key for gate".into(),
+                ..named(GATE, &[ClaimKind::Acceptance], &[])
+            }],
+            ..gate_or_box
+        }],
+        "acceptance counted through another than the gate the file names, by its key"
+    );
+}
+
+#[test]
+fn a_claim_its_file_names_no_signer_for_is_read_through_the_hosts_trust() {
+    let (fakes, located, _) = accepted();
+    let seams = fakes.seams();
+    let nobody = RequiredClaim {
+        kind: ClaimKind::Acceptance,
+        check: None,
+        signers: vec![],
+    };
+    let ones = naming(
+        vec![nobody.clone()],
+        true,
+        vec![named("laptop", &[ClaimKind::Provenance], &[])],
+    );
+    let on_index = [signed(
+        &located.index,
+        ClaimKind::Acceptance,
+        json!(null),
+        "laptop",
+    )];
+    let (policy, claims) = policy_for(
+        &seams,
+        Some(&ones),
+        &trusts(&[HOST]),
+        &located.index,
+        &on_index,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        (policy, claims.clone()),
+        (
+            PolicyOf::Given {
+                revision: Some(Revision::new("4f2a9c1"))
+            },
+            given_by_trusted(&[HOST]).1
+        ),
+        "the file's one publisher stood as the gate for reading"
+    );
+    let (wanted, checked) = wanting(judge(&seams, &claims, &located, &on_index, &[]).unwrap());
+    assert_eq!(
+        (wanted.kind, checked),
+        (ClaimKind::Acceptance, vec![SignerId::new(HOST)])
+    );
+    let by_host = [signed(
+        &located.index,
+        ClaimKind::Acceptance,
+        json!(null),
+        HOST,
+    )];
+    assert_eq!(
+        judge(&seams, &claims, &located, &by_host, &[]),
+        Ok(Ok(vec![])),
+        "the version the host accepted itself was not held"
+    );
+
+    let written = consumers(vec![nobody], false);
+    let (policy, claims) = policy_for(
+        &seams,
+        Some(&written),
+        &trusts(&[HOST]),
+        &located.index,
+        &on_index,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(policy, PolicyOf::Own { .. }), "{policy:?}");
+    assert_eq!(
+        claims,
+        given_by_trusted(&[HOST]).1,
+        "a written line's claim naming no signer was not read through the host's trust"
+    );
 }
 
 #[test]
@@ -1299,6 +1522,7 @@ impl Checkout {
             Required::Layout {
                 claims,
                 given: false,
+                signers: vec![],
             },
         );
         if let Some(pins) = pins {
