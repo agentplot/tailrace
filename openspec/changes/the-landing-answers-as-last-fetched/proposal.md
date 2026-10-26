@@ -142,6 +142,9 @@ crates/tailrace/tests/**
 crates/tailrace-core/src/landed.rs
 crates/tailrace-core/src/publish.rs
 crates/tailrace-core/src/status.rs
+crates/tailrace-core/src/cache.rs
+crates/tailrace-core/src/push.rs
+crates/tailrace-core/src/record.rs
 crates/tailrace-core/tests/**
 crates/tailrace-fakes/src/landing.rs
 crates/tailrace-fakes/src/lib.rs
@@ -152,6 +155,7 @@ crates/tailrace-conformance/src/core/publish.rs
 crates/tailrace-conformance/src/core/status.rs
 crates/tailrace-conformance/src/core/cache.rs
 crates/tailrace-conformance/src/core/gate.rs
+crates/tailrace-conformance/src/core/verify.rs
 crates/tailrace-conformance/tests/**
 site/src/content/docs/guides/integrations/landings.mdx
 ```
