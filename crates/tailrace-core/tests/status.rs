@@ -671,3 +671,25 @@ fn status_asks_no_store_signer_target_or_projection_and_writes_nothing() {
     assert_eq!(appends(), appended, "status appended to the ledger");
     assert_eq!(files(kept.dir()), record, "status wrote to the record");
 }
+
+// Requirement (serving-process): The repository is in the path, by its
+// remote's owner and name
+
+#[test]
+fn a_remotes_address_is_read_as_written_with_no_rewrite_applied() {
+    let world = World::new();
+    let url = "https://example.com/agentplot/tailrace.git";
+    world.repo.git(&["remote", "add", "upstream", url]);
+    world.repo.git(&[
+        "config",
+        "url./srv/elsewhere/.insteadOf",
+        "https://example.com/",
+    ]);
+    let history = world.history();
+    assert_eq!(history.remote_url("upstream"), Ok(Some(url.to_string())));
+    assert_eq!(history.remote_url("nowhere"), Ok(None));
+    assert_eq!(
+        tailrace_core::RepositoryName::from_remote(url).map(|r| r.to_string()),
+        Some("agentplot/tailrace".to_string())
+    );
+}
