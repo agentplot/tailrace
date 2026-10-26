@@ -662,6 +662,84 @@ fn a_landing_that_cannot_be_read_is_the_channels_unreadable_answer_and_the_rest_
     assert_eq!(json["channels"]["answer"], "unreadable", "{json}");
 }
 
+// Requirement: Status says when the landing was fetched
+
+const UNREACHABLE: &str = "fatal: unable to access 'https://example.com/o/r.git/': \
+                           Could not resolve host: example.com\n";
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+#[test]
+fn a_landing_read_as_last_fetched_shows_every_channel_and_says_when() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    declare(&world, &stable(), "lib", None);
+    promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let before = now();
+    let first = asked(&world, &ask(&world));
+    let after = now();
+    assert_eq!(
+        first.channels.as_ref().map(|c| &c.landing),
+        Ok(&Read::Source)
+    );
+    world.fakes.landing.unreachable(UNREACHABLE);
+
+    let again = asked(&world, &ask(&world));
+    let channels = again.channels.as_ref().expect("the channels answered");
+    let Read::Kept { at, said } = &channels.landing else {
+        panic!("the landing was read {:?}", channels.landing)
+    };
+    assert!((before..=after).contains(at), "fetched at {at}");
+    assert_eq!(said, UNREACHABLE);
+    assert_eq!(channels.revision, world.head);
+    assert_eq!(channels_of(&again), channels_of(&first));
+    assert!(channels_of(&again).iter().all(|c| c.at.is_ok()));
+    assert_eq!(again.published, first.published);
+
+    let json = serde_json::to_value(&again).unwrap();
+    let landing = &json["channels"]["value"]["landing"]["kept"];
+    assert_eq!(landing["at"], *at, "{json}");
+    assert_eq!(landing["said"], UNREACHABLE, "{json}");
+    let json = serde_json::to_value(&first).unwrap();
+    assert_eq!(json["channels"]["value"]["landing"], "source", "{json}");
+}
+
+#[test]
+fn a_head_not_landed_as_last_fetched_refuses_the_channels_and_the_record_still_answers() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    let before = now();
+    let (version, _) = published(&world);
+    let after = now();
+    let later = world.repo.touch("feat: lib grows again", &["crates/lib"]);
+    world.fakes.landing.land(&world.main, &later);
+    world.fakes.landing.unreachable(UNREACHABLE);
+
+    let answer = asked(&world, &ask(&world));
+    let Err(Not::Refused(r)) = &answer.channels else {
+        panic!("the channels answered {:?}", answer.channels)
+    };
+    let Why::NotLandedAsFetched {
+        branch,
+        revision,
+        fetched,
+    } = &r.why
+    else {
+        panic!("{} is not a refusal as last fetched", r.why)
+    };
+    assert_eq!((branch, revision), (&world.main, &later));
+    assert!((before..=after).contains(fetched), "fetched at {fetched}");
+    assert_eq!(r.said.as_deref(), Some(UNREACHABLE));
+    assert!(r.why.to_string().contains("ask again"), "{}", r.why);
+    let published = answer.published.as_ref().expect("the record answered");
+    assert_eq!(published.components[0].versions[0].version, version);
+}
+
 // Requirement: Asking reaches no store, signer or target and writes nothing
 
 #[test]
