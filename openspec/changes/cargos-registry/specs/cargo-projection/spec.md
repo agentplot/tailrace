@@ -9,19 +9,23 @@ setting the version where that package declares it (its own
 it inherits it), running `cargo package --no-verify --allow-dirty` into
 a scratch target directory, and answering the `.crate` file's bytes with
 metadata naming the ecosystem `cargo`, the package's name and the
-version (84, C.11). It SHALL restore the edited manifest's bytes before
-it answers, whatever cargo answered, and SHALL never open the archive to
-edit it. It SHALL answer `same_again` true (87). A crate whose own
-manifest names another version than the one given SHALL be refused
-naming both. An output with no such manifest, or several, SHALL be
-refused naming the output and its files. Cargo that cannot be run, or
-that fails, SHALL answer unreadable with the operating system's or
-cargo's own words (58, 59).
+version (84, C.11). It SHALL answer `same_again` true (87) and SHALL
+never open the archive to edit it.
 
 #### Scenario: Packed the same again
 
 - **WHEN** one crate output is packed twice at one version
 - **THEN** both packs answer the same bytes and the same metadata, the conformance group's "packed the same again" passing
+
+### Requirement: A pack leaves the checkout as it was and refuses what it cannot promise
+
+The Cargo projection SHALL restore the edited manifest's bytes before
+pack answers, whatever cargo answered. A crate whose own manifest names
+another version than the one given SHALL be refused naming both. An
+output with no `[package]` manifest among its files, or several, SHALL
+be refused naming the output and its files. Cargo that cannot be run,
+or that fails, SHALL answer unreadable with the operating system's or
+cargo's own words (58, 59).
 
 #### Scenario: The checkout is left as it was
 
@@ -55,11 +59,8 @@ per version, ordered by Cargo's version rules (23), written from the
 crate's own normalized manifest with `cksum` the crate's SHA-256 (85).
 The layout SHALL hold exactly the versions given, removing crate and
 index files of versions not given, and rendering the same artifacts
-again SHALL give the same layout (48). An artifact of another
-ecosystem, a manifest naming other than one layer, bytes of another
-digest, or a crate whose manifest names another name or version than its
-metadata SHALL be refused naming it, before anything is written. It
-SHALL answer the versions it holds.
+again SHALL give the same layout (48). It SHALL answer the versions it
+holds.
 
 #### Scenario: A layout of the versions given
 
@@ -70,6 +71,14 @@ SHALL answer the versions it holds.
 
 - **WHEN** a crate depending on a crate of its own registry, recorded by `registry-index`, and on a crate of crates.io is rendered
 - **THEN** its index line names the first dependency's registry by that index URL and the second by crates.io's index URL
+
+### Requirement: A render refuses what it cannot hold before writing
+
+The Cargo projection SHALL check every artifact before render writes
+anything, and SHALL refuse, naming it, an artifact of another ecosystem,
+a manifest naming other than one layer, bytes of another digest than
+the layer's, or a crate whose own manifest names another name or
+version than its metadata (core.4, core.5).
 
 #### Scenario: Bytes of another digest
 
