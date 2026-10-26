@@ -32,7 +32,7 @@ ecosystem, name or version (53).
 #### Scenario: A declared channel names its component
 
 - **WHEN** a channel a policy declares is written in its machine-readable form
-- **THEN** it names the channel's name, its component or that the repository declares none, and how it moves, naming the channel it is bound to where it is bound
+- **THEN** it names the channel's name, its component or that the repository declares none, and how it moves, naming the channel it is bound to where it is bound and whether it takes prereleases where it moves on each publish
 
 #### Scenario: A channel spelled
 
@@ -46,14 +46,16 @@ revision and an audience of acceptance, a channel with its component,
 or a layout, with the claims required, each with the signers that may
 make it and what each may claim (82), or absent where no policy is
 declared. The policy for a channel SHALL name the signers that may sign
-its promotion (32), and the policy for a channel bound to another SHALL
+its promotion (32) and the signers that may ask for it, none meaning any
+asker the gate verifies (129, C.10), and the policy for a channel bound to another SHALL
 name the channel it is bound to; the policy for acceptance SHALL name no
 channel (83). The policy SHALL answer channels, given a repository at a
 landed revision, with every channel its policy declares or gives, once
 each, ordered by name and then by component, each with the one
 component it belongs to (125) and how it moves: on each accepted
-publish, by a promotion alone, or bound to a channel of the same
-component (37, 83, 131); a repository that declares one component SHALL
+publish, with releases alone or prereleases too, by a promotion alone,
+or bound to a channel of the same component (37, 83, 131, C.10); a
+repository that declares one component SHALL
 have every channel in it, and one that declares none SHALL have every
 channel in that one, its channels spelled by name alone (123).
 
@@ -71,6 +73,11 @@ channel in that one, its channels spelled by name alone (123).
 
 - **WHEN** policy-for is asked for a channel
 - **THEN** it names the signers whose promotion of that channel counts, each with what it may claim
+
+#### Scenario: A channel's approvers
+
+- **WHEN** policy-for is asked for a channel whose policy names who may ask for it, and for one whose policy names none
+- **THEN** the first names those signers, and the second names none, which is any asker the gate verifies
 
 ### Requirement: The keeper's contract
 

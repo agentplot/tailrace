@@ -3,9 +3,9 @@
 ## Purpose
 
 How each channel of a repository moves, which channels every component
-is given and which an environment's words make, and who signs a
-promotion of each, as the policy seam answers them and the gate and the
-ledger read them.
+is given and which an environment's words make, who may ask for each to
+move and who signs its promotion, as the policy seam answers them and
+the gate and the ledger read them.
 
 ## ADDED Requirements
 
@@ -15,12 +15,18 @@ The policy SHALL answer, of every channel it lists, exactly one of
 three ways it moves: on each accepted publish, as the gate's own act
 (95); by a promotion alone; or bound, naming the channel of the same
 component it is bound to (37, 83, 125, 131). A channel that moves on
-each publish SHALL never be bound.
+each publish SHALL never be bound, and SHALL say whether it takes
+prereleases as well as releases (C.10).
 
 #### Scenario: Three channels, three ways
 
 - **WHEN** a repository's policy lists `beta` moving on each publish, `edge` moving by promotion alone and `stable` bound to `beta`
 - **THEN** the channels answer says so of each, and only `stable` names a channel it is bound to
+
+#### Scenario: A following channel that takes prereleases
+
+- **WHEN** a repository's policy lists `beta` moving on each publish and `alpha` moving on each publish with prereleases
+- **THEN** the channels answer says `alpha` takes prereleases and `beta` takes releases alone
 
 #### Scenario: A following channel that is bound
 
@@ -52,11 +58,14 @@ The given channels SHALL be a policy fragment in the policy file's own
 form, shipped with tailrace as data in the policy profile's directory
 and laid beneath the repository's file, the two read as one table in
 force by every answer the profile gives (C.10). The fragment SHALL hold
-`beta`, moving on each accepted publish, and `stable`, bound to `beta`,
-both on, and `alpha`, moving on each accepted publish, and `lts`, bound
-to `stable`, both off. Every component SHALL have each given that is
-on with no line written, listed like a channel declared by hand, with
-the policy for each answering like any channel's.
+`beta`, moving on each accepted publish with releases alone, and
+`stable`, bound to `beta`; and, held until the repository switches them
+on, `alpha`, moving on each accepted publish with prereleases too, and
+`lts`, bound to `stable` and moved by no rule, so only an asking moves
+it. The givens that are not held SHALL be declared, by the fragment:
+every component SHALL have `beta` and `stable` with no line written,
+listed like a channel declared by hand, with the policy for each
+answering like any channel's, and never answered as not declared.
 
 #### Scenario: A repository that writes no channel
 
@@ -75,36 +84,44 @@ the policy for each answering like any channel's.
 
 ### Requirement: One line switches a held given on
 
-A repository SHALL switch on a channel the fragment holds off by
-writing that channel's table, `[channels.<name>]` or
-`[channels.<component>.<name>]`, with no key needed, since its keys are
-already written beneath (C.10). A channel the table in force has off
+A repository SHALL switch on a channel the fragment holds by writing
+that channel's table, `[channels.<name>]` or
+`[channels.<component>.<name>]`, empty or with lines, since its keys
+are already written beneath (C.10). Writing the table SHALL be the only
+switch: no key switches a channel on or off, and nothing SHALL turn
+`beta` or `stable` off. A held channel the repository does not write
 SHALL not be listed, SHALL have no policy, and SHALL be named by no
 binding or environment.
 
 #### Scenario: alpha switched on
 
 - **WHEN** the file declares no component and holds `[channels.alpha]` and nothing under it
-- **THEN** the channels answer lists `alpha` moving on each publish beside `beta` and `stable`, and the policy for `alpha` names the gate as its promoter
+- **THEN** the channels answer lists `alpha` moving on each publish with prereleases beside `beta` and `stable`, and the policy for `alpha` names the gate as its promoter
 
 #### Scenario: lts of one component
 
 - **WHEN** the file declares `lib` and `web` and holds `[channels.lib.lts]`
 - **THEN** `lts` of `lib` is listed bound to `stable` of `lib`, and no `lts` of `web` is listed
 
-#### Scenario: A channel held off
+#### Scenario: A held channel not written
 
 - **WHEN** the file writes no `alpha`, and an environment names `channel = "alpha"`
 - **THEN** the channels are unreadable naming the environment's table and `alpha`, and the policy for `alpha` alone is absent naming the channel
+
+#### Scenario: A key that would switch a given off
+
+- **WHEN** `[channels.beta]` names `on = false`
+- **THEN** the channels are unreadable naming `[channels.beta]` and `on`, and saying that writing a channel's table is the switch and that `beta` and `stable` stay on
 
 ### Requirement: The same line overrides a given
 
 A key the repository writes in a given channel's table SHALL replace
 the fragment's key: `on_each_publish` or `bound_to` SHALL replace how
-the channel moves, both keys together, `on = false` SHALL switch it
-off, and `require` SHALL add the claims its versions must carry after
-the gate's acceptance (C.10). No line SHALL widen who signs a given's
-promotion (32, C.10).
+the channel moves, both keys together; `prereleases` SHALL replace
+whether a following channel takes prereleases; `require` SHALL add the
+claims its versions must carry after the gate's acceptance; and
+`approvers` SHALL narrow who may ask for it (C.10). No line SHALL widen
+who signs a given's promotion (32, C.10).
 
 #### Scenario: A line that adds a claim
 
@@ -121,10 +138,10 @@ promotion (32, C.10).
 - **WHEN** `[channels.beta]` names `on_each_publish = false`
 - **THEN** `beta` is listed moving by a promotion alone, and no channel follows each publish
 
-#### Scenario: beta switched off
+#### Scenario: beta taking prereleases
 
-- **WHEN** `[channels.beta]` names `on = false`, and `stable` is left as given
-- **THEN** the channels are unreadable naming `stable`'s table and `beta`, since `stable` is bound to a channel that is off
+- **WHEN** `[channels.beta]` names `prereleases = true`
+- **THEN** `beta` is listed moving on each publish with prereleases, and `stable` is still bound to `beta`
 
 #### Scenario: A cycle of bindings
 
@@ -133,7 +150,7 @@ promotion (32, C.10).
 
 ### Requirement: The gate's signer promotes a given channel
 
-The policy for a channel the givens hold and the table in force has on
+The policy for a channel the givens hold and the table in force lists
 SHALL require the gate's acceptance and SHALL name as the signers that
 may sign its promotion the signers the policy lets claim acceptance,
 the gate (32), whatever a line under the channel names; any other signer's promotion of it SHALL be refused
@@ -149,12 +166,40 @@ naming the promotion and those signers (9, 116).
 - **WHEN** `[channels.stable]` requires an acceptance from `gate` and names `laptop`, kinds `promotion`, among its signers, and the host signing as `laptop` promotes to `stable`
 - **THEN** the promotion is refused naming the promotion and `gate`, and nothing is appended
 
+### Requirement: Who may ask for a channel
+
+A channel moved by an asking, one that moves by a promotion alone, is
+bound, or is made by a manual environment, SHALL be moved at the asking
+of any asker the gate verifies, the host's own signer while no identity
+provider stands (129), unless its table names `approvers`, signers the
+policy names, and then only at the asking of one of them (32, C.10).
+The same key under a given SHALL narrow who may ask for it, and SHALL
+never widen who signs.
+
+#### Scenario: stable narrowed to one asker
+
+- **WHEN** `[signers.ci]` and `[signers.desk]` may both claim acceptance, `[channels.stable]` names `approvers = ["ci"]`, and the host signing as `desk` promotes to `stable` a version `beta` has held
+- **THEN** the promotion is refused naming `desk` as the asker and `ci` as who may ask, and nothing is signed or appended
+
+#### Scenario: The approver asks
+
+- **WHEN** the same policy, and the host signing as `ci` promotes to `stable` a version `beta` has held
+- **THEN** `stable` moves, its claim made by `ci` and naming `ci` as who asked
+
+#### Scenario: lts moves only at an asking
+
+- **WHEN** `[channels.lts]` is written, and the gate accepts a version a publish told it of
+- **THEN** `beta` moves and `lts` does not, and `lts` moves only when a promotion of it is asked for
+
 ### Requirement: A manual environment has a channel of its own
 
 An environment whose `policy` is `manual` SHALL give it a channel of
 its own, named for the environment, in the component of the channel it
-names and bound to that channel (41, 97, C.10). An environment whose
-`policy` is `auto`, or unwritten, SHALL make no channel.
+names and bound to that channel, moved only at an asking (41, 97,
+C.10). Who may ask for it SHALL be named by `approvers` in the made
+channel's own table, `[channels.<environment>]`, since an environment's
+table holds C.10's four words alone. An environment whose `policy` is
+`auto`, or unwritten, SHALL make no channel.
 
 #### Scenario: prod waits on stable
 
@@ -165,6 +210,11 @@ names and bound to that channel (41, 97, C.10). An environment whose
 
 - **WHEN** the environment `site` names the channel `stable` and writes no `policy`
 - **THEN** no channel named `site` is listed
+
+#### Scenario: Who may say yes to prod
+
+- **WHEN** the manual environment `prod` names `stable`, and `[channels.prod]` names `approvers = ["ci"]`
+- **THEN** `prod` is listed bound to `stable`, and its policy names `ci` as the one signer that may ask for it
 
 ### Requirement: An after environment has a channel bound to theirs
 
@@ -190,9 +240,10 @@ through `after` SHALL make the channels unreadable naming the table.
 A channel an environment's words make SHALL be listed, judged and
 promoted like a given channel: its policy requires the gate's
 acceptance and its promotion is signed by the gate's signer (131,
-C.10). A line under it SHALL add claims after the gate's acceptance,
-and one naming another way it moves SHALL be unreadable naming its
-table, since the environment's words say how it moves.
+C.10). A line under it SHALL add claims after the gate's acceptance or
+name its approvers, and one naming another way it moves SHALL be
+unreadable naming its table, since the environment's words say how it
+moves.
 
 #### Scenario: Promoting prod
 

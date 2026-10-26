@@ -24,8 +24,9 @@ digest, a signer or a channel of its own (56, core.31).
 `--json`, and SHALL print, at the branch's landed head, the policy for
 acceptance and for a layout and every channel the channels answer
 lists, the givens beside the repository's own, each with its component,
-how it moves, the claims its policy requires and its promoters (C.10,
-131, 82). Each part SHALL carry its own answer, so an absent layout or
+how it moves, whether a following channel takes prereleases, the claims
+its policy requires, its promoters and who may ask for it (C.10, 131,
+82). Each part SHALL carry its own answer, so an absent layout or
 a channel whose policy cannot be read leaves the rest shown (58). It
 SHALL be bound as status is, asking the landing and the policy alone,
 and SHALL write nothing (60, core.32). It SHALL exit 0 whenever an
@@ -35,7 +36,12 @@ cannot be resolved or has not landed.
 #### Scenario: The givens beside a line
 
 - **WHEN** `tailrace policy --json` runs in a repository whose landed head holds a policy file with `[acceptance]` and `[channels.stable]` requiring a rebuild
-- **THEN** the printed JSON is the core's answer value for value, listing `beta` moving on each publish and `stable` bound to `beta` requiring the gate's acceptance and then the rebuild, and the exit is 0
+- **THEN** the printed JSON is the core's answer value for value, listing `beta` moving on each publish with releases alone and `stable` bound to `beta` requiring the gate's acceptance and then the rebuild, and the exit is 0
+
+#### Scenario: alpha and its approvers shown
+
+- **WHEN** `tailrace policy` runs at a head whose file holds `[channels.alpha]` and `[channels.stable]` naming `approvers = ["ci"]`
+- **THEN** it shows `alpha` moving on each publish with prereleases, and `stable` with `ci` as who may ask
 
 #### Scenario: No layout policy
 

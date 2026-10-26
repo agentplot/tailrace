@@ -3,11 +3,12 @@
 ## Why
 
 A person who writes nothing about channels should still get `beta`,
-moved by the gate on every accepted publish, and `stable`, moved by
-promotion from what `beta` has held; one who wants `alpha` or `lts`
-should write one line and have it; and a person who marks an
-environment `manual` should get a channel of its own that waits on
-their yes. Today a channel exists only where a `[channels.<name>]`
+moved by the gate on every accepted release, and `stable`, moved by
+promotion from what `beta` has held; one who wants `alpha`, which takes
+prereleases too, or `lts` should write one line and have it; a person
+who marks an environment `manual` should get a channel of its own that
+waits on their yes; and a person should be able to say who may ask for
+a channel to move. Today a channel exists only where a `[channels.<name>]`
 line is written, the gate finds the channels that follow each publish
 by parsing the policy file itself, and two components' channels of one
 name share one chain and one store name. This unit makes the policy
@@ -17,8 +18,8 @@ repository's file, makes the channels an environment's words call for,
 and gives a channel its component wherever it travels, so the gate and
 the ledger learn every channel from that one answer and the core knows
 no channel's name (131, 125, 37, 83, 95, C.10, C.13, C.14, as amended
-at agentplot/blueprints 67f95da, 85bbf54, 7749369, e18ba89, 061bfa8
-and b64d367).
+at agentplot/blueprints 67f95da, 85bbf54, 7749369, e18ba89, 061bfa8,
+b64d367 and 53f6d44).
 
 ## What Changes
 
@@ -27,7 +28,8 @@ and b64d367).
   as the gate's own act (95); it moves by a promotion alone; or it is
   bound, naming the channel it is bound to (37, 83). The channel's
   binding leaves the listing's own field and becomes this third case
-  (131).
+  (131). A channel that moves on each publish also says whether it
+  takes prereleases (C.10).
 - **A channel's identity is its component and its name.** Every seam
   that takes a channel takes its component with it: the policy's
   channel audience, the ledger's append and chain, the store name a
@@ -45,20 +47,40 @@ and b64d367).
   main.
 - **The given channels are a fragment of the policy file, shipped as
   data.** A file in the policy profile's directory, written in the
-  policy file's own form, holds `beta`, moving on each accepted publish,
-  and `stable`, bound to `beta`, both on for every component, and
-  `alpha`, moving on each accepted publish, and `lts`, bound to
-  `stable`, both held off (C.10). The profile lays it beneath the
+  policy file's own form, declares `beta`, moving on each accepted
+  publish with releases alone, and `stable`, bound to `beta`, for every
+  component; and holds back, each marked `held = true`, `alpha`, moving
+  on each accepted publish with prereleases too, and `lts`, bound to
+  `stable` and moved by no rule, so only an asking moves it (C.10). A
+  repository that writes no channel line still has `beta` and `stable`,
+  and the channels answer carries them, never "not declared". The profile lays it beneath the
   repository's file and reads the two as one table in force, through
   one path that the channels, each channel's policy and the policy
   command all read. No Rust source names a given channel.
 - **One line switches a held channel on, and the same line overrides a
-  given.** Writing `[channels.alpha]` (or `[channels.<component>.alpha]`)
-  switches `alpha` on, since its keys are already written beneath. A
-  key the repository writes under a given replaces the fragment's: a
-  `bound_to` or `on_each_publish` changes how it moves, `on = false`
-  switches it off, and a `require` adds claims after the gate's
-  acceptance (C.10).
+  given.** Writing `[channels.alpha]` (or `[channels.<component>.alpha]`),
+  empty or with lines, switches `alpha` on, since its keys are already
+  written beneath. That is the only switch: no key switches a channel on
+  or off, nothing turns `beta` or `stable` off, and an `on` or `held`
+  written in the repository's file is unreadable naming the key. A key
+  the repository writes under a given replaces the fragment's: a
+  `bound_to` or `on_each_publish` changes how it moves, `prereleases`
+  whether it takes prereleases, a `require` adds claims after the
+  gate's acceptance, and `approvers` narrows who may ask (C.10).
+- **A following channel takes releases, and prereleases only where it
+  says so.** The gate moves each channel that follows each publish with
+  an accepted release, and with an accepted prerelease only where the
+  channel's line says `prereleases = true`, as `alpha`'s given does
+  (C.10, 95). The acceptance stands whichever channels move.
+- **Who may ask is the policy's to say.** A channel moved by an asking,
+  by a promotion alone, bound, or made by a manual environment, moves at
+  the asking of any asker the gate verifies, the host's own signer
+  today (129), unless `approvers` under its table names signers, and
+  then only at theirs; a refused asking names the asker and who may
+  ask. The same key under a given narrows who asks for it. A manual
+  environment's approvers are written under its made channel,
+  `[channels.<environment>]`. Approvers never widen who signs, and the
+  gate's own move on a publish is no asking (32, 95, C.10).
 - **A given channel is promoted by the gate's own signer.** Every
   channel the fragment holds and the table in force has on requires the
   gate's acceptance and is promoted by the signers the policy lets claim
@@ -70,15 +92,17 @@ and b64d367).
 - **`tailrace policy` shows the table in force.** At the governed
   branch's landed head it prints the acceptance and layout policies and
   every channel the channels answer lists, the givens beside the
-  repository's own, each with its component, how it moves, its claims
-  and its promoters, asked of the core like every command (core.31).
+  repository's own, each with its component, how it moves, whether it
+  takes prereleases, its claims, its promoters and who may ask, asked
+  of the core like every command (core.31).
 - **An environment's words make its channels.** An environment's
   `policy = "manual"` gives it a channel of its own, named for the
   environment and bound to the channel it names; `after = [...]` gives
   it a channel of its own bound to the channel the named environments
   follow (C.10, 41, 97). These are listed like a channel declared by
   hand and promoted by the gate's signer as a given channel is; a line
-  under one adds claims and never changes how it moves, since the
+  under one adds claims or names its approvers and never changes how it
+  moves, since the
   environment's words say that. An environment's table holds C.10's
   words and no others: `channel`, `policy` (`auto` or `manual`, `auto`
   unless written), `after` and `target`; any other key is unreadable
@@ -122,16 +146,10 @@ Out of scope, and what each waits on:
   target, phase 2. This unit makes and lists those channels; nothing
   moves them yet but `tailrace promote`. 41 and 97 stay in the register
   with the target's unit.
-- The later word that names who may say yes to a `manual` environment,
-  a line that narrows who may ask for a given channel, and `lts`'s
-  "by a person alone" (C.10): no key is named for any of them, and the
-  asker is the host's own signer in phase 1 (129). They wait on a
-  design ruling and the hosted gate's approvals.
-- `alpha` taking prereleases where `beta` does not: C.10 says `alpha`
-  follows every accepted version including prereleases, and nothing
-  says `beta` leaves them out or how a channel that moves on each
-  publish would. Here `alpha` moves on each accepted publish exactly as
-  `beta` does; it waits on a design ruling.
+- Persons as approvers, and `lts`'s "by a person alone" as a person
+  rather than the host's signer: they wait on the owner's identity
+  provider (129, phase 2). Until then `approvers` names signers, and an
+  asker is the host's own signer.
 - The other givens C.10 lists, the one component and the version rule,
   moving into the fragment: the core's reading of `[[component]]` and
   `[version]` stays as it is.
@@ -143,7 +161,9 @@ Out of scope, and what each waits on:
   unit lands; until then such a file names no gate, as on main, and its
   given channels name no promoter. Neither the gate nor `tailrace
   promote` changes for it, since both read the gate and the promoters
-  from the answer.
+  from the answer. The refusal C.10 gives a file naming several signers
+  for provenance and none for acceptance, "several publishers and no
+  gate", goes with that default.
 - `tailrace status` rendering how each channel moves:
   `status-on-any-machine`, which reads the channels answer and the
   chains as this unit leaves them.
@@ -157,37 +177,46 @@ Out of scope, and what each waits on:
 
 ### New Capabilities
 
-- `channel-movement`: how each channel moves, the given channels as a
-  fragment beneath the file, switched on and overridden by one line,
-  the channels an environment's words make, and who signs a promotion
-  of a given or made channel, as every policy profile answers them and
-  the gate and the ledger read them.
+- `channel-movement`: how each channel moves, prereleases among it, the
+  given channels as a fragment beneath the file, switched on and
+  overridden by one line, the channels an environment's words make, who
+  may ask for a channel and who signs a promotion of a given or made
+  channel, as every policy profile answers them and the gate and the
+  ledger read them.
 
 ### Modified Capabilities
 
 - `seam-contracts`: the policy's channels answer says how each channel
-  moves; a channel's identity is its component and name across the
+  moves, and whether a following one takes prereleases; the policy for
+  a channel names its approvers; a channel's identity is its component and name across the
   policy, keeper and target seams; the channel's store name carries its
   component where components are declared; the policy for a channel
   names who may sign its promotion; an empty chain read as last read
   says when.
-- `seam-fakes`: the fake policy scripts how a channel moves, its
+- `seam-fakes`: the fake policy scripts how a channel moves,
+  prereleases among it, its
   component carried by the channel itself; the fake keeper keeps a
   chain per component and channel, and an empty chain as last read.
-- `conformance-suite`: the policy's group holds how each channel moves
-  and what a profile gives with nothing declared, naming no channel a
-  profile gives; the keeper's group holds two components' chains apart,
+- `conformance-suite`: the policy's group holds how each channel moves,
+  prereleases among it, and what a profile gives with nothing declared,
+  naming no channel a profile gives; the gate's group a prerelease
+  moving only the channels that take prereleases, and the ledger's an
+  asker the approvers do not name; the keeper's group holds two components' chains apart,
   and an empty chain as last read saying when.
 - `policy-file`: the file's channel form per component, the givens'
-  fragment laid beneath it as the table in force, its environments'
-  channels and the four keys an environment's table holds, and
-  `on_each_publish`, `bound_to` and `on` read by the profile.
+  fragment laid beneath it as the table in force with its `held` mark,
+  its environments' channels and the four keys an environment's table
+  holds, and `on_each_publish`, `bound_to`, `prereleases` and
+  `approvers` read by the profile.
 - `command-line`: `tailrace policy` shows the policy in force at the
   branch's landed head.
 - `acceptance`: the gate learns the channels that follow each publish,
-  and the signer it accepts as, through the policy seam alone.
+  and the signer it accepts as, through the policy seam alone; a
+  prerelease moves only those that take prereleases; the gate's move is
+  no asking.
 - `promotion`: a promotion finds its channel through the channels
-  answer and is signed by whom the channel's policy names, the gate's
+  answer, is asked by an approver where the channel names any, and is
+  signed by whom the channel's policy names, the gate's
   signer for a given or made channel; an empty channel read as last
   read says when.
 - `git-ref-ledger`: the ref carries the component where components are
@@ -197,14 +226,16 @@ Out of scope, and what each waits on:
 
 ## Impact
 
-- `crates/tailrace-seams/src/policy.rs` (how a channel moves, the
-  promotion's signers), a channel identity type in `artifact.rs`,
+- `crates/tailrace-seams/src/policy.rs` (how a channel moves,
+  prereleases among it, the promotion's signers and approvers), a channel identity type in `artifact.rs`,
   `keeper.rs` (append, chain and the store name by identity, an empty
   chain as last read),
-  `answer.rs` (the promotion refusals naming the identity),
+  `answer.rs` (the promotion refusals naming the identity, and the
+  asker the approvers do not name),
   `target.rs`, `lib.rs`.
 - `crates/tailrace-fakes/src/policy.rs`, `keeper.rs`, `target.rs`.
-- `crates/tailrace-core/src/gate.rs` (no file parsing), `ledger.rs`
+- `crates/tailrace-core/src/gate.rs` (no file parsing, a prerelease
+  moving only the channels that take prereleases), `ledger.rs`
   (an empty channel carrying how it was read), `repair.rs`, `verify.rs`,
   `landed.rs`, `status.rs`, and their tests.
 - `crates/tailrace/src/profiles/policy/file/` (the resolution, and the

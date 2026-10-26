@@ -25,6 +25,17 @@ channel. 85bbf54 and bd772be give an environment's `policy` and
 environment's channel for the environment ("`prod` follows `prod`,
 bound to `stable`").
 
+The batch 18 rulings at agentplot/blueprints 53f6d44 settle what C.10
+left open: a held given is switched on by writing its table, empty or
+with lines, with no key for it and nothing that turns `beta` or `stable`
+off; a channel that follows each publish takes the releases the version
+rule makes, and prereleases too only where its line says `prereleases =
+true`, which `alpha`'s given does; the givens are declared, so the
+channels answer always carries `beta` and `stable`; and who may ask for
+a channel moved by an asking is any asker the gate verifies (129),
+unless `approvers` under it names signers, `lts`'s given naming no rule
+so that only an asking moves it.
+
 No `tailrace policy` command exists; C.10 names one.
 
 ## Goals / Non-Goals
@@ -40,14 +51,12 @@ No `tailrace policy` command exists; C.10 names one.
 
 - Moving an `after` channel by rule, or converging an environment
   (phase 2's target).
-- A key naming who may ask, or who may say yes to a manual
-  environment; none is designed (C.10's "later word").
+- Persons as approvers: `approvers` names signers until an identity
+  provider stands (129, phase 2), and the asker is the host's own
+  signer.
 - The core's reading of `[[component]]` and `[version]`
   (`Declared::read`), which versions need (123) and which is no
   channel; it stays as it is, and neither moves into the fragment.
-- Telling `alpha` from `beta` by prereleases (C.10's "including
-  prereleases"): 131 gives a channel that moves on each publish no word
-  for it.
 - The promotion claim's body: it keeps `channel` and `component` as two
   fields, `repository` where none is declared, so what
   `status-on-any-machine` reads does not change.
@@ -81,15 +90,18 @@ identity: rejected, since every reader would parse it back.
 
 ```rust
 pub enum Moves {
-    EachPublish,
+    EachPublish { prereleases: bool },
     Promotion,
     Bound { to: ChannelName },
 }
 pub struct DeclaredChannel { pub channel: ChannelId, pub moves: Moves }
 ```
 
-`Moves` serializes as `{"by": "each_publish"}`, `{"by": "promotion"}`
-or `{"by": "bound", "to": "beta"}`; `DeclaredChannel::bound_to()`
+`Moves` serializes as `{"by": "each_publish", "prereleases": false}`,
+`{"by": "promotion"}` or `{"by": "bound", "to": "beta"}`;
+`prereleases` is whether a following channel takes prereleases as well
+as the releases the version rule makes (C.10), so it lives on the one
+case it can be true of; `DeclaredChannel::bound_to()`
 answers the channel it is bound to, within the same component. The
 answer is ordered by name, then component, so the one-component
 answers keep the order they had.
@@ -98,14 +110,15 @@ Alternative: keep `bound_to` and add `on_each_publish: bool`. Rejected:
 two fields that can say a channel both follows each publish and is
 bound, which 37 forbids; the enum cannot.
 
-### D3. The policy for a channel names its promoters
+### D3. The policy for a channel names its promoters and its approvers
 
-`Required::Channel { claims, bound_to, promoted_by: Vec<NamedSigner> }`,
-with `Required::promoted_by()` empty for acceptance and a layout. The
+`Required::Channel { claims, bound_to, promoted_by: Vec<NamedSigner>,
+approvers: Vec<NamedSigner> }`, with `Required::promoted_by()` and
+`Required::approvers()` empty for acceptance and a layout. The
 policy, not the core, says whose promotion of the channel counts (32,
 116, core.7). The file profile answers:
 
-- for a channel the givens hold that the table in force has on, and a
+- for a channel the givens hold that the table in force lists, and a
   channel an environment's words make: the gate's signers, every
   `[signers]` entry whose `kinds` hold `acceptance`, whatever a line
   under the channel names (C.10, "never widens who signs");
@@ -124,6 +137,15 @@ channel's `promoted_by` is empty.
 
 `claims` for a given or made channel is an acceptance by the gate's
 signers, then the `require` of the table in force, in order.
+
+`approvers` are the signers the channel's table in force names under
+`approvers`, by their names in `[signers]`, whatever each may claim:
+who may ask for the channel to move (32, C.10). Empty means any asker
+the gate verifies, the host's own signer while no identity provider
+stands (129). A list the file writes empty is unreadable naming the
+table, since it would read as naming no one and answer anyone. The
+approvers never join the promoters: they narrow who asks, never who
+signs (C.10).
 
 Alternatives: append `promotion` to the gate signer's `kinds` in a
 given channel's answer. Rejected: it rewrites what a signer may claim,
@@ -145,15 +167,17 @@ on_each_publish = true
 bound_to = "beta"
 
 [channels.alpha]
-on = false
+held = true
 on_each_publish = true
+prereleases = true
 
 [channels.lts]
-on = false
+held = true
 bound_to = "stable"
 ```
 
-with a comment above each table citing C.10. `PolicyFile::new` lays
+with a comment above each table citing C.10, the one on `lts` saying
+it names no rule, so only an asking moves it. `PolicyFile::new` lays
 this fragment beneath the repository's file; `PolicyFile::with_givens`
 takes another fragment's text, so a test proves that nothing but the
 fragment names a given. A fragment that does not parse, or that holds
@@ -170,17 +194,21 @@ the repository's table of that channel and component:
 
 - a key the repository writes replaces the fragment's key;
 - `on_each_publish` and `bound_to` say together how the channel moves,
-  so writing either replaces both (37);
-- `on` is true in any table the repository writes, unless it writes
-  `on = false`. So `[channels.alpha]`, empty, switches `alpha` on, the
-  one line C.10 names, and `on = false` under `beta` switches `beta`
-  off;
+  so writing either replaces both and the fragment's `prereleases` with
+  them, unless the repository writes its own `prereleases` (37);
+- `held = true` is the fragment's mark alone: a held table is in force
+  only where the repository writes the channel's table, so
+  `[channels.alpha]`, empty, switches `alpha` on, the one line C.10
+  names, and the merged table carries no `held`;
 - a `require` the repository writes is the channel's claims after the
-  gate's acceptance (D3).
+  gate's acceptance, and its `approvers` who may ask (D3).
 
-A channel whose table in force says `on = false` is no channel: not
+A held channel the repository does not write is no channel: not
 listed, its policy absent, and not one a binding or an environment may
-name.
+name. `held` or `on` written in the repository's file is unreadable
+naming the table and the key, saying that writing a channel's table is
+the switch and nothing turns `beta` or `stable` off (C.10); the
+fragment's comment says the same.
 
 **The resolution.** `resolve` reads the table in force, shared by
 `channels` and `policy_for` so the two never disagree (83). In order,
@@ -193,11 +221,16 @@ each step unreadable naming the table on the first break:
    `on_each_publish`, `on` or `component` in a repository that declares
    components is unreadable naming the form to use; so is a nested
    table under a component not declared. In a repository that declares
-   none, keys of a channel table other than these stay their readers'.
+   none, keys of a channel table other than these, `prereleases`,
+   `approvers`, `held` and `on` stay their readers'.
 3. Each channel table in force, given or declared by hand, moves as it
-   says: `on_each_publish = true` on each publish, `bound_to` bound,
-   otherwise by a promotion alone; both keys together is unreadable
-   (37). A table is given where the fragment holds its name.
+   says: `on_each_publish = true` on each publish, taking prereleases
+   where `prereleases = true`, `bound_to` bound, otherwise by a
+   promotion alone; both keys together is unreadable (37), and so is
+   `prereleases` on a table that does not move on each publish. A table
+   is given where the fragment holds its name. Its `approvers` each name
+   a `[signers]` entry, unreadable naming the table and the name
+   otherwise.
 4. The environments: `[environments.<name>]` or
    `[environments.<component>.<name>]`, whose keys are C.10's words and
    no others: `channel`, `policy` (`auto` or `manual`, `auto` unless
@@ -212,26 +245,31 @@ each step unreadable naming the table on the first break:
    Environments are resolved in dependency order, and a cycle through
    `after`, a name not declared or of another component, or named
    environments that follow different channels, is unreadable naming
-   the table. A made channel named as a channel the fragment holds, on
-   or off, or as another made channel, is unreadable.
+   the table. A made channel named as a channel the fragment holds,
+   held or not, or as another made channel, is unreadable.
 5. A table under a made channel is a line under it: read only where it
    restates how the channel moves, its `require` the claims after the
-   gate's acceptance; another way is unreadable naming the table (C.10).
+   gate's acceptance and its `approvers` who may ask, which is where a
+   manual environment's approvers are written, since the environment's
+   table holds C.10's four words alone; another way is unreadable naming
+   the table (C.10).
 6. Bindings: every `Bound { to }` names a channel of the same component
-   that is on after steps 3 and 4, and an environment's `channel` names
+   in force after steps 3 and 4, and an environment's `channel` names
    one too; a cycle of bindings is unreadable naming a table in it,
    since no version could ever reach it (37).
 
 `policy_for` of a channel answers from the resolved entry: absent where
-none is resolved, otherwise `claims`, `bound_to` and `promoted_by` as
+none is resolved, otherwise `claims`, `bound_to`, `promoted_by` and `approvers` as
 D3 says. The module's doc and TOML example change to the per-component
-form, a given switched on, a line under one and a manual environment.
+form, a given switched on, a line under one, approvers, and a manual
+environment with its approvers under its made channel.
 
 Alternatives: the givens as Rust constants. Rejected: C.10 has the core
 know no channel's name, and a reader could not see them in the file's
-form. Switching a held channel on with `on = true`: rejected, since a
-table header and a key are two lines, and the fragment already holds
-every key. A rebinding of a given refused: rejected, since C.10 lets
+form. Two fragments, one of the givens declared and one of the held:
+rejected, since C.10 names one fragment, and one file shows a reader
+every given together. Marking the held channels by their absence from a
+list in the profile's Rust: rejected, since that Rust would name them. A rebinding of a given refused: rejected, since C.10 lets
 the same line override it.
 
 ### D5. The gate reads the channels answer
@@ -239,14 +277,21 @@ the same line override it.
 `gate.rs` loses `ChannelKeys`, `ChannelTables`, `channel_tables` and
 its use of `POLICY_FILE`. `following` becomes: the channels answer at
 the landed head (`channels_at`), filtered to the component published
-and `Moves::EachPublish`, each as its `ChannelId`. `gate_named` walks
+and `Moves::EachPublish`, each as its `ChannelId`, leaving out one whose
+`prereleases` is false where the version accepted is a prerelease. A
+version is a prerelease where it parses as a semantic version with a
+prerelease part, the test the version rule's own `derive` makes of a
+tag (`crates/tailrace-core/src/version.rs`, 21); `following` takes the
+version for it. `gate_named` walks
 the policy for each listed channel instead of each file table. A
 following channel's move (`Judging::promote`) checks that the gate's
 identity is among the channel's `promoted_by` before it counts, and
 answers refused `Why::Wanting` a promotion naming the promoters
 otherwise, that channel's answer alone; the acceptance stands. The
 `bound_to` check in `Judging::promote` goes, since the answer cannot
-list a bound channel as following.
+list a bound channel as following. The gate's move is its own act, recording
+its own signer as who asked and the publish as its cause (129), so a
+channel's `approvers` do not bind it.
 
 ### D6. Promote finds its channel in the answer
 
@@ -257,7 +302,12 @@ the channel and the component where none is. Its `ChannelId` then
 keys the policy read, the keeper's chain and append, `mirror` and the
 store name; `Moves::Bound { to }` gives the bound channel, as a
 `ChannelId` of the same component, for `held_by`. `may_promote` checks
-`required.promoted_by()`. `channel()` and `repair.rs` take a
+`required.promoted_by()`, and a new `may_ask` checks, before it, that
+the asker, `ask.signer` while no identity provider stands (129), is
+among `required.approvers()` where any are named, refused
+`Why::NotApprover { asker, approvers }` naming both otherwise (32,
+C.10). The refusal is a new `Why` in `answer.rs`, rendered as `<asker>
+may not ask for <channel>; ask one of <approvers>`. `channel()` and `repair.rs` take a
 `ChannelId`. The CLI's `promote` is unchanged in its arguments.
 
 `verify` with `--policy channel:<name>` passes a `ChannelId` with no
@@ -280,7 +330,8 @@ The fake policy keeps scripting policies by audience. Its `channels`
 lists each channel audience held, at the revision or every revision,
 its component from the `ChannelId`, and moves `Bound` where the policy
 names `bound_to`, `EachPublish` where the test scripted it with
-`follows(&ChannelId)` (or `follows_at`), and `Promotion` otherwise.
+`follows(&ChannelId, prereleases)` (or `follows_at`), and `Promotion`
+otherwise.
 `belongs` and `belongs_at` go: the identity carries the component.
 The fake gives no channel a test did not script; givens are the file
 profile's (C.10). The fake keeper keys its chains by `ChannelId`.
@@ -291,7 +342,7 @@ profile's (C.10). The fake keeper keys its chains by `ChannelId`.
 declares each channel moving as given, and a new
 `PolicyRig::given(components) -> Vec<DeclaredChannel>` answers what the
 profile lists with nothing declared: none for the fake; for the file,
-each channel the shipped `givens.toml` has on, per component, moving as
+each channel the shipped `givens.toml` declares, not held, per component, moving as
 its table says, read by the rig from that file and naming no channel
 in its Rust. The channels scenarios expect the declared and the given
 together, which holds every profile to "listed like any channel
@@ -310,13 +361,21 @@ register changes nothing: 41 and 97 stay pending with the target.
 | two components' channels of one name | keeper | 125, 120, 121 |
 | beta of one component | gate | 95, 125, 131 |
 | stable promoted by the gate's signer | ledger | 32, 9, 125 |
+| a prerelease and the channels that follow | gate | 95, 131 |
+| an asker the approvers do not name | ledger | 32, 33 |
+
+The "each way a channel moves" scenario declares a second following
+channel taking prereleases. The approvers scenario cites 32, not 129,
+which stays pending with phase 2: an asker named by an identity
+provider is not what it exercises.
 
 ### D10. ADR 0019
 
 `docs/adr/0019-a-channel-is-its-component-and-name-and-the-policy-says-how-it-moves.md`
-records D1, D2, D3, D4 (the fragment, the table in force, switching on
-and overriding by one line, the environment table and made-channel
-names), D5 and D11. It is numbered 0019 because two units in flight on
+records D1, D2 (with `prereleases`), D3 (with `approvers`), D4 (the
+fragment and its `held` mark, the table in force, switching on by
+writing the table and overriding by one line, the environment table and
+made-channel names), D5 and D11. It is numbered 0019 because two units in flight on
 this bolt propose an 0018; whichever lands later renumbers.
 
 ### D11. `tailrace policy` asks the core for the policy in force
@@ -337,8 +396,9 @@ store, no signer; with no bindings file, as a host with no file is
 bound), a new `For::Policy` in `bindings/mod.rs`. Text prints the
 branch and revision, then the acceptance and layout claims, then one
 row per channel, by name then component: the channel spelled, how it
-moves (`each publish`, `promotion`, `bound to <channel>`), its claims
-by kind and its promoters. `--json` prints the core's answer. It exits
+moves (`each publish`, `each publish, prereleases too`, `promotion`,
+`bound to <channel>`), its claims by kind, its promoters, and who may
+ask (`any asker` where it names no approvers). `--json` prints the core's answer. It exits
 0 whenever an answer is made, and the answer's own code where the head
 cannot be resolved or has not landed.
 
@@ -346,8 +406,8 @@ This shows the table in force through the seam's answers, so the
 command reads no file and the core no profile (core.2, core.31).
 Alternative: a policy seam operation answering the merged file in its
 TOML form. Rejected for now: B.5 names no such operation, and it would
-carry the file profile's form across the seam; a held channel switched
-off is therefore not shown. Named for the design agent.
+carry the file profile's form across the seam; a held channel not
+switched on is therefore not shown. Named for the design agent.
 
 ### D12. An empty channel as last read says when
 
@@ -397,10 +457,20 @@ held", and every caller of `chain` reads that as absent today.
 - [`gate.rs` is also edited by `the-publishs-host-tells-the-gate`] →
   this unit changes only how channels are found and moved; the told-by
   path is untouched.
-- [The `on` key and the empty table that switches a held channel on
-  are this unit's reading of C.10, not a ruling] → recorded in ADR 0019
-  for the user to accept with the change, and named for the design
-  agent.
+- [The fragment's `held = true` mark is this unit's reading of C.10:
+  the ruling says the repository's switch is its table and names no
+  form for how the fragment holds a channel back] → a key of the
+  fragment alone, refused in the repository's file; recorded in ADR 0019
+  and named for the design agent.
+- [`approvers` for a manual environment written under its made channel,
+  `[channels.<environment>]`, is this unit's reading: C.10 says
+  "under it" and batch 17 gives an environment's table four words
+  alone] → named for the design agent.
+- [While no identity provider stands the asker is the host's own
+  signer, which must also be a promoter, so `approvers` naming no gate
+  signer leaves the channel unmovable] → `tailrace policy` shows both
+  lists side by side; nothing refuses the file for it, since a hosted
+  gate's askers will differ from its signer.
 - [`target`'s value has no form yet: C.10 names the key and no target
   table exists before phase 2] → the profile accepts the key and reads
   nothing of it; the target's unit gives it its form.
@@ -408,14 +478,17 @@ held", and every caller of `chain` reads that as absent today.
   environment's table now reads unreadable] → nothing of that form is on
   main; the words name the key and say a target's settings sit in its
   own table.
-- [`alpha` moves exactly as `beta` does until a ruling says how a
-  channel leaves prereleases out] → the fragment's comment says so, and
-  it is named for the design agent.
-- [A repository may now rebind or switch off a given, and so make a
-  cycle of bindings] → a cycle is unreadable naming a table in it.
-- [102 says a repository may declare no channel, and C.10 now gives
-  every component two] → read as: givens are not declared, and nothing
-  of a publish changes; named for the design agent.
+- [A repository may now rebind a given, and so make a cycle of
+  bindings] → a cycle is unreadable naming a table in it.
+- [102 says a repository may declare no channel, and the givens are
+  declared by the fragment with nothing that turns `beta` or `stable`
+  off, so no repository declares none] → the channels answer carries
+  the givens as declared, as batch 18 rules; 102's first clause is named
+  for the design agent.
+- [Several provenance signers and no accepting one, which C.10 now
+  refuses in words] → that refusal belongs with the host-as-gate
+  default, `a-host-with-no-bindings-file-is-bound-to-the-defaults`'s;
+  here such a file names no gate, as on main.
 
 ## Migration Plan
 
@@ -423,7 +496,10 @@ A repository that declares no component keeps every spelling: its refs,
 store names and `[channels.<name>]` tables. A line it wrote under
 `beta` or `stable` that restates how the channel moves reads as before;
 `[channels.alpha]` or `[channels.lts]` it declared by hand becomes the
-given switched on, its own keys over the fragment's. One that declares
+given switched on, its own keys over the fragment's, so a hand-declared
+`alpha` that moved on each publish now takes prereleases too unless it
+writes `prereleases = false`. A file writing `on` under a channel reads
+unreadable naming the key; that key was only this bolt's. One that declares
 components rewrites `[channels.<name>] component = "<c>"` as
 `[channels.<c>.<name>]`; nothing of that form, nor any per-component
 ref or store name, is on main. Rollback is the bolt without this unit.
