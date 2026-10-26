@@ -8,7 +8,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Name, Revision,
+    Answer, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope, Name, Read, Revision,
     SignerId, Version,
 };
 
@@ -77,18 +77,6 @@ impl Promotion {
 /// nor a cache entry's, `cache/` and a build identity, can be.
 pub fn channel_name(channel: &ChannelName) -> Name {
     Name::new(format!("channel/{channel}"))
-}
-
-/// How a chain was read (60, 61, C.13, C.14).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Read {
-    /// From the source holding the ledger itself.
-    Source,
-    /// As this host last read it, at `at`, in seconds since the Unix
-    /// epoch, because the source did not answer, for `said`, its own
-    /// words.
-    Kept { at: u64, said: String },
 }
 
 /// 121: a channel's promotion claims in order from the first, and how

@@ -1,10 +1,11 @@
 //! A revision its branch has landed: the one value every read of the
 //! repository at a revision takes, so nothing is read at a revision the
-//! branch has not landed (14, 65, 77, rule core.22; design D2).
+//! branch has not landed (14, 65, 77, rule core.22; design D2), and how
+//! the landing read it.
 
 use tailrace_seams::{
-    Answer, Audience, Branch, DeclaredChannel, Landing, Not, Policy, Required, Revision, Seam,
-    Source, Why,
+    Answer, Audience, Branch, DeclaredChannel, IsLanded, Landing, Not, Policy, Read, Required,
+    Revision, Seam, Source, Why,
 };
 
 /// The profile a refusal the core makes from a seam's own answer names:
@@ -17,27 +18,49 @@ pub const BOUND: &str = "bound";
 pub struct Landed {
     branch: Branch,
     revision: Revision,
+    read: Read,
 }
 
 impl Landed {
     /// 77: `revision` as landed on `branch`, asked of the landing seam;
     /// refused [`Why::NotLanded`] naming both when the branch has not
     /// landed it (14), and the landing's own answer when it cannot say.
+    /// A yes read from the host's copy as last fetched is a yes, since a
+    /// branch only moves forward; a no read from it is refused
+    /// [`Why::NotLandedAsFetched`] naming when the copy was fetched, with
+    /// the remote's words, so it is asked again once the remote answers
+    /// (59, 77).
     pub fn check(landing: &dyn Landing, branch: &Branch, revision: &Revision) -> Answer<Landed> {
-        if landing.landed(branch, revision)? {
-            Ok(Landed {
+        let source = Source::new(Seam::Landing, BOUND);
+        match landing.landed(branch, revision)? {
+            IsLanded { landed: true, read } => Ok(Landed {
                 branch: branch.clone(),
                 revision: revision.clone(),
-            })
-        } else {
-            Err(Not::refused(
-                &Source::new(Seam::Landing, BOUND),
+                read,
+            }),
+            IsLanded {
+                landed: false,
+                read: Read::Source,
+            } => Err(Not::refused(
+                &source,
                 Why::NotLanded {
                     branch: branch.clone(),
                     revision: revision.clone(),
                 },
                 None,
-            ))
+            )),
+            IsLanded {
+                landed: false,
+                read: Read::Kept { at, said },
+            } => Err(Not::refused(
+                &source,
+                Why::NotLandedAsFetched {
+                    branch: branch.clone(),
+                    revision: revision.clone(),
+                    fetched: at,
+                },
+                Some(said),
+            )),
         }
     }
 
@@ -47,6 +70,12 @@ impl Landed {
 
     pub fn revision(&self) -> &Revision {
         &self.revision
+    }
+
+    /// How the landing read the revision as landed: from itself, or from
+    /// the host's copy as last fetched (77).
+    pub fn read(&self) -> &Read {
+        &self.read
     }
 }
 
@@ -99,5 +128,78 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].op, PolicyOp::Channels);
         assert_eq!(calls[0].given["revision"], "4f2a9c1");
+    }
+
+    fn refused(not: Not) -> (Why, Option<String>) {
+        match not {
+            Not::Refused(r) => {
+                assert_eq!(r.source, Source::new(Seam::Landing, BOUND));
+                (r.why, r.said)
+            }
+            other => panic!("{other} is not a refusal"),
+        }
+    }
+
+    #[test]
+    fn a_yes_from_either_read_is_landed_saying_how() {
+        let landing = FakeLanding::new();
+        let (main, rev) = (Branch::new("main"), Revision::new("4f2a9c1"));
+        landing.land(&main, &rev);
+        let landed = Landed::check(&landing, &main, &rev).unwrap();
+        assert_eq!(
+            (landed.branch(), landed.revision(), landed.read()),
+            (&main, &rev, &Read::Source)
+        );
+
+        landing.unreachable("remote hung up");
+        let landed = Landed::check(&landing, &main, &rev).unwrap();
+        assert_eq!(landed.revision(), &rev);
+        assert!(
+            matches!(landed.read(), Read::Kept { said, .. } if said == "remote hung up"),
+            "{:?}",
+            landed.read()
+        );
+    }
+
+    #[test]
+    fn a_no_from_the_landing_itself_is_not_landed() {
+        let landing = FakeLanding::new();
+        let (main, rev) = (Branch::new("main"), Revision::new("4f2a9c1"));
+        let (why, said) = refused(Landed::check(&landing, &main, &rev).unwrap_err());
+        assert_eq!(
+            why,
+            Why::NotLanded {
+                branch: main,
+                revision: rev
+            }
+        );
+        assert_eq!(said, None);
+    }
+
+    #[test]
+    fn a_no_from_the_copy_is_not_landed_as_fetched_with_the_remotes_words() {
+        let landing = FakeLanding::new();
+        let (main, first, second) = (
+            Branch::new("main"),
+            Revision::new("4f2a9c1"),
+            Revision::new("77b0e3d"),
+        );
+        landing.land(&main, &first);
+        Landed::check(&landing, &main, &first).unwrap();
+        landing.land(&main, &second);
+        landing.unreachable("fatal: remote hung up\n");
+
+        let (why, said) = refused(Landed::check(&landing, &main, &second).unwrap_err());
+        let Why::NotLandedAsFetched {
+            branch,
+            revision,
+            fetched,
+        } = why
+        else {
+            panic!("{why} is not a refusal as last fetched")
+        };
+        assert_eq!((branch, revision), (main, second));
+        assert!(fetched > 0);
+        assert_eq!(said.as_deref(), Some("fatal: remote hung up\n"));
     }
 }

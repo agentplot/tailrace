@@ -9,7 +9,7 @@ use std::cell::Cell;
 use serde_json::json;
 use tailrace_fakes::{
     BuildOp, FakeKeeper, FakePolicy, FakeProjection, FakeSigner, FakeTarget, Fakes, Fault,
-    KeeperOp, LandingOp, PolicyOp, ProjectionOp, SignerOp, StoreOp, Times, PROFILE,
+    KeeperOp, PolicyOp, ProjectionOp, SignerOp, StoreOp, Times, PROFILE,
 };
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
@@ -251,6 +251,12 @@ impl LandingRig for FakeLandingRig {
         self.records
     }
 
+    /// The fake landing keeps a copy of what it last answered, as a
+    /// landing reading a remote does.
+    fn reads_a_remote(&self) -> bool {
+        true
+    }
+
     fn landed(&self, verdicts: &[Recorded]) -> Revision {
         assert!(
             self.records || verdicts.is_empty(),
@@ -269,12 +275,11 @@ impl LandingRig for FakeLandingRig {
         revision(&self.revisions)
     }
 
+    /// The fake landing made unreachable with [`WORDS`], answering from
+    /// what it last answered.
     fn unreachable(&self) -> String {
-        let landing = &self.fakes.landing;
-        unreachable(
-            |op, f, t| landing.fault(op, f, t),
-            &[LandingOp::Landed, LandingOp::VerdictsOf],
-        )
+        self.fakes.landing.unreachable(WORDS);
+        WORDS.into()
     }
 }
 

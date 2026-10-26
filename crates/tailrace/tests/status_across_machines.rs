@@ -4,10 +4,10 @@
 //! branch landing, an OCI layout, a host key and the git ref ledger on
 //! `origin`, which promotes through `tailrace::run`; and machine B, a
 //! second clone on a host with no bindings file, bound as 118 binds such
-//! a host. A machine cut off from its remote is not asked here: its
-//! landing answers unreadable until the landing reads the host's copy of
-//! the branch as last fetched (77, C.5, C.6), and a chain as last read is
-//! proven over the fakes. Needs git alone, so it is in the fast layer.
+//! a host; and machine B cut off from that remote, its landing read from
+//! the host's copy of the branch as last fetched and each chain as last
+//! read, each saying when (60, 61, 77, C.6). Needs git alone, so it is in
+//! the fast layer.
 
 mod scratch;
 
@@ -216,16 +216,18 @@ impl Two {
     }
 }
 
-/// A port for the test's process, never the core's: below the range the
-/// system hands to connections, and never bound to see it free (see
-/// `serve.rs`).
+/// A port for one test's process, never the core's: below the range the
+/// system hands to connections, one of its own per test, and never
+/// bound to see it free (see `serve.rs`).
 fn free() -> SocketAddr {
-    let port = 29_000 + (std::process::id() % 900) as u16;
+    use std::sync::atomic::{AtomicU16, Ordering};
+    static NEXT: AtomicU16 = AtomicU16::new(0);
+    let port = 29_000 + (std::process::id() % 300) as u16 * 3 + NEXT.fetch_add(1, Ordering::SeqCst);
     SocketAddr::from(([127, 0, 0, 1], port))
 }
 
-/// `GET path` at `address`: the body as JSON.
-fn get(address: SocketAddr, path: &str) -> Value {
+/// `GET path` at `address`: the body.
+fn body(address: SocketAddr, path: &str) -> String {
     use std::io::{Read, Write};
     let mut stream = TcpStream::connect(address).unwrap();
     write!(
@@ -236,7 +238,33 @@ fn get(address: SocketAddr, path: &str) -> Value {
     let mut answered = String::new();
     stream.read_to_string(&mut answered).unwrap();
     let (_, body) = answered.split_once("\r\n\r\n").unwrap();
-    serde_json::from_str(body).unwrap()
+    body.to_string()
+}
+
+/// `GET path` at `address`: the body as JSON.
+fn get(address: SocketAddr, path: &str) -> Value {
+    serde_json::from_str(&body(address, path)).unwrap()
+}
+
+/// B's serving process, named `o/r`, answering at a port of its own.
+fn serve_b(two: &Two) -> SocketAddr {
+    let host = two.b_host();
+    let repository = RepositoryName {
+        owner: "o".into(),
+        name: "r".into(),
+    };
+    name(&host, &repository, &two.b.path).unwrap();
+    let address = free();
+    std::thread::spawn(move || serve_on(address, &host, Duration::from_secs(30)));
+    find_or_start(address, || Ok(())).expect("B's process answers");
+    address
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 #[test]
@@ -273,23 +301,14 @@ fn a_machine_that_never_published_answers_every_channel_as_the_one_that_promoted
         .b
         .git(&["for-each-ref", "--format=%(refname)", "refs/tailrace"]);
     assert!(
-        refs.lines()
-            .all(|r| r.starts_with("refs/tailrace/ledger/")
-                || r.starts_with("refs/tailrace/fetched/")),
+        refs.lines().all(|r| r.starts_with("refs/tailrace/ledger/")
+            || r.starts_with("refs/tailrace/fetched/")
+            || r.starts_with("refs/tailrace/landing/")),
         "{refs}"
     );
 
     // The page's JSON for B is B's status answer.
-    let host = two.b_host();
-    let repository = RepositoryName {
-        owner: "o".into(),
-        name: "r".into(),
-    };
-    name(&host, &repository, &two.b.path).unwrap();
-    let address = free();
-    let served = host.clone();
-    std::thread::spawn(move || serve_on(address, &served, Duration::from_secs(30)));
-    find_or_start(address, || Ok(())).expect("B's process answers");
+    let address = serve_b(&two);
     let page = get(address, "/o/r/status.json");
     assert_eq!(unasked(page), unasked(status(&two.bind_b(), &two.b.path)));
 }
@@ -329,4 +348,81 @@ fn everything_kept_deleted_answers_the_same_channels_and_the_same_record_once_re
     let (code, printed) = ask(&a, &two.a.path, &["rebuild"]);
     assert_eq!(code, 0, "{printed}");
     assert_eq!(unasked(status(&a_status, &two.a.path)), unasked(ours));
+}
+
+/// Machine B, cut off from the one remote holding its branch and its
+/// ledger, shows every channel from the ledger's chain as last read, the
+/// landing of its head from the host's copy as last fetched, each saying
+/// when and with git's words, on the command line, in its JSON and on
+/// the page alike (36, 60, 61, 77).
+#[test]
+fn a_machine_cut_off_from_its_remote_shows_every_channel_and_says_when() {
+    let two = Two::new();
+    let promote = two.bind_a(For::Promote);
+    let (code, printed) = ask(&promote, &two.a.path, &["promote", "0.1.0", "--to", "beta"]);
+    assert_eq!(code, 0, "{printed}");
+    let before = now();
+    let ours = status(&two.bind_b(), &two.b.path);
+    let after = now();
+    assert_eq!(
+        ours["value"]["channels"]["value"]["landing"], "source",
+        "{ours}"
+    );
+    fs::remove_dir_all(&two.scratch.remote).unwrap();
+    let words = scratch::git_fails(&two.b.path, &["ls-remote", "origin", "refs/heads/*"]);
+
+    let theirs = status(&two.bind_b(), &two.b.path);
+    let when = |read: &Value, what: &str| -> u64 {
+        let at = read["kept"]["at"]
+            .as_u64()
+            .unwrap_or_else(|| panic!("{what} does not say when: {theirs}"));
+        assert!((before..=after).contains(&at), "{what} fetched at {at}");
+        assert_eq!(read["kept"]["said"], words.as_str(), "{what}: {theirs}");
+        at
+    };
+    let channels = &theirs["value"]["channels"];
+    assert_eq!(channels["answer"], "ok", "{theirs}");
+    let landed = when(&channels["value"]["landing"], "the landing");
+    assert_eq!(
+        channels["value"]["revision"], ours["value"]["channels"]["value"]["revision"],
+        "{theirs}"
+    );
+    let mut chains = Vec::new();
+    for name in ["beta", "stable"] {
+        let at = &channel(&theirs, name)["at"];
+        assert_eq!(at["answer"], "ok", "{name}: {theirs}");
+        chains.push((name, when(&at["value"]["read"], name)));
+        let first = &channel(&ours, name)["at"]["value"];
+        assert_eq!(at["value"]["head"], first["head"], "{name}");
+        assert_eq!(at["value"]["chain"], first["chain"], "{name}");
+    }
+
+    let (code, text) = ask(&two.bind_b(), &two.b.path, &["status"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains(&format!(
+            "  landing: as last fetched {}\n",
+            tailrace::render::utc(landed)
+        )),
+        "{text}"
+    );
+    for (name, at) in chains {
+        assert!(
+            text.lines().any(|l| l.starts_with(&format!("  {name} "))
+                && l.ends_with(&format!(", as last read {}", tailrace::render::utc(at)))),
+            "{name}: {text}"
+        );
+    }
+
+    let address = serve_b(&two);
+    let served = get(address, "/o/r/status.json");
+    assert_eq!(unasked(served), unasked(status(&two.bind_b(), &two.b.path)));
+    let page = body(address, "/o/r/status");
+    assert!(
+        page.contains(&format!(
+            "landing: as last fetched {}",
+            tailrace::render::utc(landed)
+        )),
+        "{page}"
+    );
 }

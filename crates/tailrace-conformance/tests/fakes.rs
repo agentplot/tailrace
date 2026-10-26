@@ -70,7 +70,7 @@ fn a_fake_landing_recording_no_verdicts_keeps_the_landings_contract() {
     );
     let text = report.to_string();
     for words in [
-        "the landing group over the profile `fake`: 3 passed, 2 not applicable",
+        "the landing group over the profile `fake`: 4 passed, 2 not applicable",
         "\n- `verdicts as the landing recorded them` (clause 78): not applicable: \
          the landing records no verdicts",
         "\n- `two signers, each by its own name` (clause 104): not applicable: \

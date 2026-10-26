@@ -974,7 +974,7 @@ fn committed(host: &Host, origin: Option<&Path>) -> (PathBuf, tailrace_seams::Re
 }
 
 /// What the landing bound for status answers of `head` on `main`.
-fn landed(binding: &Binding, head: &tailrace_seams::Revision) -> Answer<bool> {
+fn landed(binding: &Binding, head: &tailrace_seams::Revision) -> Answer<tailrace_seams::IsLanded> {
     binding
         .seams
         .landing
@@ -1041,7 +1041,14 @@ fn no_file_and_no_origin_binds_the_branch_and_the_git_ref_with_no_remote() {
     let (repo, head) = committed(&host, None);
     let before = files(host.dir.path());
     let binding = bind(&host.file(), Some(&host.home()), &repo, For::Status).unwrap();
-    assert_eq!(landed(&binding, &head), Ok(true));
+    assert_eq!(
+        landed(&binding, &head),
+        Ok(tailrace_seams::IsLanded {
+            landed: true,
+            read: tailrace_seams::Read::Source
+        }),
+        "a landing with no remote reads the repository, the landing itself"
+    );
     match binding.seams.keeper.chain(&stable()) {
         Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
         other => panic!("the ledger answered {other:?}"),
