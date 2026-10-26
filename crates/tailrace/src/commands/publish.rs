@@ -4,13 +4,13 @@
 //!
 //! After the core's publish has answered, the command tells the host's
 //! gate of each version it offered where the bindings file names this
-//! host's publish as what tells it, in the same run, and prints the
-//! gate's answer beside the version's; where the file names a job or
-//! nothing, it says so and asks the gate nothing (95, 108, 130; design
-//! D2, D5). The core's publish reaches nothing of the gate: this step,
-//! the host's binding of what tells it, calls one and then the other.
-//! It reads the moment of the gate's act from the clock and hands it to
-//! the core, which reads none.
+//! host's publish as what tells it, or names no `[gate]` (118), in the
+//! same run, and prints the gate's answer beside the version's; where
+//! the file names a job, it says so and asks the gate nothing (95, 108,
+//! 130; design D2, D5). The core's publish reaches nothing of the gate:
+//! this step, the host's binding of what tells it, calls one and then
+//! the other. It reads the moment of the gate's act from the clock and
+//! hands it to the core, which reads none.
 
 use std::io::{self, Write};
 use std::path::Path;
@@ -59,8 +59,6 @@ enum Gate {
     /// A job outside tailrace tells the gate, in the file's words; the
     /// gate was not asked.
     Job(String),
-    /// Nothing on this host tells the gate: the absence naming `[gate]`.
-    Nothing(Not),
 }
 
 impl Gate {
@@ -73,13 +71,12 @@ impl Gate {
                 value
             }
             Gate::Job(words) => json!({ "told_by": "job", "job": words }),
-            Gate::Nothing(not) => answer_json::<()>(&Err(not.clone())),
         }
     }
 
     /// The exit code the gate's part adds: a refusal or a channel held
     /// counts as refused, and a channel's own answer by its kind; a job
-    /// or nothing adds none, the publish having done what it was asked.
+    /// adds none, the publish having done what it was asked.
     fn code(&self) -> i32 {
         match self {
             Gate::Told(Err(not)) => render::code(not),
@@ -90,7 +87,7 @@ impl Gate {
                     other => render::exit(other),
                 }))
             }
-            Gate::Job(_) | Gate::Nothing(_) => render::OK,
+            Gate::Job(_) => render::OK,
         }
     }
 }
@@ -154,7 +151,6 @@ fn ask(args: &PublishArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Offer
                     },
                 )),
                 Teller::Job(words) => Gate::Job(words.clone()),
-                Teller::Nothing(not) => Gate::Nothing(not.clone()),
             })
         })
         .collect();
@@ -266,13 +262,6 @@ fn gate(out: &mut dyn Write, version: &str, gate: &Gate) -> io::Result<()> {
             out,
             "  gate: {version} is offered, and the gate is told by \"{words}\""
         ),
-        Gate::Nothing(not) => {
-            writeln!(
-                out,
-                "  gate: {version} is offered, and nothing on this host tells the gate:"
-            )?;
-            render::not(out, "    ", not)
-        }
     }
 }
 
