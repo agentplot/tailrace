@@ -116,6 +116,18 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             run: a_separated_gate_names_its_offerer,
         },
         Scenario {
+            name: "the core starts nothing after an offer",
+            plays: None,
+            cites: &[95, 130],
+            run: the_core_starts_nothing_after_an_offer,
+        },
+        Scenario {
+            name: "a told index the name does not resolve to",
+            plays: None,
+            cites: &[95, 130],
+            run: a_told_index_the_name_does_not_resolve_to,
+        },
+        Scenario {
             name: "beta of one component",
             plays: None,
             cites: &[95, 125, 131],
@@ -245,6 +257,15 @@ fn offered_under(world: &FakeWorld, required: Required) -> Published {
 /// The version offered under acceptance.
 fn offered(world: &FakeWorld) -> Published {
     offered_under(world, acceptance())
+}
+
+/// Told by `published`, a publish's answer naming the index it offered
+/// (95).
+fn told(published: &Published) -> ToldBy {
+    let (_, index) = version_of(published);
+    ToldBy::Publish {
+        index: index.clone(),
+    }
 }
 
 fn revision_of(published: &Published) -> Revision {
@@ -415,7 +436,7 @@ fn a_version_accepted_and_beta_moved(world: &FakeWorld) {
     let (acceptance, already, _, channels) = accepted(accept(
         &seams,
         &world.history(),
-        &world.gate_ask(VERSION, ToldBy::Publish, GATE),
+        &world.gate_ask(VERSION, told(&published), GATE),
     ));
     assert!(!already, "a version never judged was accepted already");
 
@@ -491,7 +512,7 @@ fn a_verdict_from_a_signer_the_policy_does_not_name(world: &FakeWorld) {
     let written = world.writes().len();
 
     let (artifact, wanting, why) =
-        refused(world.judge(&world.gate_ask(VERSION, ToldBy::Publish, GATE), &[GATE]));
+        refused(world.judge(&world.gate_ask(VERSION, told(&published), GATE), &[GATE]));
     assert_eq!(
         artifact,
         artifacts(&published)[0].0,
@@ -538,7 +559,7 @@ fn a_thiefs_acceptance(world: &FakeWorld) {
     );
 
     // The thief holds the build host's key alone.
-    let (_, _, why) = refused(world.judge(&world.gate_ask(VERSION, ToldBy::Publish, HOST), &[]));
+    let (_, _, why) = refused(world.judge(&world.gate_ask(VERSION, told(&published), HOST), &[]));
     assert_eq!(
         why,
         WhyWanting::OfferedByGate {
@@ -582,7 +603,7 @@ fn a_build_host_running_the_gate(world: &FakeWorld) {
     let published = offered(world);
     let written = world.writes().len();
     let (artifact, wanting, why) =
-        refused(world.judge(&world.gate_ask(VERSION, ToldBy::Publish, HOST), &[]));
+        refused(world.judge(&world.gate_ask(VERSION, told(&published), HOST), &[]));
     assert_eq!(artifact, artifacts(&published)[0].0);
     assert_eq!(wanting.kind, ClaimKind::Provenance);
     assert_eq!(
@@ -600,7 +621,7 @@ fn a_host_with_no_gate_key(world: &FakeWorld) {
     let published = offered(world);
     let (_, index) = version_of(&published);
     let written = world.writes().len();
-    let answer = world.judge(&world.gate_ask(VERSION, ToldBy::Publish, GATE), &[]);
+    let answer = world.judge(&world.gate_ask(VERSION, told(&published), GATE), &[]);
     let Err(Not::Absent(a)) = &answer else {
         panic!("a host with no gate key answered {answer:?}")
     };
@@ -686,7 +707,7 @@ fn one_artifact_wanting_refuses_the_version(world: &FakeWorld) {
         .expect("the server was offered");
 
     let (artifact, wanting, why) =
-        refused(world.judge(&world.gate_ask(VERSION, ToldBy::Publish, GATE), &[GATE]));
+        refused(world.judge(&world.gate_ask(VERSION, told(&published), GATE), &[GATE]));
     assert_eq!(artifact, server, "the refusal names another artifact");
     assert_eq!(wanting, test_from_the_landing());
     assert_eq!(why, WhyWanting::Missing);
@@ -713,7 +734,7 @@ fn judged_by_the_claims_the_landing_and_the_policy_alone(world: &FakeWorld) {
     let answer = accept(
         &seams,
         &world.history(),
-        &world.gate_ask(VERSION, ToldBy::Publish, GATE),
+        &world.gate_ask(VERSION, told(&published), GATE),
     );
     let Err(Not::Refused(r)) = &answer else {
         panic!("a version whose revision did not land answered {answer:?}")
@@ -900,6 +921,84 @@ fn a_separated_gate_names_its_offerer(world: &FakeWorld) {
     );
 }
 
+fn the_core_starts_nothing_after_an_offer(world: &FakeWorld) {
+    let published = offered(world);
+    let (_, index) = version_of(&published);
+
+    // The publish answered, and nothing is accepted, promoted or asked of
+    // the ledger.
+    assert!(
+        world.keeper_calls().is_empty(),
+        "a publish asked the keeper"
+    );
+    for digest in digests(&published) {
+        for kind in [ClaimKind::Acceptance, ClaimKind::Promotion] {
+            assert_eq!(
+                of_kind(world, &digest, kind),
+                0,
+                "a publish attached {kind:?} to {digest}"
+            );
+        }
+    }
+    beta_unmoved(world);
+
+    // The gate, told of the publish's answer, accepts the index it names
+    // and moves beta.
+    let (acceptance, _, _, channels) =
+        accepted(world.judge(&world.gate_ask(VERSION, told(&published), GATE), &[GATE]));
+    assert!(
+        ok(world.fakes.store.claims_of(index), "claims-of")
+            .iter()
+            .any(|e| e.digest() == acceptance),
+        "the acceptance is not on the index the publish named"
+    );
+    acceptance_by(world, index, GATE);
+    let [(channel, Ok(Moved::Promoted { to, promotion, .. }))] = channels.as_slice() else {
+        panic!("beta was not promoted: {channels:?}")
+    };
+    assert_eq!(channel, &beta());
+    assert_eq!(to, index);
+    let chain = ok(world.fakes.keeper.chain(&beta()), "beta's chain").claims;
+    assert_eq!(
+        chain.iter().map(Envelope::digest).collect::<Vec<_>>(),
+        std::slice::from_ref(promotion),
+        "beta's chain does not hold the promotion"
+    );
+}
+
+fn a_told_index_the_name_does_not_resolve_to(world: &FakeWorld) {
+    let published = offered(world);
+    let (_, index) = version_of(&published);
+    let (other, _) = artifacts(&published).remove(0);
+    let written = world.writes().len();
+    let signed = world.fakes.signer.calls().len();
+
+    let told = ToldBy::Publish {
+        index: other.clone(),
+    };
+    let answer = world.judge(&world.gate_ask(VERSION, told, GATE), &[GATE]);
+    let Err(Not::Unreadable(u)) = &answer else {
+        panic!("a told index the name does not resolve to answered {answer:?}")
+    };
+    let said = u.said.clone().unwrap_or_default();
+    assert!(
+        said.contains(index.as_str()) && said.contains(other.as_str()),
+        "the answer does not name both digests: {said}"
+    );
+    assert_eq!(world.writes().len(), written, "the store was written");
+    assert!(
+        world.fakes.keeper.calls().is_empty(),
+        "the keeper was asked"
+    );
+    assert_eq!(
+        world.fakes.signer.calls().len(),
+        signed,
+        "the host's signer was asked"
+    );
+    assert_eq!(of_kind(world, index, ClaimKind::Acceptance), 0);
+    beta_unmoved(world);
+}
+
 /// 95, 125, 131: the repository of two components, the fake policy
 /// listing `beta` of each moving on each publish, a version of `lib` a
 /// publish told the gate of: `lib`'s `beta` moves, `app`'s does not, and
@@ -951,7 +1050,7 @@ fn beta_of_one_component(_: &FakeWorld) {
 
     let ask = tailrace_core::AcceptAsk {
         component: Some(ComponentName::new("lib")),
-        ..world.gate_ask(version.as_str(), ToldBy::Publish, GATE)
+        ..world.gate_ask(version.as_str(), told(&published), GATE)
     };
     let (_, _, _, channels) = accepted(world.judge(&ask, &[GATE]));
     let [(channel, Ok(Moved::Promoted { to, .. }))] = channels.as_slice() else {
@@ -1031,7 +1130,7 @@ fn followed_on_publish(world: &FakeWorld, revision: &Revision) -> Vec<(String, b
     let publish = ok(world.publish(&world.ask(revision)), "the publish");
     let published = ok(publish.components[0].1.clone(), "the publish's version");
     let (version, _) = version_of(&published);
-    let ask = world.gate_ask(version.as_str(), ToldBy::Publish, GATE);
+    let ask = world.gate_ask(version.as_str(), told(&published), GATE);
     let (_, _, _, channels) = accepted(world.judge(&ask, &[GATE]));
     channels
         .into_iter()

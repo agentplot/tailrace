@@ -677,8 +677,10 @@ pub const PROMOTED: u64 = 1_767_312_000;
 
 impl FakeWorld {
     /// 131: each of `channels` declared through the fake policy in the
-    /// world's one component, `repository`, its policy requiring nothing,
-    /// bound to the channel beside it where one is named (37, 125).
+    /// world's one component, which declares none (123, 125), its policy
+    /// requiring nothing and naming no promoter, bound to the channel
+    /// beside it where one is named (37) and moving by a promotion alone
+    /// where none is.
     pub fn declare_channels(&self, channels: &[(&str, Option<&str>)]) {
         for (channel, bound_to) in channels {
             self.fakes.policy.require(

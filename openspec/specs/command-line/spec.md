@@ -272,3 +272,78 @@ cannot be resolved or has not landed.
 
 - **WHEN** the landing answers that the branch has not landed its head
 - **THEN** it exits 1 naming the branch and the revision, and the policy is not asked
+
+### Requirement: Publish tells the host's gate where the host binds it to
+
+Where the bindings file binds `[gate] publish = {}`, or holds no
+`[gate]` and so binds the host's default (118), `tailrace publish`
+SHALL, after the core's publish has answered, tell the gate of each
+version the answer offered, in the same run: the component, the version
+and the index digest the answer names, told by a publish, the gate
+signing as the host's `[signing]` signer (95, 108, 130). A component the
+publish left unchanged, or answered with absent, refused or unreadable,
+SHALL tell the gate nothing. The core's publish SHALL reach nothing of
+the gate: the command calls the gate after the publish has answered
+(130, core.10). The gate's answer for each version SHALL be printed
+beside that version's, and in the JSON answer SHALL be the version's
+`gate`, in the core's one form (57). The exit code SHALL be the worst of
+each component's publish answer and of the gate's, a version the gate
+refused or a following channel it held counting as refused.
+
+#### Scenario: One host, beta moves in the same run
+
+- **WHEN** the policy lets the host's signer claim both provenance and acceptance, `beta` follows each publish and requires acceptance from that signer, the file binds `[gate] publish = {}` and a ledger, and `tailrace publish` offers version 0.2.0
+- **THEN** the same run prints 0.2.0 accepted by the host, the acceptance saying the host accepted what it offered, and `beta` promoted to 0.2.0's index; the ledger's chain for `beta` holds the promotion; and the exit code is 0
+
+#### Scenario: A file with no gate table tells the gate the same way
+
+- **WHEN** the policy and the file are as in the scenario above, except that the file holds no `[gate]`
+- **THEN** the run's answer, its exit code, the acceptance attached and `beta`'s chain are the same as with `[gate] publish = {}`
+
+#### Scenario: Two landings, beta follows both
+
+- **WHEN** two revisions land one after the other and `tailrace publish` runs after each on that one host
+- **THEN** `beta` is at the second version, its chain holds two promotions, the second naming the first as its predecessor, and no other process ran
+
+#### Scenario: The gate refuses what the host offered
+
+- **WHEN** the file binds `[gate] publish = {}` and the policy does not let the host's signer claim acceptance
+- **THEN** the version is offered, the gate's answer refuses it naming the first artifact and the claim found wanting, nothing is attached, `beta` does not move, and the exit code is that of a refusal
+
+#### Scenario: A channel held
+
+- **WHEN** the gate accepts the version and `beta`'s own policy requires a claim the version does not carry
+- **THEN** the version is accepted, the answer for `beta` is held naming the claim, and the exit code is that of a refusal
+
+#### Scenario: Accepted with no ledger bound
+
+- **WHEN** the file binds `[gate] publish = {}` and no `[ledger]`, and `beta` follows each publish
+- **THEN** the version is accepted and the answer for `beta` is absent naming `[ledger]` in the file
+
+#### Scenario: Unchanged is not told
+
+- **WHEN** the publish answers a component unchanged since its last release
+- **THEN** the gate is not asked, and that component's answer carries no gate answer
+
+#### Scenario: The JSON answer carries the gate's
+
+- **WHEN** `tailrace publish --json` tells the gate of 0.2.0 and the gate accepts it
+- **THEN** the component's entry holds the publish's answer as before and a `gate` member holding the gate's answer, value for value as the core's gate answers it
+
+### Requirement: Publish says when a job tells the gate
+
+Where the bindings file binds `[gate] job`, `tailrace publish` SHALL
+offer as it does today and SHALL say, for each version it offered, that
+the gate is told by the job the file names, carrying its words as
+written, and SHALL ask the gate nothing; the version stays offered (20,
+130, C.16). It SHALL NOT change the exit code.
+
+#### Scenario: A job tells the gate
+
+- **WHEN** the file binds `[gate] job = "the release job a push to main wakes"` and `tailrace publish` offers 0.2.0
+- **THEN** the answer says 0.2.0 is offered and the gate is told by "the release job a push to main wakes"; no acceptance is attached, the ledger is not asked, and the exit code is 0
+
+#### Scenario: The JSON answer says so
+
+- **WHEN** `tailrace publish --json` offers 0.2.0 on a host whose file binds `[gate] job = "the release job a push to main wakes"`
+- **THEN** the component's `gate` member says it is told by a job and carries those words as written

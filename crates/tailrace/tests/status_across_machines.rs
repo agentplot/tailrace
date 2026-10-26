@@ -393,7 +393,7 @@ fn a_machine_cut_off_from_its_remote_shows_every_channel_and_says_when() {
         "{theirs}"
     );
     let mut chains = Vec::new();
-    for name in ["beta", "stable"] {
+    for name in ["beta", "rc"] {
         let at = &channel(&theirs, name)["at"];
         assert_eq!(at["answer"], "ok", "{name}: {theirs}");
         chains.push((name, when(&at["value"]["read"], name)));
