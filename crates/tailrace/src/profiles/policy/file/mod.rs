@@ -92,6 +92,15 @@
 //! channel declared by hand is promoted by the signers its `require`
 //! names that may claim a promotion.
 //!
+//! Where `[signers]` lets no signer claim acceptance and exactly one
+//! claim provenance, that signer may claim acceptance too in everything
+//! this profile answers: the one host 108 admits, the repository's gate
+//! for acceptance and the promoter of its given and made channels, its
+//! acceptance saying one host (118, 108, C.10). The gate reads this from
+//! the answer and decides nothing of it (rule core.7), and the file is
+//! never rewritten. A file that lets a signer claim acceptance, or none
+//! claim provenance, is answered as written.
+//!
 //! Every operation begins by reading the fragment and resolving the
 //! revision in the repository, so a fragment or a repository that cannot
 //! be read answers unreadable with the parser's or git's words before any
@@ -340,6 +349,7 @@ impl PolicyFile {
         for (name, table) in &file.signers {
             signers.insert(name.clone(), signer(name, table).map_err(unreadable)?);
         }
+        given_gate(&mut signers);
         Ok(Some(Read { file, signers }))
     }
 }
@@ -881,6 +891,25 @@ fn claims_of(
         });
     }
     Ok(claims)
+}
+
+/// 118, 108, C.10: the given gate. Where no signer of `signers` may
+/// claim acceptance and exactly one may claim provenance, that one may
+/// claim acceptance too, as the one host that offers and accepts; the
+/// signers are left as written otherwise.
+fn given_gate(signers: &mut BTreeMap<String, NamedSigner>) {
+    if signers
+        .values()
+        .any(|s| s.kinds.contains(&ClaimKind::Acceptance))
+    {
+        return;
+    }
+    let mut publishers = signers
+        .values_mut()
+        .filter(|s| s.kinds.contains(&ClaimKind::Provenance));
+    if let (Some(one), None) = (publishers.next(), publishers.next()) {
+        one.kinds.push(ClaimKind::Acceptance);
+    }
 }
 
 /// 32: the signers that may claim `kind` among `signers`, once each, in
