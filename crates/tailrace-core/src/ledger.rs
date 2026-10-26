@@ -280,8 +280,10 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
         }
     }
 
-    // 8: judged, and the host's signer one the channel's policy names
-    // among its promoters (9, 31, 32).
+    // 8: the asker one the channel's policy lets ask, judged, and the
+    // host's signer one the channel's policy names among its promoters
+    // (9, 31, 32, C.10).
+    may_ask(&required, channel, &ask.signer)?;
     let claims = judge(seams, &required, &to.index)?;
     may_promote(&required, &ask.signer)?;
 
@@ -427,6 +429,27 @@ pub fn judge(seams: &Seams, required: &Required, index: &Digest) -> Answer<Vec<D
         }
     }
     Ok(satisfied)
+}
+
+/// 32, C.10: `asker`, the host's own signer while no identity provider
+/// stands (129), is among the signers the policy for `channel` lets ask,
+/// or the policy names none, so any asker the gate verifies may;
+/// refused [`Why::NotApprover`], naming the asker and who may ask,
+/// otherwise.
+fn may_ask(required: &Required, channel: &ChannelId, asker: &SignerId) -> Answer<()> {
+    let approvers = required.approvers();
+    if approvers.is_empty() || approvers.iter().any(|s| s.id == *asker) {
+        return Ok(());
+    }
+    Err(Not::refused(
+        &Source::new(Seam::Policy, BOUND),
+        Why::NotApprover {
+            channel: channel.clone(),
+            asker: asker.clone(),
+            approvers: approvers.iter().map(|s| s.id.clone()).collect(),
+        },
+        None,
+    ))
 }
 
 /// 9, 32: `signer` is among the signers the channel's policy names as

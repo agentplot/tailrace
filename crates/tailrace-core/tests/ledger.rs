@@ -585,6 +585,80 @@ fn a_lines_promotion_signer_is_refused_and_nothing_is_appended() {
     ));
 }
 
+// Requirement: Only an approver asks for a channel that names approvers
+
+/// `stable` as the policy gives it, who may ask for it named by
+/// `approvers`, none meaning any asker the gate verifies (32, C.10).
+fn stable_asked_by(world: &World, approvers: &[&str]) {
+    let required = match given_stable(vec![]) {
+        Required::Channel {
+            claims,
+            bound_to,
+            promoted_by,
+            ..
+        } => Required::Channel {
+            claims,
+            bound_to,
+            promoted_by,
+            approvers: approvers.iter().map(|a| named(a, &[])).collect(),
+        },
+        other => other,
+    };
+    world
+        .fakes
+        .policy
+        .require(Audience::Channel(stable()), required);
+}
+
+#[test]
+fn an_asker_the_approvers_do_not_name_is_refused_naming_both_and_nothing_is_signed_or_appended() {
+    let Two { world, .. } = two();
+    stable_asked_by(&world, &["ci"]);
+    let before = counts(&world);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let why = refused(answer);
+    assert_eq!(
+        why,
+        Why::NotApprover {
+            channel: stable(),
+            asker: SignerId::new(GATE),
+            approvers: vec![SignerId::new("ci")],
+        }
+    );
+    assert_eq!(
+        why.to_string(),
+        "gate may not ask for lib/stable; ask one of ci"
+    );
+    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert!(matches!(
+        world.fakes.keeper.chain(&stable()),
+        Err(Not::Absent(_))
+    ));
+}
+
+#[test]
+fn a_channel_naming_no_approvers_is_promoted_by_the_gates_signer_asking() {
+    let Two { world, second, .. } = two();
+    stable_asked_by(&world, &[]);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let Ok(Promoted::Moved { to, .. }) = &answer else {
+        panic!("a channel naming no approvers was answered {answer:?}")
+    };
+    assert_eq!(to.index, second);
+    assert_eq!(chain_of(&world, &stable())[0].asked_by, SignerId::new(GATE));
+}
+
+#[test]
+fn an_asker_the_approvers_name_promotes_the_channel() {
+    let Two { world, second, .. } = two();
+    stable_asked_by(&world, &["ci", GATE]);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let Ok(Promoted::Moved { to, .. }) = &answer else {
+        panic!("an approver's asking was answered {answer:?}")
+    };
+    assert_eq!(to.index, second);
+}
+
 #[test]
 fn a_channel_of_another_component_is_absent_naming_both_and_nothing_is_read_of_the_version() {
     let Two { world, .. } = two();
