@@ -61,10 +61,40 @@ an envelope gives its signer decides nothing.
 The host key is bound by the host's bindings file's `[signing]` table,
 sluice's own shape: `signer`, the identity it signs as, and `key`, the
 key file's path, absolute or beginning `~/` (see
-[self-hosting](/tailrace/guides/self-hosting/)). A host whose file names
-no `[signing]` binds the host key verify-only: it tells every claim by
-the keys the policy lists, and answers every sign absent, saying no
-identity is at hand, reading no file.
+[self-hosting](/tailrace/guides/self-hosting/)). A key file the table
+names that is not there is absent, naming the identity and the path.
+
+A host with no file, or a file with no `[signing]`, publishes and
+promotes with the given host key, `~/.local/share/tailrace/host/signing.key`,
+under `$XDG_DATA_HOME` where it is set (118, C.8). The first claim it
+signs makes it: an Ed25519 key in OpenSSH's form with no passphrase,
+readable by its owner alone, the form sluice signs with, its directory
+readable by its owner alone where it is made, and its public half beside
+it as `signing.key.pub`. It signs as the host's short name, its first
+label in lower case, so a host named `Laptop.local` signs as `laptop`;
+that name is fixed in `signing.key.pub` when the key is made, so a host
+renamed later still signs as it. Two first signs at once end with one
+key, and a key file that is there is never replaced: one others may
+read is refused, naming `chmod 600`. Every other command, verify, sync,
+push, rebuild and status, binds the host key verify-only: it tells every
+claim by the keys the policy lists, and answers every sign absent,
+saying no identity is at hand, reading and making no file.
+
+To list the made key, print its public half and copy the one line into
+the policy under the name it gives, for provenance:
+
+```sh
+cat ~/.local/share/tailrace/host/signing.key.pub
+# ssh-ed25519 AAAA… laptop
+```
+
+```toml
+[signers.laptop]
+ssh = "ssh-ed25519 AAAA… laptop"
+kinds = ["provenance"]
+```
+
+Until the policy lists it, no claim the key makes counts (80).
 
 ### A key in AWS KMS
 

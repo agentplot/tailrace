@@ -34,6 +34,19 @@ remote = "origin" }` or `branch = { remote = "origin" }`, the remote
 optional. With a remote, sluice's records or the branches are read from
 it; without one, from the repository's own refs and files.
 
+A host with no file, or a file with no `[landing]`, binds sluice where
+the repository is set up for it, its `HEAD` commit holding
+`.config/sluice.toml`, read from the commit and never from the working
+tree, and a plain branch otherwise, a repository with no commit yet
+among them (118, C.5, C.6). Its remote is the checkout's `origin`, else
+its one remote of another name, else none, the repository's own refs
+then read. A checkout with several remotes and none of them `origin`
+answers every command unreadable, naming each remote and `[landing]`
+remote in the bindings file, the one line that picks one. A written
+`[landing]` binds exactly what it names: one with no `remote` reads the
+repository's own refs, `origin` or not. The given ledger is kept on the
+same remote the landing reads (see [ledgers](/tailrace/guides/integrations/ledgers/)).
+
 ## Adding one
 
 A landing profile implements the one landing interface and nothing of
