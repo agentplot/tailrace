@@ -1,10 +1,12 @@
 //! The fake keeper (B.8): per channel, a chain of promotion claims, each
-//! held with the predecessor it named.
+//! held with the predecessor it named, and the chain as it last answered
+//! it, which it answers as last read once made unreachable (C.13, C.14).
 
 use std::collections::BTreeMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
-use tailrace_seams::{Answer, ChannelName, Digest, Envelope, Keeper, Not, Seam, Why};
+use tailrace_seams::{Answer, Chain, ChannelName, Digest, Envelope, Keeper, Not, Read, Seam, Why};
 
 use crate::Fake;
 
@@ -22,10 +24,20 @@ struct Link {
     predecessor: Option<Digest>,
 }
 
-/// Each channel's chain, in the order held.
+/// Each channel's chain, in the order held; per channel, the claims it
+/// last answered and when, in seconds since the Unix epoch; and the words
+/// it answers with once unreachable.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct KeeperState {
     chains: BTreeMap<ChannelName, Vec<Link>>,
+    answered: BTreeMap<ChannelName, (Vec<Envelope>, u64)>,
+    unreachable: Option<String>,
+}
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// A keeper in memory.
@@ -70,6 +82,14 @@ impl FakeKeeper {
             });
         }
     }
+
+    /// The source holding the ledger no longer answers, for `words`, its
+    /// own: a chain answered before is answered as then, [`Read::Kept`]
+    /// with the time of that answer and the words; one never answered,
+    /// and every append, unreadable with them (60, 61).
+    pub fn unreachable(&self, words: impl Into<String>) {
+        self.state().unreachable = Some(words.into());
+    }
 }
 
 impl Keeper for FakeKeeper {
@@ -86,6 +106,10 @@ impl Keeper for FakeKeeper {
             given,
             format!("the chain of {channel}"),
             |s, source| {
+                if let Some(words) = &s.unreachable {
+                    let what = format!("the chain of {channel}");
+                    return Err(Not::unreadable(source, what, Some(words.clone())));
+                }
                 let chain = s.chains.entry(channel.clone()).or_default();
                 if let Some(why) = fork(chain) {
                     return Err(Not::refused(source, why, None));
@@ -103,13 +127,29 @@ impl Keeper for FakeKeeper {
         )
     }
 
-    fn chain(&self, channel: &ChannelName) -> Answer<Vec<Envelope>> {
+    fn chain(&self, channel: &ChannelName) -> Answer<Chain> {
         let given = json!({ "channel": channel });
         self.ask(
             KeeperOp::Chain,
             given,
             format!("the chain of {channel}"),
             |s, source| {
+                if let Some(words) = &s.unreachable {
+                    return match s.answered.get(channel) {
+                        Some((claims, at)) => Ok(Chain {
+                            claims: claims.clone(),
+                            read: Read::Kept {
+                                at: *at,
+                                said: words.clone(),
+                            },
+                        }),
+                        None => Err(Not::unreadable(
+                            source,
+                            format!("the chain of {channel}"),
+                            Some(words.clone()),
+                        )),
+                    };
+                }
                 let chain = match s.chains.get(channel) {
                     Some(chain) if !chain.is_empty() => chain,
                     _ => return Err(Not::absent(source, format!("chain of {channel}"))),
@@ -117,7 +157,12 @@ impl Keeper for FakeKeeper {
                 if let Some(why) = fork(chain) {
                     return Err(Not::refused(source, why, None));
                 }
-                Ok(chain.iter().map(|l| l.promotion.clone()).collect())
+                let claims: Vec<Envelope> = chain.iter().map(|l| l.promotion.clone()).collect();
+                s.answered.insert(channel.clone(), (claims.clone(), now()));
+                Ok(Chain {
+                    claims,
+                    read: Read::Source,
+                })
             },
         )
     }
@@ -160,7 +205,7 @@ mod tests {
             keeper.append(&stable, &two, Some(&one.digest())),
             Ok(two.digest())
         );
-        assert_eq!(keeper.chain(&stable), Ok(vec![one, two]));
+        assert_eq!(keeper.chain(&stable).map(|c| c.claims), Ok(vec![one, two]));
     }
 
     #[test]
@@ -184,7 +229,7 @@ mod tests {
             ))
         );
         assert_eq!(
-            keeper.chain(&stable),
+            keeper.chain(&stable).map(|c| c.claims),
             Ok(vec![root.clone(), a.clone()]),
             "the chain is unchanged"
         );
@@ -222,7 +267,7 @@ mod tests {
         assert_eq!(keeper.chain(&stable), forked);
         assert_eq!(
             keeper.append(&stable, &promotion("1.3.0"), Some(&b.digest())),
-            forked.map(|_: Vec<Envelope>| unreachable!())
+            forked.map(|_: Chain| unreachable!())
         );
     }
 
@@ -252,6 +297,59 @@ mod tests {
         assert_eq!(
             keeper.calls().iter().map(|c| c.op).collect::<Vec<_>>(),
             [KeeperOp::Append, KeeperOp::Chain, KeeperOp::Chain]
+        );
+    }
+
+    #[test]
+    fn unreachable_after_a_read_answers_the_chain_as_last_read() {
+        let keeper = FakeKeeper::new();
+        let (stable, beta) = (ChannelName::new("stable"), ChannelName::new("beta"));
+        let (one, two) = (promotion("1.0.0"), promotion("1.1.0"));
+        keeper.append(&stable, &one, None).unwrap();
+        keeper.append(&beta, &two, None).unwrap();
+        let before = now();
+        let read = keeper.chain(&stable).unwrap();
+        let after = now();
+        assert_eq!(
+            read,
+            Chain {
+                claims: vec![one.clone()],
+                read: Read::Source
+            }
+        );
+
+        keeper.unreachable("ref unreadable");
+        let Ok(Chain {
+            claims,
+            read: Read::Kept { at, said },
+        }) = keeper.chain(&stable)
+        else {
+            panic!("an unreachable keeper answered no kept chain")
+        };
+        assert_eq!(claims, std::slice::from_ref(&one));
+        assert!(
+            (before..=after).contains(&at),
+            "{at} is not the first answer's time"
+        );
+        assert_eq!(said, "ref unreadable");
+
+        let unreadable =
+            |what: &str| Not::unreadable(&source(), what, Some("ref unreadable".into()));
+        assert_eq!(keeper.chain(&beta), Err(unreadable("the chain of beta")));
+        assert_eq!(
+            keeper.append(&stable, &two, Some(&one.digest())),
+            Err(unreadable("the chain of stable"))
+        );
+        assert_eq!(
+            keeper.calls().iter().map(|c| c.op).collect::<Vec<_>>(),
+            [
+                KeeperOp::Append,
+                KeeperOp::Append,
+                KeeperOp::Chain,
+                KeeperOp::Chain,
+                KeeperOp::Chain,
+                KeeperOp::Append
+            ]
         );
     }
 }

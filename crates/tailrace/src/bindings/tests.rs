@@ -200,7 +200,7 @@ fn a_relative_path_is_unreadable_naming_its_key() {
 }
 
 #[test]
-fn what_the_repository_binds_and_no_ledger_are_unreadable_naming_the_table() {
+fn what_the_repository_binds_and_no_table_of_the_file_are_unreadable_naming_the_table() {
     let host = Host::new();
     for (table, said) in [
         (
@@ -212,12 +212,8 @@ fn what_the_repository_binds_and_no_ledger_are_unreadable_naming_the_table() {
             "[projections] is the repository's to bind, in its policy file, and not the host's",
         ),
         (
-            "ledger",
-            "[ledger] names a ledger, and no ledger profile is built yet",
-        ),
-        (
             "targets",
-            "[targets] is no table of the bindings file, which binds [store], [landing] and [signing]",
+            "[targets] is no table of the bindings file, which binds [store], [landing], [ledger] and [signing]",
         ),
     ] {
         host.write(&format!("[store]\nlayout = \"/layout\"\n\n[{table}]\nx = 1\n"));
@@ -464,13 +460,8 @@ fn with_no_signing_the_host_only_verifies() {
     }
 }
 
-#[test]
-fn the_ledger_is_bound_to_nothing() {
-    let host = Host::new();
-    let layout = host.dir.path().join("layout");
-    let binding = bound(&host, &layout, true, For::Publish).unwrap();
-    let keeper = &binding.seams.keeper;
-    let envelope = Envelope::signed(
+fn envelope() -> Envelope {
+    Envelope::signed(
         "a type",
         vec![],
         tailrace_seams::Signature {
@@ -478,13 +469,24 @@ fn the_ledger_is_bound_to_nothing() {
             keyid: String::new(),
             sig: vec![],
         },
-    );
+    )
+}
+
+#[test]
+fn a_file_naming_no_ledger_binds_one_absent_naming_the_table() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let binding = bound(&host, &layout, true, For::Publish).unwrap();
+    let keeper = &binding.seams.keeper;
     let absent = Not::absent(
         &Source::new(Seam::Keeper, "unbound"),
-        "binding of the ledger",
+        format!(
+            "binding of the ledger, [ledger] in {}",
+            host.file().display()
+        ),
     );
     assert_eq!(
-        keeper.append(&ChannelName::new("stable"), &envelope, None),
+        keeper.append(&ChannelName::new("stable"), &envelope(), None),
         Err(absent.clone())
     );
     assert_eq!(keeper.chain(&ChannelName::new("stable")), Err(absent));
@@ -496,6 +498,223 @@ fn the_ledger_is_bound_to_nothing() {
         .map(|e| e.as_str())
         .collect();
     assert_eq!(ecosystems, ["file", "image", "moon-cache"]);
+}
+
+/// A repository in the host's directory, made with git, and its path.
+fn repository(host: &Host) -> PathBuf {
+    let repo = host.dir.path().join("repo");
+    let made = std::process::Command::new("git")
+        .args(["init", "-q", "-b", "main"])
+        .arg(&repo)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .status()
+        .unwrap();
+    assert!(made.success());
+    repo.canonicalize().unwrap()
+}
+
+/// A file binding the layout at `layout`, a branch with no remote,
+/// `ledger` as its `[ledger]` where it is not empty and, where `signing`,
+/// the signer `laptop`; and the binding it makes for `command` in
+/// `repo`.
+fn bound_with(
+    host: &Host,
+    repo: &Path,
+    layout: &Path,
+    ledger: &str,
+    signing: bool,
+    command: For,
+) -> Answer<Binding> {
+    let signing = if signing {
+        "\n[signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n"
+    } else {
+        ""
+    };
+    let ledger = if ledger.is_empty() {
+        String::new()
+    } else {
+        format!("\n[ledger]\n{ledger}\n")
+    };
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n{ledger}{signing}",
+        layout.display()
+    ));
+    bind(&host.file(), Some(&host.home()), repo, command)
+}
+
+/// What the bound ledger answers for `stable`'s chain.
+fn chain_of(binding: Answer<Binding>) -> Answer<Chain> {
+    binding
+        .unwrap_or_else(|not| panic!("the file bound nothing: {not}"))
+        .seams
+        .keeper
+        .chain(&ChannelName::new("stable"))
+}
+
+#[test]
+fn a_git_ref_ledger_with_and_without_a_remote_and_a_store_ledger_are_bound() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+
+    match chain_of(bound_with(
+        &host,
+        &repo,
+        &layout,
+        "git_ref = {}",
+        true,
+        For::Promote,
+    )) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref"));
+            assert_eq!(a.what, "chain of stable");
+        }
+        other => panic!("a git ref ledger with no remote answered {other:?}"),
+    }
+    let remote = "git_ref = { remote = \"nowhere\" }";
+    match chain_of(bound_with(
+        &host,
+        &repo,
+        &layout,
+        remote,
+        true,
+        For::Promote,
+    )) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::new(Seam::Keeper, "git_ref"));
+            assert!(
+                u.said.as_deref().is_some_and(|s| s.contains("'nowhere'")),
+                "{u:?}"
+            );
+        }
+        other => panic!("a git ref ledger with a remote answered {other:?}"),
+    }
+    match chain_of(bound_with(
+        &host,
+        &repo,
+        &layout,
+        "store = {}",
+        true,
+        For::Promote,
+    )) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::new(Seam::Keeper, "store"));
+            assert_eq!(a.what, "chain of stable");
+        }
+        other => panic!("a store ledger answered {other:?}"),
+    }
+    let binding = bound_with(&host, &repo, &layout, "store = {}", false, For::Verify).unwrap();
+    assert_eq!(
+        binding.signer, None,
+        "a verify binds the ledger and no signer"
+    );
+}
+
+#[test]
+fn a_ledger_table_naming_two_profiles_none_or_an_option_its_profile_does_not_read_is_unreadable() {
+    let host = Host::new();
+    host.write("[ledger]\ngit_ref = {}\nstore = {}\n");
+    assert_eq!(
+        host.unreadable(Some("[ledger]")),
+        "[ledger] names git_ref and store, and a seam is bound to one profile"
+    );
+    host.write("[ledger]\n");
+    assert_eq!(
+        host.unreadable(Some("[ledger]")),
+        "[ledger] names no profile"
+    );
+
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    for (ledger, at, words) in [
+        (
+            "git_ref = { remote = \"origin\", branch = \"main\" }",
+            "[ledger] git_ref",
+            "branch",
+        ),
+        (
+            "store = { remote = \"origin\" }",
+            "[ledger] store",
+            "remote",
+        ),
+        ("table = {}", "[ledger]", "it reads git_ref or store"),
+    ] {
+        for command in [For::Verify, For::Promote] {
+            match bound_with(&host, &repo, &layout, ledger, true, command) {
+                Err(Not::Unreadable(u)) => {
+                    assert_eq!(u.what, format!("{}, {at}", host.file().display()));
+                    assert!(
+                        u.said.as_deref().is_some_and(|s| s.contains(words)),
+                        "{u:?}"
+                    );
+                }
+                other => panic!("[ledger] {ledger} answered {:?}", other.err()),
+            }
+        }
+    }
+}
+
+#[test]
+fn a_promote_with_no_ledger_or_no_signing_is_absent_naming_it_before_anything_is_read() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    match bound_with(&host, &repo, &layout, "", true, For::Promote) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::host(host.file()));
+            assert_eq!(
+                a.what,
+                format!(
+                    "binding of the ledger, [ledger] in {}",
+                    host.file().display()
+                )
+            );
+        }
+        other => panic!("a promote with no ledger answered {:?}", other.err()),
+    }
+    match bound_with(&host, &repo, &layout, "git_ref = {}", false, For::Promote) {
+        Err(Not::Absent(a)) => assert!(a.what.contains("[signing]"), "{a:?}"),
+        other => panic!("a promote with no signing answered {:?}", other.err()),
+    }
+    host.write("[ledger]\ngit_ref = {}\n");
+    match bind(&host.file(), Some(&host.home()), &repo, For::Promote) {
+        Err(Not::Absent(a)) => assert!(a.what.contains("[signing]"), "{a:?}"),
+        other => panic!("a promote with no signing answered {:?}", other.err()),
+    }
+    assert!(
+        !layout.exists(),
+        "a promote that cannot bind made the layout"
+    );
+}
+
+#[test]
+fn the_store_ledgers_binding_never_makes_the_layout() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layouts").join("laptop");
+    let promote = bound_with(&host, &repo, &layout, "store = {}", true, For::Promote);
+    assert!(
+        matches!(&promote, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store
+            && u.said.as_deref().is_some_and(|s| s.contains("No such file or directory"))),
+        "{:?}",
+        promote.err()
+    );
+    assert!(
+        !layout.exists(),
+        "the store ledger made {}",
+        layout.display()
+    );
+    let publish = bound_with(&host, &repo, &layout, "store = {}", true, For::Publish).unwrap();
+    assert!(
+        matches!(
+            publish.seams.keeper.chain(&ChannelName::new("stable")),
+            Err(Not::Absent(_))
+        ),
+        "the store ledger did not read the layout a publish made"
+    );
 }
 
 #[test]

@@ -13,17 +13,21 @@
 //! [landing]
 //! branch = { remote = "origin" }   # the remote optional
 //!
+//! [ledger]
+//! git_ref = { remote = "origin" }  # the remote optional
+//! # store = {}                     # the chain held in [store] in its place
+//!
 //! [signing]
 //! signer = "laptop"
 //! key = "~/.config/tailrace/signing"
 //! ```
 //!
-//! `[store]` and `[landing]` each name their profile by their one key,
-//! so a later profile is a new key and not a new shape; `[signing]`
-//! names the host's signer and its key file, in the landing's own
-//! `[signing]` shape, or a key in a key service by the key's own name.
-//! A path is absolute or begins `~/`, expanded against the home
-//! directory. This module reads each table generically and names no
+//! `[store]`, `[landing]` and `[ledger]` each name their profile by their
+//! one key, so a later profile is a new key and not a new shape;
+//! `[signing]` names the host's signer and its key file, in the
+//! landing's own `[signing]` shape, or a key in a key service by the
+//! key's own name. A path is absolute or begins `~/`, expanded against
+//! the home directory. This module reads each table generically and names no
 //! tool or service (rule core.1): the key of each seam's table is
 //! matched to its profile by the `bind` function of that seam's profile
 //! family, and `[signing]` is read whole by the signer profiles' family,
@@ -38,9 +42,11 @@
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
 //! through a second binding of `[store]`, opened and never made (design
-//! D6). No ledger and no target are bound yet. Only a publish and a push
-//! make the layout they name, and a push needs no `[signing]`, since it
-//! signs nothing (60, rule core.32).
+//! D6). The ledger is bound where the file names `[ledger]`, and answers
+//! absent naming it where it does not; no target is bound yet. Only a
+//! publish and a push make the layout they name, and a push needs no
+//! `[signing]`, since it signs nothing (60, rule core.32); a promote
+//! needs `[signing]` and `[ledger]` and makes nothing (C.13, C.14).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -49,7 +55,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
-use tailrace_seams::{Answer, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, Source};
+use tailrace_seams::{
+    Answer, Chain, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, Source,
+};
 
 use crate::profiles::signer::Signing;
 use crate::{profiles, unsigned, Binding};
@@ -70,13 +78,14 @@ pub fn path(xdg_config_home: Option<&OsStr>, home: Option<&Path>) -> Option<Path
     Some(config.join(FILE))
 }
 
-/// What the bindings file names: the store's table and the landing's,
-/// where it holds them, and the host's signer.
+/// What the bindings file names: the store's table, the landing's and
+/// the ledger's, where it holds them, and the host's signer.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bindings {
     pub file: PathBuf,
     pub store: Option<Table>,
     pub landing: Option<Table>,
+    pub ledger: Option<Table>,
     pub signing: Option<Signing>,
 }
 
@@ -211,6 +220,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
         file: file.to_path_buf(),
         store: None,
         landing: None,
+        ledger: None,
         signing: None,
     };
     for (name, value) in tables {
@@ -219,12 +229,16 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
             return Err(unreadable(
                 file,
                 Some(&name),
-                format!("{name} is not a table; the file binds [store], [landing] and [signing]"),
+                format!(
+                    "{name} is not a table; the file binds [store], [landing], [ledger] \
+                     and [signing]"
+                ),
             ));
         };
         match name.as_str() {
             "store" => bindings.store = Some(seam(file, home, "store", table)?),
             "landing" => bindings.landing = Some(seam(file, home, "landing", table)?),
+            "ledger" => bindings.ledger = Some(seam(file, home, "ledger", table)?),
             "signing" => bindings.signing = Some(profiles::signer::read(file, home, table)?),
             "build" | "projections" => {
                 return Err(unreadable(
@@ -236,20 +250,13 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
                     ),
                 ))
             }
-            "ledger" => {
-                return Err(unreadable(
-                    file,
-                    Some(&at),
-                    format!("{at} names a ledger, and no ledger profile is built yet"),
-                ))
-            }
             _ => {
                 return Err(unreadable(
                     file,
                     Some(&at),
                     format!(
                         "{at} is no table of the bindings file, which binds [store], \
-                         [landing] and [signing]"
+                         [landing], [ledger] and [signing]"
                     ),
                 ))
             }
@@ -258,7 +265,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
     Ok(bindings)
 }
 
-/// A seam's table, `[store]` or `[landing]`, by its one key.
+/// A seam's table, `[store]`, `[landing]` or `[ledger]`, by its one key.
 fn seam(
     file: &Path,
     home: Option<&Path>,
@@ -296,8 +303,9 @@ fn seam(
 }
 
 /// The command a binding is made for: publish or push, which make the
-/// layout the file names the first time, or verify, sync or rebuild,
-/// which never make or write one.
+/// layout the file names the first time; verify, sync or rebuild, which
+/// never make or write one; or promote, which needs the host's signer
+/// and its ledger and never makes the layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
@@ -305,36 +313,40 @@ pub enum For {
     Sync,
     Push,
     Rebuild,
+    Promote,
 }
 
-/// The ledger, which the host's file names no profile of until bolt 4's
-/// ledger unit: every operation absent naming its binding.
-struct NoLedger;
+/// The ledger of a host whose file names no `[ledger]`: every operation
+/// absent naming the table in the file.
+struct NoLedger {
+    file: PathBuf,
+}
 
 impl NoLedger {
-    fn absent() -> Not {
+    fn absent(&self) -> Not {
         Not::absent(
             &Source::new(Seam::Keeper, "unbound"),
-            "binding of the ledger",
+            format!("binding of the ledger, [ledger] in {}", self.file.display()),
         )
     }
 }
 
 impl Keeper for NoLedger {
     fn append(&self, _: &ChannelName, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
-        Err(NoLedger::absent())
+        Err(self.absent())
     }
 
-    fn chain(&self, _: &ChannelName) -> Answer<Vec<Envelope>> {
-        Err(NoLedger::absent())
+    fn chain(&self, _: &ChannelName) -> Answer<Chain> {
+        Err(self.absent())
     }
 }
 
 /// The binding the bindings file at `file` names for `command`, in the
 /// repository at `repository`, its `~/` paths expanded against `home`.
-/// A publish on a host whose file names no `[signing]` is absent naming
-/// it before anything is read; a file naming no `[store]` or no
-/// `[landing]` is absent naming the table. Every table is read before the
+/// A publish or a promote on a host whose file names no `[signing]`, and
+/// a promote on one whose file names no `[ledger]`, is absent naming it
+/// before anything is read; a file naming no `[store]` or no `[landing]`
+/// is absent naming the table. Every table is read before the
 /// layout is made, so a file that cannot bind leaves nothing behind. The
 /// store is named as the file names it, its key and what it names, a
 /// path with `~/` expanded, so the record names a directory a reader
@@ -345,7 +357,7 @@ impl Keeper for NoLedger {
 pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
     let bindings = read(file, home)?;
     let signing = bindings.signing.as_ref();
-    if command == For::Publish && signing.is_none() {
+    if matches!(command, For::Publish | For::Promote) && signing.is_none() {
         return Err(unsigned());
     }
     let missing = |table: &str| {
@@ -354,6 +366,9 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
             format!("binding of the {table}, [{table}] in {}", file.display()),
         )
     };
+    if command == For::Promote && bindings.ledger.is_none() {
+        return Err(missing("ledger"));
+    }
     let landing = bindings
         .landing
         .as_ref()
@@ -365,13 +380,19 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
     // After the seams' own store, so a publish or a push has made the
     // layout.
     let cache = profiles::store::bind(store, false)?;
+    let keeper: Box<dyn Keeper> = match &bindings.ledger {
+        Some(ledger) => profiles::ledger::bind(ledger, repository, store)?,
+        None => Box::new(NoLedger {
+            file: file.to_path_buf(),
+        }),
+    };
     Ok(Binding {
         seams: Seams {
             store: bound,
             build: profiles::build::bind(repository),
             landing,
             policy: profiles::policy::bind(repository),
-            keeper: Box::new(NoLedger),
+            keeper,
             signers: profiles::signer::bind(signing),
             projections: profiles::projection::bound(cache, repository),
             targets: BTreeMap::new(),

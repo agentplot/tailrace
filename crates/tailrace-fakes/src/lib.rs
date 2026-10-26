@@ -264,7 +264,10 @@ mod tests {
             seams.keeper.append(&stable, &envelope, None),
             Ok(envelope.digest())
         );
-        assert_eq!(seams.keeper.chain(&stable), Ok(vec![envelope]));
+        assert_eq!(
+            seams.keeper.chain(&stable).map(|c| c.claims),
+            Ok(vec![envelope])
+        );
 
         let ops = |calls: Vec<Call<StoreOp>>| calls.into_iter().map(|c| c.op).collect::<Vec<_>>();
         assert_eq!(

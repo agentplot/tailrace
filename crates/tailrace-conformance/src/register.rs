@@ -18,7 +18,6 @@ pub struct Pending {
     pub why: &'static str,
 }
 
-const PROMOTION: &str = "bolt 4 · the keeper and promotion";
 const ACROSS: &str = "bolt 4 · status across machines";
 const RENDER: &str = "bolt 5 · render under a policy";
 const SERVED: &str = "bolt 5 · the first served projection";
@@ -30,14 +29,6 @@ const PHASE_2: &str = "phase 2";
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 32, unit: PROMOTION, why: "A channel moves only by a promotion, and bolt 1 promotes nothing." },
-    Pending { clause: 33, unit: PROMOTION, why: "A promotion is recorded in the ledger before the channel moves, and bolt 1 keeps no ledger." },
-    Pending { clause: 38, unit: PROMOTION, why: "Moving a channel away withdraws nothing, and bolt 1 moves no channel." },
-    Pending { clause: 39, unit: PROMOTION, why: "Every promotion is a claim attached to the index it moves to, and bolt 1 promotes nothing." },
-    Pending { clause: 41, unit: PROMOTION, why: "An environment that waits converges on an approver's promotion, and bolt 1 promotes nothing." },
-    Pending { clause: 97, unit: PROMOTION, why: "An approval is a promotion, and bolt 1 promotes nothing." },
-    Pending { clause: 101, unit: PROMOTION, why: "One record is the source of a channel's every state, and bolt 1 keeps no channel." },
-    Pending { clause: 106, unit: PROMOTION, why: "The keeper's chain is that record and the store is rewritten from it, and bolt 1 keeps no ledger." },
     Pending { clause: 36, unit: ACROSS, why: "A channel resolves to one version for every reader, read across machines." },
     Pending { clause: 98, unit: ACROSS, why: "What each environment should run and runs is told to every asker across machines." },
     Pending { clause: 47, unit: RENDER, why: "A consumer layout holds only versions its policy satisfies, and bolt 1 renders under no policy." },
@@ -48,6 +39,8 @@ pub const PENDING: &[Pending] = &[
     Pending { clause: 49, unit: SERVED, why: "A client's recorded address names no host, which a served layout keeps." },
     Pending { clause: 114, unit: SERVED, why: "A served layout is reached by one fixed name and port, and bolt 1 serves none." },
     Pending { clause: 115, unit: SERVED, why: "The host runs a served layout for as long as a client needs it, and bolt 1 serves none." },
+    Pending { clause: 41, unit: TARGET, why: "An environment that waits converges on an approver's promotion, S6's environment half, and phase 1 leaves every target to phase 2." },
+    Pending { clause: 97, unit: TARGET, why: "An approval is a promotion of the environment's own channel, S6's environment half, and phase 1 leaves every target to phase 2." },
     Pending { clause: 42, unit: TARGET, why: "A reconciler verifies before it applies, and phase 1 leaves every target to phase 2." },
     Pending { clause: 44, unit: TARGET, why: "Pushed to or pulling is the environment's own, and phase 1 leaves every target to phase 2." },
     Pending { clause: 45, unit: TARGET, why: "A reconciler acts with the environment's own credentials, and phase 1 leaves every target to phase 2." },

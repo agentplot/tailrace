@@ -5,8 +5,8 @@ use tailrace::bindings::{self, For};
 use tailrace::{run, Cli, Command};
 
 /// The command line over the host's bindings file (118): publish, verify,
-/// sync, push and rebuild are bound by it, only publish and push making
-/// the layout it names, and status reads none (60).
+/// sync, push, rebuild and promote are bound by it, only publish and push
+/// making the layout it names, and status reads none (60).
 fn main() {
     let cli = Cli::parse();
     let at = std::env::current_dir().expect("a working directory");
@@ -16,6 +16,7 @@ fn main() {
         Command::Sync(_) => bindings::load(&at, For::Sync),
         Command::Push(_) => bindings::load(&at, For::Push),
         Command::Rebuild(_) => bindings::load(&at, For::Rebuild),
+        Command::Promote(_) => bindings::load(&at, For::Promote),
         Command::Status(_) => Err(bindings::not_read()),
     };
     let mut out = std::io::stdout().lock();

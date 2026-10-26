@@ -77,15 +77,23 @@ signer made, for anyone who wants to read the evidence.
 
 ## Channels moved only by proof
 
-A channel such as `beta` or `stable` is a mutable pointer, an OCI tag, to
-a version. A landing on `main` makes a version and attaches it to `beta`;
-`tailrace promote <version> --to stable` moves `stable` to it. Every
-promotion is a signed record that names the one before it: the version
-and its digest, the channel, who or what promoted it, when, and the
-policy evidence. The chain is the ledger, ordered and tamper-evident
-wherever it is held, in a git ref the gate pushes by default, and the same records sit in the registry beside the versions
-they moved. The ledger is the audit trail, and a rollback is a promotion
-to an older version. The direction for `stable` is an independent rebuild by a builder
+A channel such as `beta` or `stable` is a mutable pointer, a name in the
+store, `channel/stable`, to a version. A landing on `main` makes a
+version and attaches it to `beta`; `tailrace promote <version> --to
+stable` moves `stable` to it, once the version's index carries the
+gate's acceptance and every claim `stable`'s policy requires, and the
+host's signer is one the policy lets promote. Every promotion is a
+signed record that names the one before it: the version and its digest,
+the channel, who promoted it, when, and the policy evidence. The chain
+is the ledger, ordered and tamper-evident wherever it is held, in a git
+ref the gate pushes by default, and the same records sit in the
+registry beside the versions they moved; the ledger holds a move before
+the store does, and the store is rewritten from the ledger. The ledger
+is the audit trail. `--from <version>` names where the asker expects the
+channel, and a channel that has moved since is refused naming where it
+is. A wrong move is undone by `tailrace promote --back --to stable`,
+one more promotion, to the version the channel moved from: the version
+left stays accepted and readable by its digest. The direction for `stable` is an independent rebuild by a builder
 the first one does not control, with the shared cache off, whose matching
 digest is one more attestation, and two signatures before `stable` moves.
 

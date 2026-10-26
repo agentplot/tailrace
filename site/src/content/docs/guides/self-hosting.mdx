@@ -64,6 +64,10 @@ layout = "~/.local/share/tailrace/layout"   # C.2
 sluice = { remote = "origin" }   # C.5; or: branch = { remote = "origin" }, C.6
                                  # remote optional; without one, local refs
 
+[ledger]
+git_ref = { remote = "origin" }  # C.13; or: store = {}, C.14, the chain in [store]
+                                 # remote optional; without one, the repository's own refs
+
 [signing]                         # sluice's own table, C.8
 signer = "laptop"
 key = "~/.config/tailrace/signing"
@@ -73,7 +77,8 @@ key = "~/.config/tailrace/signing"
 
 - Each seam's table names its profile by its one key; a table naming
   none or two is refused, naming it. A path is absolute or begins `~/`.
-- `tailrace publish`, `verify`, `sync`, `push` and `rebuild` read it.
+- `tailrace publish`, `verify`, `sync`, `push`, `rebuild` and `promote`
+  read it.
   With no file they answer absent, naming the file's path; a file that
   is not well formed is unreadable in the parser's own words. `tailrace
   status` reads no bindings file and answers from the host's record.
@@ -104,11 +109,18 @@ key = "~/.config/tailrace/signing"
   clone of the repository are all it needs. Every host binds both
   signers, the one its `[signing]` names signing and the other
   verify-only, so it tells a host key's claims and a KMS key's alike.
+- `[ledger]` names where each channel's chain is held. `git_ref` keeps
+  it in the repository's refs, `refs/tailrace/ledger/<channel>`, pushed
+  to and fetched from the remote it names with the host's own git
+  credentials, kept nowhere (64); `store` keeps it as the promotion
+  claims in the store `[store]` names, opened and never made. `tailrace
+  promote` needs `[signing]` and `[ledger]`, and a host whose file names
+  no `[ledger]` answers absent naming it; promote never makes the
+  layout.
 - The build and the projections are the repository's to bind, not the
   host's: moon is the build, and the policy file names each output's task
-  and the projection that packs it. A `[build]`, `[projections]` or
-  `[ledger]` table is refused, naming it; the ledger is bound by a later
-  bolt.
+  and the projection that packs it. A `[build]` or `[projections]` table
+  is refused, naming it.
 
 ## The policy's signers and audiences
 
@@ -128,7 +140,7 @@ checks = ["cli:test", "core:test"]       # by the landing's names (116)
 
 [signers.gate]
 ssh = "ssh-ed25519 CCCC…"
-kinds = ["acceptance"]
+kinds = ["acceptance", "promotion"]
 
 [acceptance]
 require = [
@@ -215,6 +227,26 @@ require = [{ kind = "provenance", signers = ["laptop"] }]
 on_each_publish = true
 require = [{ kind = "acceptance", signers = ["laptop"] }]
 ```
+
+### Promoting
+
+`tailrace promote 0.2.0 --to stable` moves `stable` to 0.2.0 of the one
+component, or of the one `--component` names, under `[channels.stable]`
+as it stands at the branch's landed head. The version's index must carry
+an acceptance a signer the channel's policy names made, and then every
+claim its `require` lists, in order; the first found wanting is named
+with the signers that may make it (31, 58). The host's `[signing]`
+signer must be one the policy lets claim `promotion`, as `gate` is above
+(9, 32), and it is recorded as who asked. A channel bound to another,
+as `stable` is to `beta`, takes only a version `beta` has held, now or
+before (37).
+
+The promotion is held in the ledger before `stable`'s name moves in the
+store (33). `--from 0.1.0` says where you expect `stable`, and a channel
+that has moved since is refused naming where it is (35); a promotion
+another host made between your read and your append is refused naming
+it, never retried. `tailrace promote --back --to stable` moves `stable`
+back to the version it moved from, one more promotion (34).
 
 ## A team
 
