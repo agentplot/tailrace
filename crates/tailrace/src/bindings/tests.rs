@@ -1209,7 +1209,7 @@ fn sluices_file_in_the_head_commit_binds_sluice() {
     sluice_file(&repo);
     git_in(&repo, &["add", ".config/sluice.toml"]);
     git_in(&repo, &["commit", "-q", "-m", "chore: sluice gates main"]);
-    let landing = profiles::landing::given(&repo).unwrap();
+    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(landing_source(landing.as_ref(), &repo), sluice());
 }
 
@@ -1219,18 +1219,18 @@ fn sluices_file_only_in_the_working_tree_no_file_and_no_commit_bind_a_branch() {
     let repo = repository(&host);
     // No commit yet, sluice's file in the working tree alone.
     sluice_file(&repo);
-    let landing = profiles::landing::given(&repo).unwrap();
+    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(landing_source(landing.as_ref(), &repo), branch());
     // A commit that holds no sluice file, with one in the working tree.
     git_in(
         &repo,
         &["commit", "-q", "--allow-empty", "-m", "feat: a start"],
     );
-    let landing = profiles::landing::given(&repo).unwrap();
+    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(landing_source(landing.as_ref(), &repo), branch());
     // No file anywhere.
     fs::remove_dir_all(repo.join(".config")).unwrap();
-    let landing = profiles::landing::given(&repo).unwrap();
+    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
     assert_eq!(landing_source(landing.as_ref(), &repo), branch());
 }
 
@@ -1239,7 +1239,7 @@ fn a_directory_git_cannot_open_is_unreadable_in_gits_words() {
     let host = Host::new();
     let dir = host.dir.path().join("plain");
     fs::create_dir(&dir).unwrap();
-    match profiles::landing::given(&dir) {
+    match profiles::landing::given(&host.file(), &dir) {
         Err(Not::Unreadable(u)) => {
             assert_eq!(u.source, sluice());
             let said = u.said.unwrap();
@@ -1247,4 +1247,126 @@ fn a_directory_git_cannot_open_is_unreadable_in_gits_words() {
         }
         other => panic!("no repository answered {:?}", other.err()),
     }
+}
+
+// Requirement: The given landing remote is the checkout's origin or its
+// one remote
+
+/// A repository in the host's directory with one commit on `main` and
+/// each of `remotes`, each at a path in the host's directory named for
+/// it and holding nothing, so a landing that reads one names its path;
+/// its path and the commit.
+fn with_remotes(host: &Host, remotes: &[&str]) -> (PathBuf, tailrace_seams::Revision) {
+    let (repo, head) = committed(host, None);
+    for remote in remotes {
+        let at = host.dir.path().join(format!("{remote}.git"));
+        git_in(&repo, &["remote", "add", remote, at.to_str().unwrap()]);
+    }
+    (repo, head)
+}
+
+/// The remote `landing` reads, by the path its answer of `head` on
+/// `main` names, or none where it reads the repository's own refs and
+/// finds `head` landed.
+fn remote_read(
+    host: &Host,
+    landing: &dyn tailrace_seams::Landing,
+    head: &tailrace_seams::Revision,
+) -> Option<String> {
+    match landing.landed(&tailrace_seams::Branch::new("main"), head) {
+        Ok(true) => None,
+        Err(Not::Unreadable(u)) => {
+            let said = u.said.unwrap_or_default();
+            let read: Vec<&str> = ["origin", "upstream", "github", "gitlab"]
+                .into_iter()
+                .filter(|remote| {
+                    let at = host.dir.path().join(format!("{remote}.git"));
+                    said.contains(&at.display().to_string())
+                })
+                .collect();
+            match read.as_slice() {
+                [remote] => Some(remote.to_string()),
+                _ => panic!("the landing read no one remote: {said}"),
+            }
+        }
+        other => panic!("the landing answered {other:?}"),
+    }
+}
+
+#[test]
+fn a_clone_reads_origin_beside_another_remote() {
+    let host = Host::new();
+    let (repo, head) = with_remotes(&host, &["upstream", "origin"]);
+    assert_eq!(
+        profiles::landing::given_remote(&host.file(), &repo),
+        Ok(Some("origin".to_string()))
+    );
+    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    assert_eq!(
+        remote_read(&host, landing.as_ref(), &head).as_deref(),
+        Some("origin")
+    );
+}
+
+#[test]
+fn one_remote_of_another_name_is_read() {
+    let host = Host::new();
+    let (repo, head) = with_remotes(&host, &["github"]);
+    assert_eq!(
+        profiles::landing::given_remote(&host.file(), &repo),
+        Ok(Some("github".to_string()))
+    );
+    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    assert_eq!(
+        remote_read(&host, landing.as_ref(), &head).as_deref(),
+        Some("github")
+    );
+}
+
+#[test]
+fn no_remote_reads_the_repositorys_own_refs() {
+    let host = Host::new();
+    let (repo, head) = with_remotes(&host, &[]);
+    assert_eq!(
+        profiles::landing::given_remote(&host.file(), &repo),
+        Ok(None)
+    );
+    let landing = profiles::landing::given(&host.file(), &repo).unwrap();
+    assert_eq!(remote_read(&host, landing.as_ref(), &head), None);
+}
+
+#[test]
+fn several_remotes_none_origin_are_unreadable_naming_each_and_the_landing_table() {
+    let host = Host::new();
+    let (repo, _) = with_remotes(&host, &["gitlab", "github"]);
+    let unreadable = Not::unreadable(
+        &branch(),
+        format!("the landing remote of the checkout at {}", repo.display()),
+        Some(format!(
+            "the checkout has the remotes github, gitlab, none of them origin; name one in \
+             [landing] remote of {}",
+            host.file().display()
+        )),
+    );
+    assert_eq!(
+        profiles::landing::given_remote(&host.file(), &repo),
+        Err(unreadable.clone())
+    );
+    assert_eq!(
+        profiles::landing::given(&host.file(), &repo).err(),
+        Some(unreadable)
+    );
+}
+
+#[test]
+fn a_written_landing_with_no_remote_reads_its_own_refs_in_a_clone() {
+    let host = Host::new();
+    let (repo, head) = with_remotes(&host, &["origin"]);
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound_with(&host, &repo, &layout, "", false, For::Verify).unwrap();
+    assert_eq!(
+        remote_read(&host, binding.seams.landing.as_ref(), &head),
+        None
+    );
 }
