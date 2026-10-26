@@ -4,8 +4,9 @@ The npm profile of the projection seam (B.6, C.11): an npm package packed
 with npm's own packager, a lockfile's pins read as npm spells them, a
 registry read layout of tarballs and packuments, and npm's registry
 protocol served from that layout, so a consumer's `npm install` reads the
-family's packages from what tailrace rendered under the policy (46, 49,
-84 to 87, 99, 114, 115, 137).
+family's packages from what tailrace rendered under the policy, with
+every family package they require, and no lockfile written by hand (46,
+49, 84 to 87, 99, 114, 115, 137, 140).
 
 ## ADDED Requirements
 
@@ -45,27 +46,71 @@ cannot promise the same bytes again (87).
 - **WHEN** the npm projection is asked to pack an output with no version, or to render cache entries
 - **THEN** each answer is absent naming cache entries, and nothing runs
 
-### Requirement: npm answers what a lockfile pins
+### Requirement: npm answers what a lockfile pins and what a manifest asks for
 pinned SHALL read the checkout's `npm-shrinkwrap.json` where it holds
 one, else its `package-lock.json`, and SHALL answer every package the
 lockfile's `packages` pins, by the package's own name and its version as
 the lockfile spells them, each once; a linked entry and the root entry
-SHALL be passed over. A checkout holding neither file SHALL be absent
-naming the lockfile; a lockfile of version 1, or one that does not
-parse, SHALL be unreadable naming the file and what could not be read
-(137, 58).
+SHALL be passed over. Beside those, for each family package the
+checkout's root `package.json` or a workspace's declares in
+`dependencies`, `devDependencies`, `optionalDependencies` or the
+`peerDependencies` npm installs, and the lockfile pins at no version,
+pinned SHALL answer the name and its range as the manifest spells it, an
+alias by its target's name and range, and `latest` as `*`; a path, git,
+URL or other tag spec SHALL be passed over (137). A family package is one
+whose scope the `.npmrc` beside the checkout's `package.json` sends to the
+host's serving process. A checkout holding no lockfile and no family
+range SHALL be absent naming the lockfile; a lockfile of version 1, or a
+lockfile or manifest that does not parse, SHALL be unreadable naming the
+file and what could not be read (137, 58).
 
 #### Scenario: A lockfile's pins
 - **WHEN** a checkout's `package-lock.json` pins `@family/widget` at `1.4.0` twice under two paths, `left-pad` at `1.3.0`, and an alias `w` of `@family/widget` at `1.2.0`
 - **THEN** pinned answers `@family/widget` at `1.4.0`, `left-pad` at `1.3.0` and `@family/widget` at `1.2.0`, each once
 
+#### Scenario: A first install's ranges
+- **WHEN** a checkout with no lockfile has a `.npmrc` sending `@family` to `http://127.0.0.1:7420/agentplot/consumer/npm/`, and a `package.json` declaring `@family/widget` at `^1.2.0`, `@family/tool` at `latest` in `devDependencies`, `@family/local` at `file:../local` and `react` at `^18.0.0`
+- **THEN** pinned answers the ranges `@family/widget` `^1.2.0` and `@family/tool` `*`, and nothing of `@family/local` or `react`
+
+#### Scenario: A name the lockfile already pins
+- **WHEN** a checkout's lockfile pins `@family/widget` at `1.4.0` and its `package.json` declares it at `^1.2.0` and `@family/base` at `^2.0.0`
+- **THEN** pinned answers the pin `@family/widget` at `1.4.0` and the range `@family/base` `^2.0.0`, and no range of `@family/widget`
+
+#### Scenario: No family without the `.npmrc` line
+- **WHEN** a checkout with no lockfile declares `@family/widget` at `^1.2.0` and its `.npmrc` sends no scope to the host's serving process
+- **THEN** pinned is absent naming the lockfile
+
 #### Scenario: No lockfile
-- **WHEN** a checkout holds no `npm-shrinkwrap.json` and no `package-lock.json`
+- **WHEN** a checkout holds no `npm-shrinkwrap.json`, no `package-lock.json` and no `package.json`
 - **THEN** pinned is absent naming the lockfile, never an empty list
 
 #### Scenario: A lockfile npm 6 wrote
 - **WHEN** a checkout's `package-lock.json` is of `lockfileVersion` 1
 - **THEN** pinned is unreadable naming the file and its lockfile version
+
+### Requirement: npm answers what a held package requires of the family
+Given a held version's artifact, requires SHALL read the `package.json`
+inside its tarball, read through the projection's store by the digest
+the artifact names and checked against it, and SHALL answer each family
+package of its `dependencies`, `optionalDependencies` and the
+`peerDependencies` npm installs, with its range as written, passing over
+a name its `bundleDependencies` lists and a spec that is no range, as
+pinned does (140). It SHALL answer a version within a range, and the
+newer of two versions, by npm's own rules, a prerelease within a range
+only where npm takes it there (23). A tarball the store does not hold, or
+one with no `package.json`, SHALL be unreadable naming the artifact (58).
+
+#### Scenario: What a held package requires
+- **WHEN** requires is asked of `@family/widget` `1.4.0`, whose `package.json` has `dependencies` `@family/base` `^2.1.0` and `left-pad` `^1.3.0`, `peerDependencies` `@family/ui` `^3.0.0`, an optional peer `@family/theme`, and `devDependencies` `@family/test-kit`
+- **THEN** it answers `@family/base` `^2.1.0` and `@family/ui` `^3.0.0`, and nothing else
+
+#### Scenario: npm's own range rules
+- **WHEN** requires is asked whether `2.3.0`, `3.0.0` and `2.4.0-rc.1` are within `^2.1.0`, and which of `2.10.0` and `2.9.0` is newer
+- **THEN** `2.3.0` is within it, `3.0.0` and `2.4.0-rc.1` are not, and `2.10.0` is newer
+
+#### Scenario: A tarball the store does not hold
+- **WHEN** requires is asked of an artifact whose tarball the store answers absent
+- **THEN** the answer is unreadable naming the artifact
 
 ### Requirement: npm renders a registry read layout
 Given artifacts, the npm projection SHALL render at the layout's place
@@ -129,7 +174,7 @@ words verbatim (99, 58, 59).
 
 #### Scenario: A package no layout holds
 - **WHEN** npm asks for the packument of a name the layout holds no version of
-- **THEN** the answer is `404` with an `error` naming the package and saying the layout holds no version of it, and the core was asked for nothing
+- **THEN** the answer is `404` with an `error` naming the package, saying the layout holds no version of it and that `tailrace sync` holds a name `package.json` declares, and the core was asked for nothing
 
 ### Requirement: A lockfile npm writes names no host
 A family package installed from a served layout SHALL be recorded in the
@@ -140,6 +185,10 @@ host and in every checkout of the repository (49, 114, core.18).
 #### Scenario: npm install on two hosts
 - **WHEN** one consuming repository's checkouts on two hosts, at different paths under different homes, each sync and run `npm install` for `@family/widget` at `1.4.0`
 - **THEN** both lockfiles record `resolved` as `http://127.0.0.1:7420/<owner>/<name>/npm/@family/widget/-/widget-1.4.0.tgz` with the same integrity, and neither names a home, a checkout or a store
+
+#### Scenario: A first install with no lockfile
+- **WHEN** a consumer with no lockfile, whose `package.json` declares `@family/widget` at `^1.2.0` and whose `.npmrc` names the served address for `@family`, runs `tailrace sync` and `npm install`, the store holding `@family/widget` `1.2.0`, `1.3.0` and `1.5.0`, of which the policy refuses `1.5.0`, and `1.3.0` requiring `@family/base` at `^2.0.0`
+- **THEN** the install succeeds, the lockfile npm writes pins `@family/widget` at `1.3.0` and `@family/base` at the newest admitted `2.x` at the served address, `tailrace sync` printed `1.5.0` refused naming the claim found wanting, and no other registry was asked for any `@family` package
 
 #### Scenario: Installed only from the layout
 - **WHEN** a consumer whose `.npmrc` names the served address for the `@family` scope runs `npm install` with a version the store does not name in its lockfile

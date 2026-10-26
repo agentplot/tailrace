@@ -7,16 +7,22 @@ the policy `tailrace sync` with no argument would use in the checkout the
 layout belongs to, found as a sync finds it: the consuming repository's
 own where its file writes one, else the publisher's layout policy the
 version's index carries, else the given (113, C.10); and, where the
-policy admits it, render the layout holding what it held and that
-version, and record it; it SHALL answer
-the one version held, refused naming the claim found wanting, absent, or
-unreadable with the source's own words (115, 50, 47, 99, 51). A version
-refused, absent or unreadable SHALL leave the layout and its record as
-they were. Only the one version asked SHALL be read from the store.
+policy admits it, hold that version and the family packages it
+requires, by the loop a sync's render runs through every level, and
+render the layout holding what it held and those, and record them; it
+SHALL answer the one version held, refused naming the claim found
+wanting, absent, or unreadable with the source's own words (115, 50, 47,
+99, 51, 137). A version refused, absent or unreadable SHALL leave the
+layout and its record as they were. Only the one version asked, and the
+names it requires that the layout lacks, SHALL be read from the store.
 
 #### Scenario: A miss the policy admits
 - **WHEN** a layout holding `1.4.0` of a name is asked for `1.3.0`, which the store names and the policy admits
 - **THEN** the layout holds `1.3.0` and `1.4.0`, the record names both, and the store was asked about `1.3.0` alone
+
+#### Scenario: A miss that requires a name the layout lacks
+- **WHEN** a layout holding `@family/widget` `1.4.0` is asked for `@family/widget` `1.3.0`, which the policy admits and which requires `@family/base` at `^2.0.0`, of which the store names `2.0.0` and `2.2.0`, both admitted
+- **THEN** the layout and its record hold `@family/widget` `1.3.0` and `1.4.0` and `@family/base` `2.2.0`, and the store was asked about `@family/widget` `1.3.0` and the versions of `@family/base` alone
 
 #### Scenario: A miss the policy refuses
 - **WHEN** a layout is asked for a version whose index lacks the claim the policy requires first

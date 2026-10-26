@@ -2,16 +2,20 @@
 
 A family repository that depends on another family repository's npm
 packages still installs them from wherever its `.npmrc` points, because
-tailrace cannot pack an npm package, cannot say what a `package-lock.json`
-pins, cannot render an npm layout, and npm, which reads no files, has
-nothing to read one from. This unit gives npm all four: a publish packs
-with npm's own packager, `tailrace sync` renders the lockfile's family
-versions under the policy, and the host's one serving process answers
-npm at one fixed address, with the consuming repository in the path, so
-`npm install` reads the family's packages from that layout and from
-nowhere else, and the lockfile it writes names no host
+tailrace cannot pack an npm package, cannot say what a checkout's
+`package-lock.json` pins or its `package.json` asks for, cannot say what
+a held package requires of the family, cannot render an npm layout, and
+npm, which reads no files, has nothing to read one from. This unit gives
+npm all of it: a publish packs with npm's own packager, `tailrace sync`
+renders the family's versions the checkout pins or asks for, and every
+family package those require, under the policy, and the host's one
+serving process answers npm at one fixed address, with the consuming
+repository in the path. `npm install` then reads the family's packages
+from that layout and from nowhere else, with no lockfile written by
+hand, and the lockfile npm writes names no host
 (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 5,
-"npm, rendered and served"; ADR 0006).
+"npm, rendered and served"; `design/tailrace/requirements.md` at
+`4c14235`, 137 and 140; ADR 0006).
 
 ## What Changes
 
@@ -23,11 +27,26 @@ nowhere else, and the lockfile it writes names no host
   the tarball, never edits the build's own files, and runs no script of
   the package, since tailrace builds nothing (15). It says it cannot
   promise the same bytes again, since npm does not promise it (87).
-- **npm answers what a lockfile pins.** pinned reads the checkout's
-  `npm-shrinkwrap.json` or `package-lock.json` and answers every package
-  it pins by its npm name and version, as the lockfile spells them, and
-  absent where the checkout holds neither (137). Most of those are
-  third-party; the core answers them absent (render-under-a-policy).
+- **npm answers what a checkout pins and what it asks for.** pinned
+  reads the checkout's `npm-shrinkwrap.json` or `package-lock.json` and
+  answers every package it pins by its npm name and version, as the
+  lockfile spells them (137). Beside those, for each family package the
+  checkout's `package.json`, or a workspace's, declares and no lockfile
+  pins yet, it answers the name and the range as `package.json` spells
+  it, so a first `npm install` needs no lockfile written by hand (137).
+  A family package is one whose scope the checkout's own `.npmrc` sends
+  to the host's serving process. A checkout with neither a lockfile nor a
+  family range is absent.
+- **npm answers what a held package requires of the family** (140).
+  Given a held version's artifact, the projection reads the
+  `package.json` inside its tarball and answers each family package it
+  requires, from `dependencies`, `optionalDependencies` and the
+  `peerDependencies` npm installs, with its range as written; and it
+  answers whether a version falls within a range, and which of two is
+  newer, by npm's own rules, through the `nodejs-semver` crate (23). The
+  core runs the loop: it lists a name's versions through the store,
+  judges them under the policy and asks again of what it held, until
+  nothing held requires a name the layout lacks (137).
 - **npm renders a registry read layout.** Given the versions the policy
   admits, the projection writes each tarball, read from the store by
   digest, and one packument per package name listing the versions held,
@@ -57,11 +76,13 @@ nowhere else, and the lockfile it writes names no host
   policy `tailrace sync` would use in that checkout, found as render
   finds it: the consuming repository's own where its file writes one,
   else the publisher's layout policy the version's index carries, else
-  the given policy of accepted versions (113, C.10); it answers from the
-  layout (115, 50). A refused version is answered in the response to
-  npm's own request, `403` with the version and the claim found wanting,
-  which npm prints after the status line; an absent one `404`, and an
-  unreadable one `502` with the source's own words (99, 58, 59).
+  the given policy of accepted versions (113, C.10). Like any version the
+  layout holds, its family dependencies are then held by the core's loop
+  (137). The process answers from the layout (115, 50). A refused version
+  is answered in the response to npm's own request, `403` with the
+  version and the claim found wanting, which npm prints after the status
+  line; an absent one `404`, and an unreadable one `502` with the
+  source's own words (99, 58, 59).
 - **`tailrace sync` makes a served layout reachable.** After the layouts
   are rendered, each layout whose projection serves names its address in
   the answer, and sync names the checkout's repository to the host and
@@ -82,27 +103,24 @@ nowhere else, and the lockfile it writes names no host
 
 Out of scope, and what each waits on:
 
-- Writing the `artifact/npm/<name>@<version>` pointer at publish (138):
-  the unit the-store-names-an-artifact-by-ecosystem-name-and-version,
-  which this unit comes after.
+- Writing the `artifact/npm/<name>@<version>` pointer at publish, and
+  the store's listing of a name's versions (138): the unit
+  the-store-names-an-artifact-by-ecosystem-name-and-version, which this
+  unit comes after.
 - The core's render under a policy, pinned on the seam, the layout's
   place and its record: render-under-a-policy, which this unit comes
   after. This unit adds only the render of one missed version and the
   lock that keeps two renders of one layout apart.
+- requires on the projection seam, with the fake's answer and the absent
+  answer of a projection with no manifest: render-under-a-policy's fix on
+  the bolt, which this unit's code waits on.
+- The range a pin carries on the seam, and the core's loop that lists,
+  judges and holds through every level (137): cargos-registry, which owns
+  them in `render.rs` and runs beside this unit. npm implements its side
+  of both, and its range and requires work waits on their landing.
 - The serving process itself, its lock, the host's file of repositories
   and `tailrace status --page`: bolt tailrace-the-gate-and-the-channels'
   status across machines, on which this unit's code waits.
-- A first install of a family package no lockfile pins yet, as `npm
-  install @family/new` does, where 137 has pinned answer the manifest's
-  range and render hold the newest version the layout's policy admits
-  within it, found by listing the versions the store holds for the name
-  (138). The listing is the store's, and the range on the seam's pin and
-  its resolution in render are render-under-a-policy's, whose change
-  does not yet carry a range; npm's part, `package.json`'s ranges in
-  pinned and whether a version falls within one by npm's own rule, waits
-  on that pin's shape. Until then pinned answers the lockfile's pins
-  alone and the process answers `404` for a packument the layout holds
-  no version of: a packument names no version, so it is no miss (50).
 - `npm publish` refused in a tailrace repository: the Claude Code
   plugin unit.
 - Third-party packages, which stay the public registry's (section 8).
@@ -112,19 +130,22 @@ Out of scope, and what each waits on:
 ### New Capabilities
 
 - `npm-projection`: the npm profile of the projection seam: pack with
-  `npm pkg set` and `npm pack`, pinned from `package-lock.json`, render
-  as tarballs and packuments, and serve as npm's registry protocol, with
-  a missed version asked of the core and a refusal answered in npm's own
-  response.
+  `npm pkg set` and `npm pack`, pinned from `package-lock.json` and the
+  family ranges `package.json` declares, requires from a held tarball's
+  `package.json` with npm's own range rules, render as tarballs and
+  packuments, and serve as npm's registry protocol, with a missed version
+  asked of the core and a refusal answered in npm's own response.
 
 ### Modified Capabilities
 
 - `seam-contracts`: a projection's serve answers one request of its
-  client and may ask the core for a version the layout lacks.
+  client and may ask the core for a version the layout lacks; the
+  contract's pinned and requires read as 137 and 140 now say.
 - `seam-fakes`: the fake projection serves requests and records the
   versions it asked for.
 - `consumer-layouts`: a version a served layout lacks is rendered into
-  it under the policy, and one layout is rendered by one party at a time.
+  it under the policy, with the family packages it requires, and one
+  layout is rendered by one party at a time.
 - `serving-process`: the process answers each served layout under the
   repository's path, from the layout of the checkout that last named it,
   and stays past its idle time while any such layout is served.
@@ -132,7 +153,8 @@ Out of scope, and what each waits on:
   finds or starts the host's serving process.
 - `conformance-suite`: the projection group holds a projection to serve
   and the npm projection runs it; the layouts group holds the core to a
-  render on a miss; 46, 49, 114 and 115 leave the register.
+  render on a miss; 46, 49, 114 and 115 leave the register; the group's
+  range and requires scenarios, cargos-registry's, run over npm's rig.
 - `tools-layer`: npm's tests run in the tools layer against the pinned
   npm.
 
@@ -140,25 +162,29 @@ Out of scope, and what each waits on:
 
 - New profile directory `crates/tailrace/src/profiles/projection/npm/`,
   bound beside the others in `profiles/projection/mod.rs` with a store of
-  its own to read tarballs through.
+  its own to read tarballs through and the host's serving address, by
+  which it tells a family scope in the checkout's `.npmrc`.
 - The projection trait's serve, and every implementation: the fake, the
   file, image and moon cache profiles, and the conformance rigs.
 - `crates/tailrace/src/commands/serve/` routes served layouts and answers
   bytes; `crates/tailrace/src/commands/sync.rs` names and starts the
-  process; `tailrace-core`'s `render.rs` gains the miss and the layout's
-  lock, `served.rs` the served layout's address.
+  process; `tailrace-core`'s `render.rs` gains the miss, which holds a
+  version and closes over it by cargos-registry's loop, and the layout's
+  lock; `served.rs` the served layout's address and the process's.
 - New dependencies: `flate2` and `tar`, to read a tarball's
-  `package.json` for the packument, and `sha1`, already in the lockfile,
-  for the packument's `shasum`; `tempfile` becomes a dependency of the
-  binary. `devenv.nix` gains Node.js.
+  `package.json` for the packument and for requires; `sha1`, already in
+  the lockfile, for the packument's `shasum`; `nodejs-semver` 4.2, npm's
+  own range and version rules ported to Rust, for requires; `tempfile`
+  becomes a dependency of the binary. `devenv.nix` gains Node.js.
 - The register loses 46, 49, 114 and 115.
 - The site's projections page says how npm reads a family package.
 - Rules kept: core.1 and core.2 (only the npm profile names npm; the
   process routes by the bound ecosystem's name and the projection never
   reaches the store but through the seam it is handed, nor the policy),
-  core.5 (the packager's tarball is never rewritten), core.17 (a miss is
-  judged under the policy before it is held), core.18 and core.36 (one
-  address on every host, one process), core.19 (absent, refused and
+  core.5 (the packager's tarball is never rewritten), core.17 (a
+  miss, a range's version and a required one are each judged under the
+  policy before it is held, and the core judges, never the projection),
+  core.18 and core.36 (one address on every host, one process), core.19 (absent, refused and
   unreadable are three responses), core.21 (no credential written into
   `.npmrc` or kept), core.25 and core.26 (npm pinned and its tests a
   moon task), core.31 (the process renders the core's answer), core.33.
