@@ -58,6 +58,10 @@ register in the commit whose scenario first cites them.
 - **WHEN** the fake policy answers no policy for layouts and a pinned version's index carries layout-policy claims by a trusted and an untrusted signer of different content
 - **THEN** the version is judged under the trusted signer's claim alone, and the answer names its revision
 
+#### Scenario: The publisher's above the consumer's given over the fakes
+- **WHEN** the fake policy answers a given policy for layouts and a pinned version's index carries a trusted signer's layout-policy claim
+- **THEN** the version is judged under the publisher's policy, and where the index carries none, under the consumer's given
+
 #### Scenario: A version refused over the fakes
 - **WHEN** a pinned version's index lacks the acceptance claim the consumer's policy requires
 - **THEN** the answer names the version and acceptance as the claim found wanting, and the render was not given it

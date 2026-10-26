@@ -70,3 +70,13 @@ kind is.
 #### Scenario: A layout-policy claim written and read back
 - **WHEN** a layout-policy claim is made about an index, signed and read back from its envelope
 - **THEN** it is a claim of the layout-policy kind about that index, naming the revision and no build identity, with the required claims as made
+
+### Requirement: The policy for a layout says whether it is given
+The policy's answer for a layout SHALL say whether the repository's file
+writes it or it is the given laid beneath a file that writes none, so a
+consumer stacks the publisher's policy above the given and never above
+its own line (113, C.10). No other audience's answer SHALL carry it.
+
+#### Scenario: A given layout policy written and read back
+- **WHEN** a policy for a layout marked as given is written in its machine-readable form and read back
+- **THEN** it is the same policy, still marked as given, and a written one reads back unmarked

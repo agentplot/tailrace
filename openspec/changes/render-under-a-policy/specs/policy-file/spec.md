@@ -13,7 +13,7 @@ and the revision, with git's or the parser's own words (59).
 #### Scenario: No layout policy
 
 - **WHEN** the file holds `[acceptance]` and no `[layout]`
-- **THEN** the policy for a layout is the given one, never absent
+- **THEN** the policy for a layout is the given one, marked as given, never absent
 
 #### Scenario: No policy for a channel
 
@@ -34,13 +34,12 @@ and the revision, with git's or the parser's own words (59).
 
 ### Requirement: The given policy for a layout admits what the gate accepted
 
-A file with no `[layout]` SHALL answer for a layout one required claim:
+A file with no `[layout]` SHALL answer for a layout, marked as given,
+one required claim:
 acceptance, by every signer its `[signers]` lets claim acceptance, in
 the file's order; where it names none that may and exactly one that may
 claim provenance, by that one, as the one host 108 admits; and
-otherwise by no signer, so the given admits no version (C.10, 108). A
-file's own `[layout]` SHALL be answered as written, with nothing of the
-given laid beneath it.
+otherwise by no signer, so the given admits no version (C.10, 108).
 
 #### Scenario: A gate named
 
@@ -57,7 +56,13 @@ given laid beneath it.
 - **WHEN** the file names two signers that may claim provenance, none that may claim acceptance, and no `[layout]`
 - **THEN** the policy for a layout requires acceptance by no signer, never absent and never unreadable
 
+### Requirement: The given names no signer, and a written line stands alone
+
+The given SHALL name no signer of its own: its gate is read from the
+file alone (116, C.10). A file's own `[layout]` SHALL be answered as
+written, not marked as given, with nothing of the given laid beneath it.
+
 #### Scenario: A layout line written
 
 - **WHEN** the file's `[layout]` requires provenance from `laptop`
-- **THEN** the policy for a layout requires that provenance alone, and no acceptance
+- **THEN** the policy for a layout requires that provenance alone, and no acceptance, and is not marked as given
