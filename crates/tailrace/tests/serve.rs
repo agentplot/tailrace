@@ -173,7 +173,7 @@ impl World {
                 asked_by: SignerId::new("gate"),
                 policy: Satisfied {
                     revision: self.head.clone(),
-                    claims: vec![],
+                    claims: vec![acceptance(version)],
                 },
                 at: 1_793_000_000 + claims.len() as u64,
             };
@@ -204,6 +204,12 @@ fn moved(version: &str) -> Moved {
         version: Version::new(version),
         index: Digest::of(format!("{version}'s index").as_bytes()),
     }
+}
+
+/// The digest `promote` names as the claim that satisfied the policy for
+/// `version`'s promotion.
+fn acceptance(version: &str) -> Digest {
+    Digest::of(format!("{version}'s acceptance").as_bytes())
 }
 
 fn now() -> u64 {
@@ -359,6 +365,23 @@ fn the_page_names_every_channel_version_and_promotion_and_escapes_the_words() {
     for claim in &claims {
         assert!(page.contains(claim.as_str()), "{claim}: {page}");
     }
+    assert!(
+        page.contains(&format!(
+            "<code>{}</code>, 2026-10-26T07:33:21Z; claim <code>{}</code> after <code>{}</code>",
+            acceptance("0.2.0"),
+            claims[1],
+            claims[0]
+        )),
+        "each promotion names the claims that satisfied its policy and its predecessor: {page}"
+    );
+    assert!(
+        page.contains(&format!(
+            "under the policy at <code>{}</code> satisfied by <code>{}</code>",
+            world.head,
+            acceptance("0.1.0")
+        )),
+        "{page}"
+    );
     assert!(page.contains("no target is read"), "{page}");
     assert!(page.contains("v0.1.0"), "the record's part: {page}");
 

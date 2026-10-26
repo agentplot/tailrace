@@ -12,6 +12,7 @@ use tailrace_core::{
 };
 use tailrace_seams::{Answer, ComponentName, Digest, Not, Promotion, Read};
 
+use crate::commands::status::satisfied;
 use crate::render::utc;
 
 /// `text` with every character HTML gives a meaning escaped.
@@ -261,9 +262,9 @@ fn channel_html(body: &mut String, channel: &ChannelStatus) {
     );
 }
 
-/// 33: one promotion of a chain, where it moved the channel from, who
-/// asked, under which policy revision, when, and its claim and its
-/// predecessor's.
+/// 33, 105: one promotion of a chain, where it moved the channel from,
+/// who asked, the policy revision it was judged under with the claims
+/// that satisfied it, when, and its claim and its predecessor's.
 fn promoted(claim: &Digest, promotion: &Promotion) -> String {
     let from = promotion.from.as_ref().map_or_else(
         || "the first".to_string(),
@@ -281,8 +282,15 @@ fn promoted(claim: &Digest, promotion: &Promotion) -> String {
         .map_or_else(String::new, |p| {
             format!(" after <code>{}</code>", escape(p.as_str()))
         });
+    let satisfied = satisfied(
+        promotion
+            .policy
+            .claims
+            .iter()
+            .map(|c| format!("<code>{}</code>", escape(c.as_str()))),
+    );
     format!(
-        "{} <code>{}</code>, {from}, asked by {}, under the policy at <code>{}</code>, {}; claim <code>{}</code>{after}",
+        "{} <code>{}</code>, {from}, asked by {}, under the policy at <code>{}</code> satisfied by {satisfied}, {}; claim <code>{}</code>{after}",
         escape(promotion.to.version.as_str()),
         escape(promotion.to.index.as_str()),
         escape(promotion.asked_by.as_str()),
