@@ -14,11 +14,11 @@ use ssh_key::PublicKey;
 use tailrace_seams::{Answer, Not, Signer, SignerId};
 
 use crate::bindings::{path_of, unreadable};
-use host_key::HostKey;
+use host_key::{public_half, HostKey};
 use kms::{KeyArn, Kms};
 
-/// `[signing]`: the identity the host signs as, and the key it signs
-/// with.
+/// What the host signs with: the identity `[signing]` names and its key,
+/// or the given host key where the file names no `[signing]`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Signing {
     /// A host key: the signer's name and its key file's path, in the
@@ -26,16 +26,33 @@ pub enum Signing {
     HostKey { signer: SignerId, key: PathBuf },
     /// A key in AWS KMS by its key ARN, which is the signer's name (C.7).
     Kms(KeyArn),
+    /// No `[signing]`: the host's given key, made on its first sign, and
+    /// the name it signs as (118, C.8).
+    Given { signer: SignerId, key: PathBuf },
 }
+
+/// Where the given host key is, beside the bindings file.
+pub const GIVEN_KEY: &str = "signing";
 
 impl Signing {
     /// The identity the host signs as.
     pub fn signer(&self) -> SignerId {
         match self {
-            Signing::HostKey { signer, .. } => signer.clone(),
+            Signing::HostKey { signer, .. } | Signing::Given { signer, .. } => signer.clone(),
             Signing::Kms(key) => SignerId::new(key.as_str()),
         }
     }
+}
+
+/// What a publish or a promote signs with where the bindings file at
+/// `file` names no `[signing]` (118, C.8; design D3, D4): the given host
+/// key at [`GIVEN_KEY`] beside the file, signing as [`given_signer`]
+/// names it from the key's public half. That public half is the one
+/// file read, and nothing is made: the key is made by its first sign.
+pub fn given(file: &Path) -> Answer<Signing> {
+    let key = file.with_file_name(GIVEN_KEY);
+    let signer = given_signer(&public_half(&key))?;
+    Ok(Signing::Given { signer, key })
 }
 
 /// The given host key's signer, whose public half is at `public` (118,
@@ -190,10 +207,11 @@ pub fn read(file: &Path, home: Option<&Path>, table: &toml::Table) -> Answer<Sig
     })
 }
 
-/// What to bind, in order (80, 92): the profile `[signing]` names,
-/// signing as its signer, then the other verify-only, so a claim either
-/// kind of signer made is told on any host; with no `[signing]`, both
-/// verify-only, the host key first. Nothing is read or reached.
+/// What to bind, in order (80, 92): the profile `[signing]` names, or
+/// the given host key where a publish or a promote has none, signing as
+/// its signer, then the other verify-only, so a claim either kind of
+/// signer made is told on any host; with no signing, both verify-only,
+/// the host key first. Nothing is read or reached.
 pub fn plan(signing: Option<&Signing>) -> Vec<Bound> {
     match signing {
         Some(Signing::HostKey { signer, key }) => vec![
@@ -203,6 +221,10 @@ pub fn plan(signing: Option<&Signing>) -> Vec<Bound> {
         Some(Signing::Kms(key)) => vec![
             Bound::Kms(Some(key.clone())),
             Bound::HostKey(HostKey::verifying()),
+        ],
+        Some(Signing::Given { signer, key }) => vec![
+            Bound::HostKey(HostKey::given(signer.clone(), key)),
+            Bound::Kms(None),
         ],
         None => vec![Bound::HostKey(HostKey::verifying()), Bound::Kms(None)],
     }

@@ -461,20 +461,6 @@ fn the_store_is_named_by_its_key_and_its_path_under_the_home() {
 }
 
 #[test]
-fn publish_with_no_signing_is_absent_naming_it_and_makes_nothing() {
-    let host = Host::new();
-    let layout = host.dir.path().join("layout");
-    match bound(&host, &layout, false, For::Publish) {
-        Err(Not::Absent(a)) => {
-            assert_eq!(a.source.seam, Seam::Host);
-            assert!(a.what.contains("[signing]"), "{a:?}");
-        }
-        other => panic!("answered {:?}", other.err()),
-    }
-    assert!(!layout.exists(), "a publish with no signer made the layout");
-}
-
-#[test]
 fn with_no_signing_the_host_only_verifies() {
     let host = Host::new();
     let layout = host.dir.path().join("layout");
@@ -671,21 +657,6 @@ fn a_ledger_table_naming_two_profiles_none_or_an_option_its_profile_does_not_rea
             }
         }
     }
-}
-
-#[test]
-fn a_promote_with_no_signing_is_absent_naming_it_before_anything_is_read() {
-    let host = Host::new();
-    let repo = repository(&host);
-    let layout = host.dir.path().join("layout");
-    match bound_with(&host, &repo, &layout, "git_ref = {}", false, For::Promote) {
-        Err(Not::Absent(a)) => assert!(a.what.contains("[signing]"), "{a:?}"),
-        other => panic!("a promote with no signing answered {:?}", other.err()),
-    }
-    assert!(
-        !layout.exists(),
-        "a promote that cannot bind made the layout"
-    );
 }
 
 #[test]

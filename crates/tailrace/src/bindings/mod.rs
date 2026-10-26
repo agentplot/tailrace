@@ -72,7 +72,7 @@ use tailrace_seams::{
 };
 
 use crate::profiles::signer::Signing;
-use crate::{profiles, unsigned, Binding};
+use crate::{profiles, Binding};
 
 #[cfg(test)]
 mod tests;
@@ -443,10 +443,11 @@ fn unbound_store() -> Source {
 
 /// The binding the bindings file at `file` names for `command`, in the
 /// repository at `repository`, its `~/` paths expanded against `home`.
-/// A publish or a promote on a host whose file names no `[signing]` is
-/// absent naming it before anything is read; a file naming no `[store]`
-/// or no `[landing]` is absent naming the table, and one naming no
-/// `[ledger]` binds the given git ref (118, C.13). Every table is read before the
+/// A publish or a promote on a host whose file names no `[signing]`
+/// signs with the given host key, as the name its public half gives,
+/// and every other command binds both signers verify-only; a file
+/// naming no `[store]` or no `[landing]` is absent naming the table, and
+/// one naming no `[ledger]` binds the given git ref (118, C.8, C.13). Every table is read before the
 /// layout is made, so a file that cannot bind leaves nothing behind. The
 /// store is named as the file names it, its key and what it names, a
 /// path with `~/` expanded, so the record names a directory a reader
@@ -459,10 +460,15 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         return status(file, home, repository);
     }
     let bindings = read(file, home)?;
-    let signing = bindings.signing.as_ref();
-    if matches!(command, For::Publish | For::Promote) && signing.is_none() {
-        return Err(unsigned());
-    }
+    let given;
+    let signing = match &bindings.signing {
+        Some(signing) => Some(signing),
+        None if matches!(command, For::Publish | For::Promote) => {
+            given = profiles::signer::given(file)?;
+            Some(&given)
+        }
+        None => None,
+    };
     let landing = bindings
         .landing
         .as_ref()
