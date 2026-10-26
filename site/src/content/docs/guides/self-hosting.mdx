@@ -74,6 +74,9 @@ signer = "laptop"
 key = "~/.config/tailrace/signing"
                                  # or a key in AWS KMS, C.7, alone:
                                  # kms = "arn:aws:kms:<region>:<account>:key/<key id>"
+
+[gate]                            # what tells the gate, C.16
+publish = {}                      # or: job = "<the job's words>"
 ```
 
 - Each seam's table names its profile by its one key; a table naming
@@ -124,6 +127,16 @@ key = "~/.config/tailrace/signing"
   promote` needs `[signing]` and `[ledger]`, and a host whose file names
   no `[ledger]` answers absent naming it; promote never makes the
   layout.
+- `[gate]` names what tells the host's gate of a version a publish
+  offered, by one key (130). `publish = {}` is this host's own publish:
+  once the publish has answered, the same run tells the gate of each
+  version it offered, and prints the gate's answer beside the version's.
+  `job = "…"` names in your own words a job outside tailrace that a
+  forge's or a store's event wakes; tailrace runs nothing for it, and a
+  publish says the version is offered and the gate is told by those
+  words. A file with no `[gate]` tells no gate: each version stays
+  offered, and the publish says so, naming `[gate]` in the file. A
+  `[gate]` naming no key, two, or another is refused, naming it.
 - The build and the projections are the repository's to bind, not the
   host's: moon is the build, and the policy file names each output's task
   and the projection that packs it. A `[build]` or `[projections]` table
@@ -259,6 +272,23 @@ on_each_publish = true
 require = [{ kind = "acceptance", signers = ["laptop"] }]
 ```
 
+Beside that policy, the laptop's bindings file names its own publish as
+what tells its gate:
+
+```toml
+[gate]
+publish = {}
+```
+
+`beta` then moves on each publish, in the same run: `tailrace publish`
+offers the version, the gate accepts it as the laptop's `[signing]`
+signer, and the promotion is held in the ledger `[ledger]` names before
+`beta`'s name moves. The answer shows the acceptance and `beta`'s move
+beside the version, and the publish exits as a refusal where the gate
+refused the version or held `beta`, so a landing step that runs it fails
+when `beta` did not move. With no `[ledger]`, the version is accepted and
+`beta`'s answer is absent naming it.
+
 ### Promoting
 
 `tailrace promote 0.2.0 --to stable` moves `stable` to 0.2.0 of the one
@@ -289,6 +319,18 @@ to quarantine with a signer the policy admits for that; only the gate's
 signer may accept and promote. Environments subscribe to the channels the
 gate moves, and converge through the
 [targets](/tailrace/guides/integrations/targets/) the repository binds.
+
+A host that only offers tells no gate itself. Its bindings file names
+the job that does, so each publish says where the version went to be
+judged:
+
+```toml
+[gate]
+job = "the release job a push to main wakes"
+```
+
+tailrace runs nothing for the job and carries its words as written, and
+the publish asks the gate nothing.
 
 ## What stays yours
 

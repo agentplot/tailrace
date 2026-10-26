@@ -23,7 +23,7 @@ is `moon run ':#check-fast'`, the tools layer `moon run ':#check-tools'`.
 ## 4. Records and the guide
 
 - [x] 4.1 Write `docs/adr/0018-the-host-names-what-tells-its-gate-and-its-publish-step-tells-its-own.md` (or the next free number when 0018 is taken) recording design D1 to D3 and extending ADR 0013's table list, in the form `adrs.toml` sets. Add to `docs/architecture/core.md`, in core.10's details, "Not ruled out: the host's publish step telling the host's own gate of the publish's answer where the host's bindings file names it, whose judgment and moves are the gate's (95, 108, 130)", with the new ADR in its source. Verify: `moon run ':#check-fast'` passes, the records' numbers check among it.
-- [ ] 4.2 In `site/src/content/docs/guides/self-hosting.mdx`, show `[gate] publish = {}` in the laptop's bindings beside the one-host policy, saying `beta` then moves on each publish in the same run; in the team section, show `[gate] job = "…"` on hosts that only offer; and say that a file with no `[gate]` leaves each version offered and says so. Verify: `moon run site:build` passes.
+- [x] 4.2 In `site/src/content/docs/guides/self-hosting.mdx`, show `[gate] publish = {}` in the laptop's bindings beside the one-host policy, saying `beta` then moves on each publish in the same run; in the team section, show `[gate] job = "…"` on hosts that only offer; and say that a file with no `[gate]` leaves each version offered and says so. Verify: `moon run site:build` passes.
 
 ## 5. The whole
 
