@@ -11,10 +11,12 @@ use tailrace_seams::{
     Source, Version, Why,
 };
 
+use crate::ledger::listed;
 use crate::{policy_at, Declared, History, Landed, Provenance, BOUND, LOCAL, POLICY_FILE};
 
 /// What verify is asked: the version, of the one component named or the
-/// only one declared, on the branch, under the policy for an audience.
+/// only one declared, on the branch, under the policy for an audience; a
+/// channel by its name, whose component is the version's (125).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct VerifyAsk {
     pub branch: Branch,
@@ -82,8 +84,16 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
         .map(|t| t.revision)
         .ok_or_else(|| Not::absent(&local(), format!("tag {tag} reached from {head}")))?;
     let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &revision)?;
+    // A channel asked by its name alone is the version's component's, as
+    // the policy at the revision lists it (125, 131).
+    let audience = match &ask.audience {
+        Audience::Channel(asked) => {
+            Audience::Channel(listed(seams, &landed, &asked.name, &component.name)?.channel)
+        }
+        other => other.clone(),
+    };
     let required =
-        policy_at(seams.policy.as_ref(), &landed, &ask.audience).map_err(|not| match not {
+        policy_at(seams.policy.as_ref(), &landed, &audience).map_err(|not| match not {
             Not::Absent(a) => Not::absent(&a.source, format!("{} at {revision}", a.what)),
             other => other,
         })?;
@@ -140,7 +150,7 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
         revision,
         index,
         artifacts: meta.artifacts().to_vec(),
-        audience: ask.audience.clone(),
+        audience,
         claims,
     })
 }

@@ -1,17 +1,17 @@
 //! B.5 The policy: the authors' rule for an audience, and the channels
-//! they declare, read at a landed revision (82, 83, 131).
+//! it lists with how each moves, read at a landed revision (82, 83, 131).
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Answer, ChannelName, Check, ClaimKind, ComponentName, NamedSigner, Revision};
+use crate::{Answer, ChannelId, ChannelName, Check, ClaimKind, NamedSigner, Revision};
 
-/// Whom a policy is for (82): the gate's acceptance, a channel, or a
-/// consumer layout.
+/// Whom a policy is for (82): the gate's acceptance, a channel with its
+/// component (125), or a consumer layout.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Audience {
     Acceptance,
-    Channel(ChannelName),
+    Channel(ChannelId),
     Layout,
 }
 
@@ -26,8 +26,9 @@ pub struct RequiredClaim {
 }
 
 /// 82, 83: the claims an audience requires, by audience, so the policy
-/// for acceptance has nowhere to name a channel and the policy for a
-/// channel names the channel it is bound to where it is bound (37).
+/// for acceptance has nowhere to name a channel, and the policy for a
+/// channel names the channel it is bound to where it is bound (37) and
+/// the signers whose promotion of it counts (32).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Required {
@@ -37,6 +38,7 @@ pub enum Required {
     Channel {
         claims: Vec<RequiredClaim>,
         bound_to: Option<ChannelName>,
+        promoted_by: Vec<NamedSigner>,
     },
     Layout {
         claims: Vec<RequiredClaim>,
@@ -52,43 +54,85 @@ impl Required {
         }
     }
 
-    /// 83: the channel this policy's channel is bound to; never one for
-    /// acceptance or a layout.
+    /// 83: the channel of the same component this policy's channel is
+    /// bound to; never one for acceptance or a layout.
     pub fn bound_to(&self) -> Option<&ChannelName> {
         match self {
             Required::Channel { bound_to, .. } => bound_to.as_ref(),
             Required::Acceptance { .. } | Required::Layout { .. } => None,
         }
     }
+
+    /// 32: the signers whose promotion of this policy's channel counts,
+    /// each with what it may claim; none for acceptance or a layout,
+    /// which nothing promotes.
+    pub fn promoted_by(&self) -> &[NamedSigner] {
+        match self {
+            Required::Channel { promoted_by, .. } => promoted_by,
+            Required::Acceptance { .. } | Required::Layout { .. } => &[],
+        }
+    }
 }
 
-/// 131: a channel the policy declares, the one component it belongs to
-/// (125), and the channel it is bound to where it is one (37, 83).
+/// 131: how a channel moves: on each accepted publish, as the gate's own
+/// act (95); by a promotion alone; or bound to a channel of its own
+/// component, taking only what that channel held (37, 83). One of the
+/// three, so no channel both follows each publish and is bound.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "by", rename_all = "snake_case")]
+pub enum Moves {
+    EachPublish,
+    Promotion,
+    Bound { to: ChannelName },
+}
+
+/// 125, 131: a channel the policy lists, with its component, and how it
+/// moves.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeclaredChannel {
-    pub name: ChannelName,
-    pub component: ComponentName,
-    pub bound_to: Option<ChannelName>,
+    pub channel: ChannelId,
+    pub moves: Moves,
+}
+
+impl DeclaredChannel {
+    /// 37, 125: the channel this one is bound to, of the same component;
+    /// none where it moves on each publish or by a promotion alone.
+    pub fn bound_to(&self) -> Option<ChannelId> {
+        match &self.moves {
+            Moves::Bound { to } => Some(ChannelId::new(self.channel.component.clone(), to.clone())),
+            Moves::EachPublish | Moves::Promotion => None,
+        }
+    }
 }
 
 pub trait Policy {
     /// 82: the claims `audience` requires, read from the repository at
     /// `revision`, a landed revision of the branch the policy governs
-    /// (65, 107); absent where no policy is declared for it.
+    /// (65, 107); absent where no policy is declared for it. For a
+    /// channel, the signers whose promotion of it counts (32).
     fn policy_for(&self, revision: &Revision, audience: &Audience) -> Answer<Required>;
 
-    /// 131: every channel the policy at `revision` declares, by name, each
-    /// with its component (125) and the channel of that component it is
-    /// bound to where it is one (37, 83); in the one component of a
-    /// repository that declares one or none (123), and an empty list,
-    /// never absent, where the policy declares no channel.
+    /// 131: every channel the policy at `revision` declares or gives,
+    /// once each, ordered by name and then component, each with its
+    /// component (125) and how it moves (37, 83, 95); in the one
+    /// component of a repository that declares one or none (123), and an
+    /// empty list, never absent, where it lists no channel.
     fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{round_trip, SignerId};
+    use crate::{round_trip, ComponentName, SignerId};
+
+    fn gate() -> NamedSigner {
+        NamedSigner {
+            id: SignerId::new("gate"),
+            verified_by: "a public key".into(),
+            kinds: vec![ClaimKind::Acceptance],
+            checks: vec![],
+        }
+    }
 
     fn claims() -> Vec<RequiredClaim> {
         vec![RequiredClaim {
@@ -103,58 +147,104 @@ mod tests {
         }]
     }
 
-    #[test]
-    fn acceptance_names_no_channel() {
-        let acceptance = Required::Acceptance { claims: claims() };
-        assert_eq!(acceptance.bound_to(), None);
-        assert_eq!(acceptance.claims(), claims().as_slice());
-        let json = serde_json::to_value(&acceptance).unwrap();
-        assert!(json["acceptance"].get("bound_to").is_none(), "{json}");
+    fn lib(name: &str) -> ChannelId {
+        ChannelId::new(Some(ComponentName::new("lib")), ChannelName::new(name))
     }
 
     #[test]
-    fn a_bound_channel_names_its_channel() {
+    fn acceptance_names_no_channel_and_no_promoter() {
+        let acceptance = Required::Acceptance { claims: claims() };
+        assert_eq!(acceptance.bound_to(), None);
+        assert_eq!(acceptance.promoted_by(), &[]);
+        assert_eq!(acceptance.claims(), claims().as_slice());
+        let json = serde_json::to_value(&acceptance).unwrap();
+        assert!(json["acceptance"].get("bound_to").is_none(), "{json}");
+        assert!(json["acceptance"].get("promoted_by").is_none(), "{json}");
+    }
+
+    #[test]
+    fn a_channels_policy_names_its_binding_and_its_promoters() {
         let stable = Required::Channel {
             claims: claims(),
             bound_to: Some(ChannelName::new("beta")),
+            promoted_by: vec![gate()],
         };
         assert_eq!(stable.bound_to(), Some(&ChannelName::new("beta")));
+        assert_eq!(stable.promoted_by(), &[gate()]);
     }
 
     #[test]
     fn every_type_round_trips_through_json() {
         round_trip(Audience::Acceptance);
-        round_trip(Audience::Channel(ChannelName::new("beta")));
+        round_trip(Audience::Channel(lib("beta")));
+        round_trip(Audience::Channel(ChannelId::new(
+            None,
+            ChannelName::new("beta"),
+        )));
         round_trip(Audience::Layout);
         round_trip(claims().remove(0));
         round_trip(Required::Acceptance { claims: claims() });
         round_trip(Required::Channel {
             claims: claims(),
             bound_to: None,
+            promoted_by: vec![gate()],
         });
         round_trip(Required::Layout { claims: vec![] });
     }
 
-    fn stable(bound_to: Option<&str>) -> DeclaredChannel {
-        DeclaredChannel {
-            name: ChannelName::new("stable"),
-            component: ComponentName::new("lib"),
-            bound_to: bound_to.map(ChannelName::new),
+    #[test]
+    fn each_way_a_channel_moves_round_trips_by_what_moves_it() {
+        let cases = [
+            (
+                Moves::EachPublish,
+                serde_json::json!({ "by": "each_publish" }),
+            ),
+            (Moves::Promotion, serde_json::json!({ "by": "promotion" })),
+            (
+                Moves::Bound {
+                    to: ChannelName::new("beta"),
+                },
+                serde_json::json!({ "by": "bound", "to": "beta" }),
+            ),
+        ];
+        for (moves, json) in cases {
+            assert_eq!(serde_json::to_value(&moves).unwrap(), json);
+            round_trip(moves.clone());
+            round_trip(DeclaredChannel {
+                channel: lib("stable"),
+                moves,
+            });
         }
     }
 
     #[test]
-    fn a_declared_channel_round_trips_bound_or_not() {
-        round_trip(stable(Some("beta")));
-        round_trip(stable(None));
-    }
-
-    #[test]
-    fn a_declared_channel_names_its_component_and_that_it_is_bound_to_none() {
-        let json = serde_json::to_value(stable(None)).unwrap();
+    fn a_declared_channel_names_its_component_or_none_and_how_it_moves() {
+        let stable = DeclaredChannel {
+            channel: lib("stable"),
+            moves: Moves::Bound {
+                to: ChannelName::new("beta"),
+            },
+        };
         assert_eq!(
-            json,
-            serde_json::json!({ "name": "stable", "component": "lib", "bound_to": null })
+            serde_json::to_value(&stable).unwrap(),
+            serde_json::json!({
+                "channel": { "component": "lib", "name": "stable" },
+                "moves": { "by": "bound", "to": "beta" },
+            })
         );
+        assert_eq!(stable.bound_to(), Some(lib("beta")));
+
+        let edge = DeclaredChannel {
+            channel: ChannelId::new(None, ChannelName::new("edge")),
+            moves: Moves::EachPublish,
+        };
+        assert_eq!(
+            serde_json::to_value(&edge).unwrap(),
+            serde_json::json!({
+                "channel": { "component": null, "name": "edge" },
+                "moves": { "by": "each_publish" },
+            })
+        );
+        assert_eq!(edge.bound_to(), None);
     }
 }

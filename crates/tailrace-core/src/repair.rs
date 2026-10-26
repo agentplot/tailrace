@@ -8,8 +8,7 @@
 
 use serde::Serialize;
 use tailrace_seams::{
-    Answer, ChannelName, Claim, ClaimKind, Digest, Keeper, Name, Not, Read, Seam, Source, Store,
-    Why,
+    Answer, ChannelId, Claim, ClaimKind, Digest, Keeper, Name, Not, Read, Seam, Source, Store, Why,
 };
 
 use crate::BOUND;
@@ -36,7 +35,7 @@ pub enum Followed {
 /// promotion claim of tailrace's form, and unreadable naming the chain,
 /// with the ledger's words, when the ledger answered it as last read,
 /// whose head may be behind the one held (101, 106).
-fn head(keeper: &dyn Keeper, channel: &ChannelName) -> Answer<Digest> {
+fn head(keeper: &dyn Keeper, channel: &ChannelId) -> Answer<Digest> {
     let chain = keeper.chain(channel)?;
     if let Read::Kept { said, .. } = chain.read {
         return Err(Not::unreadable(
@@ -73,7 +72,7 @@ fn head(keeper: &dyn Keeper, channel: &ChannelName) -> Answer<Digest> {
 pub fn follow(
     store: &dyn Store,
     keeper: &dyn Keeper,
-    channel: &ChannelName,
+    channel: &ChannelId,
     name: &Name,
     expected: Option<&Digest>,
 ) -> Answer<Followed> {
@@ -97,12 +96,14 @@ mod tests {
 
     use serde_json::json;
     use tailrace_fakes::{FakeKeeper, FakeStore, StoreOp};
-    use tailrace_seams::{Envelope, Held, Manifest, Put, Revision, Signature, SignerId, IN_TOTO};
+    use tailrace_seams::{
+        ChannelName, Envelope, Held, Manifest, Put, Revision, Signature, SignerId, IN_TOTO,
+    };
 
     use super::*;
 
-    fn stable() -> ChannelName {
-        ChannelName::new("stable")
+    fn stable() -> ChannelId {
+        ChannelId::new(None, ChannelName::new("stable"))
     }
 
     fn channel_name() -> Name {

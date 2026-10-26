@@ -3,8 +3,9 @@
 //! on a plain branch whose builds moon runs. Two landings, each followed
 //! by one `tailrace publish`, move `beta` twice in the ledger and the
 //! layout, each acceptance saying one host offered and accepted; the same
-//! host with no `[gate]` leaves each version offered, nothing attached
-//! and no ledger ref (95, 108, 130, C.6; design D7). The binary runs with
+//! host with no `[gate]` does exactly the same, its file binding the
+//! host's publish as what tells its gate (95, 108, 118, 130, C.6; design
+//! D7). The binary runs with
 //! its home and its configuration in the scratch directory, and none of
 //! the `SLUICE_*` or `MOON_*` variables of a gate that may be running
 //! these tests. Needs moon, so it is in the tools layer.
@@ -25,13 +26,15 @@ use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use tailrace::bindings::{self, For};
 use tailrace::profiles::store::layout::Layout;
 use tailrace_core::{channel, Channel};
-use tailrace_seams::{channel_name, ChannelName, Claim, ClaimKind, Digest, Promotion, Store};
+use tailrace_seams::{
+    channel_name, ChannelId, ChannelName, Claim, ClaimKind, Digest, Promotion, Store,
+};
 
 /// The identity the one host signs as, and the gate's.
 const LAPTOP: &str = "laptop";
 
-fn beta() -> ChannelName {
-    ChannelName::new("beta")
+fn beta() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("beta"))
 }
 
 /// The one host: a scratch repository on a plain branch with moon's
@@ -185,9 +188,13 @@ fn offered(json: &Value) -> (String, Digest, Value) {
     )
 }
 
-#[test]
-fn two_landings_on_the_one_host_each_move_beta_in_the_same_run() {
-    let host = OneHost::new("\n[gate]\npublish = {}\n");
+/// Two landings on the one host whose file holds `gate`, each followed
+/// by one `tailrace publish`: each version accepted by the one host and
+/// `beta` moved to it in the same run, its chain holding both
+/// promotions, the second naming the first, and the layout's name for
+/// `beta` at the second.
+fn beta_follows_two_landings(gate: &str) {
+    let host = OneHost::new(gate);
     let mut indexes = Vec::new();
     for (message, grows, version) in [
         ("feat: the site", "", "0.1.0"),
@@ -211,7 +218,11 @@ fn two_landings_on_the_one_host_each_move_beta_in_the_same_run() {
         assert_eq!(gate["value"]["index"], index.as_str(), "{json}");
         let channels = gate["value"]["channels"].as_array().unwrap();
         assert_eq!(channels.len(), 1, "{json}");
-        assert_eq!(channels[0]["channel"], "beta", "{json}");
+        assert_eq!(
+            channels[0]["channel"],
+            serde_json::json!({ "component": null, "name": "beta" }),
+            "{json}"
+        );
         assert_eq!(channels[0]["value"]["moved"], "promoted", "{json}");
         assert_eq!(channels[0]["value"]["to"], index.as_str(), "{json}");
 
@@ -267,32 +278,11 @@ fn two_landings_on_the_one_host_each_move_beta_in_the_same_run() {
 }
 
 #[test]
-fn the_one_host_with_no_gate_table_leaves_each_version_offered() {
-    let host = OneHost::new("");
-    let landed = host.land("feat: the site");
-    let (code, json) = host.publish(&landed);
-    assert_eq!(code, Some(0), "{json}");
-    let (version, index, gate) = offered(&json);
-    assert_eq!(version, "0.1.0");
-    assert_eq!(gate["answer"], "absent", "{json}");
-    let what = gate["absent"]["what"].as_str().unwrap();
-    assert!(
-        what.contains("[gate] in") && what.contains("tailrace/config.toml"),
-        "{what}"
-    );
+fn two_landings_on_the_one_host_each_move_beta_in_the_same_run() {
+    beta_follows_two_landings("\n[gate]\npublish = {}\n");
+}
 
-    assert!(
-        host.acceptances(&index).is_empty(),
-        "an acceptance was attached"
-    );
-    let layout = host.layout();
-    assert!(
-        layout.resolve(&channel_name(&beta())).is_err(),
-        "beta names a version"
-    );
-    assert_eq!(
-        host.ledger_refs(),
-        (String::new(), String::new()),
-        "a ledger ref was written"
-    );
+#[test]
+fn the_one_host_with_no_gate_table_moves_beta_on_each_landing_as_publish_does() {
+    beta_follows_two_landings("");
 }

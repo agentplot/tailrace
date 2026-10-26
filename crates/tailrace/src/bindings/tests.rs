@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use tailrace_seams::{Chain, ChannelName, SignerId};
+use tailrace_seams::{Chain, ChannelId, ChannelName, SignerId};
 use tempfile::TempDir;
 
 use super::*;
@@ -482,7 +482,7 @@ fn a_file_naming_no_ledger_binds_the_git_ref_in_the_repository() {
     let repo = repository(&host);
     let layout = host.dir.path().join("layout");
     let binding = bound_with(&host, &repo, &layout, "", true, For::Publish).unwrap();
-    match binding.seams.keeper.chain(&ChannelName::new("stable")) {
+    match binding.seams.keeper.chain(&stable()) {
         Err(Not::Absent(a)) => {
             assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref"));
             assert_eq!(a.what, "chain of stable");
@@ -548,7 +548,7 @@ fn chain_of(binding: Answer<Binding>) -> Answer<Chain> {
         .unwrap_or_else(|not| panic!("the file bound nothing: {not}"))
         .seams
         .keeper
-        .chain(&ChannelName::new("stable"))
+        .chain(&ChannelId::new(None, ChannelName::new("stable")))
 }
 
 #[test]
@@ -676,7 +676,10 @@ fn the_store_ledgers_binding_never_makes_the_layout() {
     let publish = bound_with(&host, &repo, &layout, "store = {}", true, For::Publish).unwrap();
     assert!(
         matches!(
-            publish.seams.keeper.chain(&ChannelName::new("stable")),
+            publish
+                .seams
+                .keeper
+                .chain(&ChannelId::new(None, ChannelName::new("stable"))),
             Err(Not::Absent(_))
         ),
         "the store ledger did not read the layout a publish made"
@@ -936,8 +939,8 @@ fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     all
 }
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("stable"))
 }
 
 #[test]

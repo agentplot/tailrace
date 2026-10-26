@@ -22,14 +22,20 @@ use tailrace::profiles::store::layout::Layout;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{channel, Channel};
 use tailrace_seams::{
-    channel_name, Answer, ChannelName, Claim, ClaimKind, ComponentName, Digest, IndexMeta,
-    Manifest, Name, Not, Read, Revision, SignerId, Store, Version,
+    channel_name, Answer, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest,
+    IndexMeta, Manifest, Name, Not, Promotion, Read, Revision, SignerId, Store, Version,
 };
 
 const GATE: &str = "gate";
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+/// A channel declared by hand, moving by a promotion alone, which the
+/// gate promotes as its `require` lets it.
+fn lts() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("lts"))
+}
+
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("stable"))
 }
 
 /// A machine: its clone of the remote, its layout, and its bindings file
@@ -124,7 +130,8 @@ fn files(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 /// The scratch remote, machine A with two versions of the repository's
 /// one component landed, tagged and put in its layout, each index
 /// carrying the gate's acceptance, and machine B, a second clone with an
-/// empty layout and no key.
+/// empty layout and no key; the policy file naming the gate with `kinds`
+/// and holding `channels`.
 struct Two {
     scratch: Scratch,
     a: Machine,
@@ -133,6 +140,15 @@ struct Two {
 }
 
 fn two() -> Two {
+    two_with(
+        "[\"acceptance\", \"promotion\"]",
+        &format!(
+            "[channels.lts]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n"
+        ),
+    )
+}
+
+fn two_with(kinds: &str, channels: &str) -> Two {
     let scratch = Scratch::new();
     let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).expect("an Ed25519 key");
     let repo = scratch.repo.clone();
@@ -140,8 +156,7 @@ fn two() -> Two {
         POLICY_FILE,
         &format!(
             "outputs = [\"site\"]\n\n[projections]\nsite = \"file\"\n\n\
-             [signers.{GATE}]\nssh = \"{}\"\nkinds = [\"acceptance\", \"promotion\"]\n\n\
-             [channels.stable]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n",
+             [signers.{GATE}]\nssh = \"{}\"\nkinds = {kinds}\n\n{channels}",
             key.public_key().to_openssh().unwrap()
         ),
     );
@@ -209,16 +224,16 @@ fn a_promotion_on_one_machine_is_read_on_another_from_the_ledger_alone() {
     } = two();
     let binding = a.bind(For::Promote);
     for args in [
-        &["promote", "0.1.0", "--to", "stable"][..],
-        &["promote", "0.2.0", "--to", "stable", "--from", "0.1.0"][..],
-        &["promote", "--back", "--to", "stable"][..],
+        &["promote", "0.1.0", "--to", "lts"][..],
+        &["promote", "0.2.0", "--to", "lts", "--from", "0.1.0"][..],
+        &["promote", "--back", "--to", "lts"][..],
     ] {
         let (code, printed) = a.run(&binding, args);
         assert_eq!(code, 0, "{args:?}: {printed}");
         assert!(printed.contains("the store followed"), "{printed}");
     }
     let layout = Layout::open(a.layout()).unwrap();
-    assert_eq!(layout.resolve(&channel_name(&stable())), Ok(first.clone()));
+    assert_eq!(layout.resolve(&channel_name(&lts())), Ok(first.clone()));
     let on = |index: &Digest| {
         layout
             .claims_of(index)
@@ -231,7 +246,7 @@ fn a_promotion_on_one_machine_is_read_on_another_from_the_ledger_alone() {
 
     let ours = at_of(channel(
         binding.as_ref().unwrap().seams.keeper.as_ref(),
-        &stable(),
+        &lts(),
     ));
     assert_eq!(ours.0.to.index, first);
     assert_eq!(ours.0.from.as_ref().map(|f| &f.index), Some(&second));
@@ -243,7 +258,7 @@ fn a_promotion_on_one_machine_is_read_on_another_from_the_ledger_alone() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let read = at_of(channel(theirs.seams.keeper.as_ref(), &stable()));
+    let read = at_of(channel(theirs.seams.keeper.as_ref(), &lts()));
     assert_eq!(read.0, ours.0, "machine B read another head");
     assert_eq!(read.1, ours.1, "machine B read another chain");
     assert_eq!(read.2, Read::Source);
@@ -254,7 +269,7 @@ fn a_promotion_on_one_machine_is_read_on_another_from_the_ledger_alone() {
     );
 
     fs::remove_dir_all(&scratch.remote).unwrap();
-    let kept = at_of(channel(theirs.seams.keeper.as_ref(), &stable()));
+    let kept = at_of(channel(theirs.seams.keeper.as_ref(), &lts()));
     assert_eq!((kept.0, kept.1), (ours.0, ours.1));
     match kept.2 {
         Read::Kept { at, said } => {
@@ -283,9 +298,9 @@ fn a_promotion_found_wanting_on_real_profiles_writes_nothing() {
     let (code, printed) = a.run(&binding, &["promote", "0.3.0", "--to", "stable"]);
     assert_eq!(code, 4, "{printed}");
     assert!(printed.contains("v0.3.0"), "{printed}");
-    let (code, printed) = a.run(&binding, &["promote", "0.2.0", "--to", "beta"]);
+    let (code, printed) = a.run(&binding, &["promote", "0.2.0", "--to", "edge"]);
     assert_eq!(code, 4, "{printed}");
-    assert!(printed.contains("channel beta"), "{printed}");
+    assert!(printed.contains("channel edge"), "{printed}");
     assert_eq!(
         a.repo.git(&["for-each-ref", "refs/tailrace/ledger"]),
         "",
@@ -293,7 +308,58 @@ fn a_promotion_found_wanting_on_real_profiles_writes_nothing() {
     );
     let layout = Layout::open(a.layout()).unwrap();
     assert!(matches!(
-        layout.resolve(&channel_name(&stable())),
+        layout.resolve(&channel_name(&lts())),
         Err(Not::Absent(_))
     ));
+}
+
+#[test]
+fn a_given_stable_is_promoted_by_the_gate_with_no_channels_written() {
+    // The gate may claim acceptance alone, and the file writes no channel.
+    let Two {
+        scratch: _kept,
+        a,
+        indexes: [first, _],
+        ..
+    } = two_with("[\"acceptance\"]", "");
+    let binding = a.bind(For::Promote);
+    let (code, printed) = a.run(&binding, &["promote", "0.1.0", "--to", "stable"]);
+    assert_eq!(code, 1, "{printed}");
+    assert!(printed.contains("stable is bound to beta"), "{printed}");
+    for args in [
+        &["promote", "0.1.0", "--to", "beta"][..],
+        &["promote", "0.1.0", "--to", "stable"][..],
+    ] {
+        let (code, printed) = a.run(&binding, args);
+        assert_eq!(code, 0, "{args:?}: {printed}");
+    }
+    let (head, chain, _) = at_of(channel(
+        binding.as_ref().unwrap().seams.keeper.as_ref(),
+        &stable(),
+    ));
+    assert_eq!(head.to.index, first);
+    assert_eq!(head.asked_by, SignerId::new(GATE));
+    assert_eq!(chain.len(), 1);
+    let claim = binding
+        .as_ref()
+        .unwrap()
+        .seams
+        .keeper
+        .chain(&stable())
+        .unwrap()
+        .claims[0]
+        .clone();
+    assert_eq!(claim.sole().unwrap().signer, SignerId::new(GATE));
+    let made = Promotion::of(&Claim::from_envelope(&claim).unwrap()).unwrap();
+    assert_eq!(made.channel, ChannelName::new("stable"));
+    assert_eq!(
+        a.repo.git(&[
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/tailrace/ledger"
+        ]),
+        "refs/tailrace/ledger/beta\nrefs/tailrace/ledger/stable"
+    );
+    let layout = Layout::open(a.layout()).unwrap();
+    assert_eq!(layout.resolve(&channel_name(&stable())), Ok(first));
 }

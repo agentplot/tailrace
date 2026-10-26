@@ -12,15 +12,24 @@ use tailrace_conformance::seams::keeper::{self, KeeperRig};
 use tailrace_conformance::{run, Rig};
 use tailrace_fakes::FakeSigner;
 use tailrace_seams::{
-    channel_name, Chain, ChannelName, ComponentName, Digest, Envelope, IndexMeta, Keeper, Manifest,
-    Moved, Not, Promotion, Read, Revision, Satisfied, Signer, SignerId, Store, Version, Why,
+    channel_name, Chain, ChannelId, ChannelName, ComponentName, Digest, Envelope, IndexMeta,
+    Keeper, Manifest, Moved, Not, Promotion, Read, Revision, Satisfied, Signer, SignerId, Store,
+    Version, Why,
 };
 use tempfile::TempDir;
 
 const GATE: &str = "gate";
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("stable"))
+}
+
+/// `beta` of `component`.
+fn beta_of(component: &str) -> ChannelId {
+    ChannelId::new(
+        Some(ComponentName::new(component)),
+        ChannelName::new("beta"),
+    )
 }
 
 /// A layout, the store ledger over it, and the directory its chains are
@@ -63,15 +72,15 @@ impl StoreRig {
     /// `from`, after `predecessor`, at `at`, signed as the gate.
     fn moved(
         &self,
-        channel: &ChannelName,
+        channel: &ChannelId,
         to: u32,
         from: Option<u32>,
         predecessor: Option<Digest>,
         at: u64,
     ) -> Envelope {
         let body = Promotion {
-            channel: channel.clone(),
-            component: ComponentName::new("lib"),
+            channel: channel.name.clone(),
+            component: channel.component_name(),
             to: self.index(to),
             from: from.map(|n| self.index(n)),
             predecessor,
@@ -94,7 +103,7 @@ impl StoreRig {
 
     /// The `n`th promotion of `channel`: to version `0.<n>.0`, from the
     /// one before, after the `n - 1`th promotion.
-    fn nth(&self, channel: &ChannelName, n: u32) -> Envelope {
+    fn nth(&self, channel: &ChannelId, n: u32) -> Envelope {
         let predecessor = (n > 1).then(|| self.nth(channel, n - 1).digest());
         self.moved(
             channel,
@@ -117,7 +126,7 @@ impl KeeperRig for StoreRig {
         &self.keeper
     }
 
-    fn promotion(&self, channel: &ChannelName, n: u32) -> Envelope {
+    fn promotion(&self, channel: &ChannelId, n: u32) -> Envelope {
         self.nth(channel, n)
     }
 
@@ -125,7 +134,7 @@ impl KeeperRig for StoreRig {
     /// the channel to 0.2.0, attached there, and the channel's name moved
     /// to it, as two gates racing on a store with no conditional names
     /// leave them.
-    fn fork(&self, channel: &ChannelName) -> [Envelope; 2] {
+    fn fork(&self, channel: &ChannelId) -> [Envelope; 2] {
         let first = self.nth(channel, 1);
         self.keeper.append(channel, &first, None).unwrap();
         let [a, b] = [10, 20].map(|at| self.moved(channel, 2, Some(1), Some(first.digest()), at));
@@ -218,6 +227,45 @@ fn a_claim_the_store_no_longer_holds_is_unreadable_naming_it_and_its_index() {
         }
         other => panic!("a missing predecessor answered {other:?}"),
     }
+}
+
+#[test]
+fn two_components_beta_walk_apart_from_their_own_names() {
+    let rig = StoreRig::new();
+    let (lib, web) = (beta_of("lib"), beta_of("web"));
+    let mut held = Vec::new();
+    for channel in [&lib, &web] {
+        let (first, second) = (rig.nth(channel, 1), rig.nth(channel, 2));
+        rig.keeper.append(channel, &first, None).unwrap();
+        rig.keeper
+            .append(channel, &second, Some(&first.digest()))
+            .unwrap();
+        held.push(vec![first, second]);
+    }
+    assert_eq!(
+        rig.layout.resolve(&channel_name(&lib)),
+        Ok(rig.index(2).index)
+    );
+    assert_eq!(
+        channel_name(&lib),
+        tailrace_seams::Name::new("channel/lib/beta")
+    );
+    for (channel, claims) in [&lib, &web].into_iter().zip(held) {
+        assert_eq!(
+            rig.keeper.chain(channel),
+            Ok(Chain {
+                claims,
+                read: Read::Source,
+            }),
+            "{channel}'s chain holds another's claims"
+        );
+    }
+    assert!(rig.kept().join("lib").join("beta.json").is_file());
+    assert!(matches!(
+        rig.keeper
+            .chain(&ChannelId::new(None, ChannelName::new("beta"))),
+        Err(Not::Absent(_))
+    ));
 }
 
 // Requirement: Two claims naming one predecessor are a fork
@@ -357,7 +405,10 @@ fn the_store_gone_after_a_read_answers_the_chain_as_kept_with_its_time_and_words
         Err(Not::Unreadable(u)) => assert_eq!(u.said.as_deref(), Some(words.as_str())),
         other => panic!("an append with the store gone answered {other:?}"),
     }
-    match rig.keeper.chain(&ChannelName::new("beta")) {
+    match rig
+        .keeper
+        .chain(&ChannelId::new(None, ChannelName::new("beta")))
+    {
         Err(Not::Unreadable(u)) => assert_eq!(u.said.as_deref(), Some(words.as_str())),
         other => panic!("a chain never read answered {other:?}"),
     }

@@ -12,11 +12,11 @@ use tailrace_fakes::{
     KeeperOp, LandingOp, PolicyOp, ProjectionOp, SignerOp, StoreOp, Times, PROFILE,
 };
 use tailrace_seams::{
-    Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
-    ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope, Environment,
-    EnvironmentName, Keeper, Landing, NamedSigner, Outcome, Output, OutputName, Policy, Projection,
-    Report, Required, Revision, Seams, Signature, Signer, SignerId, Store, Target, Verdict,
-    Verified, Version, IN_TOTO,
+    Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelId, ChannelName, Claim,
+    ClaimKind, ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope,
+    Environment, EnvironmentName, Keeper, Landing, Moves, NamedSigner, Outcome, Output, OutputName,
+    Policy, Projection, Report, Required, Revision, Seams, Signature, Signer, SignerId, Store,
+    Target, Verdict, Verified, Version, IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
@@ -407,16 +407,24 @@ impl PolicyRig for FakePolicyRig {
         for channel in channels {
             self.policy.require_at(
                 &at,
-                Audience::Channel(channel.name.clone()),
+                Audience::Channel(channel.channel.clone()),
                 Required::Channel {
                     claims: vec![],
-                    bound_to: channel.bound_to.clone(),
+                    bound_to: channel.bound_to().map(|c| c.name),
+                    promoted_by: vec![],
                 },
             );
-            self.policy
-                .belongs_at(&at, &channel.name, &channel.component);
+            if channel.moves == Moves::EachPublish {
+                self.policy.follows_at(&at, &channel.channel);
+            }
         }
         at
+    }
+
+    /// The fake gives no channel a test did not script (C.10 is the
+    /// file's).
+    fn given(&self, _: &[ComponentName]) -> Vec<DeclaredChannel> {
+        Vec::new()
     }
 
     fn unreachable(&self) -> String {
@@ -538,7 +546,7 @@ impl FakeTargetRig {
         let n = self.environments.get();
         Environment {
             name: EnvironmentName::new(format!("environment-{n}")),
-            channel: ChannelName::new(format!("channel-{n}")),
+            channel: ChannelId::new(None, ChannelName::new(format!("channel-{n}"))),
             waits: false,
         }
     }
@@ -619,7 +627,7 @@ impl KeeperRig for FakeKeeperRig {
         &self.keeper
     }
 
-    fn promotion(&self, channel: &ChannelName, n: u32) -> Envelope {
+    fn promotion(&self, channel: &ChannelId, n: u32) -> Envelope {
         let claim = Claim {
             subject: Digest::of(format!("the index {channel} moves to, {n}").as_bytes()),
             kind: ClaimKind::Promotion,
@@ -632,7 +640,7 @@ impl KeeperRig for FakeKeeperRig {
             .expect("the gate's identity is at hand")
     }
 
-    fn fork(&self, channel: &ChannelName) -> [Envelope; 2] {
+    fn fork(&self, channel: &ChannelId) -> [Envelope; 2] {
         let (a, b) = (self.promotion(channel, 1), self.promotion(channel, 2));
         self.keeper.fork(channel, &a, &b);
         [a, b]
