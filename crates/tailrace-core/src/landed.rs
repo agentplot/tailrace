@@ -138,6 +138,21 @@ mod tests {
         assert_eq!(calls[0].given["revision"], "4f2a9c1");
     }
 
+    #[test]
+    fn the_channels_in_force_never_carry_a_held_given() {
+        let (landing, policy) = (FakeLanding::new(), FakePolicy::new());
+        let (main, rev) = (Branch::new("main"), Revision::new("4f2a9c1"));
+        landing.land(&main, &rev);
+        let canary = ChannelId::new(None, ChannelName::new("canary"));
+        policy.holds(&canary, Moves::Promotion, "[channels.canary]");
+
+        let landed = Landed::check(&landing, &main, &rev).unwrap();
+        let whole = policy_channels_at(&policy, &landed).unwrap();
+        assert_eq!(whole.held.len(), 1);
+        assert_eq!(whole.held[0].channel.channel, canary);
+        assert_eq!(channels_at(&policy, &landed), Ok(vec![]));
+    }
+
     fn refused(not: Not) -> (Why, Option<String>) {
         match not {
             Not::Refused(r) => {

@@ -1,15 +1,16 @@
 //! The fake policy (B.5): what each audience requires, for every revision
-//! or for one, and which channels move on each publish, as a test
-//! scripts it. A channel carries its component (125), and the fake gives
-//! no channel a test did not script: the channels a profile gives with
-//! nothing declared are that profile's (C.10).
+//! or for one, which channels move on each publish, and the givens it
+//! holds off, as a test scripts it. A channel carries its component
+//! (125), and the fake gives and holds off no channel a test did not
+//! script: the channels a profile gives with nothing declared are that
+//! profile's (C.10).
 
 use std::collections::BTreeMap;
 
 use serde_json::json;
 use tailrace_seams::{
-    Answer, Audience, ChannelId, DeclaredChannel, Moves, Not, Policy, PolicyChannels, Required,
-    Revision, Seam,
+    Answer, Audience, ChannelId, DeclaredChannel, HeldChannel, Moves, Not, Policy, PolicyChannels,
+    Required, Revision, Seam,
 };
 
 use crate::Fake;
@@ -21,14 +22,16 @@ pub enum PolicyOp {
     Channels,
 }
 
-/// What each audience requires, at every revision and at one, and the
-/// channels that move on each publish, at every revision and at one.
+/// What each audience requires, at every revision and at one, the
+/// channels that move on each publish, at every revision and at one, and
+/// the givens held off, each with how it would move and its line.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PolicyState {
     every: BTreeMap<Audience, Required>,
     at: BTreeMap<(Revision, Audience), Required>,
     follows: BTreeMap<ChannelId, bool>,
     follows_at: BTreeMap<(Revision, ChannelId), bool>,
+    holds: BTreeMap<ChannelId, (Moves, String)>,
 }
 
 /// A policy in memory.
@@ -80,6 +83,15 @@ impl FakePolicy {
             .follows_at
             .insert((revision.clone(), channel.clone()), prereleases);
     }
+
+    /// C.10: `channel` held off at every revision, moving as `moves` once
+    /// `switch`, the line that switches it on, is written; carried in the
+    /// channels answer apart from the channels in force.
+    pub fn holds(&self, channel: &ChannelId, moves: Moves, switch: impl Into<String>) {
+        self.state()
+            .holds
+            .insert(channel.clone(), (moves, switch.into()));
+    }
 }
 
 impl Policy for FakePolicy {
@@ -99,7 +111,9 @@ impl Policy for FakePolicy {
     /// carries (125): bound where its policy names a binding, moving on
     /// each publish where the test scripted it so, and by a promotion
     /// alone otherwise, taking prereleases as scripted. A binding is
-    /// answered as scripted, never checked.
+    /// answered as scripted, never checked. Apart from them, each given
+    /// scripted held off, by name and then component, with how it would
+    /// move and its line; an empty list where none is (C.10).
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         let given = json!({ "revision": revision });
         self.ask(PolicyOp::Channels, given, "the channels", |s, _| {
@@ -134,10 +148,18 @@ impl Policy for FakePolicy {
                     }
                 })
                 .collect();
-            Ok(PolicyChannels {
-                in_force,
-                held: vec![],
-            })
+            let held = s
+                .holds
+                .iter()
+                .map(|(channel, (moves, switch))| HeldChannel {
+                    channel: DeclaredChannel {
+                        channel: channel.clone(),
+                        moves: moves.clone(),
+                    },
+                    switch: switch.clone(),
+                })
+                .collect();
+            Ok(PolicyChannels { in_force, held })
         })
     }
 }
@@ -392,6 +414,45 @@ mod tests {
         );
         policy.follows(&id(None, "beta"), false);
         assert_eq!(listed(&policy, &Revision::new("4f2a9c1")), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_given_held_off_is_carried_apart_from_the_channels_in_force() {
+        let policy = FakePolicy::new();
+        let rev = Revision::new("4f2a9c1");
+        assert_eq!(
+            policy.channels(&rev),
+            Ok(PolicyChannels {
+                in_force: vec![],
+                held: vec![],
+            })
+        );
+        let canary = id(None, "canary");
+        policy.holds(&canary, RELEASES, "[channels.canary]");
+        let answer = policy.channels(&rev).unwrap();
+        assert_eq!(
+            answer.held,
+            [HeldChannel {
+                channel: declared(canary.clone(), RELEASES),
+                switch: "[channels.canary]".into(),
+            }]
+        );
+        assert!(
+            !answer.in_force.iter().any(|c| c.channel == canary),
+            "{answer:?}"
+        );
+        policy.fault(
+            PolicyOp::Channels,
+            Fault::Unreadable("no such revision".into()),
+            Times::Once,
+        );
+        assert!(matches!(
+            policy.channels(&rev),
+            Err(Not::Unreadable(u)) if u.said.as_deref() == Some("no such revision")
+        ));
+        let calls = policy.calls();
+        assert_eq!(calls.len(), 3);
+        assert!(calls.iter().all(|c| c.op == PolicyOp::Channels));
     }
 
     #[test]
