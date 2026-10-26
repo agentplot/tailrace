@@ -169,18 +169,60 @@ a checkout (65).
 
 ### The channels
 
-Every component has two channels with no line written (C.10): `beta`,
-which moves on each accepted publish, and `stable`, bound to `beta`, so
-it takes only a version `beta` has held (37). Both require the gate's
-acceptance, by the signers `[signers]` lets claim `acceptance`, and
-those same signers, the gate, are the ones whose promotion of them
-counts (32). A line under one, as `[channels.stable]` above, adds the
-claims its versions must carry after that acceptance, and never widens
-who signs or changes how the channel moves: a line naming
-`on_each_publish` or `bound_to` is read only where it says what the
-channel already does, and is unreadable naming its table otherwise.
+The given channels are a policy fragment shipped with tailrace, written
+in the policy file's own form and laid beneath your file (C.10):
 
-A channel of your own is a table of its own, and moves as it says:
+```toml
+[channels.beta]             # on: moves on each accepted publish
+on_each_publish = true
+
+[channels.stable]           # on: takes only a version beta has held
+bound_to = "beta"
+
+[channels.alpha]            # held: moves on each accepted publish
+on = false
+on_each_publish = true
+
+[channels.lts]              # held: takes only a version stable has held
+on = false
+bound_to = "stable"
+```
+
+So every component has `beta` and `stable` with no line written, and
+`alpha` and `lts` are one line away. `alpha` moves as `beta` does for
+now: nothing yet says how a channel leaves prereleases out. Each given
+channel that is on requires the gate's acceptance, by the signers
+`[signers]` lets claim `acceptance`, and those same signers, the gate,
+are the ones whose promotion of it counts (32).
+
+A table you write under a given channel lies over the fragment's. It
+switches the channel on, so an empty table is the one line a held
+channel needs; each key you write replaces the fragment's, and
+`on = false` switches a channel off:
+
+```toml
+[channels.alpha]            # alpha switched on, its keys already written
+
+[channels.stable]           # a claim after the gate's acceptance
+require = [{ kind = "verdict", check = "core:test", signers = ["box"] }]
+```
+
+```toml
+[channels.alpha]
+
+[channels.stable]           # the same line rebinds stable to alpha
+bound_to = "alpha"
+```
+
+`on_each_publish` and `bound_to` say together how a channel moves, so
+writing either replaces both (37). A line never widens who signs a given
+channel's promotion: a signer it names for a promotion is a claim the
+version must carry, and the gate stays the promoter. A channel bound to
+one that is off, or bindings that come round to where they began, are
+unreadable naming a table, since no version could reach the channel.
+
+A channel of your own is a table under a name the fragment does not
+hold, and moves as it says:
 
 ```toml
 [channels.edge]
@@ -189,7 +231,7 @@ on_each_publish = true      # moves on each accepted publish
 [channels.next]
 bound_to = "beta"           # takes only what beta has held
 
-[channels.lts]              # moves by a promotion alone
+[channels.rc]               # moves by a promotion alone
 require = [{ kind = "acceptance", signers = ["gate"] }]
 ```
 
@@ -201,22 +243,24 @@ channel takes no version from a publish (37).
 Each channel belongs to one component and names only its versions
 (125). Where the repository declares no component, a channel is
 `[channels.<name>]`, spelled by its name alone. Where it declares
-components, each has its own `beta` and `stable`, and a channel of
-yours is `[channels.<component>.<name>]`:
+components, the fragment lies beneath each one's tables, every component
+has its own `beta` and `stable`, and a channel is
+`[channels.<component>.<name>]`:
 
 ```toml
-[channels.lib.stable]
+[channels.lib.stable]       # lib's stable alone takes this claim
 require = [{ kind = "verdict", check = "core:test", signers = ["box"] }]
+
+[channels.lib.lts]          # lts switched on for lib, and not for web
 
 [channels.web.nightly]
 on_each_publish = true
 ```
 
-A channel is bound only to another of its own component, declared,
-given or made (37). A table of the other form, one under a component
-the file does not declare, or one naming a component with
-`component = "<name>"`, is unreadable naming the table and the form to
-use.
+A channel is bound only to another of its own component that is on (37).
+A table of the other form, one under a component the file does not
+declare, or one naming a component with `component = "<name>"`, is
+unreadable naming the table and the form to use.
 
 An environment's words make channels too. `policy = "manual"` gives the
 environment a channel of its own, named for it and bound to the channel
@@ -234,9 +278,10 @@ after = ["us"]              # makes eu, bound to us
 ```
 
 These are listed like a channel of your own, are promoted by the gate's
-signers as `beta` and `stable` are, and take a line as they do. An
-environment's other keys are its target's. `policy` other than `auto` or
-`manual`, a made channel named `beta` or `stable`, environments named in
+signers as a given channel is, and take a line that adds claims and
+never changes how they move. An environment's other keys are its
+target's. `policy` other than `auto` or `manual`, a made channel named
+as any channel the fragment holds, on or off, environments named in
 `after` that follow two channels, an environment not declared, or one
 that comes after itself, is unreadable naming the table. Nothing moves
 an `after` channel, or converges an environment, until a target is
@@ -245,6 +290,41 @@ bound; `tailrace promote` moves them as any channel.
 The policy lists a repository's channels, each with its component and
 how it moves, read the same way as the policy for one channel, so the
 two never disagree (131).
+
+### What is in force
+
+`tailrace policy` shows the one table in force at the branch's landed
+head, the givens beside your own lines: what acceptance and a layout
+require, then every channel that is on, with how it moves, the claims
+its versions must carry and who promotes it. Each part is its own
+answer, so a missing `[layout]` is shown as absent beside the rest:
+
+```text
+$ tailrace policy
+main at 4f2a9c1…
+
+acceptance
+  provenance by laptop
+  verdict of cli:test by box
+layout
+  the policy (policy file) holds no policy for layout in .config/tailrace.toml
+
+channels
+  alpha, each publish
+    requires acceptance by gate
+    promoted by gate
+  beta, each publish
+    requires acceptance by gate
+    promoted by gate
+  stable, bound to alpha
+    requires acceptance by gate, then verdict of core:test by box
+    promoted by gate
+```
+
+`--branch` names another governed branch, and `--json` prints the
+answer as one document. It asks the landing and the policy alone and
+writes nothing (60); a head the branch has not landed is refused naming
+both, before the policy is read.
 
 ### The gate and the channels that follow each publish
 
@@ -294,7 +374,7 @@ the policy does not list for the component is absent, naming both (125,
 channel's policy names made, and then every claim it requires, in order;
 the first found wanting is named with the signers that may make it (31,
 58). The host's `[signing]` signer must be among the channel's
-promoters, the gate's signers for `beta`, `stable` and a channel an
+promoters, the gate's signers for a given channel and one an
 environment makes, so a host holding the gate's signer promotes
 `stable` with no line written (9, 32), and it is recorded as who asked.
 A channel bound to another, as `stable` is to `beta`, takes only a
