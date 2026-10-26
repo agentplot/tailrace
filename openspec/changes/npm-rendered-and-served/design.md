@@ -25,11 +25,13 @@ What it builds on:
   and calls both. `tailrace-core/src/served.rs` holds `SERVING_HOST`
   `127.0.0.1`, `SERVING_PORT` 7420 and `RepositoryName`.
 - **Render under a policy** (`render-under-a-policy` design): pinned on
-  the seam (`Pinned { name, version }`); `render::render(seams,
+  the seam (`Pinned { name, version }`); `render::render(seams, layouts,
   &RenderAsk) -> Answer<Refreshed>` resolves pins through
-  `artifact/<ecosystem>/<name>@<version>`, judges each under the
-  consumer's `[layout]` policy at the landed revision or the publisher's
-  layout-policy claim, and hands the projection exactly the satisfied
+  `artifact/<ecosystem>/<name>@<version>` (`render::locate`), judges each
+  under the consumer's `[layout]` policy at the landed revision, the
+  publisher's layout-policy claim counted through the signers the host's
+  bindings trust, or the givens' policy admitting accepted versions
+  alone (113, C.10), and hands the projection exactly the satisfied
   artifacts at `<working tree>/.tailrace/layouts/<ecosystem>/`; the record
   `Layouts` at `<git dir>/tailrace/layouts/<ecosystem>.json`;
   `render::sync_checkout` behind `tailrace sync`.
@@ -57,12 +59,15 @@ name's `/` as `%2f` in the packument's path.
 
 **Goals:** the npm profile's four operations; serve reshaped to answer
 one request inside the host's one process; the process routing served
-layouts; the core's render of one missed version, and the layout's lock;
+layouts, and staying while one is served; the core's render of one
+missed version, and the layout's lock;
 sync naming and starting the process; npm pinned and its tests in the
 tools layer.
 
 **Non-Goals:** serving any other ecosystem; a packument for a name no
-layout holds a version of; `.npmrc` written by tailrace (the consumer
+layout holds a version of, and a manifest's range answered by pinned
+(137), which wait on how a range is resolved against a store that
+resolves a name only by its version (proposal); `.npmrc` written by tailrace (the consumer
 writes its scope line once, S4); the store's `artifact/` pointer.
 
 ## Decisions
@@ -161,6 +166,11 @@ revision, when }) -> Answer<HeldPin>`, beside `render::render`:
    artifacts and this one, records the layout, and answers held; where
    absent, refused or unreadable, writes nothing and answers that.
 
+The policy is found as `render` finds it, so whatever render-under-a-
+policy holds a consumer with no policy of its own to, the publisher's
+claim counted through the host's trusted signers or the givens'
+accepted versions (C.10), a miss holds it to the same.
+
 It reads the store for the one pin alone: the held versions were judged
 when they were rendered, and the record names their digests (48, 50).
 The process maps the answer to `miss`'s `Answer<()>`.
@@ -196,7 +206,7 @@ the host's, as `serve.lock` and `repositories.lock` are.
    still compares (18).
 
 With no version: `no_cache_entries`. `npm` is the one on `PATH`; the
-devenv shell's is the pinned one (D11).
+devenv shell's is the pinned one (D12).
 
 ### D7. npm's pinned
 
@@ -273,7 +283,28 @@ and its answer is printed after the core's as `serving`, in JSON as a
 host, the address and `start` as parameters, so its tests run on an
 address of their own and start nothing real.
 
-### D11. npm pinned, and where its tests run
+### D11. The process stays while a layout is served
+
+`serve_on` keeps its idle time, and where it elapses asks
+`host::serves_a_layout(host, bind)` before it ends: for each checkout
+`host::named` answers, bound `For::Sync`, whether any bound projection
+whose serve is not absent naming serving (the probe of D10) has a
+rendered layout, its place `render::place(tree, ecosystem)` present
+with its record. Where one has, the idle time starts again and the
+process answers on; where none has, it ends as before. A checkout gone
+or unbindable counts as holding none, so removing a worktree, or the
+layout's directory, lets the process end at its next idle (114). The
+check reads files and opens no connection (core.32). `bind` is a
+parameter, as `respond_with`'s is, so the tests run it over the fake
+projection; `serve_on` passes `Host::bind_for`.
+
+Why at idle and not on each request: the answer changes only when a
+sync renders or a person removes a layout, and the process need not
+know sooner than its idle time. Alternative: sync writing a mark in the
+host's file that a layout is served, which a removed worktree would
+leave behind, keeping the process for a layout that is gone.
+
+### D12. npm pinned, and where its tests run
 
 `devenv.nix` adds `pkgs.nodejs` to `packages`, pinned by `devenv.lock`
 (core.26). Tests:
@@ -293,22 +324,29 @@ address of their own and start nothing real.
   `tailrace sync` then `npm install` under a home and `npm_config_*` of
   its own, a refused and an absent version, and two worktrees sharing one
   process. Added to the `tools` task's `--test` list in `moon.yml`.
-- `crates/tailrace/tests/serve.rs` for the route (D2) with the fake
-  projection; `crates/tailrace-core/tests/render.rs` for D4 and D5.
+- `crates/tailrace/tests/serve.rs` for the route (D2) and the stay
+  (D11) with the fake projection, the latter at an idle of moments;
+  `crates/tailrace-core/tests/render.rs` for D4 and D5.
 
 ## Risks / Trade-offs
 
-- [The process ends after ten idle minutes, and npm cannot start it] →
-  an `npm install` long after a sync fails with npm's connection refused
-  until something asks; sync starts it again, and a host may run `tailrace
-  serve` as a service of its own (114). Named for the design agent.
+- [A host with a served layout keeps its process for good] → the
+  clause's choice (114): npm cannot start it, so it stays while a layout
+  is served, and ends once the layout's directory, or its checkout, is
+  removed. The check binds each named checkout once per idle period,
+  which is minutes, never per request.
+- [A host that rebooted] → nothing runs the process until an asker
+  starts it: the next `tailrace sync`, `tailrace status --page` or a
+  pane; an `npm install` before any of them fails with npm's connection
+  refused. A host may run `tailrace serve` as a service of its own (114).
 - [The served layout is the last-named checkout's] → a second checkout's
   pins its layout lacks are rendered into it on the miss, and leave at
   that checkout's next sync; the lockfile is the same either way, so
   installs agree.
-- [A family package no lockfile pins] → `npm install @family/new`
-  answers `404`; the consumer adds it after a publish by version, or
-  waits for the design agent's answer.
+- [A family package no lockfile pins] → `npm install @family/new` and
+  `npm install @family/new@<version>` both answer `404`, since npm asks
+  the packument first and the layout holds none for the name, until a
+  range can be resolved against the store (proposal).
 - [npm retries a `502`] → npm's fetch retries 5xx with backoff before it
   fails; the words still reach the user, later.
 - [A miss judged under a newer landed policy than the layout's] → the
