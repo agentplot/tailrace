@@ -182,6 +182,7 @@ crates/tailrace-core/src/publish.rs
 crates/tailrace-core/src/verify.rs
 crates/tailrace-core/src/history.rs
 crates/tailrace-core/tests/**
+crates/tailrace-fakes/src/lib.rs
 crates/tailrace-fakes/src/projection.rs
 crates/tailrace-conformance/src/**
 crates/tailrace-conformance/tests/**
