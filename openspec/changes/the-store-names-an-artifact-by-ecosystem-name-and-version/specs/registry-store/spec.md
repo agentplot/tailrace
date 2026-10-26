@@ -98,6 +98,10 @@ words verbatim and naming the repository, and nothing SHALL be retried
 - **WHEN** a registry that makes no repository on push holds the declared repository and not `artifact/eco/site`, and the name `artifact/eco/site@1.3.0` is made
 - **THEN** the make is refused carrying the registry's words and naming `artifact/eco/site` under the declared repository, and no tag is put
 
+#### Scenario: A cache repository missing
+- **WHEN** a registry that makes no repository on push holds the declared repository and not `cache/moon`, and a store bound for a push puts a cache entry's bytes, with the moon build profile bound
+- **THEN** the put is refused carrying the registry's words and naming `cache/moon` under the declared repository, nothing is asked again, and the declared repository is not written
+
 ## MODIFIED Requirements
 
 ### Requirement: One declared repository holds the store

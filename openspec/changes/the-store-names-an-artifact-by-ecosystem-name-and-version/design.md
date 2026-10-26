@@ -341,7 +341,9 @@ repository the put was for, which `NAME_UNKNOWN` on a put, or a body
 naming a repository not found, gives, so an operator reads which one to
 make (58, 59). A refused artifact name leaves the version's tag unmade
 (D2); a refused cache entry is the push's answer for that output, as any
-store refusal is. Nothing is retried. The self-hosting guide says what
+store refusal is, naming `cache/<build>`, and a push bound for the cache
+space never falls back to the declared repository, which its credential
+may not write (135). Nothing is retried. The self-hosting guide says what
 an ECR operator makes before the first publish: the declared repository,
 and repository creation templates applying on push to the prefixes
 `<declared path>/artifact/` and `<declared path>/cache/`, or each
