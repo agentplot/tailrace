@@ -4,7 +4,7 @@ tasks are verified by the moon tasks named, which `check-fast` runs.
 ## 1. The seam: pinned and the layout-policy claim
 
 - [x] 1.1 Add `Pinned { name: EcosystemName, version: Version }` and `Projection::pinned(&self, checkout: &str) -> Answer<Vec<Pinned>>` to `crates/tailrace-seams/src/projection.rs`, exported from `lib.rs`, with a round-trip test (design D1); verify with `moon run seams:test`
-- [ ] 1.2 Add `ClaimKind::LayoutPolicy`, named `layout_policy`, to `claim.rs` and its `ALL`, with a test that a layout-policy claim about an index reads back from its envelope with the revision, no build identity and its body (design D8); verify with `moon run seams:test`
+- [x] 1.2 Add `ClaimKind::LayoutPolicy`, named `layout_policy`, to `claim.rs` and its `ALL`, with a test that a layout-policy claim about an index reads back from its envelope with the revision, no build identity and its body (design D8); verify with `moon run seams:test`
 - [ ] 1.3 Add `Why::Wanting { version, index, wanting: RequiredClaim, checked: Vec<SignerId> }` to `answer.rs`, rendered in words that name the version, the claim's kind and check and the signers checked, with a round-trip test (design D4); verify with `moon run seams:test`
 - [ ] 1.4 Give the fake projection pins per checkout set by the test, absent naming `lockfile` for any other, and a render of artifacts that records the place and the artifacts given and answers `Holds::Versions` (seam-fakes spec); verify with `moon run fakes:test`
 - [ ] 1.5 Answer `pinned` absent naming `lockfile` in the file, image and moon cache profiles, each with a unit test (file-, image- and moon-cache-projection specs); verify with `moon run cli:test`
