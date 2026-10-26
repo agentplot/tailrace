@@ -17,4 +17,4 @@
 
 ## 3. The gate whole
 
-- [ ] 3.1 Run the fast layer over the tree: verify `devenv shell -- moon run ':#check-fast'` passes, `root:format` included (every new file owned by treefmt's shellcheck, shfmt or Biome, or the `*.md` exclude), and `moon query projects` lists `plugin-claude-code`.
+- [x] 3.1 Run the fast layer over the tree: verify `devenv shell -- moon run ':#check-fast'` passes, `root:format` included (every new file owned by treefmt's shellcheck, shfmt or Biome, or the `*.md` exclude), and `moon query projects` lists `plugin-claude-code`.
