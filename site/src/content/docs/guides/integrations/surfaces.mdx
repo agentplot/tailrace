@@ -22,6 +22,33 @@ store's, signer's or ecosystem's own words verbatim beside tailrace's
 (58, 59). Asking what tailrace holds reaches no store, no signer and no
 target, and writes nothing (60).
 
+## What status shows
+
+`tailrace status` answers in any checkout of a repository, on any
+machine, one that never published included: a fresh clone on a host
+with no bindings file is bound to the branch, or sluice where the
+repository is set up for it, and the git ref ledger, and nothing is
+written to bind it (118). It names the branch and the landed revision
+its policy was read at, and then, for each channel the policy declares
+(131), its component, the channel it is bound to where it is one, and
+the version it is at or that it is empty (31). Below each version is
+the chain of promotions that put it there, newest first: the version it
+moved from, who asked, when, and the claim (33). The channels are read
+from the ledger alone, so every machine asking one ledger is answered
+one version per channel; a chain the ledger could only answer as this
+host last fetched it says when, with the remote's own words (36, 61).
+
+Beside the channels are two parts of their own. The environments are
+answered unreadable, saying what each should run and runs is read from
+a target and no target is read yet, never as none behind (98). What
+this host published comes from its own record, absent on a machine that
+never published (61). A chain that cannot be read, a fork the ledger
+refuses and a channel never promoted are three answers, each carrying
+the ledger's own words, and one channel's answer leaves every other
+shown (58, 59). `tailrace status --json` prints the same answer as one
+document, and asking writes nothing and reaches no store, signer or
+target (60).
+
 ## Members
 
 | surface | what it is | status |
