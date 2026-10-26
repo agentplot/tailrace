@@ -113,6 +113,7 @@ impl Host {
             seams: self.fakes.seams(),
             store: store(),
             signer: Some(SignerId::new("host")),
+            trust: Vec::new(),
         }
     }
 
