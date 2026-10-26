@@ -404,3 +404,29 @@ fn the_pins_of_a_checkout_are_absent_naming_the_lockfile() {
     }
     assert_eq!(files(&rig.checkout), [], "a file was written");
 }
+
+#[test]
+fn what_an_artifact_requires_and_which_versions_satisfy_a_range_are_none() {
+    let rig = Rig::new();
+    rig.left(B7E1, b"archive");
+    let store = FakeStore::new();
+    let projection = MoonCache::new(&rig.checkout, Box::new(store.clone()));
+    let held = Artifact {
+        digest: Digest::of(b"archive"),
+        meta: ArtifactMeta::new(
+            Ecosystem::new(ECOSYSTEM),
+            EcosystemName::new("site"),
+            Version::new("1.0.0"),
+        )
+        .unwrap(),
+    };
+    let before = files(&rig.checkout);
+    assert_eq!(projection.requires(&held), Ok(vec![]));
+    let versions = [Version::new("1.0.0"), Version::new("1.10.0")];
+    assert_eq!(
+        projection.satisfying(&Range::new("^1"), &versions),
+        Ok(vec![])
+    );
+    assert_eq!(store.calls(), [], "the store was read");
+    assert_eq!(files(&rig.checkout), before, "the checkout was written");
+}

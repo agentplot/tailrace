@@ -10,9 +10,10 @@ use tailrace_core::cache::Written;
 use tailrace_core::{answer_json, cache_name, sync, write, Filled, SyncAsk, Synced, BOUND};
 use tailrace_fakes::{Call, FakeSigner, Fakes, Fault, LandingOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
-    Answer, ArtifactMeta, Branch, BuildId, Check, Claim, ClaimKind, Contents, Digest, Ecosystem,
-    EcosystemName, Held, Layout, Name, Not, Outcome, Output, OutputName, Packed, Pinned,
-    Projection, Rendered, Revision, Seam, Serving, Signer, SignerId, Store, Verdict, Version, Why,
+    Answer, Artifact, ArtifactMeta, Branch, BuildId, Check, Claim, ClaimKind, Contents, Digest,
+    Ecosystem, EcosystemName, Held, Layout, Name, Not, Outcome, Output, OutputName, Packed, Pinned,
+    Projection, Range, Rendered, Requirement, Revision, Seam, Serving, Signer, SignerId, Store,
+    Verdict, Version, Why,
 };
 
 fn site() -> Output {
@@ -135,6 +136,14 @@ impl Projection for Offering {
 
     fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
         unreachable!("a write reads no lockfile")
+    }
+
+    fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
+        Ok(Vec::new())
+    }
+
+    fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
+        Ok(Vec::new())
     }
 }
 

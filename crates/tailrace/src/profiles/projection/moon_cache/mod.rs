@@ -21,15 +21,17 @@
 //! before any remote. Moon's cache has no lockfile: pinned answers
 //! absent naming the lockfile for every checkout and reads nothing, and
 //! sync fills the cache from the landing's verdicts, never from a pin
-//! (137).
+//! (137). Nor has it a manifest: requires and satisfying answer none, an
+//! empty list, and reach neither the store nor the checkout (140).
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_lockfile, Answer, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not, Output,
-    Packed, Pinned, Projection, Rendered, Seam, Serving, Source, Store, Version, Why,
+    no_lockfile, Answer, Artifact, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not,
+    Output, Packed, Pinned, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Store,
+    Version, Why,
 };
 
 /// The ecosystem this projection packs in, as the bindings bind it.
@@ -212,6 +214,18 @@ impl Projection for MoonCache {
     /// never from a pin.
     fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
         Err(no_lockfile(&MoonCache::source()))
+    }
+
+    /// 140: none for every artifact, since moon's cache has no manifest;
+    /// it reaches neither the store nor the checkout.
+    fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
+        Ok(Vec::new())
+    }
+
+    /// 140: none for any range and any versions, since moon's cache has
+    /// no manifest to require a range.
+    fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
+        Ok(Vec::new())
     }
 }
 

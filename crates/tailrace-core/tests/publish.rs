@@ -16,8 +16,8 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Answer, Artifact, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest,
     EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Layout, Manifest, Name, NamedSigner,
-    Not, Outcome, Output, Packed, Pinned, Projection, Put, Rendered, Required, RequiredClaim, Seam,
-    Serving, SignerId, Source, Store, Version, Why,
+    Not, Outcome, Output, Packed, Pinned, Projection, Put, Range, Rendered, Required,
+    RequiredClaim, Requirement, Seam, Serving, SignerId, Source, Store, Version, Why,
 };
 use world::{
     build_of, build_ops, by_host, eco, output, published_before_notes, version_of, Watched, World,
@@ -503,6 +503,12 @@ impl Projection for Metaless {
     }
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
         self.0.pinned(checkout)
+    }
+    fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
+        Ok(Vec::new())
+    }
+    fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
+        Ok(Vec::new())
     }
 }
 

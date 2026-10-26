@@ -1,17 +1,21 @@
 //! The fake projection (B.6): its ecosystem, the name each output takes,
 //! whether it packs cache entries, the build identities it holds no
-//! archive for, and the pins of each checkout's lockfile. A pack is the
+//! archive for, the pins of each checkout's lockfile, and what the
+//! manifest of each artifact, by digest, requires. A pack is the
 //! canonical JSON of what it was given, read from no disk; a render
 //! writes nothing and keeps the place and the artifacts it was given;
-//! pinned reads no checkout (design D7).
+//! pinned reads no checkout and requires no bytes. satisfying keeps the
+//! versions a range matches and orders them newest first by Semantic
+//! Versioning, so a test can list versions out of order and get the
+//! newest that fits (140, 23; design D7).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::json;
 use tailrace_seams::{
     canonical, no_cache_entries, no_lockfile, Answer, Artifact, ArtifactMeta, BuildId, Contents,
-    Ecosystem, EcosystemName, Holds, Layout, Not, Output, OutputName, Packed, Pinned, Projection,
-    Rendered, Seam, Serving, Version, Why,
+    Digest, Ecosystem, EcosystemName, Holds, Layout, Not, Output, OutputName, Packed, Pinned,
+    Projection, Range, Rendered, Requirement, Seam, Serving, Version, Why,
 };
 
 use crate::Fake;
@@ -23,12 +27,15 @@ pub enum ProjectionOp {
     Render,
     Serve,
     Pinned,
+    Requires,
+    Satisfying,
 }
 
 /// The projection's ecosystem, the names outputs take in it, whether its
 /// packing is the same twice, whether it packs cache entries, the build
 /// identities it holds no archive for, the pins of each checkout holding
-/// a lockfile, and each render of artifacts.
+/// a lockfile, what each artifact's manifest requires, by its digest, and
+/// each render of artifacts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectionState {
     ecosystem: Ecosystem,
@@ -38,6 +45,7 @@ pub struct ProjectionState {
     no_archive: BTreeSet<BuildId>,
     packs: u64,
     lockfiles: BTreeMap<String, Vec<Pinned>>,
+    manifests: BTreeMap<Digest, Vec<Requirement>>,
     renders: Vec<(String, Vec<Artifact>)>,
 }
 
@@ -59,6 +67,7 @@ impl FakeProjection {
                 no_archive: BTreeSet::new(),
                 packs: 0,
                 lockfiles: BTreeMap::new(),
+                manifests: BTreeMap::new(),
                 renders: Vec::new(),
             },
         )
@@ -100,6 +109,15 @@ impl FakeProjection {
         self.state()
             .lockfiles
             .insert(checkout.to_string(), pins.to_vec());
+    }
+
+    /// 140: the manifest of the artifact at `digest` requires
+    /// `requirements`, answered in the order given; every other
+    /// artifact's manifest is one the fake cannot find.
+    pub fn manifest(&self, digest: &Digest, requirements: &[Requirement]) {
+        self.state()
+            .manifests
+            .insert(digest.clone(), requirements.to_vec());
     }
 
     /// 85: each render of artifacts answered, in order: the place it was
@@ -214,6 +232,46 @@ impl Projection for FakeProjection {
                     .get(checkout)
                     .cloned()
                     .ok_or_else(|| no_lockfile(source))
+            },
+        )
+    }
+
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        let given = json!({ "held": held });
+        let manifest = format!(
+            "the manifest of {}@{}",
+            held.meta.name(),
+            held.meta.version()
+        );
+        self.ask(
+            ProjectionOp::Requires,
+            given,
+            manifest.clone(),
+            |s, source| {
+                s.manifests
+                    .get(&held.digest)
+                    .cloned()
+                    .ok_or_else(|| Not::absent(source, manifest))
+            },
+        )
+    }
+
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        let given = json!({ "range": range, "versions": versions });
+        self.ask(
+            ProjectionOp::Satisfying,
+            given,
+            format!("the versions satisfying {range}"),
+            |_, source| {
+                let req = semver::VersionReq::parse(range.as_str())
+                    .map_err(|e| Not::refused(source, Why::Said, Some(e.to_string())))?;
+                let mut kept: Vec<(semver::Version, &Version)> = versions
+                    .iter()
+                    .filter_map(|v| semver::Version::parse(v.as_str()).ok().map(|p| (p, v)))
+                    .filter(|(p, _)| req.matches(p))
+                    .collect();
+                kept.sort_by(|(a, _), (b, _)| b.cmp_precedence(a));
+                Ok(kept.into_iter().map(|(_, v)| v.clone()).collect())
             },
         )
     }
@@ -428,6 +486,89 @@ mod tests {
         assert_eq!(projection.pinned("/work/empty").unwrap(), []);
     }
 
+    fn requirement(name: &str, range: &str) -> Requirement {
+        Requirement {
+            name: EcosystemName::new(name),
+            range: Range::new(range),
+        }
+    }
+
+    fn held(version: &str) -> Artifact {
+        Artifact {
+            digest: Digest::of(version.as_bytes()),
+            meta: ArtifactMeta::new(
+                Ecosystem::new("eco"),
+                EcosystemName::new("site"),
+                Version::new(version),
+            )
+            .unwrap(),
+        }
+    }
+
+    fn versions(spelled: &[&str]) -> Vec<Version> {
+        spelled.iter().map(|v| Version::new(*v)).collect()
+    }
+
+    #[test]
+    fn requirements_set_for_an_artifact_are_answered_in_the_order_set() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let requirements = [
+            requirement("@scope/lib", "^1.2.0"),
+            requirement("left-pad", ">=1.2.0-rc.1 <2"),
+        ];
+        projection.manifest(&held("1.0.0").digest, &requirements);
+        assert_eq!(projection.requires(&held("1.0.0")).unwrap(), requirements);
+        match projection.requires(&held("1.1.0")) {
+            Err(Not::Absent(a)) => {
+                assert_eq!(a.source.seam, Seam::Projection);
+                assert_eq!(a.what, "the manifest of site@1.1.0");
+            }
+            other => panic!("an artifact given no manifest answered {other:?}"),
+        }
+        projection.manifest(&held("1.2.0").digest, &[]);
+        assert_eq!(projection.requires(&held("1.2.0")).unwrap(), []);
+    }
+
+    #[test]
+    fn versions_that_satisfy_a_range_are_answered_newest_first() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let given = versions(&["1.9.0", "2.0.0", "1.10.0", "1.2.0", "1.1.9"]);
+        assert_eq!(
+            projection.satisfying(&Range::new("^1.2"), &given).unwrap(),
+            versions(&["1.10.0", "1.9.0", "1.2.0"])
+        );
+        assert_eq!(
+            projection.satisfying(&Range::new("^3"), &given).unwrap(),
+            []
+        );
+    }
+
+    #[test]
+    fn a_range_it_cannot_read_is_refused_in_the_parsers_words() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let words = semver::VersionReq::parse("not a range")
+            .unwrap_err()
+            .to_string();
+        match projection.satisfying(&Range::new("not a range"), &versions(&["1.0.0"])) {
+            Err(Not::Refused(r)) => {
+                assert_eq!(r.source.seam, Seam::Projection);
+                assert_eq!(r.why, Why::Said);
+                assert_eq!(r.said, Some(words));
+            }
+            other => panic!("an unreadable range answered {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_version_it_cannot_read_satisfies_no_range() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let given = versions(&["1.2", "1.3.0", "latest", "1.2.5"]);
+        assert_eq!(
+            projection.satisfying(&Range::new("^1.2"), &given).unwrap(),
+            versions(&["1.3.0", "1.2.5"])
+        );
+    }
+
     #[test]
     fn a_render_of_artifacts_keeps_the_place_and_the_artifacts_given() {
         let projection = FakeProjection::new(Ecosystem::new("eco"));
@@ -472,13 +613,20 @@ mod tests {
             ProjectionOp::Render,
             ProjectionOp::Serve,
             ProjectionOp::Pinned,
+            ProjectionOp::Requires,
+            ProjectionOp::Satisfying,
         ] {
             projection.fault(op, Fault::Refused("no".into()), Times::Once);
         }
+        projection.manifest(&held("1.0.0").digest, &[requirement("lib", "^1")]);
         assert!(projection.pack(&output(), &b7e1(), None).is_err());
         assert!(projection.render(Contents::Artifacts(&[]), "at").is_err());
         assert!(projection.serve(&Layout { at: "at".into() }).is_err());
         assert!(projection.pinned("checkout").is_err());
+        assert!(projection.requires(&held("1.0.0")).is_err());
+        assert!(projection
+            .satisfying(&Range::new("^1"), &versions(&["1.0.0"]))
+            .is_err());
         assert_eq!(projection.renders(), [], "a faulted render was kept");
         let calls = projection.calls();
         assert_eq!(
@@ -487,7 +635,9 @@ mod tests {
                 ProjectionOp::Pack,
                 ProjectionOp::Render,
                 ProjectionOp::Serve,
-                ProjectionOp::Pinned
+                ProjectionOp::Pinned,
+                ProjectionOp::Requires,
+                ProjectionOp::Satisfying
             ]
         );
         assert_eq!(calls[0].given["build"], "b7e1");
@@ -495,5 +645,8 @@ mod tests {
         assert_eq!(calls[1].given["contents"]["artifacts"], json!([]));
         assert_eq!(calls[1].given["at"], "at");
         assert_eq!(calls[3].given["checkout"], "checkout");
+        assert_eq!(calls[4].given["held"], json!(held("1.0.0")));
+        assert_eq!(calls[5].given["range"], "^1");
+        assert_eq!(calls[5].given["versions"], json!(["1.0.0"]));
     }
 }

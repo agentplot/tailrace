@@ -5,15 +5,15 @@ tasks it names, all of which `check-fast` runs.
 
 ## 1. The seam and every implementation
 
-- [ ] 1.1 In `crates/tailrace-seams/src/projection.rs`, make these changes and export the new items from `lib.rs`:
+- [x] 1.1 In `crates/tailrace-seams/src/projection.rs`, make these changes and export the new items from `lib.rs`:
   - add the `Range` text type and `Requirement { name: EcosystemName, range: Range }`, deriving what `Pinned` derives;
   - add `Projection::requires(&self, held: &Artifact) -> Answer<Vec<Requirement>>` and `Projection::satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>>`, each with a doc comment citing 140, saying an ecosystem with no manifest answers none (an empty list, never absent), and saying satisfying answers newest first by the ecosystem's own ordering (23; design D1 to D4);
   - change the module doc and the seam table in `lib.rs` to cite 140.
 
   Test: a requirement naming `@scope/pkg` with `>=1.2.0-rc.1 <2` round-trips through JSON as spelled. Verify with `moon run seams:test`.
-- [ ] 1.2 In `Nowhere` in `crates/tailrace-seams/src/lib.rs`, answer both operations with `nothing(Seam::Projection, "requires")` and `"satisfying"` (design D7). Verify with `moon run seams:test`.
-- [ ] 1.3 In the file, image and moon cache projections under `crates/tailrace/src/profiles/projection/`, answer both operations with `Ok(Vec::new())`, reading nothing. Each gets a doc comment saying its ecosystem has no manifest (140), each module's top doc comment gets a sentence saying so, and each module gets a unit test that both answers are empty (the file-, image- and moon-cache-projection specs; design D3). Verify with `moon run cli:test`.
-- [ ] 1.4 In `crates/tailrace-fakes/src/projection.rs` (seam-fakes spec; design D5), first add `semver.workspace = true` to `crates/tailrace-fakes/Cargo.toml`. Then:
+- [x] 1.2 In `Nowhere` in `crates/tailrace-seams/src/lib.rs`, answer both operations with `nothing(Seam::Projection, "requires")` and `"satisfying"` (design D7). Verify with `moon run seams:test`.
+- [x] 1.3 In the file, image and moon cache projections under `crates/tailrace/src/profiles/projection/`, answer both operations with `Ok(Vec::new())`, reading nothing. Each gets a doc comment saying its ecosystem has no manifest (140), each module's top doc comment gets a sentence saying so, and each module gets a unit test that both answers are empty (the file-, image- and moon-cache-projection specs; design D3). Verify with `moon run cli:test`.
+- [x] 1.4 In `crates/tailrace-fakes/src/projection.rs` (seam-fakes spec; design D5), first add `semver.workspace = true` to `crates/tailrace-fakes/Cargo.toml`. Then:
   - add `manifests` to the state, with `FakeProjection::manifest(&Digest, &[Requirement])`;
   - add `ProjectionOp::Requires` and `ProjectionOp::Satisfying`;
   - requires answers what was set for the digest, else absent naming `the manifest of <name>@<version>`;
@@ -28,7 +28,7 @@ tasks it names, all of which `check-fast` runs.
   - both ops added to `every_operation_can_be_faulted_and_is_recorded`, with their `given` asserted.
 
   Verify with `moon run fakes:test`.
-- [ ] 1.5 Give the test projections both operations (design D7):
+- [x] 1.5 Give the test projections both operations (design D7):
   - pass through to the inner fake in `Watched` in `crates/tailrace-core/tests/world/mod.rs` and in `crates/tailrace-conformance/src/world.rs`;
   - answer none in `Offering` (`crates/tailrace-core/tests/cache.rs`), `Metaless` (`crates/tailrace-core/tests/publish.rs`) and `Carrying` (`crates/tailrace-conformance/src/core/cache.rs`).
 

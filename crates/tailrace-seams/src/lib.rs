@@ -9,7 +9,7 @@
 //! | the landing | [`Landing`] | B.3, 77, 78 |
 //! | the signer | [`Signer`] | B.4, 79 to 81 |
 //! | the policy | [`Policy`] | B.5, 82, 83 |
-//! | a projection | [`Projection`] | B.6, 84 to 87, 137 |
+//! | a projection | [`Projection`] | B.6, 84 to 87, 137, 140 |
 //! | a target | [`Target`] | B.7, 88 to 91 |
 //! | the ledger | [`Keeper`] | B.8, 120 to 122 |
 //!
@@ -176,6 +176,12 @@ mod tests {
         fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
             nothing(Seam::Projection, "pinned")
         }
+        fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
+            nothing(Seam::Projection, "requires")
+        }
+        fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
+            nothing(Seam::Projection, "satisfying")
+        }
     }
 
     impl Target for Nowhere {
@@ -279,12 +285,17 @@ mod tests {
             asked(projection.render(
                 Contents::Artifacts(&[Artifact {
                     digest: d.clone(),
-                    meta,
+                    meta: meta.clone(),
                 }]),
                 "at",
             )),
             asked(projection.serve(&Layout { at: "at".into() })),
             asked(projection.pinned("checkout")),
+            asked(projection.requires(&Artifact {
+                digest: d.clone(),
+                meta,
+            })),
+            asked(projection.satisfying(&Range::new("^1"), &[Version::new("1.0.0")])),
             asked(target.desired(&environment)),
             asked(target.current(&environment)),
             asked(target.apply(
@@ -320,7 +331,14 @@ mod tests {
         assert_eq!(named(Seam::Policy), ["policy-for"]);
         assert_eq!(
             named(Seam::Projection),
-            ["pack", "render", "serve", "pinned"]
+            [
+                "pack",
+                "render",
+                "serve",
+                "pinned",
+                "requires",
+                "satisfying"
+            ]
         );
         assert_eq!(
             named(Seam::Target),
