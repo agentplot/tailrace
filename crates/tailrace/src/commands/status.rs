@@ -1,5 +1,6 @@
 //! `tailrace status`: the versions this host published, from its own
-//! record alone; it needs no seam and writes nothing (60, 61, rule
+//! record alone, each with its notes rendered from the repository's own
+//! history; it needs no seam and writes nothing (60, 61, 134, rule
 //! core.32).
 
 use std::io::{self, Write};
@@ -44,7 +45,7 @@ fn ask(args: &StatusArgs, at: &Path) -> Answer<Status> {
             None => None,
         },
     };
-    status(&Kept::at(&history), &ask)
+    status(&history, &Kept::at(&history), &ask)
 }
 
 fn text(out: &mut dyn Write, answer: &Answer<Status>) -> io::Result<()> {
@@ -54,12 +55,22 @@ fn text(out: &mut dyn Write, answer: &Answer<Status>) -> io::Result<()> {
     };
     for component in &status.components {
         writeln!(out, "{}", component.component)?;
-        for entry in &component.versions {
+        for shown in &component.versions {
+            let entry = &shown.entry;
             writeln!(
                 out,
                 "  {} ({}) from {} on {}: index {} in {}",
                 entry.version, entry.tag, entry.revision, entry.branch, entry.index, entry.store
             )?;
+            match &shown.notes {
+                Some(Ok(notes)) => {
+                    for line in notes.lines() {
+                        writeln!(out, "{}", format!("    {line}").trim_end())?;
+                    }
+                }
+                Some(Err(not)) => render::not(out, "    ", not)?,
+                None => {}
+            }
         }
     }
     Ok(())

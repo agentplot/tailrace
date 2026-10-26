@@ -746,6 +746,41 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
     assert_eq!(entry["index"], index.as_str());
 }
 
+// Requirement: Status shows each version's notes from git
+
+#[test]
+fn status_prints_the_notes_beneath_the_versions_line_and_carries_them_in_its_json() {
+    let host = Host::new();
+    let (code, published) = host.run(&["publish", "HEAD", "--json"]);
+    assert_eq!(code, 0, "{published}");
+    let published: Value = serde_json::from_str(&published).unwrap();
+    let carried = published["value"]["components"][0]["value"]["notes"]["text"]
+        .as_str()
+        .expect("the notes' text")
+        .to_string();
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| l.starts_with("  0.1.0 (v0.1.0) from "))
+        .expect(&printed);
+    let shown: Vec<String> = carried
+        .lines()
+        .map(|l| format!("    {l}").trim_end().to_string())
+        .collect();
+    assert_eq!(lines[at + 1..], shown, "{printed}");
+
+    let (code, json) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let version = &json["value"]["components"][0]["versions"][0];
+    assert_eq!(version["version"], "0.1.0");
+    assert_eq!(version["notes"]["answer"], "ok");
+    assert_eq!(version["notes"]["value"], carried.as_str());
+}
+
 // Requirement: An unbound host answers absent
 
 #[test]

@@ -87,7 +87,10 @@ fn record(world: &FakeWorld) -> Vec<(PathBuf, Vec<u8>)> {
 }
 
 fn status_of(world: &FakeWorld) -> Status {
-    ok(status(&world.kept(), &StatusAsk::default()), "status")
+    ok(
+        status(&world.history(), &world.kept(), &StatusAsk::default()),
+        "status",
+    )
 }
 
 /// The record's file of `tag`, of `component`.

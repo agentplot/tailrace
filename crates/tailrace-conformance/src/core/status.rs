@@ -54,13 +54,17 @@ fn status_after_a_publish(world: &FakeWorld) {
     let record = world.record();
     assert!(!record.is_empty(), "the publish recorded nothing");
 
-    let answer = ok(status(&world.kept(), &StatusAsk::default()), "status");
+    let answer = ok(
+        status(&world.history(), &world.kept(), &StatusAsk::default()),
+        "status",
+    );
     assert_eq!(answer.components.len(), 1, "{answer:?}");
     let versions = &answer.components[0];
     assert_eq!(versions.component, ComponentName::new(COMPONENT));
+    let entries: Vec<&Entry> = versions.versions.iter().map(|s| &s.entry).collect();
     assert_eq!(
-        versions.versions,
-        [Entry {
+        entries,
+        [&Entry {
             component: ComponentName::new(COMPONENT),
             version: tailrace_seams::Version::new(VERSION),
             tag: TAG.into(),
@@ -126,7 +130,7 @@ fn the_record_read_with_a_file_reader(world: &FakeWorld) {
 
 fn nothing_kept_and_an_entry_that_cannot_be_read(world: &FakeWorld) {
     let kept = world.kept();
-    match status(&kept, &StatusAsk::default()) {
+    match status(&world.history(), &kept, &StatusAsk::default()) {
         Err(Not::Absent(a)) => assert_eq!(
             a.source,
             Source::host(kept.dir()),
@@ -139,7 +143,7 @@ fn nothing_kept_and_an_entry_that_cannot_be_read(world: &FakeWorld) {
     let bad = kept.dir().join(COMPONENT).join("v9.0.0.json");
     fs::create_dir_all(bad.parent().expect("under the record")).expect("the record is writable");
     fs::write(&bad, "{\"component\": \"repository\", \"version\": 9").expect("writable");
-    match status(&kept, &StatusAsk::default()) {
+    match status(&world.history(), &kept, &StatusAsk::default()) {
         Err(Not::Unreadable(u)) => {
             assert_eq!(u.what, bad.display().to_string(), "{u:?}");
             assert_eq!(u.source, Source::host(kept.dir()));
