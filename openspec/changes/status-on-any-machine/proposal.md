@@ -9,10 +9,12 @@ from its own record, so a second machine sees nothing, and no channel
 appears anywhere. With the ledger and the policy seam's list of channels
 built ahead of this unit, status can now read each channel from the
 ledger and every channel the policy declares, and the host's one serving
-process can show the same answer as a page
+process can show the same answer as a page: every repository the host
+knows on one page, one row each, and each repository whole on a page of
+its own
 (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4,
 status across machines; 31, 36, 56 to 63, 114, 118, 131, 132, S10 to
-S12, as amended at `agentplot/blueprints` 85bbf54).
+S12, as amended at `agentplot/blueprints` 85bbf54 and 157c828).
 
 ## What Changes
 
@@ -47,13 +49,29 @@ S12, as amended at `agentplot/blueprints` 85bbf54).
   repository is set up for it, and the git ref ledger, so status shows
   the channels with nothing written. Status needs no store or signer,
   so it binds neither.
+- **Status names what it cannot yet read of the environments.** The
+  answer has a third part beside the channels and the record: the
+  environments, answered unreadable, saying what each environment should
+  run and runs is read from a target and no target is read yet, never
+  empty and never counted as running what it should (58, 98). Phase 2's
+  first target fills it; every surface already shows it.
 - **`tailrace serve` is the host's one serving process.** It answers at
-  `127.0.0.1:7420`, a constant of the core no setting moves (114), with
-  the repository in the path as the owner and name its landing's remote
-  gives it: `/<owner>/<name>/status` is the page, rendered on each
-  request from the same answer `tailrace status` gives, and
-  `/<owner>/<name>/status.json` is that answer itself (57, 132). It
-  writes nothing on a request.
+  `127.0.0.1:7420`, a constant of the core no setting moves (114), and
+  writes nothing on a request. Each page is rendered on each request
+  from the core's answer, with the same answer as JSON beside it, and no
+  timer renders one (57, 132):
+  - `/` shows every repository the host knows together, one row each:
+    every channel's head version, and how many of its environments run
+    what they should, are behind, wait on a person or cannot be read;
+    `/status.json` is that answer.
+  - `/<owner>/<name>/` shows that repository whole, its channels, their
+    chains, its environments and what this host published, the owner
+    and name being those its landing's remote gives it;
+    `/<owner>/<name>/status.json` is the same answer `tailrace status
+    --json` prints in its checkout.
+  - `/serving.json` names the process, its revision and its id, so an
+    asker tells it from anything else on the port without asking every
+    repository.
 - **The first asker that finds none starts it, and the lock keeps it
   one.** `tailrace status --page` names the checkout's repository to
   the host, finds the serving process or starts one when none answers,
@@ -61,29 +79,33 @@ S12, as amended at `agentplot/blueprints` 85bbf54).
   for as long as it runs, so a second exits saying the first answers,
   and it ends when nothing has asked for ten minutes. A host may also
   run it as a service of its own; nothing tells a person to start one
-  (114, as sluice's one reader per host is, sluice 129).
+  (114, as sluice's one reader per host is, sluice 129). The address it
+  prints is the repository's own page.
 - **The process answers only repositories a checkout named.** The
   repositories named live in one file of the host,
   `~/.local/state/tailrace/repositories`, owner and name with the
   checkout's path, read on each request; one no checkout named answers
-  absent saying so (132).
+  absent saying so, and the root page shows every one it names, a row
+  whose checkout is gone showing that, beside the others (132).
 - **Environments and notes wait, and the register says so.** What each
   environment should run, runs and waits on is phase 2's first target:
   98 moves to its block, and the register gains a way to name the part
-  of a clause this unit cites that still waits: 132's environments, for
-  the first target, and its notes, for the notes unit (ruling 4). 114
+  of a clause this unit cites that still waits: 132's environments and
+  the four counts of each row, for the first target, and its notes, for
+  the notes unit (ruling 4). 114
   stays registered for bolt 5's first served projection, whose served
   layout the suite will cite it with; this unit proves the process in
   the command line's own tests.
 - **ADR 0018** records the serving process: its address, its paths, the
-  lock, the file of named repositories, how an asker starts it and when
-  it ends.
+  root and each repository's page, the lock, the file of named
+  repositories, how an asker starts it and when it ends.
 
 Out of scope, and what each waits on:
 
 - What each environment should run, runs and waits on, on the command
-  line and on the page (98, 132, the environment half of S11): phase
-  2's first target. No target is asked.
+  line and on the pages, and the four counts of each row on the root
+  page (98, 132, the environment half of S11): phase 2's first target.
+  No target is asked, and the policy seam lists no environment yet.
 - Each version's notes on the page (132): the notes unit, which the
   user has not yet said yes to.
 - The rest of 118's bindings for a host with no file, a layout under
@@ -96,6 +118,11 @@ Out of scope, and what each waits on:
   layout half of S10): bolt 5's render under a policy.
 - The herdr pane and the Claude Code plugin reading the page: bolt 5's
   plugin and phase 2.
+- A channel named by its component and its name together, in the
+  ledger's refs and the store's names (125, C.13, C.14 as amended at
+  7749369): not this unit; status asks the ledger by the channel the
+  policy seam answers, and shows its component beside it. The planner
+  places it.
 - How each channel moves, in the policy seam's answer (131 as widened
   at 67f95da): `the-policy-seam-lists-the-channels`, as amended by the
   plan's proposal 92. This unit shows what that answer carries.
@@ -107,11 +134,13 @@ Out of scope, and what each waits on:
 - `channel-status`: every channel a repository's policy declares, at
   its version or empty, with the chain that put it there, read from the
   ledger on any machine, the same for every reader as of when it read,
-  each channel's absent, refused and unreadable kept apart.
-- `serving-process`: the host's one process at a fixed address with the
-  repository in the path, started by the first asker that finds none
-  and kept one by a lock, answering the status page and its JSON from
-  the one core for the repositories a checkout named.
+  each channel's absent, refused and unreadable kept apart; the
+  environments' part; one repository's row of heads and counts.
+- `serving-process`: the host's one process at a fixed address,
+  started by the first asker that finds none and kept one by a lock,
+  answering from the one core every repository a checkout named
+  together at its root and each whole at its own path, each as a page
+  and as JSON.
 
 ### Modified Capabilities
 
@@ -124,21 +153,22 @@ Out of scope, and what each waits on:
 - `host-bindings`: status is bound with no bindings file, and with one,
   needs no store, signer or ledger to answer.
 - `conformance-suite`: the status group holds channels across machines,
-  S10 and S12 for them; the surfaces group holds the page beside the
+  S10 and S12 for them, and the environments not yet read; the surfaces group holds the page beside the
   command line, the channels' answer among the questions.
-- `clause-coverage`: the suite's clauses run to 132, read at 85bbf54,
+- `clause-coverage`: the suite's clauses run to 132, read at 157c828,
   and the register names the part of a cited clause that waits.
 
 ## Impact
 
-- `crates/tailrace-core`: `status.rs` gains the channels and the whole
-  status answer; `served.rs` (new) holds the address and the
+- `crates/tailrace-core`: `status.rs` gains the channels, the
+  environments' part, the whole status answer and a repository's row; `served.rs` (new) holds the address and the
   repository's name from a remote's address; `history.rs` reads a
   remote's address; `lib.rs`'s exports.
 - `crates/tailrace`: `commands/status.rs`, `commands/serve/` (new: the
   process, the page, the host's lock and file of repositories),
   `commands/mod.rs`, `lib.rs`, `main.rs`, `render.rs` (a time rendered
-  in UTC), `bindings/` for status's binding.
+  in UTC), `bindings/` for status's binding, and the landing and ledger
+  profiles' `mod.rs` for the binding of a host with no file.
 - `crates/tailrace-conformance`: the status and surfaces groups below
   their markers, the register and its parts, the coverage check, the
   statement's list.
@@ -168,6 +198,8 @@ crates/tailrace/src/main.rs
 crates/tailrace/src/render.rs
 crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
+crates/tailrace/src/profiles/landing/mod.rs
+crates/tailrace/src/profiles/ledger/mod.rs
 crates/tailrace/tests/cli.rs
 crates/tailrace/tests/conformance.rs
 crates/tailrace/tests/status_across_machines.rs

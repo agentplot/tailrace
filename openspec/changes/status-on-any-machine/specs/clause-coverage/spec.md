@@ -10,7 +10,7 @@ adopts it.
 #### Scenario: The clauses listed
 
 - **WHEN** the suite's list of clauses is read
-- **THEN** it holds every number from 1 to 132 exactly once, each under its section of Part A or Part B as agentplot/blueprints 85bbf54 places it, 132 after 60 in A.10, and names that revision as the one it was read at
+- **THEN** it holds every number from 1 to 132 exactly once, each under its section of Part A or Part B as agentplot/blueprints 157c828 places it, 132 after 60 in A.10, and names that revision as the one it was read at
 
 ## ADDED Requirements
 
@@ -37,4 +37,4 @@ naming a part with no unit or no reason (core.33, section 12).
 #### Scenario: The parts this unit leaves
 
 - **WHEN** the register is read as this unit leaves it
-- **THEN** it names as parts 132's environments, for the first target, and 132's notes, for the notes unit; 36 leaves the clauses that wait, 98 waits on the first target, and 114 still waits on bolt 5's first served projection, whose served layout will cite it
+- **THEN** it names as parts 132's environments, with the four counts of each repository's row, for the first target, and 132's notes, for the notes unit; 36 leaves the clauses that wait, 98 waits on the first target, and 114 still waits on bolt 5's first served projection, whose served layout will cite it

@@ -38,7 +38,11 @@ ends when nothing has asked for a while, may be run as a host's own
 service, and no one is told to start one; a host with no bindings file
 is bound to the branch (or sluice), the git ref and the rest (118); the
 policy file gives `beta` and `stable` to every component (C.10), read
-through 131 like any channel.
+through 131 like any channel. 157c828, on the user's word that the herdr
+pane should see every repository as sluice's does, amends 132: the
+process answers every repository it knows together at its root path,
+one row each with every channel's head and four counts of its
+environments, and each repository alone at its own path with the whole.
 
 The workspace has no HTTP server crate, and the bolt's units add no
 dependency (phase-1-bolts.md, How the units stay apart). Rust 1.98
@@ -53,11 +57,14 @@ dependency (phase-1-bolts.md, How the units stay apart). Rust 1.98
 - Channels read on a machine that never published, each channel's
   answer its own.
 - One serving process per host, started by whoever first asks for the
-  page, with no service file and nothing to configure.
+  page, with no service file and nothing to configure, showing every
+  repository the host knows on one page and each on its own.
 
 **Non-Goals:**
 
-- Environments and versions' notes on the page (registered, D11).
+- What each environment should run and runs, and versions' notes
+  (registered, D11): the pages show the environments' part as D14
+  answers it.
 - 118's layout and host key for a host with no file: status needs
   neither, and publish keeps its absent answer.
 - A served layout: bolt 5 shares the address and the process.
@@ -82,6 +89,7 @@ pub struct Overview {
     pub branch: Branch,
     pub asked_at: u64,
     pub channels: Answer<Channels>,   // serialized through answer_json (57)
+    pub environments: Answer<EnvironmentCounts>, // serialized through answer_json; D14
     pub published: Answer<Status>,    // serialized through answer_json
 }
 
@@ -104,7 +112,7 @@ pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<C
 is named, and asks `ledger::channel` of each. A channel's ledger
 answer, absent, refused or unreadable, is that channel's `at`, never
 the whole answer's (58). `overview` always answers: each part carries
-its own `Answer`. Serde writes each inner answer with `answer_json`, as
+its own `Answer`, the environments' part as D14 gives it. Serde writes each inner answer with `answer_json`, as
 `Promoted::Moved.store` does, so one JSON form names the four answers
 at every depth.
 
@@ -165,6 +173,9 @@ lib
   stable   empty, moves by promotion, bound to beta
   edge     unreadable: the chain of edge in ledger bound could not be read
            fatal: unable to access 'https://…': Could not resolve host
+
+environments
+  unreadable: what each environment should run and runs is read from a target, and no target is read
 
 published from this host
   lib 0.3.0 (lib-v0.3.0) from 77b0e3d on main: index sha256:… in layout …
@@ -250,13 +261,16 @@ that wants the page; plain `status` writes nothing (60). D12 says why.
    (requests have no body), `GET` only, else 405; answer HTTP/1.1 with
    `Content-Length` and `Connection: close`.
 
-Routes:
+Routes; a repository's paths have two segments before their last, so
+a one-segment path is never a repository's:
 
 | path | answer |
 |---|---|
-| `/` | `{"serving": "tailrace", "revision": REVISION, "pid": <id>}` |
+| `/serving.json` | `{"serving": "tailrace", "revision": REVISION, "pid": <id>}`, asking no repository |
+| `/status.json` | `render::json` of the root's answer (D14) |
+| `/` | the root's page (D8) of the same answer |
 | `/<owner>/<name>/status.json` | `render::json` of the overview in the named checkout |
-| `/<owner>/<name>/status` | the page (D8) of the same overview |
+| `/<owner>/<name>/`, and without its last `/` | the repository's page (D8) of the same overview |
 | anything else | 404 |
 
 The repository's answer: `checkout_of` (D5), then `bindings::load(
@@ -291,13 +305,14 @@ environment and the `start` below:
    remote, absent naming the landing's remote; an address with no owner
    and name, unreadable naming the remote and its address.
 2. `name(repository, checkout)` (D5).
-3. `find_or_start(address, start)`: `GET /` with a one-second timeout;
+3. `find_or_start(address, start)`: `GET /serving.json` with a one-second timeout;
    tailrace's document answers it. A connection refused runs `start`,
    then asks again every 100 ms for up to five seconds. Anything else
    answering is unreadable naming the address and what it answered. A
    process that has not answered in five seconds is unreadable naming
    the address and saying it was started and did not answer.
-4. The answer: `Ok("http://127.0.0.1:7420/<owner>/<name>/status")`.
+4. The answer: `Ok("http://127.0.0.1:7420/<owner>/<name>/")`, the
+   repository's own page; the root is one link away on it.
 
 `start` runs `std::env::current_exe()` with `serve`, `stdin`, `stdout`
 and `stderr` null, `process_group(0)` so the asker's terminal and its
@@ -309,15 +324,25 @@ lets one serve and the other exit 0 (D6), so both find one process.
 
 ### D8. The page
 
-`commands/serve/page.rs`: one HTML document, styles inline, no script,
-rendered from the `Overview` value and nothing else (core.31): the
-repository and branch, the landed revision and the moment asked; per
-component a table of its channels, each row the channel, how it moves,
-its binding, its version and index or "empty", or its refusal or
-unreadable answer with the source's words in a `<pre>` (59); below each
-channel its chain newest first; then the record's part. Every string is
-escaped (`&`, `<`, `>`, `"`, `'`). No environment row and no notes are
-shown (D11).
+`commands/serve/page.rs`: two pages, each one HTML document, styles
+inline, no script, each rendered from one core value and nothing else
+(core.31). Every string is escaped (`&`, `<`, `>`, `"`, `'`), and every
+refusal and unreadable answer is shown with the source's words in a
+`<pre>` (59). No notes are shown (D11).
+
+- **The root**, from `Repositories` (D14): the host's repositories in
+  one table, the moment asked above it, a row each: the repository,
+  linked to its own page; every channel's head as `component/channel
+  version`, `empty`, or that channel's answer; and the environments'
+  four counts, or the answer given in their place. A row's own answer
+  spans the row. No repository named is a sentence saying no checkout
+  on this host has named one, and how (`tailrace status --page`).
+- **A repository**, from `Overview`: a link to the root; the repository
+  and branch, the landed revision and the moment asked; per component a
+  table of its channels, each row the channel, how it moves, its
+  binding, its version and index or "empty", or its own answer; below
+  each channel its chain newest first; then the environments' part;
+  then the record's part.
 
 ### D9. The conformance groups
 
@@ -332,6 +357,7 @@ the fake signer before the scenario's asking begins:
 | a channel read as last read, the store unreachable | 36, 60, 61 | S10 |
 | one channel's answer beside another's | 58, 59, 105 | |
 | everything kept deleted, the channels the same | 63 | S12 |
+| the environments not yet read, a fake target bound | 58, 60 | |
 
 `world.rs` gains what they need: `promote_fake(channel, version)`, which
 appends a promotion of a published version to the fake keeper, and
@@ -345,7 +371,8 @@ marker, "the command line and the page answer the channels" (36, 56,
 `asked_at` of each checked between the moments before and after.
 `crates/tailrace/tests/conformance.rs` gains a second rig, the served
 page: it names the world's repository in a state directory of its own
-and answers through the process's request handling, without a socket;
+and answers `/<owner>/<name>/status.json` through the process's request
+handling, without a socket;
 asked `Publish` or `Verify`, which the page does not answer, it ends the
 scenario with the suite's `not_applicable`, naming the page as a reader.
 Each rig's `Question::Status` answers the record's part of its status
@@ -353,12 +380,14 @@ JSON, `["value"]["published"]`, which is the question's own doc ("status, of
 every version the host published") and keeps the scenario above the
 marker as it is.
 
-### D10. The statement at 85bbf54
+### D10. The statement at 157c828
 
-`statement.rs` reads `agentplot/blueprints 85bbf54`, and A.10 holds 132
+`statement.rs` reads `agentplot/blueprints 157c828`, and A.10 holds 132
 after 60, before 129, as the statement places it; its test asserts 1 to
 132 once each. Of the statement's text since 673d334, only 132 is a new
-number; 114, 118, 129, 131 and C.10 changed words, not numbers.
+number; 114, 118, 129, 131, 132 and C.10 changed words, not numbers.
+Main's later revisions, through 7749369, change words alone, and none
+is this unit's (125's channel by component and name is the ledger's).
 
 ### D11. The register and its parts
 
@@ -367,7 +396,7 @@ number; 114, 118, 129, 131 and C.10 changed words, not numbers.
 ```rust
 pub struct Part { pub clause: u16, pub part: &'static str, pub unit: &'static str, pub why: &'static str }
 pub const PARTS: &[Part] = &[
-    Part { clause: 132, part: "what every environment should run, runs and waits on", unit: TARGET, why: "the page shows environments once a target reports them, and phase 1 leaves every target to phase 2" },
+    Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: TARGET, why: "the pages show environments once a target reports them, and phase 1 leaves every target to phase 2" },
     Part { clause: 132, part: "each version's notes", unit: NOTES, why: "no version carries notes yet, and the notes unit waits on the user" },
 ];
 ```
@@ -399,14 +428,68 @@ unit; the plugins ask `--page`.
 ### D13. ADR 0018
 
 "The host's one serving process is started by the first asker that
-finds none and answers repositories a checkout named": D4 to D8 and
-D12, with ADR 0006 (serve only where a client reads no files) and the
-rulings of dbe7ca0 and 85bbf54 as its context; the std sockets and lock
+finds none and answers repositories a checkout named": D4 to D8, D12
+and D14, with ADR 0006 (serve only where a client reads no files) and
+the rulings of dbe7ca0, 85bbf54 and 157c828 as its context; the std sockets and lock
 over an HTTP crate as its first alternative; a service unit shipped as
 its second, rejected by 85bbf54. Proposed, for the user to accept with
 the change.
 
+### D14. The environments and the root
+
+The environments' part is one core function in `status.rs`,
+`environments(seams, ask) -> Answer<EnvironmentCounts>`, which in this
+unit answers unreadable, its source the target seam, naming the
+environments and saying what each environment should run and runs is
+read from a target and no target is read. It asks no target (60), and
+the policy seam lists no environment, so nothing is counted: a count
+of none would read as none behind (98). Phase 2's first target replaces
+the body, and its type grows the list each environment's row needs;
+the surfaces already render the part.
+
+```rust
+pub struct EnvironmentCounts { pub converged: usize, pub behind: usize, pub waiting: usize, pub unreadable: usize }
+
+pub struct Row {
+    pub repository: RepositoryName,
+    pub heads: Answer<Vec<Head>>,                // the channels' part's own answer where it has none
+    pub environments: Answer<EnvironmentCounts>, // as the overview answers it
+}
+pub struct Head { pub component: ComponentName, pub channel: ChannelName, pub at: Answer<HeadAt> }
+pub enum HeadAt { Empty, At { version: Version, index: Digest } }
+
+pub struct Repositories {
+    pub asked_at: u64,
+    pub repositories: Vec<Answer<Row>>,          // ordered by owner and name
+}
+
+pub fn row(repository: &RepositoryName, overview: &Overview) -> Row;
+```
+
+`row` reads the overview alone; a channel's absent, refused or
+unreadable chain is its head's `at`. The process makes `Repositories`
+(`commands/serve/host.rs` reads the host's file, D5): for each entry,
+the checkout's overview as D6 makes it, then `row`; an entry whose
+checkout is gone, or whose history cannot be opened, is that row's
+unreadable answer naming the path, an `Err` in the list beside the
+others. An absent file is an empty list; a file that does not parse is
+the root's unreadable answer, 500. Each request computes every row
+anew, in turn: no row is kept between requests and no timer renders
+one (132).
+
 ## Risks / Trade-offs
+
+- [The root asks every named repository's ledger on each request, a
+  fetch each for a git ref ledger with a remote] → the rows are asked
+  in turn, each fetch bounded as the ledger profile bounds it; a host
+  with many repositories waits on them. Keeping rows between requests
+  would be a timer's render by another name (132); bolt 5's pane can
+  ask less often.
+- [The environments' part is unreadable on every host until phase 2,
+  and the root's four counts with it] → it is the honest answer: no
+  seam lists an environment yet, and 98 forbids a guess. The gap, how
+  the core learns which environments a repository has, goes to the
+  design agent.
 
 - [A store ledger's chain is read from the store while C.14 lets
   asking read it there, and 60 and core.32 say asking reaches no
