@@ -147,11 +147,13 @@ fn no_policy_for_an_audience(rig: &dyn PolicyRig) {
         Required::Acceptance { claims: claims() },
     )]);
     // The policy's absence names the audience alone; the revision beside
-    // it is verify's to name (82).
+    // it is verify's to name (82). A channel, since a layout with no
+    // policy written has the given (C.10).
     absent(
-        rig.policy().policy_for(&at, &Audience::Layout),
+        rig.policy()
+            .policy_for(&at, &Audience::Channel(ChannelName::new("nightly"))),
         Seam::Policy,
-        "layout",
+        "nightly",
         "policy-for an audience with no policy",
     );
 }
