@@ -22,7 +22,7 @@
 
 use serde::{Deserialize, Serialize, Serializer};
 use tailrace_seams::{
-    Answer, Branch, ChannelName, ComponentName, DeclaredChannel, Digest, Not, Revision, Seam,
+    Answer, Branch, ChannelName, ComponentName, DeclaredChannel, Digest, Not, Read, Revision, Seam,
     Seams, Source, Version,
 };
 
@@ -106,10 +106,13 @@ pub struct Overview {
 }
 
 /// 131: the channels the policy declares at `revision`, the branch's
-/// landed head, in the policy seam's order.
+/// landed head, in the policy seam's order, and how the landing read the
+/// head as landed: from itself, or from the host's copy as last fetched
+/// (77; design D6).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Channels {
     pub revision: Revision,
+    pub landing: Read,
     pub channels: Vec<ChannelStatus>,
 }
 
@@ -147,14 +150,18 @@ fn record_ask(ask: &OverviewAsk) -> StatusAsk {
 /// 31, 101, 125, 131: every channel the policy at the branch's landed
 /// head declares, of `ask.component` where it names one, each with its
 /// chain as the ledger answers it. The head not landed is refused before
-/// the policy is read (65, 77). A channel's absent, refused or unreadable
-/// chain is that channel's answer, never the whole one's (58, 105).
+/// the policy is read (65, 77), and refused as not landed as last fetched
+/// where the landing read that from its copy; a head landed as last
+/// fetched is answered as one landed on the remote, saying so. A
+/// channel's absent, refused or unreadable chain is that channel's
+/// answer, never the whole one's (58, 105).
 pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<Channels> {
     let head = history.head(&ask.branch)?;
     let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &head)?;
     let declared = channels_at(seams.policy.as_ref(), &landed)?;
     Ok(Channels {
         revision: head,
+        landing: landed.read().clone(),
         channels: declared
             .into_iter()
             .filter(|c| {
