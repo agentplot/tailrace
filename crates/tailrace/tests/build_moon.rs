@@ -305,6 +305,43 @@ fn the_same_revision_ensured_again() {
 }
 
 #[test]
+fn an_archive_placed_in_the_bound_checkout_is_replayed() {
+    let rig = MoonRig::new();
+    let revision = rig.commit(
+        &[Task::new("web", "build", "site.txt", true, 0)],
+        &[("site", "web:build")],
+    );
+    // Another host's build of the task, its archive and the bytes it
+    // wrote; the bound repository has never run it.
+    let hash = moon_hash(&rig.second.path, "web:build");
+    let archive = format!("{hash}.tar.gz");
+    let written = fs::read(rig.second.path.join("web/dist/site.txt")).unwrap();
+    let outputs = rig.scratch.repo.path.join(".moon/cache/outputs");
+    fs::create_dir_all(&outputs).unwrap();
+    fs::copy(
+        rig.second.path.join(".moon/cache/outputs").join(&archive),
+        outputs.join(&archive),
+    )
+    .unwrap();
+
+    assert_eq!(rig.build.ensure(&revision, &[output("site")]), Ok(()));
+    let statuses: Vec<String> = rig.run_report(&revision)["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["label"] == "RunTask(web:build)")
+        .map(|a| a["status"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(statuses, ["cached"], "moon ran the task's command");
+    let site = rig.build.report(&revision, &output("site")).unwrap();
+    assert_eq!(site.build.as_str(), hash);
+    assert_eq!(
+        fs::read(rig.checkout(&revision).join("web/dist/site.txt")).unwrap(),
+        written
+    );
+}
+
+#[test]
 fn a_failed_tasks_report() {
     let rig = MoonRig::new();
     let revision = rig.commit(
