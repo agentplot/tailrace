@@ -22,9 +22,9 @@ no layout of it is rendered or recorded.
 
 ### Requirement: A range is held at the newest admitted version within it
 For a range pinned answers, sync SHALL list the name's versions in the
-store, keep those the projection answers are within the range, in its
-order, and judge each under the layout's policy, newest first, until one
-is admitted, and hold that one; none where the listing is empty or none
+store, keep those the projection answers satisfy the range, and judge
+each under the layout's policy, newest first by the projection's
+ordering, until one is admitted, and hold that one; none where the listing is empty or none
 within it is admitted (137, 138, 140, 23). Each version judged SHALL be
 answered as a pin is, held or refused naming the claim found wanting,
 and a refused one SHALL count against the sync only where its range
@@ -43,7 +43,8 @@ For every version a layout holds, sync SHALL ask the projection what it
 requires of the family and hold each range so answered by the same rule,
 level by level, until nothing held requires a range the layout does not
 meet; a range SHALL be met where the layout holds a version of its name
-the projection answers is within it (137, 140). Every version SHALL be
+the projection answers satisfies it (137, 140). Where the projection
+answers requires absent, the version SHALL require nothing. Every version SHALL be
 judged before anything is written, in a fixed order, so the same store
 under the same policy holds the same versions (48). The core SHALL never
 read a manifest itself (core.1).

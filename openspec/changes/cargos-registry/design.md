@@ -1,7 +1,7 @@
 ## Context
 
 The projection seam (B.6, `crates/tailrace-seams/src/projection.rs`) has
-pack, render, serve and pinned. Three units this change comes after
+pack, render, serve and pinned. Four units this change comes after
 shape what it implements:
 
 - **render under a policy** adds pinned (137) and the core's render in
@@ -54,12 +54,26 @@ shape what it implements:
   this change. It also holds a declared component's indexes and channels
   in a registry repository of the component's own, which this change
   reads nothing of: it reaches a version only by its artifact's name.
+- **the projection answers what an artifact requires** adds 140's one
+  question to the projection seam: given a held version's artifact, the
+  family's names and ranges its own manifest requires, as the manifest
+  spells them, and whether a version satisfies a range and which of two
+  versions is newer, by the ecosystem's own ordering (140, 23). Every
+  profile on the bolt answers it, the file, image and moon cache
+  projections with none, and the fake answers absent. It is not yet
+  constructed, so its exact types are its own: this change implements
+  the question as that unit lands it, for Cargo, and builds the core's
+  loop on it. Below, `requires` names what a held artifact requires,
+  `satisfies` whether a version satisfies a range, `newer` the order of
+  two versions, and `Ranged` the name and range `requires` answers, each
+  standing for whatever that unit calls it.
 
 Built here already: the profile, its binding with a store of its own,
 render writing a crate per version and an index file per name, the index
 line, the race check after pack, and the conformance rig.
 
-The statement, blueprints `4c14235`:
+The statement, blueprints `f90f5fd` (the clauses below unchanged since
+`4c14235`):
 
 - C.11's Cargo row: pack the crate file with `cargo package --no-verify`
   after the component's version is set on every crate of the component,
@@ -96,6 +110,12 @@ The statement, blueprints `4c14235`:
   resolves by that listing under the layout's policy; the planner settled
   that the listing is the store-naming unit's, the empty list for a name
   the store never held.
+- The planner's case for proposal 154, as the user approved it: the
+  question on the seam is a unit of its own landed before the units that
+  need it; the loop that lists, judges, holds and asks again until
+  nothing held requires a name the layout lacks is the core's, and this
+  change owns it with the closure; npm's projection answers the same
+  question from its own manifest in its own unit.
 - 99: a sparse-index client's refusal reaches it by omission from the
   listing, by the bytes' answer and by sync's words.
 
@@ -175,11 +195,11 @@ format, dependency resolution):
 **Goals:** pack, pinned, render and serve for Cargo on the seams the
 units above land, held to the whole projection group; a crate's
 siblings and its other components' crates told apart by the component's
-paths, and its siblings checked against the component's outputs; ranges
-and requires (140) carried by the seam, and the core's render closing a
-layout over them, each version listed by the store and judged by the
-core; a manifest's range and a crate's requirement resolved by
-Cargo's rules; a consumer with no lockfile proven to `cargo build`
+paths, and its siblings checked against the component's outputs; a
+checkout's ranges carried by pinned, Cargo's answer to what a crate
+requires and whether a version satisfies a range (140), and the core's
+render closing a layout over them, each version listed by the store and
+judged by the core; a consumer with no lockfile proven to `cargo build`
 against the host's serving process after `tailrace sync`, Cargo writing
 the lockfile, and `cargo build --locked` after a second sync.
 
@@ -187,8 +207,11 @@ the lockfile, and `cargo build --locked` after a second sync.
 its record's form (render under a policy); the process, its route and
 its lifetime (npm, rendered and served); making the
 `artifact/<ecosystem>/<name>@<version>` pointer and the store's listing
-(the store-naming unit); npm's ranges and what an npm version requires; a copy carrying
-those pointers; writing a checkout's cargo configuration.
+(the store-naming unit); the question on the seam, its fake and the
+answer of a projection with no manifest (the projection answers what an
+artifact requires); npm's ranges and what an npm version requires (npm,
+rendered and served); a copy carrying those pointers; writing a
+checkout's cargo configuration.
 
 ## Decisions
 
@@ -369,53 +392,34 @@ name or version, is refused naming the file and carrying the parser's
 words (58, 59). Pinned runs no cargo, since cargo may write the
 lockfile, and writes nothing.
 
-### D6. The seam carries ranges and what a version requires
+### D6. pinned carries a checkout's ranges
 
 `crates/tailrace-seams/src/projection.rs` gains:
 
 ```rust
-/// 137: a name a checkout's manifest, or a held version's, declares, by
-/// the range the manifest writes for it, as written; the core never
-/// reads the range.
-pub struct Ranged { pub name: EcosystemName, pub range: String }
-
 /// 137: what pinned answers for a checkout: a version its lockfile pins,
 /// or a range its manifest declares for a name no lockfile pins yet.
 pub enum Pin { Version(Pinned), Range(Ranged) }
 
 fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>>;
-
-/// 140: the family's names and ranges the manifest of `artifact`, a
-/// held version's artifact of this ecosystem, requires of the
-/// ecosystem, as the manifest spells them; none from a projection whose
-/// ecosystem has no manifest.
-fn requires(&self, artifact: &Artifact) -> Answer<Vec<Ranged>>;
-
-/// 140, 23: of `versions`, those that satisfy `range` by the
-/// ecosystem's own rules, newest first by its own ordering; refused
-/// naming the name, the range and the ecosystem's own words where the
-/// range cannot be read; none from a projection whose ecosystem has no
-/// manifest.
-fn within(&self, range: &Ranged, versions: &[Version]) -> Answer<Vec<Version>>;
 ```
 
-`Pin` and `Ranged` serialize as the seam's other types, a pin and a
-range each read back as written. render is unchanged: it is given
-exactly the artifacts the core holds. The file, image and moon cache
-projections answer `requires` and `within` with none, as 140 says of an
-ecosystem with no manifest. npm's projection answers none here too: npm
-has a manifest, and what an npm version requires of the family is npm's
-own later work.
+`Ranged` is the name and range the seam's `requires` answers, as the
+projection answers what an artifact requires lands it: a checkout's
+manifest and a held version's manifest declare a range the same way, and
+the core treats both alike, reading neither range (core.1). `Pin`
+serializes as the seam's other types, a pin and a range each read back
+as written. render is unchanged: it is given exactly the artifacts the
+core holds. The file, image and moon cache projections, and npm's where
+it is on the branch, answer `Pin::Version` alone where they answer pins.
 
-Why `within` answers an ordered list rather than one version's yes or
-no: 140 gives the projection whether a version satisfies a range by the
-ecosystem's own ordering, and the core must take the newest, which 23
-orders by the ecosystem's rules and never by spelling or listing order;
-one call answers both and keeps the order out of the core (core.1).
-Alternatives: a `satisfies(range, version)` and a separate comparison;
-refused as two calls for one answer. The core ordering by the
-publisher's version rule; refused because a consumer knows no
-publisher's rule and the range is the ecosystem's.
+Why the range is pinned's and this change's: 137 gives pinned the
+manifest's range, and no unit before this one carries it; the question
+the unit before lands is 140's alone, what a held version requires and
+whether a version satisfies a range. npm's unit implements its side of
+the range on this type (its proposal says so). Alternative: a second
+operation on the seam for a checkout's ranges; refused because 137 makes
+them pinned's answer, beside the pins.
 
 ### D7. The core closes the layout
 
@@ -427,26 +431,31 @@ nothing until the end:
 2. each `Pin::Range`, by name and range, then, level by level, each
    range the held versions of the level before require, by name and
    range, each name and range once. A range is met where the layout
-   already holds a version of its name that `within` answers satisfies
-   it, the version held for it. Otherwise the store's `versions` of the
-   name, the empty list where it names none, go through `within`, and
-   each version it answers, newest first, is judged as a pin is until
+   already holds a version of its name that `satisfies` it, the version
+   held for it. Otherwise the store's `versions` of the name, the empty
+   list where it names none, are kept where `satisfies` answers yes,
+   ordered newest first by `newer`, and each is judged as a pin is until
    one is held; that one is held for the range, or none where none is
    admitted or none is listed within it;
 3. for each version newly held, pinned or taken, `requires` of its
    artifact gives the next level's ranges, until a level holds nothing
-   new, so nothing held requires a name the layout lacks (137, 140).
+   new, so nothing held requires a name the layout lacks (137, 140). An
+   absent `requires`, the fake's and a projection's with no manifest,
+   requires nothing.
 
 Then `.tailrace/` ignores itself, the projection renders
 `Contents::Artifacts` of every held version at `place`, and the record
 is written: `held` every held version, `refused` every refused one. A
 read whose source cannot answer, the store's listing, a judgment's
-reads, or a projection's `requires` or `within`, is sync's answer for
-the layout, and nothing is written; a range `within` refuses is that
-range's own answer, held nothing. The fixed order makes the same store
-under the same policy hold the same versions (48). A version is judged
-under the same policy whichever way it was reached (113), and the layout
-holds only admitted versions (47, core.17).
+reads, or the projection's `requires`, `satisfies` or `newer`, is sync's
+answer for the layout, and nothing is written; a range the projection
+refuses to read is that range's own answer, held nothing. The fixed
+order makes the same store under the same policy hold the same versions
+(48). A version is judged under the same policy whichever way it was
+reached (113), and the layout holds only admitted versions (47,
+core.17). The core orders no versions and reads no range itself: which
+are within a range and which is newest are the projection's (23, 137,
+core.1).
 
 `Refreshed` gains `asked`, the answers of the versions judged for a
 range, and `ranges`, each range with what required it, none for the
@@ -467,13 +476,18 @@ from the checkout's manifest or from `<name> <version>`, and the version
 held or that none within it was admitted, and each version asked as a
 pin is printed; `--json` carries `asked` and `ranges`.
 
-Why "met" reads the held version through `within`: 137 stops where
-nothing held requires a name the layout lacks; a version of the name
-that does not satisfy the range would leave the client's resolution
-open, so it does not meet it, and the range is resolved by the same
-rule.
+Why "met" asks `satisfies` of the held version: 137 stops where nothing
+held requires a name the layout lacks; a version of the name that does
+not satisfy the range would leave the client's resolution open, so it
+does not meet it, and the range is resolved by the same rule.
 
-### D8. Cargo's requires, within and render
+The fake projection the unit before lands answers absent. The core's
+tests need it to answer what a test sets: pins and ranges for pinned,
+the ranges each artifact requires, the versions each range is satisfied
+by and their order. This change adds those settings to the fake, its
+absent answer kept where a test sets nothing.
+
+### D8. Cargo's requires, satisfies, newer and render
 
 `requires` reads the artifact's crate through its store as render
 reads it (one layer, bytes of that digest), and its normalized
@@ -490,11 +504,13 @@ answered, since Cargo writes one lockfile for every platform, and a
 feature a consumer turns on needs the crate it enables. A crate that
 does not read is unreadable naming its digest.
 
-`within` reads the range with `VersionReq::parse`, Cargo's own parser,
-refusing one whose text does not parse naming the name, the range and
-the parser's words, and answers the versions that parse as a `semver`
-version and `matches` it, newest first by `semver`'s order; a version
-that is not a Cargo version is within no range.
+`satisfies` reads the range with `VersionReq::parse`, Cargo's own
+parser, refusing one whose text does not parse naming the name, the
+range and the parser's words, and answers yes where the version parses
+as a `semver` version and `matches` it; a version that is not a Cargo
+version satisfies no range. `newer` orders two versions by `semver`'s
+order, Cargo's own; a version that does not parse is refused naming it
+and the parser's words.
 
 render holds exactly the crates given, checked first (ecosystem `cargo`,
 one layer, bytes of that digest, the crate's manifest naming the
@@ -573,19 +589,19 @@ moon cache, since a `Box<dyn Store>` is not shared (core.2).
 
 Unit tests in the profile build crates in memory with `flate2` and
 `tar` for the index line, `requires`, render and serve, read lockfiles
-and workspaces written as text for pinned, and give `within` ranges and
-versions as text; they run in `check-fast` with no cargo needed. The
-core's render is tested over the fakes in
+and workspaces written as text for pinned, and give `satisfies` and
+`newer` ranges and versions as text; they run in `check-fast` with no
+cargo needed. The core's render is tested over the fakes in
 `crates/tailrace-core/tests/render.rs`, the fake projection answering
-the pins and ranges a test sets, and `requires` and `within` from what
-a test sets for each artifact and range.
+the pins and ranges a test sets, and `requires`, `satisfies` and `newer`
+from what a test sets for each artifact and range (D7).
 
 The layouts group of the conformance suite gains two scenarios over the
 fakes, citing 137: a range held at the newest admitted version within
 it, a newer refused one answered with its claim and one outside the
 range neither held nor asked; and a pinned version's family dependency
 held, and that one's in turn, each answered with the version requiring
-it. 137's range part leaves the register in the commit that adds them
+it. 137's range and closure parts leave the register in the commit that adds them
 (core.33).
 
 The conformance group and the proofs run cargo, so they sit behind the
@@ -660,8 +676,17 @@ The conformance group and the proofs run cargo, so they sit behind the
   as the family's by name and version alone (138); Cargo still reads it
   only for a dependency naming the registry `tailrace`, and `requires`
   answers only a dependency naming a served address.
-- [Code waits on three units] → the first code task checks their seams
+- [Code waits on four units] → the first code task checks their seams
   are on the branch and stops through crew where any is missing.
+- [The seam's question is named by a unit not yet constructed] → this
+  change names it `requires`, `satisfies` and `newer` and holds the core
+  and Cargo to what 140 asks, not to a signature; the code stage writes
+  them against the trait as that unit lands it, and stops through crew
+  where the trait gives no order of two versions, since the core takes
+  the newest and orders nothing itself (23, core.1).
+- [Two changes rewrite the projection's contract] → this change writes
+  the whole contract as 84, 137 and 140 read, so whichever of it and the
+  unit before archives last keeps both.
 
 ## Open Questions
 

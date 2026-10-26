@@ -21,11 +21,13 @@ and no lockfile pins yet, the manifest's range as the manifest spells
 it, or absent where the checkout holds no lockfile of that ecosystem and
 its manifest declares no such range (137); requires, given a held
 version's artifact, with the family's names and ranges its manifest
-requires of the ecosystem, as the manifest spells them (140); and
-within, given a range and versions, with those that satisfy the range
-by the ecosystem's own rules, newest first by its own ordering (140,
-23). A projection whose ecosystem has no manifest SHALL answer requires
-and within with none. A projection SHALL never reach the store but
+requires of the ecosystem, as the manifest spells them, and, of a range
+and a version, whether the version satisfies the range, and of two
+versions, which is newer, by the ecosystem's own ordering (140, 23). A
+projection whose ecosystem has no manifest SHALL answer requires with
+none. pinned's range and requires' ranges SHALL be one type, so the
+core holds a checkout's range and a held version's alike and reads
+neither. A projection SHALL never reach the store but
 through the store it is handed, nor the policy or a version's claims at
 all, nor match a component's paths itself: a version a served layout
 lacks is asked of the core, which judges it, and whether the component's
@@ -60,7 +62,7 @@ paths hold a path is asked of the core through pack's input (core.2).
 - **THEN** each is the same as written
 
 #### Scenario: A projection with no manifest asked what a version requires
-- **WHEN** the file, image or moon cache projection is asked what a held artifact requires, or which versions are within a range
+- **WHEN** the file, image or moon cache projection is asked what a held artifact requires
 - **THEN** each answers none, and reads and writes nothing
 
 #### Scenario: An output packed with its component

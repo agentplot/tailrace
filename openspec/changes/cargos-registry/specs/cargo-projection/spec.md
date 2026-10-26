@@ -165,22 +165,27 @@ cannot be read SHALL be unreadable naming its digest.
 - **WHEN** requires is asked of a crate whose only dependencies are of crates.io
 - **THEN** it answers none
 
-### Requirement: The versions within a range by Cargo's rules
+### Requirement: Whether a version satisfies a range, by Cargo's rules
 
-The Cargo projection SHALL answer within for a range and versions with
-those that satisfy the range by Cargo's own requirement rules, newest
-first by Cargo's version order, a version Cargo cannot read being within
-no range (140, 23). A range Cargo's rules cannot read SHALL be refused
-naming the name, the range and the parser's own words.
+The Cargo projection SHALL answer whether a version satisfies a range
+by Cargo's own requirement rules, a version Cargo cannot read
+satisfying no range, and which of two versions is newer by Cargo's
+version order (140, 23). A range Cargo's rules cannot read SHALL be
+refused naming the name, the range and the parser's own words.
 
-#### Scenario: The versions within a range, newest first
+#### Scenario: The versions a range admits
 
-- **WHEN** within is asked of the range `1` of `fam-b` with the versions 1.2.0, 2.0.0, 1.5.0-rc.1, 1.4.0 and `latest`
-- **THEN** it answers 1.4.0 then 1.2.0, and nothing else
+- **WHEN** the projection is asked whether each of 1.2.0, 2.0.0, 1.5.0-rc.1, 1.4.0 and `latest` satisfies the range `1` of `fam-b`
+- **THEN** it answers yes for 1.2.0 and 1.4.0, and no for the rest
+
+#### Scenario: The newer of two versions
+
+- **WHEN** the projection is asked which of 1.10.0 and 1.9.0 is newer, and which of 1.0.0-rc.1 and 1.0.0
+- **THEN** it answers 1.10.0, and 1.0.0
 
 #### Scenario: A range Cargo cannot read
 
-- **WHEN** within is asked of the range `not-a-range` of `fam-b`
+- **WHEN** the projection is asked whether 1.0.0 satisfies the range `not-a-range` of `fam-b`
 - **THEN** it is refused naming `fam-b`, `not-a-range` and the parser's words
 
 ### Requirement: A sparse registry rendered from the store
