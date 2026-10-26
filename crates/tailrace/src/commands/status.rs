@@ -271,8 +271,9 @@ fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Re
     }
 }
 
-/// 33: one promotion of a chain: where it moved the channel from, who
-/// asked, when, and its claim.
+/// 33, 105: one promotion of a chain: where it moved the channel from,
+/// who asked, the policy revision it was judged under with the claims
+/// that satisfied it, when, and its claim and its predecessor's.
 fn promoted(
     out: &mut dyn Write,
     indent: &str,
@@ -283,13 +284,32 @@ fn promoted(
         || ", the first".to_string(),
         |f| format!(" from {}", f.version),
     );
+    let after = promotion
+        .predecessor
+        .as_ref()
+        .map(|p| format!(" after {p}"))
+        .unwrap_or_default();
     writeln!(
         out,
-        "{indent}{}{from}, asked by {}, {}, claim {claim}",
+        "{indent}{}{from}, asked by {}, under the policy at {} satisfied by {}, {}, claim \
+         {claim}{after}",
         promotion.to.version,
         promotion.asked_by,
+        promotion.policy.revision,
+        satisfied(promotion.policy.claims.iter().map(Digest::to_string)),
         render::utc(promotion.at)
     )
+}
+
+/// The claims that satisfied a promotion's policy, or `no claim` where
+/// it required none.
+pub(crate) fn satisfied(claims: impl Iterator<Item = String>) -> String {
+    let claims: Vec<String> = claims.collect();
+    if claims.is_empty() {
+        "no claim".to_string()
+    } else {
+        claims.join(" and ")
+    }
 }
 
 /// A source's own words, unchanged, on a line of their own (59).

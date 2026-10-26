@@ -1,4 +1,9 @@
-## ADDED Requirements
+# channel-status Specification
+
+## Purpose
+TBD - created by archiving change status-on-any-machine. Update Purpose after archive.
+
+## Requirements
 
 ### Requirement: Status shows every channel the policy declares
 
@@ -52,17 +57,26 @@ a person reads a time in UTC, and every reader of one ledger SHALL see
 one version per channel (36). Where the ledger answers a chain as this
 host last read it, status SHALL show that chain, saying when it was
 read and carrying the remote's or store's own words verbatim, and SHALL
-never show it as refused or as empty (36, 60, 61, C.13, C.14).
+never show it as refused or as empty (36, 60, 61, C.13, C.14). Status
+SHALL take the landing's answer as the landing seam gives it: where the
+landing cannot be read, the channels' part SHALL be unreadable carrying
+the landing's words, never refused, and the record's part SHALL still
+answer (58, 59, 77).
 
 #### Scenario: Two machines, one answer
 
 - **WHEN** one machine promotes and a second machine, which never published, asks status of the same repository
 - **THEN** both answer the same version and chain for every channel
 
-#### Scenario: The remote cannot be reached
+#### Scenario: The ledger's remote cannot be reached
 
-- **WHEN** the ledger's remote cannot be reached after this host last fetched the chain
+- **WHEN** the landing answers the branch's head landed, and the ledger's remote cannot be reached after this host last fetched the chain
 - **THEN** the channel is shown at the version of the chain as last fetched, with when it was fetched and the remote's words, and nothing is shown refused
+
+#### Scenario: The landing cannot be read
+
+- **WHEN** the landing answers unreadable with its source's words
+- **THEN** the channels' part is unreadable carrying those words verbatim, never refused, the record's part answers, and status exits 0
 
 ### Requirement: Each channel's answer is its own
 

@@ -568,14 +568,16 @@ fn declared(fakes: &Fakes, channel: &str) {
 }
 
 /// `channel` promoted over `fakes`' keeper to each version in turn, each
-/// from the one before, signed by the host as the fake signer signs.
-fn chained(host: &Host, channel: &str, versions: &[&str]) {
+/// from the one before, signed by the host as the fake signer signs,
+/// each satisfied by its version's acceptance; every claim's digest.
+fn chained(host: &Host, channel: &str, versions: &[&str]) -> Vec<Digest> {
     let channel = ChannelId::new(None, ChannelName::new(channel));
     let moved = |v: &str| tailrace_seams::Moved {
         version: Version::new(v),
         index: Digest::of(format!("{v}'s index").as_bytes()),
     };
     let mut predecessor: Option<Digest> = None;
+    let mut claims = Vec::new();
     for (i, version) in versions.iter().enumerate() {
         let promotion = Promotion {
             channel: channel.name.clone(),
@@ -586,7 +588,7 @@ fn chained(host: &Host, channel: &str, versions: &[&str]) {
             asked_by: SignerId::new("host"),
             policy: tailrace_seams::Satisfied {
                 revision: host.head.clone(),
-                claims: vec![],
+                claims: vec![acceptance(version)],
             },
             at: 1_793_000_000 + i as u64,
         };
@@ -602,8 +604,16 @@ fn chained(host: &Host, channel: &str, versions: &[&str]) {
             predecessor.as_ref(),
         )
         .unwrap();
+        claims.push(digest.clone());
         predecessor = Some(digest);
     }
+    claims
+}
+
+/// The digest `chained` names as the claim that satisfied the policy for
+/// `version`'s promotion.
+fn acceptance(version: &str) -> Digest {
+    Digest::of(format!("{version}'s acceptance").as_bytes())
 }
 
 #[test]
@@ -648,7 +658,7 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
     for channel in ["edge", "preview", "stable"] {
         declared(&host.fakes, channel);
     }
-    chained(&host, "stable", &["0.1.0", "0.2.0"]);
+    let claims = chained(&host, "stable", &["0.1.0", "0.2.0"]);
     // The first chain asked, edge's, cannot be read.
     host.fakes.keeper.fault(
         tailrace_fakes::KeeperOp::Chain,
@@ -681,16 +691,27 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
         )),
         "{printed}"
     );
-    assert!(
-        lines[stable + 1]
-            .trim_start()
-            .starts_with("0.2.0 from 0.1.0, asked by host, 2026-10-26T07:33:21Z, claim sha256:"),
+    assert_eq!(
+        lines[stable + 1].trim_start(),
+        format!(
+            "0.2.0 from 0.1.0, asked by host, under the policy at {} satisfied by {}, \
+             2026-10-26T07:33:21Z, claim {} after {}",
+            host.head,
+            acceptance("0.2.0"),
+            claims[1],
+            claims[0]
+        ),
         "{printed}"
     );
-    assert!(
-        lines[stable + 2]
-            .trim_start()
-            .starts_with("0.1.0, the first, asked by host, 2026-10-26T07:33:20Z, claim sha256:"),
+    assert_eq!(
+        lines[stable + 2].trim_start(),
+        format!(
+            "0.1.0, the first, asked by host, under the policy at {} satisfied by {}, \
+             2026-10-26T07:33:20Z, claim {}",
+            host.head,
+            acceptance("0.1.0"),
+            claims[0]
+        ),
         "{printed}"
     );
     let environments = at("environments");

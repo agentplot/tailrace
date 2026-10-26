@@ -68,10 +68,10 @@
 //!
 //! Status asks the landing, the policy and the ledger alone (60; design
 //! D8): it is bound by the same path, with no signer but every profile
-//! verify-only, and the store opened, never made, where it is there, its
-//! every operation answering why it could not be opened where it is not;
-//! so status on a host with nothing written reads the given landing and
-//! the given ledger and makes nothing.
+//! verify-only, and the store opened, never made, only for a ledger held
+//! in it, every operation of the store answering absent naming it
+//! otherwise; so status on a host with nothing written reads the given
+//! landing and the given ledger and makes nothing.
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -400,8 +400,8 @@ pub enum For {
     Status,
 }
 
-/// The store status binds where its layout cannot be opened, which
-/// status never asks: every operation answers why it could not be (60).
+/// The store status binds where no ledger is held in it, which status
+/// never asks: every operation answers why it was not opened (60).
 struct Unopened {
     not: Not,
 }
@@ -492,8 +492,24 @@ pub fn bind(
     };
     let (bound, keeper, projections) = if command == For::Status {
         let keeper = ledger(store)?;
-        let bound = profiles::store::bind(store, false)
-            .unwrap_or_else(|not| Box::new(Unopened { not }) as Box<dyn Store>);
+        // No part of status reads the store but a ledger held in it, so a
+        // store that is not there leaves every other ledger's chains read.
+        let bound = match &bindings.ledger {
+            Some(ledger) if profiles::ledger::in_store(ledger) => {
+                profiles::store::bind(store, false)?
+            }
+            _ => Box::new(Unopened {
+                not: Not::absent(
+                    &Source::new(Seam::Store, "unbound"),
+                    format!(
+                        "binding of the store, {} in {}, which status opens only for a ledger \
+                         held in it",
+                        store.at(),
+                        file.display()
+                    ),
+                ),
+            }) as Box<dyn Store>,
+        };
         (bound, keeper, BTreeMap::new())
     } else {
         let bound = profiles::store::bind(store, matches!(command, For::Publish | For::Push))?;

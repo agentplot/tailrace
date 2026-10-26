@@ -966,6 +966,37 @@ fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making
     }
 }
 
+#[test]
+fn a_git_ref_ledger_binds_status_with_the_layout_it_names_missing_and_opens_no_store() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[ledger]\ngit_ref = {{}}\n",
+        layout.display()
+    ));
+    let binding = host
+        .bind(&repo, For::Status)
+        .unwrap_or_else(|not| panic!("a missing layout bound nothing: {not}"));
+    assert!(!layout.exists(), "status made {}", layout.display());
+    assert_eq!(
+        binding.store,
+        Source::new(Seam::Store, format!("layout {}", layout.display())),
+        "the store is named as the file names it"
+    );
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
+        other => panic!("a git ref ledger answered {other:?}"),
+    }
+    match binding.seams.store.resolve(&Name::new("v0.1.0")) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::new(Seam::Store, "unbound"));
+            assert!(a.what.contains("[store]"), "{a:?}");
+        }
+        other => panic!("status's store answered {other:?}"),
+    }
+}
+
 /// A repository in the host's directory with one commit on `main`, its
 /// remote `origin` at `origin` where one is given, and its path and the
 /// commit.
@@ -1329,8 +1360,11 @@ fn status_with_no_file_binds_the_given_landing_and_the_git_ref_with_no_remote_an
     }
     assert_eq!(binding.store, given_store(&host));
     match binding.seams.store.resolve(&Name::new("v0.1.0")) {
-        Err(Not::Unreadable(u)) => assert_eq!(u.source.seam, Seam::Store),
-        other => panic!("a given layout that is not there answered {other:?}"),
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::new(Seam::Store, "unbound"));
+            assert!(a.what.contains("[store] layout (given)"), "{a:?}");
+        }
+        other => panic!("status's given store answered {other:?}"),
     }
     assert_eq!(binding.signer, None);
     assert_eq!(binding.seams.signers.len(), 2);

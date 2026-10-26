@@ -50,6 +50,13 @@ pub fn bind(table: &Table, repository: &Path, store: &Table) -> Answer<Box<dyn K
     }
 }
 
+/// Whether the ledger `[ledger]` names holds its chains in `[store]`
+/// (C.14), so a binding that reads no store but the ledger's opens it
+/// for this ledger alone (60).
+pub fn in_store(table: &Table) -> bool {
+    table.key() == "store"
+}
+
 /// The ledger a host binds where its file names no `[ledger]` (118,
 /// C.13): the git ref in the repository at `repository`, read and
 /// written with no remote.

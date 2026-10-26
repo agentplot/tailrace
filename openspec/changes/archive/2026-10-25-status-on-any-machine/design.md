@@ -43,6 +43,11 @@ pane should see every repository as sluice's does, amends 132: the
 process answers every repository it knows together at its root path,
 one row each with every channel's head and four counts of its
 environments, and each repository alone at its own path with the whole.
+061bfa8 rules that where a landing's remote does not answer, the
+landing is read from the host's copy of the branch as last fetched,
+saying when and carrying the remote's words (77, C.5, C.6); that reading
+is `the-landing-answers-as-last-fetched`'s, a unit after this one, and
+status takes the landing's answer as the seam gives it.
 
 The workspace has no HTTP server crate, and the bolt's units add no
 dependency (phase-1-bolts.md, How the units stay apart). Rust 1.98
@@ -111,7 +116,10 @@ pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<C
 `landed::channels_at`, keeps the channels of `ask.component` where one
 is named, and asks `ledger::channel` of each. A channel's ledger
 answer, absent, refused or unreadable, is that channel's `at`, never
-the whole answer's (58). `overview` always answers: each part carries
+the whole answer's (58). The landing's answer is the channels' part
+as the seam gives it: a landing that cannot be read is the part's
+unreadable answer with its words, never a refusal, and the record's
+and environments' parts still answer. `overview` always answers: each part carries
 its own `Answer`, the environments' part as D14 gives it. Serde writes each inner answer with `answer_json`, as
 `Promoted::Moved.store` does, so one JSON form names the four answers
 at every depth.
@@ -514,6 +522,15 @@ one (132).
   the profiles, not the remote; `origin` is git's own default name, and
   a host that uses another names it in `[landing]`. The gap goes to the
   design agent.
+- [Where the landing's remote does not answer, the channels' part is
+  the landing's unreadable answer, so a machine cut off from its remote
+  shows no channel though the ledger kept its chain] → 061bfa8 has the
+  landing read its copy as last fetched (77, C.5, C.6), which changes
+  the landing seam's contract at every caller and both landing
+  profiles; `the-landing-answers-as-last-fetched` builds it after this
+  unit, and status shows its answer with no change of its own. Status's
+  showing of a chain the ledger kept is proven here over the fakes,
+  where the landing answers.
 - [The policy unit's amendment for how a channel moves has not landed]
   → this unit renders the field as that unit lands it, and its text
   form follows that unit's names.

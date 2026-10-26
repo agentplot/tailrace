@@ -5,7 +5,10 @@
 //! key and the git ref ledger on `origin`, which promotes through
 //! `tailrace::run`; and machine B, a second clone whose file names the
 //! shared ledger on `origin` alone, every other seam given as 118 binds
-//! it. Needs git alone, so it is in the fast layer.
+//! it. A machine cut off from its remote is not asked here: its landing
+//! answers unreadable until the landing reads the host's copy of the
+//! branch as last fetched (77, C.5, C.6), and a chain as last read is
+//! proven over the fakes. Needs git alone, so it is in the fast layer.
 
 mod scratch;
 
