@@ -2,9 +2,10 @@
 //! `.config/tailrace.toml` read with git from the tree of the revision
 //! asked, never from a checkout (65, rule core.22; design D3, D4). It
 //! reads its own tables, the `name` of each `[[component]]`, and of each
-//! environment its `channel`, `policy`, `after` and `approvers`, and
-//! leaves the core's other keys (`outputs`, `[version]`, `[projections]`,
-//! the rest of `[[component]]`) and every other reader's alone:
+//! environment its `channel`, `policy`, `after` and `approvers`, leaving
+//! its `target` to the target's reader, and leaves the core's other keys
+//! (`outputs`, `[version]`, `[projections]`, the rest of `[[component]]`)
+//! and every other reader's alone:
 //!
 //! ```toml
 //! [[component]]
@@ -91,8 +92,10 @@
 //! (41, 97, C.10), and a table under it is a line that adds claims and
 //! never changes how it moves; every binding is within its component and
 //! none is a cycle (37, 125). Environments are `[environments.<name>]` or
-//! `[environments.<component>.<name>]` alike. A file that breaks any of
-//! it is unreadable naming the table.
+//! `[environments.<component>.<name>]` alike, each holding C.10's words
+//! and no others: `channel`, `policy`, `after`, `target`, and `approvers`
+//! where it is manual, a target's own settings sitting in the target's
+//! table. A file that breaks any of it is unreadable naming the table.
 //!
 //! The policy for a given or made channel requires the gate's
 //! acceptance, by every signer `[signers]` lets claim acceptance, then
@@ -222,17 +225,21 @@ struct ChannelTable {
     on: Option<bool>,
 }
 
-/// An environment's table, of which this profile reads the channel it
-/// names, its policy, the environments it comes after and, where it is
-/// manual, who may say yes to it (C.10); its other keys are its
-/// target's.
+/// An environment's table, C.10's words and no others: the channel it
+/// names, its policy, the environments it comes after, its target, whose
+/// value is the target's reader's and read nothing of here, and, where it
+/// is manual, who may say yes to it; any other key is kept to be refused.
 #[derive(Deserialize)]
 struct EnvironmentTable {
     channel: Option<ChannelName>,
     policy: Option<String>,
     #[serde(default)]
     after: Vec<String>,
+    #[serde(rename = "target")]
+    _target: Option<serde::de::IgnoredAny>,
     approvers: Option<Vec<SignerId>>,
+    #[serde(flatten)]
+    other: BTreeMap<String, toml::Value>,
 }
 
 /// The file at a revision, parsed whole, with its signers read.
@@ -786,7 +793,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
         &table.file.environments,
         "environments",
         "environment",
-        &["channel", "policy", "after"],
+        &["channel", "policy", "after", "target", "approvers"],
         &components,
     )?;
     let mut follows: Vec<(String, Option<ComponentName>, ChannelName)> = Vec::new();
@@ -798,6 +805,11 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
             .map(|(_, name, table, env)| (name.as_str(), (table, env)))
             .collect();
         for (name, (env_table, env)) in &of {
+            if let Some(key) = env.other.keys().next() {
+                return Err(format!(
+                    "{env_table} names {key}, and an environment's table holds channel, policy, after, target and, where it is manual, approvers: a target's own settings sit in the target's table (C.10)"
+                ));
+            }
             let channel = env
                 .channel
                 .clone()
@@ -811,12 +823,13 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
                     ))
                 }
             };
+            if !manual && env.approvers.is_some() {
+                return Err(format!(
+                    "{env_table} names approvers, and only a manual environment waits on a yes: no one says yes to an environment whose policy is auto (C.10)"
+                ));
+            }
             follows.push(((*env_table).clone(), scope.clone(), channel.clone()));
-            let approvers = if manual {
-                approvers_of(env_table, &env.approvers, &table.file.signers)?
-            } else {
-                Vec::new()
-            };
+            let approvers = approvers_of(env_table, &env.approvers, &table.file.signers)?;
             let bound = if !env.after.is_empty() {
                 after(&of, name, env_table, env, scope)?
             } else if manual {

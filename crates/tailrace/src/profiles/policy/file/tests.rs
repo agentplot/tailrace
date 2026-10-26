@@ -1118,11 +1118,40 @@ fn a_manual_environments_approver_the_signers_table_lacks_is_unreadable_naming_i
 // Requirement: The environments' words are read
 
 #[test]
-fn an_environment_that_moves_on_its_own_makes_no_channel_and_its_targets_keys_are_not_read() {
+fn an_environment_naming_its_target_is_read_and_makes_no_channel() {
     let repo = Repo::new();
-    let at = repo
-        .at("[environments.site]\nchannel = \"stable\"\nbucket = \"example-site\"\nregion = 3\n");
+    let at = repo.at(
+        "[environments.site]\nchannel = \"stable\"\ntarget = { bucket = \"example-site\", region = 3 }\n",
+    );
     assert_eq!(repo.policy().listed(&at), Ok(givens(None)));
+    let at = repo.at("[environments.site]\nchannel = \"stable\"\ntarget = \"site\"\n");
+    assert_eq!(repo.policy().listed(&at), Ok(givens(None)));
+}
+
+#[test]
+fn an_environment_with_a_targets_own_key_is_unreadable_naming_the_table_and_the_key() {
+    let repo = Repo::new();
+    let at = repo.at("[environments.site]\nchannel = \"stable\"\nbucket = \"example-site\"\n");
+    assert_eq!(
+        both_unreadable(&repo, &at, &id(None, "stable")),
+        "[environments.site] names bucket, and an environment's table holds channel, policy, after, target and, where it is manual, approvers: a target's own settings sit in the target's table (C.10)"
+    );
+}
+
+#[test]
+fn approvers_on_an_environment_that_moves_on_its_own_are_unreadable_naming_the_key() {
+    let repo = Repo::new();
+    let refusal = "[environments.site] names approvers, and only a manual environment waits on a yes: no one says yes to an environment whose policy is auto (C.10)";
+    let at = repo.at(&format!(
+        "{}[environments.site]\nchannel = \"stable\"\napprovers = [\"ci\"]\n",
+        askers_table()
+    ));
+    assert_eq!(both_unreadable(&repo, &at, &id(None, "stable")), refusal);
+    let at = repo.at(&format!(
+        "{}[environments.site]\nchannel = \"stable\"\npolicy = \"auto\"\napprovers = [\"ci\"]\n",
+        askers_table()
+    ));
+    assert_eq!(both_unreadable(&repo, &at, &id(None, "stable")), refusal);
 }
 
 #[test]
