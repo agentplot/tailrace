@@ -29,5 +29,5 @@ workspace builds only once every `Policy` implementor answers
 
 ## 4. The guide and the gate
 
-- [ ] 4.1 In `site/src/content/docs/guides/self-hosting.mdx`, say beside the policy file's example that a channel belongs to one component, named by `component` and left out where one is declared, that a channel is bound only within its component, and that a file breaking either is unreadable naming the table (37, 125, 131); verify with `site:build`
+- [x] 4.1 In `site/src/content/docs/guides/self-hosting.mdx`, say beside the policy file's example that a channel belongs to one component, named by `component` and left out where one is declared, that a channel is bound only within its component, and that a file breaking either is unreadable naming the table (37, 125, 131); verify with `site:build`
 - [ ] 4.2 Run the fast layer, `moon run ':#check-fast'`, and verify every task passes, format and lint among them
