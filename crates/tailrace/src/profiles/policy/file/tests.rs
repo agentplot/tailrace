@@ -1504,3 +1504,112 @@ fn a_channel_held_off_is_no_channel() {
         "the channel alpha",
     );
 }
+
+// Requirement: A held given is answered with the line that switches it on
+
+fn held(channel: ChannelId, moves: Moves, switch: &str) -> HeldChannel {
+    HeldChannel {
+        channel: declared(channel, moves),
+        switch: switch.into(),
+    }
+}
+
+/// That no channel the channels answer at `at` holds off is among its
+/// channels in force.
+fn none_in_both(policy: &PolicyFile, at: &Revision) {
+    let answer = policy.channels(at).unwrap();
+    for given in &answer.held {
+        assert!(
+            !answer
+                .in_force
+                .iter()
+                .any(|c| c.channel == given.channel.channel),
+            "{} is both held off and in force",
+            given.channel.channel
+        );
+    }
+}
+
+#[test]
+fn with_nothing_switched_on_alpha_and_lts_are_held_off_with_their_lines() {
+    let repo = Repo::new();
+    let at = repo.at(&signers());
+    let answer = repo.policy().channels(&at).unwrap();
+    assert_eq!(
+        answer.held,
+        [
+            held(
+                id(None, "alpha"),
+                Moves::EachPublish { prereleases: true },
+                "[channels.alpha]"
+            ),
+            held(id(None, "lts"), bound("stable"), "[channels.lts]"),
+        ]
+    );
+    assert_eq!(answer.in_force, givens(None));
+    none_in_both(&repo.policy(), &at);
+    fs::remove_file(repo.path().join(POLICY_FILE)).unwrap();
+    let none = repo.commit();
+    assert_eq!(repo.policy().channels(&none), Ok(answer));
+}
+
+#[test]
+fn one_components_alpha_switched_on_leaves_the_held_givens_and_joins_the_channels() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}[channels.lib.alpha]\n",
+        component("lib"),
+        component("web")
+    ));
+    let answer = repo.policy().channels(&at).unwrap();
+    assert_eq!(
+        answer.held,
+        [
+            held(
+                id(Some("web"), "alpha"),
+                Moves::EachPublish { prereleases: true },
+                "[channels.web.alpha]"
+            ),
+            held(
+                id(Some("lib"), "lts"),
+                bound("stable"),
+                "[channels.lib.lts]"
+            ),
+            held(
+                id(Some("web"), "lts"),
+                bound("stable"),
+                "[channels.web.lts]"
+            ),
+        ]
+    );
+    assert!(
+        answer
+            .in_force
+            .iter()
+            .any(|c| c.channel == id(Some("lib"), "alpha")),
+        "{answer:?}"
+    );
+    none_in_both(&repo.policy(), &at);
+}
+
+#[test]
+fn another_fragments_held_given_is_answered_with_its_line() {
+    let repo = Repo::new();
+    fs::write(repo.path().join("README"), "no policy").unwrap();
+    let none = repo.commit();
+    let policy = PolicyFile::with_givens(
+        repo.path(),
+        "[channels.edge]\non_each_publish = true\n\n[channels.canary]\nheld = true\nbound_to = \"edge\"\n",
+    );
+    assert_eq!(
+        policy.channels(&none),
+        Ok(PolicyChannels {
+            in_force: vec![declared(
+                id(None, "edge"),
+                Moves::EachPublish { prereleases: false }
+            )],
+            held: vec![held(id(None, "canary"), bound("edge"), "[channels.canary]")],
+        })
+    );
+    none_in_both(&policy, &none);
+}
