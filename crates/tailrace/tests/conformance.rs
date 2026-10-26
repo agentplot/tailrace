@@ -1,13 +1,30 @@
-//! The surfaces' group of the conformance suite over the command line:
-//! publish, verify and status asked with `--json` answer what the one
-//! core answers (56, 57; design D6).
+//! The surfaces' group of the conformance suite over the command line and
+//! over the served page: publish, verify and status asked with `--json`,
+//! and a repository's `status.json` asked of the process's own handling
+//! of a request, answer what the one core answers (56, 57, 132; design
+//! D6, and status-on-any-machine's D9).
 
 use clap::Parser;
 use serde_json::{json, Value};
 use tailrace::bindings::Teller;
+use tailrace::commands::serve::host::{name, Host};
+use tailrace::commands::serve::respond_with;
 use tailrace::{run, Binding, Cli};
 use tailrace_conformance::core::surfaces::{self, Question, Surface};
+use tailrace_conformance::not_applicable;
 use tailrace_conformance::world::FakeWorld;
+use tailrace_core::RepositoryName;
+use tempfile::TempDir;
+
+/// The world's fakes as the one binding a surface is handed.
+fn binding(world: &FakeWorld) -> Binding {
+    Binding {
+        seams: world.seams(),
+        store: world.store(),
+        signer: Some(world.host.clone()),
+        gate: Teller::Job(JOB.into()),
+    }
+}
 
 /// The job the binding names as what tells the gate, so the command
 /// line's publish asks it nothing.
@@ -32,6 +49,9 @@ impl Surface for CommandLine {
             Question::Publish { revision } => vec!["publish".into(), revision.to_string()],
             Question::Verify { version } => vec!["verify".into(), version.to_string()],
             Question::Status => vec!["status".into()],
+            Question::Channels { branch } => {
+                vec!["status".into(), "--branch".into(), branch.to_string()]
+            }
         };
         let cli = Cli::try_parse_from(
             ["tailrace".to_string()]
@@ -40,14 +60,13 @@ impl Surface for CommandLine {
                 .chain(["--json".to_string()]),
         )
         .expect("the arguments parse");
-        let binding = Binding {
-            seams: self.world.seams(),
-            store: self.world.store(),
-            signer: Some(self.world.host.clone()),
-            gate: Teller::Job(JOB.into()),
-        };
         let mut out = Vec::new();
-        run(&cli, &Ok(binding), &self.world.repo().path, &mut out);
+        run(
+            &cli,
+            &Ok(binding(&self.world)),
+            &self.world.repo().path,
+            &mut out,
+        );
         let mut printed: Value = serde_json::from_slice(&out).unwrap_or_else(|e| {
             panic!(
                 "{question:?} printed no JSON document ({e}): {}",
@@ -83,4 +102,86 @@ fn the_command_line_answers_from_the_one_core() {
         })
     })
     .assert();
+}
+
+/// The served page over a world of fakes: the world's repository named
+/// `o/r` in a state directory of its own, each request answered by the
+/// process's own handling of it, without a socket, over the world's
+/// binding.
+struct Page {
+    world: FakeWorld,
+    host: Host,
+    _state: TempDir,
+}
+
+impl Page {
+    fn new() -> Page {
+        let world = FakeWorld::new();
+        let state = TempDir::new().expect("a temporary directory");
+        let host = Host {
+            state: state.path().join("tailrace"),
+            config: state.path().join("no bindings file"),
+            home: None,
+        };
+        let repository = RepositoryName {
+            owner: "o".into(),
+            name: "r".into(),
+        };
+        name(&host, &repository, &world.repo().path).expect("the repository is named");
+        Page {
+            world,
+            host,
+            _state: state,
+        }
+    }
+}
+
+impl Surface for Page {
+    fn name(&self) -> String {
+        "the served page".into()
+    }
+
+    fn world(&self) -> &FakeWorld {
+        &self.world
+    }
+
+    fn ask(&self, question: &Question) -> Value {
+        match question {
+            Question::Publish { .. } | Question::Verify { .. } => not_applicable(
+                "the served page is a reader: it answers status, and publishes and verifies nothing",
+            ),
+            Question::Status | Question::Channels { .. } => {}
+        }
+        let response = respond_with(
+            &self.host,
+            &|_| Ok(binding(&self.world)),
+            "GET",
+            "/o/r/status.json",
+        );
+        assert_eq!(response.status, 200, "{}", response.body);
+        let served: Value = serde_json::from_str(&response.body).unwrap_or_else(|e| {
+            panic!(
+                "{question:?} served no JSON document ({e}): {}",
+                response.body
+            )
+        });
+        match question {
+            Question::Status => served["value"]["published"].clone(),
+            _ => served,
+        }
+    }
+}
+
+#[test]
+fn the_served_page_answers_from_the_one_core() {
+    let report = tailrace_conformance::run(surfaces::GROUP, &surfaces::scenarios(), &|| {
+        Box::new(Page::new())
+    });
+    report.assert();
+    let inapplicable: Vec<&str> = report.not_applicable.iter().map(|n| n.scenario).collect();
+    assert_eq!(
+        inapplicable,
+        ["the command line answers what the core answers"],
+        "{report}"
+    );
 }
