@@ -1,11 +1,12 @@
 //! The status group: what the host published, answered from its own
-//! record with no seam asked and nothing written (58, 60 to 62).
+//! record with no seam asked and nothing written, each version beside its
+//! notes rendered again from git (58, 60 to 62).
 
 use std::fs;
 
 use serde_json::Value;
-use tailrace_core::{status, Entry, Published, StatusAsk};
-use tailrace_seams::{Branch, ComponentName, Not, Source};
+use tailrace_core::{status, Entry, Noted, Published, StatusAsk};
+use tailrace_seams::{Branch, ComponentName, Held, Not, Source, Store};
 
 use crate::core::publish::{one, passing, TAG, VERSION};
 use crate::world::FakeWorld;
@@ -47,8 +48,18 @@ fn published(world: &FakeWorld) -> Published {
 
 fn status_after_a_publish(world: &FakeWorld) {
     let published = published(world);
-    let Published::Version { index, store, .. } = &published else {
+    let Published::Version {
+        index,
+        store,
+        notes,
+        ..
+    } = &published
+    else {
         panic!("the head was not published: {published:?}")
+    };
+    let notes = notes.as_ref().expect("the publish answered no notes");
+    let Ok(Held::Bytes(carried)) = world.fakes.store.read(&notes.bytes) else {
+        panic!("{} holds no bytes", notes.bytes)
     };
     let asked = world.asked();
     let record = world.record();
@@ -72,9 +83,18 @@ fn status_after_a_publish(world: &FakeWorld) {
             branch: Branch::new(crate::fixture::MAIN),
             index: index.clone(),
             store: store.clone(),
-            notes: None,
+            notes: Some(Noted {
+                last: Some("v0.1.0".into()),
+                commits: vec![world.head.clone()],
+            }),
         }],
-        "status answered another version, revision or index than the publish's"
+        "status answered another version, revision or index than the publish's, \
+         or another entry than the commits the notes were rendered from"
+    );
+    assert_eq!(
+        versions.versions[0].notes,
+        Some(Ok(String::from_utf8(carried).expect("the notes are text"))),
+        "status's notes are not the bytes the version carries"
     );
     assert_eq!(world.asked(), asked, "status asked a seam");
     assert_eq!(world.record(), record, "status wrote to the record");
@@ -109,6 +129,11 @@ fn the_record_read_with_a_file_reader(world: &FakeWorld) {
     assert_eq!(
         entry["store"]["seam"], "store",
         "the entry names no store: {text}"
+    );
+    assert_eq!(
+        entry["notes"]["commits"],
+        serde_json::json!([world.head.as_str()]),
+        "the entry names other revisions than the notes were rendered from: {text}"
     );
     for artifact in artifacts {
         assert!(
