@@ -210,7 +210,7 @@ impl<'a> Run<'a> {
         let seams = self.seams;
         let revision = self.landed.revision();
         self.verdicts
-            .get_or_insert_with(|| seams.landing.verdicts_of(revision))
+            .get_or_insert_with(|| seams.landing.verdicts_of(revision).map(|v| v.verdicts))
             .clone()
     }
 

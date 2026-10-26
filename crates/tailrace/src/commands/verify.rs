@@ -6,7 +6,9 @@ use std::path::Path;
 
 use clap::Args;
 use tailrace_core::{verify, History, Verified, VerifyAsk};
-use tailrace_seams::{Answer, Audience, Branch, ChannelName, ComponentName, Not, Version};
+use tailrace_seams::{
+    Answer, Audience, Branch, ChannelId, ChannelName, ComponentName, Not, Version,
+};
 
 use crate::{render, Binding};
 
@@ -36,9 +38,10 @@ fn audience(text: &str) -> Result<Audience, String> {
         "acceptance" => Ok(Audience::Acceptance),
         "layout" => Ok(Audience::Layout),
         _ => match text.strip_prefix("channel:") {
-            Some(channel) if !channel.is_empty() => {
-                Ok(Audience::Channel(ChannelName::new(channel)))
-            }
+            Some(channel) if !channel.is_empty() => Ok(Audience::Channel(ChannelId::new(
+                None,
+                ChannelName::new(channel),
+            ))),
             _ => Err(format!(
                 "{text} is no audience: acceptance, layout or channel:<name>"
             )),

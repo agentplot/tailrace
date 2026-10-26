@@ -12,8 +12,9 @@ use serde_json::json;
 use tailrace_core::{verify, Published, Told, Verified, VerifyAsk};
 use tailrace_fakes::{Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
-    Answer, Audience, ChannelName, Check, Claim, ClaimKind, ComponentName, Envelope, NamedSigner,
-    Not, Outcome, Policy, Required, RequiredClaim, Revision, Seam, SignerId, Store, Version, Why,
+    Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName, Envelope,
+    NamedSigner, Not, Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam,
+    SignerId, Store, Version, Why,
 };
 use world::{build_of, World, HOST, LANDING};
 
@@ -166,12 +167,16 @@ impl Policy for Watched {
             .map(|c| {
                 (
                     serde_json::from_value(c.given["revision"].clone()).unwrap(),
-                    c.answer == Ok(json!(true)),
+                    c.answer.as_ref().is_ok_and(|a| a["landed"] == json!(true)),
                 )
             })
             .collect();
         self.seen.borrow_mut().push(yeses);
         self.inner.policy_for(revision, audience)
+    }
+
+    fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
+        self.inner.channels(revision)
     }
 }
 
@@ -209,7 +214,7 @@ fn no_policy_for_the_audience_is_absent_naming_it_and_the_revision() {
     let Err(Not::Absent(a)) = verified(
         &world,
         &VerifyAsk {
-            audience: Audience::Channel(ChannelName::new("beta")),
+            audience: Audience::Channel(ChannelId::new(None, ChannelName::new("beta"))),
             ..ask("0.2.0")
         },
     ) else {
@@ -218,6 +223,39 @@ fn no_policy_for_the_audience_is_absent_naming_it_and_the_revision() {
     assert!(a.what.contains("beta"), "{}", a.what);
     assert!(a.what.contains(world.head.as_str()), "{}", a.what);
     assert_eq!(a.source.seam, Seam::Policy);
+}
+
+#[test]
+fn a_channel_named_alone_is_the_versions_components() {
+    let (world, _) = published();
+    let libs = ChannelId::new(Some(ComponentName::new("lib")), ChannelName::new("beta"));
+    world.fakes.policy.require(
+        Audience::Channel(libs.clone()),
+        Required::Channel {
+            claims: vec![],
+            bound_to: None,
+            promoted_by: vec![],
+            approvers: vec![],
+        },
+    );
+    let verified = verified(
+        &world,
+        &VerifyAsk {
+            audience: Audience::Channel(ChannelId::new(None, ChannelName::new("beta"))),
+            ..ask("0.2.0")
+        },
+    )
+    .unwrap();
+    assert_eq!(verified.audience, Audience::Channel(libs.clone()));
+    let asked = world.fakes.policy.calls();
+    let policy_for = asked
+        .iter()
+        .find(|c| c.op == PolicyOp::PolicyFor)
+        .expect("the policy for the channel was asked");
+    assert_eq!(
+        policy_for.given["audience"],
+        serde_json::to_value(Audience::Channel(libs)).unwrap()
+    );
 }
 
 // Requirement: Each attestation is told by the signer that made it

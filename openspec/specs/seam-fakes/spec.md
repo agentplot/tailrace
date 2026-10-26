@@ -53,7 +53,8 @@ reordered (122).
 Each fake SHALL be set up by the test that uses it, with what its seam
 holds (the revisions a branch has landed and their verdicts, the
 outputs a build leaves and their identities and outcomes, the policy
-for each audience, the signers and their identities, a projection's
+for each audience, each channel with its component, and how each
+channel moves, the signers and their identities, a projection's
 ecosystem, an environment's channel head and what it runs), and SHALL
 share that state with every copy the test hands to the core.
 
@@ -66,6 +67,26 @@ share that state with every copy the test hands to the core.
 
 - **WHEN** a test keeps one handle to a fake store and puts bytes through a copy of it
 - **THEN** the test's handle sees the bytes held
+
+#### Scenario: The fake policy's channels
+
+- **WHEN** a test scripts the fake policy with policies for `beta` of `lib`, which it says moves on each publish, `stable` of `lib` bound to `beta`, and `edge` of no declared component at one revision only
+- **THEN** channels at that revision answers `beta` of `lib` moving on each publish, `edge` moving by promotion alone and `stable` of `lib` bound to `beta`, and at another revision only the two of `lib`, with the call recorded and faultable like policy-for
+
+#### Scenario: A scripted following channel that takes prereleases
+
+- **WHEN** a test scripts the fake policy with `nightly` moving on each publish with prereleases
+- **THEN** channels answers `nightly` moving on each publish with prereleases
+
+#### Scenario: A scripted given held off
+
+- **WHEN** a test scripts the fake policy with `canary` held off, moving on each publish, with the line `[channels.canary]`, and scripts no other
+- **THEN** the channels answer carries `canary` held, with how it would move and its line, apart from the channels in force, which do not include it, and a fake scripted with none held carries an empty list held, the one call recorded and faultable as before
+
+#### Scenario: The fake keeper's two components
+
+- **WHEN** a test appends a promotion to `beta` of `lib` on the fake keeper
+- **THEN** the chain of `beta` of `lib` holds it, and the chain of `beta` of `web` and of `beta` of no declared component are absent
 
 ### Requirement: Scripted refusals and unreadable answers
 
@@ -147,3 +168,41 @@ both answer absent for one.
 
 - **WHEN** a test scripts the fake projection to pack no cache entries
 - **THEN** a pack with no version and a render of cache entries each answer absent, and a pack with a version answers as before
+
+### Requirement: The fake keeper answers as last read
+
+The fake keeper SHALL keep, per channel, the chain as it last answered
+it, and once made unreachable SHALL answer a channel it has answered
+with that chain, the time it answered and the words it was made
+unreachable with, and a channel it never answered unreadable with those
+words; append SHALL then be unreadable (C.13, C.14). Every chain it
+answers while reachable SHALL say it was read from the keeper itself.
+
+#### Scenario: Unreachable after a read
+
+- **WHEN** the fake keeper answers `stable`'s chain, is made unreachable with the words `ref unreadable`, and is asked again
+- **THEN** it answers the same claims, the time of the first answer and `ref unreadable`, and an append is unreadable with those words
+
+### Requirement: The fake landing answers as last fetched
+
+The fake landing SHALL keep, as its copy, what it held when it last
+answered, and once made unreachable SHALL answer every question from
+that copy, saying so, with the time of that answer and the words it was
+made unreachable with; made unreachable before it answered anything, it
+SHALL answer unreadable with those words (77, C.5, C.6). While
+reachable, every answer SHALL say it was read from the landing itself.
+
+#### Scenario: Unreachable after a read
+
+- **WHEN** the fake landing answers a landed revision, is made unreachable with the words `remote hung up`, and is asked again
+- **THEN** it answers landed from the copy, with the time of the first answer and `remote hung up`
+
+#### Scenario: A landing after the last answer
+
+- **WHEN** the fake landing answers of `main`, lands another revision on it, is made unreachable, and is asked of that revision
+- **THEN** it answers not landed from the copy, with the time of its last answer
+
+#### Scenario: Unreachable before any answer
+
+- **WHEN** the fake landing is made unreachable before it answered anything, and landed and verdicts-of are asked
+- **THEN** both answer unreadable with the words it was made unreachable with

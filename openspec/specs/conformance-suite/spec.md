@@ -38,8 +38,8 @@ nothing yet SHALL exist with its marker.
 
 #### Scenario: The gate's group waits for its unit
 
-- **WHEN** the gate's group is listed in bolt 1
-- **THEN** it holds no scenario, and its marker is in place for bolt 4's gate unit to add below
+- **WHEN** the gate's group is listed once bolt 4's gate unit has landed
+- **THEN** its marker is in place and below it are that unit's scenarios, among them those playing S3, S5 and S9, and they cite 25 to 30, 94 to 96, 107 and 108, none of which the register still names
 
 #### Scenario: Every seam has a group
 
@@ -237,12 +237,29 @@ identity told as expired.
 
 ### Requirement: The policy's contract
 
-The policy's group SHALL hold a policy to 82 and 83: for each audience,
-the claims required with the signers that may make each and the kinds
-and checks each may claim, binding no signer by output or ecosystem
-(116); and, where the repository declares no policy for an audience,
-an absence naming the audience. The revision beside it is verify's to
-name, not the policy's (82).
+The policy's group SHALL hold a policy to 82, 83 and 131: for each
+audience, the claims required with the signers that may make each and
+the kinds and checks each may claim, binding no signer by output or
+ecosystem (116); where the repository declares no policy for an
+audience, an absence naming the audience, the revision beside it being
+verify's to name, not the policy's (82); and the channels the policy
+declares, each with the one component it belongs to and how it moves,
+on each publish with releases alone or prereleases too, by promotion
+alone, or bound within its component, one
+component holding every channel where the repository declares one or
+none (125, 37), listed beside the channels the profile gives with
+nothing declared and like them (131). The group's rig SHALL declare
+components and channels, each with how it moves, at a landed revision
+as well as policies for audiences, and SHALL answer the channels its
+profile gives a set of components with nothing declared, and the
+channels it holds off. The group SHALL hold the givens a profile holds
+off to the channels answer, carried apart from the channels in force,
+each naming how it would move and the line that would switch it on
+(131, C.10). The group
+SHALL hold a profile to the three ways a channel moves and SHALL name
+no channel a profile gives, its declared channels bearing names no
+profile gives, so a profile whose givens bear other names passes alike
+(C.10).
 
 #### Scenario: The claims an audience requires
 
@@ -258,6 +275,36 @@ name, not the policy's (82).
 
 - **WHEN** the policy for a layout is asked where none is declared
 - **THEN** the answer is absent naming the audience, never refused
+
+#### Scenario: The channels a policy declares
+
+- **WHEN** the channels are asked at a revision declaring the components `lib` and `web`, `edge` of `lib` moving by promotion alone, `nightly` of `web` moving on each publish and `next` of `lib` bound to `edge`
+- **THEN** the answer is those three channels and the ones the profile gives `lib` and `web`, once each by name and then component, each with its component and how it moves, and the policy for `next` names `edge` as the channel it is bound to
+
+#### Scenario: One component has every channel
+
+- **WHEN** the channels `edge` and `next` are declared, at one revision declaring no component and at another declaring the one component `lib`
+- **THEN** both are of no declared component, spelled by name alone, at the first, and of `lib` at the second, and so is every channel the profile gives
+
+#### Scenario: A policy declaring no channel
+
+- **WHEN** the channels are asked at a revision whose policy declares acceptance and no channel
+- **THEN** the answer is the channels the profile gives the one component, an empty list where it gives none, and not an absence
+
+#### Scenario: Each way a channel moves
+
+- **WHEN** the channels are asked at a revision declaring one channel of each way it moves, and a second channel moving on each publish with prereleases
+- **THEN** the answer says each as declared, prereleases of the second alone, and policy-for of each agrees on the channel it is bound to
+
+#### Scenario: The givens held off
+
+- **WHEN** the channels are asked at a revision declaring the components `lib` and `web` and the channel `edge` of `lib`
+- **THEN** the answer's held givens are what the rig says its profile holds off for `lib` and `web`, an empty list where it holds none, each with how it would move and a line, and none of them is among the answer's channels in force
+
+#### Scenario: The channels of a policy that cannot be reached
+
+- **WHEN** the rig makes the policy unreachable and the channels are asked
+- **THEN** the answer is unreadable naming the policy, with its words unchanged, and not an empty list
 
 ### Requirement: A projection's contract
 
@@ -331,7 +378,10 @@ reported by digest with when it last converged.
 The keeper's group SHALL hold a keeper to 120 to 122, and to 34, 35 and
 105 as a keeper keeps them: promotions only appended, each after the
 claim it names as predecessor, a stale predecessor refused naming the
-head, a fork reported and never chosen.
+head, a fork reported and never chosen; to 125: two components'
+channels of one name kept as two chains; and to 60 and 61 as C.13 and
+C.14 keep them: a chain the keeper cannot reach answered as last read,
+saying when, an empty chain as any other, and never appended to.
 
 #### Scenario: A chain appended in order
 
@@ -352,6 +402,21 @@ head, a fork reported and never chosen.
 
 - **WHEN** the chain of a channel never appended to is read
 - **THEN** the keeper answers that none is held, not an error
+
+#### Scenario: Two components' channels of one name
+
+- **WHEN** a promotion of `beta` of `lib` is appended with no predecessor, then one of `beta` of `web` with no predecessor
+- **THEN** both appends are held, and each chain answers its own claim alone
+
+#### Scenario: A chain read as last read
+
+- **WHEN** a chain is appended and read, the keeper is made unreachable, and the chain is read again
+- **THEN** it answers the claims as read, a time no earlier than the first read, and the rig's words, and an append is unreadable with them
+
+#### Scenario: An empty chain read as last read
+
+- **WHEN** the chain of a channel never appended to is read, the keeper is made unreachable, and the chain is read again
+- **THEN** it answers no claims, a time no earlier than the first read, and the rig's words, and not that none is held
 
 ### Requirement: The binding
 
@@ -662,3 +727,209 @@ the conformance register in the commit whose scenario first cites it.
 
 - **WHEN** the coverage check runs
 - **THEN** 63 is cited by the record's group and is not in the register
+
+### Requirement: Promotion over the fakes
+
+The ledger's group SHALL hold the core's promotion over the fakes: S6 as
+far as the ledger goes, an approver promoting a version whose policy
+for `stable` requires the gate's acceptance and a rebuild by a second
+signer, the move in the ledger before the store, the claim attached to
+the index and `stable`'s name at it (33, 39, 101); S7 (35, 105); S8 (34,
+38); a bound channel taking a version its bound channel held and since
+left, and refusing one it never held (37, 83); a version found wanting,
+one not accepted, and a host the policy does not let promote, each
+refused naming the claim and writing nothing (9, 31, 32, 58); a forked
+chain refusing the promotion (105); the store rewritten from the ledger
+(106); and a channel read from the ledger alone, the store asked
+nothing (101, 60). Each scenario SHALL cite the clauses it exercises,
+and 32, 33, 37, 38, 39, 101 and 106 SHALL leave the register in the
+commit that cites them.
+
+#### Scenario: S6 over the fakes
+
+- **WHEN** an approver promotes an accepted version whose index carries a second signer's rebuild claim the policy for `stable` requires
+- **THEN** the ledger's append comes before every store write, the promotion claim is attached to the index, and `stable`'s name resolves to it
+
+#### Scenario: S7 over the fakes
+
+- **WHEN** a promotion names `stable` at a version it has left
+- **THEN** it is refused naming the version `stable` is at, and the ledger and the store are asked to write nothing
+
+#### Scenario: S8 over the fakes
+
+- **WHEN** `stable` is moved back to the version before
+- **THEN** the ledger holds both moves, and the newer version's index and claims are still read by digest
+
+#### Scenario: The register after this unit
+
+- **WHEN** the coverage check runs
+- **THEN** 32, 33, 37, 38, 39, 101 and 106 are cited and in no register entry, 41 and 97 are pending with the first target, and 125 is pending with `the-policy-seam-lists-the-channels`
+
+### Requirement: Channels in status over the fakes
+
+The status group SHALL hold status's channels to 31, 36, 58 to 61, 63,
+101 and 131 over the fakes, below its marker, each scenario asking the
+landing, the policy and the keeper alone and writing nothing:
+
+- every channel the policy declares, at its version or empty, with its
+  chain (31, 101, 125, 131);
+- a channel read as last read, with the store unreachable, nothing
+  shown refused, playing S10 as far as status goes (36, 60, 61);
+- one chain unreadable and one forked beside a channel shown, each
+  carrying the keeper's words (58, 59, 105);
+- everything kept deleted, the channels answered the same and the
+  record the same once rebuilt, playing S12 for the channels (63);
+- the environments' part unreadable with a fake target bound, the
+  target asked nothing (58, 60).
+
+#### Scenario: Every channel at its version or empty
+
+- **WHEN** the fake policy declares `beta` and `stable` of the world's component and the fake keeper holds two promotions of `stable`
+- **THEN** status names `beta` empty and `stable` at its head's version with both promotions newest first, and the store, signer and targets record no call
+
+#### Scenario: S10 for status
+
+- **WHEN** the fake store faults every operation, the fake keeper is made unreachable after one answer, and status is asked
+- **THEN** each channel is shown as last read with its time and the keeper's words, no part is refused, and the store records no call
+
+#### Scenario: One channel's answer beside another's
+
+- **WHEN** the fake keeper's chain is faulted unreadable once with the words `connection reset` and another channel is forked
+- **THEN** the first channel asked is unreadable carrying `connection reset`, the forked one refused naming both claims, and every other channel shown
+
+#### Scenario: S12 for the channels
+
+- **WHEN** status is asked, the host's record is deleted, and status is asked again
+- **THEN** the channels' part of both answers is equal, and after a rebuild so is the record's
+
+#### Scenario: The environments not yet read
+
+- **WHEN** the fake world binds a target for an environment and status is asked
+- **THEN** the environments' part is unreadable saying no target is read, never empty, and the fake target records no call
+
+### Requirement: The page answers from the one core beside the command line
+
+The surfaces group SHALL hold every surface to answer status's channels
+as the core does, below its marker, for 36, 56, 57 and 132, and SHALL
+run over the command line and over the served page, the page asked
+for its repository's JSON, `/<owner>/<name>/status.json`, through the
+process's own handling of a request. A
+surface's answer and the core's SHALL be equal value for value but for
+the moment each asked.
+
+#### Scenario: The command line and the page answer the channels
+
+- **WHEN** status is asked through each surface with JSON output over the fakes, with a channel promoted
+- **THEN** each answer equals the core's status answer over the same binding, value for value but for the moment asked, which lies between the moments before and after the asking
+
+### Requirement: The given channels over the fakes
+
+The gate's and the ledger's groups SHALL hold the core to the channels
+the policy gives and makes: the gate moving every channel the channels
+answer says moves on each publish, of the component published and no
+other, and no channel it reads from the policy file (95, 125, 131), a
+prerelease moving only those that take prereleases (95, 131); a
+promotion of a channel whose policy names the gate's signer as its
+promoter, refusing any other signer (32, 9); and a promotion asked by
+a signer the channel's approvers do not name refused (32, 33). Each
+scenario SHALL cite the clauses it exercises.
+
+#### Scenario: beta of one component
+
+- **WHEN** the fake policy lists `beta` of `lib` and of `web`, both moving on each publish, and the gate accepts a version of `lib` a publish told it of
+- **THEN** `beta` of `lib` moves and `beta` of `web` does not, and the ledger holds one chain
+
+#### Scenario: stable promoted by the gate's signer
+
+- **WHEN** the policy for `stable` names `gate` as the signer of its promotion, and in one world a host signing as `gate` and in another one signing as `laptop` promotes a version `beta` has held
+- **THEN** the first moves `stable`, and the second is refused naming the promotion and `gate` with nothing appended
+
+#### Scenario: A prerelease and the channels that follow
+
+- **WHEN** the fake policy lists `edge` moving on each publish with prereleases and `nightly` moving on each publish with releases alone, and the gate accepts a prerelease a publish told it of
+- **THEN** `edge` moves and `nightly` does not, and the version is accepted
+
+#### Scenario: An asker the approvers do not name
+
+- **WHEN** the policy for `next` names `gate` as its promoter and `ci` as the one signer that may ask, and a host signing as `gate` promotes a version
+- **THEN** the promotion is refused naming `gate` as the asker and `ci`, with nothing signed or appended
+
+### Requirement: A landing read as last fetched
+
+The landing's group SHALL hold every landing that reads a remote to 77
+read from a copy: read once, made unreachable and asked again, it
+answers as before from the copy, saying when and with the remote's
+words, and a revision landed after the copy was fetched is not landed
+from the copy (58, 59, 61, 77, 78). For a rig whose landing reads no
+remote, the scenario SHALL be not applicable.
+
+#### Scenario: Read again from the copy
+
+- **WHEN** a landed revision's landed and verdicts-of are read, the landing is made unreachable, and both are read again
+- **THEN** both answer as first read, each saying it was read from the copy at a time no earlier than the first read, with the words the rig made it unreachable with
+
+#### Scenario: A revision landed after the copy
+
+- **WHEN** a revision is landed after the landing was last read, the landing is then made unreachable, and landed is asked of it
+- **THEN** it answers not landed from the copy, never landed and never refused
+
+#### Scenario: A landing that reads no remote
+
+- **WHEN** the group runs over a rig that says its landing reads no remote
+- **THEN** the report names a landing read as last fetched not applicable, with the rig's reason
+
+### Requirement: Not landed as last fetched over the fakes
+
+The publish group SHALL hold publish to 77's refusal over the fakes: a
+revision the landing answers not landed from its copy is refused naming
+the copy's time and the remote's words before any seam but the landing
+is asked, and one it answers landed from its copy is published as one
+landed on its remote (14, 59, 77, core.11).
+
+#### Scenario: Refused from the copy
+
+- **WHEN** the fake landing answers not landed from its copy, and the revision is published
+- **THEN** the publish is refused naming the branch, the revision, the copy's time and the remote's words, saying to ask again, and no seam but the landing is asked
+
+#### Scenario: Published from the copy
+
+- **WHEN** the fake landing answers landed from its copy, and the revision is published in two worlds alike but that one answers from its remote
+- **THEN** the two publishes answer the same
+
+### Requirement: Status's landing as last fetched over the fakes
+
+The status group SHALL hold status to a landing read from its copy over
+the fakes: every channel shown as for a landing read from its remote,
+the channels' part saying the landing was read as last fetched, when,
+and with the remote's words (36, 60, 77).
+
+#### Scenario: Channels from a landing's copy
+
+- **WHEN** the fake landing answers the branch's head landed from its copy, and status is asked
+- **THEN** every channel the policy declares is shown as in a world alike whose landing answers from itself, and the channels' part names the copy's time and the remote's words verbatim
+
+### Requirement: The gate told by a publish's answer over the fakes
+
+The gate's group SHALL hold a scenario in which the core's publish
+offers a version and answers, with nothing accepted and nothing asked
+of the ledger, and the gate, told of that answer with the index it
+names, accepts that index and moves each channel that follows each
+publish; and a scenario in which the told index is not what the
+version's name resolves to, answered unreadable with nothing written.
+Each SHALL cite 95 and 130, and 130 SHALL leave the register in the
+commit that cites it (core.33).
+
+#### Scenario: The core starts nothing after an offer
+
+- **WHEN** the suite publishes a version over the fakes and then tells the gate of the publish's answer
+- **THEN** the fake keeper and the fake store record no acceptance, no promotion and no append before the gate is told, and after it the acceptance is attached to the index the publish's answer named and `beta`'s chain holds the promotion
+
+#### Scenario: A told index the name does not resolve to
+
+- **WHEN** the suite tells the gate of a publish's answer whose index differs from the one the version's name resolves to
+- **THEN** the gate's answer is unreadable naming both digests, and the fake store and the fake keeper record no write
+
+#### Scenario: 130 cited and not registered
+
+- **WHEN** the coverage check runs
+- **THEN** 130 is cited by the gate's group and is not in the register

@@ -13,6 +13,7 @@ pub mod recorder;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::LazyLock;
 
 use tempfile::TempDir;
 
@@ -39,12 +40,47 @@ const GIT_REPOSITORY_ENV: &[&str] = &[
     "GIT_PREFIX",
 ];
 
-/// The git command, under the fixed author, committer and date and none
-/// of the host's configuration.
+/// The variables that place a program's home, configuration, state,
+/// cache and data, each with the directory of the scratch home it names.
+pub const HOME_ENV: &[(&str, &str)] = &[
+    ("HOME", "home"),
+    ("XDG_CONFIG_HOME", "config"),
+    ("XDG_STATE_HOME", "state"),
+    ("XDG_CACHE_HOME", "cache"),
+    ("XDG_DATA_HOME", "data"),
+];
+
+/// The scratch home: a directory of this test process's own under the
+/// target directory, holding a home, a configuration, a state, a cache and
+/// a data directory as the gate's sluice has. The process runs under it
+/// from its first scratch git on, so nothing it starts reads the host's:
+/// not the scratch git and the hooks it runs, sluice's among them, nor a
+/// profile's tools, which a test runs in its own process.
+static HOME: LazyLock<PathBuf> = LazyLock::new(|| {
+    let home = TempDir::new_in(env!("CARGO_TARGET_TMPDIR"))
+        .expect("a temporary directory")
+        .keep();
+    for (name, dir) in HOME_ENV {
+        fs::create_dir_all(home.join(dir)).expect("the home is writable");
+        std::env::set_var(name, home.join(dir));
+    }
+    home
+});
+
+/// The scratch home, the process running under it from here on.
+pub fn home() -> &'static Path {
+    &HOME
+}
+
+/// The git command, under the fixed author, committer and date, the
+/// scratch home and none of the host's configuration.
 pub fn git_command() -> Command {
     let mut command = Command::new("git");
     for name in GIT_REPOSITORY_ENV {
         command.env_remove(name);
+    }
+    for (name, dir) in HOME_ENV {
+        command.env(name, home().join(dir));
     }
     command
         .env("GIT_CONFIG_GLOBAL", "/dev/null")

@@ -60,7 +60,17 @@ rollback a promotion back; `tailrace status` reading channels and the
 chain on any machine.\
 *Done when* a promotion made on one machine is read on another from the
 ledger alone, a promotion from a stale predecessor is refused naming the
-head, and a rollback is a promotion to an older version.
+head, and a rollback is a promotion to an older version.\
+*Landed:* the key in AWS KMS as the signer; the gate accepting under the
+policy, with `beta` following each publish; and the ledger and
+promotion: `tailrace promote` judging a version under the channel's
+policy and its binding, the git ref and the store as the ledger, a
+rollback a promotion back, and a channel read on a second machine from
+the git ref alone; and status on any machine: `tailrace status` showing
+every channel the policy declares at its version, with the chain that
+put it there, read from the ledger on a machine that never published,
+and the host's one serving process showing every repository it knows
+on one page and each whole on a page of its own.
 
 **Bolt 5 · sync and serve.** Consumer layouts under a policy: npm
 rendered and served by one process per host at a fixed port, Cargo's

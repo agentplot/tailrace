@@ -81,6 +81,13 @@ impl World {
     }
 
     pub fn with_policy(policy: &str) -> World {
+        World::with_head(policy, "feat: lib grows")
+    }
+
+    /// The world under `policy` whose head is one commit on `lib` with
+    /// the message `subject`: a feature makes `lib` a release, and a chore
+    /// a prerelease (21).
+    pub fn with_head(policy: &str, subject: &str) -> World {
         let fixture = Fixture::new();
         let shared = fixture.bare("shared.git");
         let repo = fixture.clone_of(&shared, "repo");
@@ -88,28 +95,44 @@ impl World {
         let start = repo.touch("feat: start", &["crates/lib", "site"]);
         repo.tag("lib-v0.1.0", &start);
         repo.tag("web-v0.1.0", &start);
-        let head = repo.touch("feat: lib grows", &["crates/lib"]);
+        let head = repo.touch(subject, &["crates/lib"]);
         repo.git(&["push", "-q", "origin", "main", "lib-v0.1.0", "web-v0.1.0"]);
 
-        let mut fakes = Fakes::new();
         let main = Branch::new("main");
-        fakes.landing.land(&main, &head);
-        fakes.signer.hold(&SignerId::new(HOST));
-        fakes.projection(&eco("eco-a"));
-        fakes.projection(&eco("eco-b"));
-        let world = World {
+        let mut world = World {
             fixture,
             shared,
             repo,
-            fakes,
+            fakes: Fakes::new(),
             main,
             start,
             head,
         };
-        for o in ["lib-pack", "lib-docs", "site"] {
-            world.made(o, Outcome::Pass);
-        }
+        world.fakes = world.fakes_alike();
         world
+    }
+
+    /// Fakes as the world first bound them: the head landed on `main`,
+    /// every output built and passing, the host's identity at hand, and
+    /// both ecosystems bound; nothing asked of them yet.
+    pub fn fakes_alike(&self) -> Fakes {
+        let mut fakes = Fakes::new();
+        fakes.landing.land(&self.main, &self.head);
+        fakes.signer.hold(&SignerId::new(HOST));
+        fakes.projection(&eco("eco-a"));
+        fakes.projection(&eco("eco-b"));
+        for o in ["lib-pack", "lib-docs", "site"] {
+            fakes.build.made(
+                &self.head,
+                &OutputName::new(o),
+                Report {
+                    build: build_of(o, &self.head),
+                    outcome: Outcome::Pass,
+                    files: vec![format!("dist/{o}.tar")],
+                },
+            );
+        }
+        fakes
     }
 
     /// `output` built at the head from its own build identity, ending in

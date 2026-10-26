@@ -9,13 +9,14 @@ use std::cell::Cell;
 use serde_json::json;
 use tailrace_fakes::{
     BuildOp, FakeKeeper, FakePolicy, FakeProjection, FakeSigner, FakeTarget, Fakes, Fault,
-    KeeperOp, LandingOp, PolicyOp, ProjectionOp, SignerOp, StoreOp, Times, PROFILE,
+    KeeperOp, PolicyOp, ProjectionOp, SignerOp, StoreOp, Times, PROFILE,
 };
 use tailrace_seams::{
-    Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
-    Digest, Ecosystem, EcosystemName, Envelope, Environment, EnvironmentName, Keeper, Landing,
-    NamedSigner, Outcome, Output, OutputName, Policy, Projection, Report, Required, Revision,
-    Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
+    Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelId, ChannelName, Claim,
+    ClaimKind, ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope,
+    Environment, EnvironmentName, HeldChannel, Keeper, Landing, Moves, NamedSigner, Outcome,
+    Output, OutputName, Policy, Projection, Report, Required, Revision, Seams, Signature, Signer,
+    SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
@@ -250,6 +251,12 @@ impl LandingRig for FakeLandingRig {
         self.records
     }
 
+    /// The fake landing keeps a copy of what it last answered, as a
+    /// landing reading a remote does.
+    fn reads_a_remote(&self) -> bool {
+        true
+    }
+
     fn landed(&self, verdicts: &[Recorded]) -> Revision {
         assert!(
             self.records || verdicts.is_empty(),
@@ -268,12 +275,11 @@ impl LandingRig for FakeLandingRig {
         revision(&self.revisions)
     }
 
+    /// The fake landing made unreachable with [`WORDS`], answering from
+    /// what it last answered.
     fn unreachable(&self) -> String {
-        let landing = &self.fakes.landing;
-        unreachable(
-            |op, f, t| landing.fault(op, f, t),
-            &[LandingOp::Landed, LandingOp::VerdictsOf],
-        )
+        self.fakes.landing.unreachable(WORDS);
+        WORDS.into()
     }
 }
 
@@ -401,9 +407,42 @@ impl PolicyRig for FakePolicyRig {
         at
     }
 
+    fn declaring(&self, _: &[ComponentName], channels: &[DeclaredChannel]) -> Revision {
+        let at = revision(&self.revisions);
+        for channel in channels {
+            self.policy.require_at(
+                &at,
+                Audience::Channel(channel.channel.clone()),
+                Required::Channel {
+                    claims: vec![],
+                    bound_to: channel.bound_to().map(|c| c.name),
+                    promoted_by: vec![],
+                    approvers: vec![],
+                },
+            );
+            if let Moves::EachPublish { prereleases } = channel.moves {
+                self.policy.follows_at(&at, &channel.channel, prereleases);
+            }
+        }
+        at
+    }
+
+    /// The fake gives no channel a test did not script (C.10 is the
+    /// file's).
+    fn given(&self, _: &[ComponentName]) -> Vec<DeclaredChannel> {
+        Vec::new()
+    }
+
+    fn held(&self, _: &[ComponentName]) -> Vec<HeldChannel> {
+        Vec::new()
+    }
+
     fn unreachable(&self) -> String {
         let policy = &self.policy;
-        unreachable(|op, f, t| policy.fault(op, f, t), &[PolicyOp::PolicyFor])
+        unreachable(
+            |op, f, t| policy.fault(op, f, t),
+            &[PolicyOp::PolicyFor, PolicyOp::Channels],
+        )
     }
 }
 
@@ -517,7 +556,7 @@ impl FakeTargetRig {
         let n = self.environments.get();
         Environment {
             name: EnvironmentName::new(format!("environment-{n}")),
-            channel: ChannelName::new(format!("channel-{n}")),
+            channel: ChannelId::new(None, ChannelName::new(format!("channel-{n}"))),
             waits: false,
         }
     }
@@ -598,7 +637,7 @@ impl KeeperRig for FakeKeeperRig {
         &self.keeper
     }
 
-    fn promotion(&self, channel: &ChannelName, n: u32) -> Envelope {
+    fn promotion(&self, channel: &ChannelId, n: u32) -> Envelope {
         let claim = Claim {
             subject: Digest::of(format!("the index {channel} moves to, {n}").as_bytes()),
             kind: ClaimKind::Promotion,
@@ -611,7 +650,7 @@ impl KeeperRig for FakeKeeperRig {
             .expect("the gate's identity is at hand")
     }
 
-    fn fork(&self, channel: &ChannelName) -> [Envelope; 2] {
+    fn fork(&self, channel: &ChannelId) -> [Envelope; 2] {
         let (a, b) = (self.promotion(channel, 1), self.promotion(channel, 2));
         self.keeper.fork(channel, &a, &b);
         [a, b]
