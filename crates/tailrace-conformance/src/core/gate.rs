@@ -11,9 +11,9 @@ use serde_json::json;
 use tailrace_core::{accept, Judged, Moved, Published, ToldBy, WhyWanting};
 use tailrace_fakes::{FakeKeeper, FakeLanding, FakeSigner, FakeStore, KeeperOp, StoreOp};
 use tailrace_seams::{
-    Answer, Audience, ChannelName, Check, Claim, ClaimKind, Digest, Envelope, Held, Keeper,
-    Manifest, Name, NamedSigner, Not, Outcome, Put, Required, RequiredClaim, Revision, Seam,
-    Signer, SignerId, Store, Why,
+    channel_name, Answer, Audience, ChannelName, Check, Claim, ClaimKind, Digest, Envelope, Held,
+    Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required, RequiredClaim, Revision,
+    Seam, Signer, SignerId, Store, Why,
 };
 
 use crate::core::publish::{one, version_of, TAG, VERSION};
@@ -321,7 +321,7 @@ fn of_kind(world: &FakeWorld, digest: &Digest, kind: ClaimKind) -> usize {
 /// `beta` names nothing and its chain holds nothing.
 fn beta_unmoved(world: &FakeWorld) {
     assert!(
-        world.fakes.store.resolve(&Name::new(BETA)).is_err(),
+        world.fakes.store.resolve(&channel_name(&beta())).is_err(),
         "beta names a version"
     );
     assert!(
@@ -368,11 +368,11 @@ impl Store for LedgerWatched {
         self.inner.claims_of(digest)
     }
     fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
-        if name.as_str() == BETA {
+        if *name == channel_name(&beta()) {
             let head = self.keeper.chain(&beta()).ok();
             self.heads
                 .borrow_mut()
-                .push(head.and_then(|c| c.last().map(Envelope::digest)));
+                .push(head.and_then(|c| c.claims.last().map(Envelope::digest)));
         }
         self.inner.name(name, to, expected)
     }
@@ -430,7 +430,7 @@ fn a_version_accepted_and_beta_moved(world: &FakeWorld) {
     assert!(
         writes.iter().all(
             |w| matches!(w, Write::Attach { subject, .. } if subject == index)
-                || matches!(w, Write::Name { name, .. } if name.as_str() == BETA)
+                || matches!(w, Write::Name { name, .. } if *name == channel_name(&beta()))
         ),
         "the gate wrote other than claims on the index and beta's name: {writes:?}"
     );
@@ -442,7 +442,10 @@ fn a_version_accepted_and_beta_moved(world: &FakeWorld) {
     assert_eq!(channel, &beta());
     assert_eq!(to, index);
     assert_eq!(
-        ok(world.fakes.store.resolve(&Name::new(BETA)), "resolve beta"),
+        ok(
+            world.fakes.store.resolve(&channel_name(&beta())),
+            "resolve beta"
+        ),
         *index,
         "beta does not name the version"
     );

@@ -145,17 +145,6 @@ system's words.
 - **WHEN** rebuild runs while the layout path the file names does not exist
 - **THEN** it exits 3 naming the layout, and no directory is made
 
-### Requirement: The ledger is not yet bound
-
-The file SHALL name no ledger; the binding SHALL hold a ledger that
-answers absent naming the ledger's binding for every operation, and no
-target (92).
-
-#### Scenario: A ledger table
-
-- **WHEN** the bindings file holds a `[ledger]` table
-- **THEN** publish and verify answer unreadable naming the table
-
 ### Requirement: A laptop publishes a sluice landing from the installed binary
 
 The built binary, bound by a bindings file naming a layout, sluice and a
@@ -208,3 +197,36 @@ both verify-only.
 
 - **WHEN** a host whose file names no `[signing]` is bound for verify
 - **THEN** both signer profiles are bound verify-only, and nothing is read or reached in binding them
+
+### Requirement: The file names the ledger
+
+The file SHALL bind the ledger for the host with `[ledger]`, naming its
+profile by its one key (92, 118): `git_ref`, with an optional `remote`
+holding the refs, the repository the command runs in holding them where
+none is named (C.13); or `store`, holding the chain in the store
+`[store]` names, through a binding of its own that never makes the
+store (C.14). `[ledger]` naming no profile, two, or an option its
+profile does not read SHALL be unreadable naming the table. A command
+that needs the ledger on a host whose file names no `[ledger]` SHALL
+answer absent naming `[ledger]` before anything is read; the binding
+SHALL hold no target.
+
+#### Scenario: A git ref ledger with a remote
+
+- **WHEN** the file names `[ledger] git_ref = { remote = "origin" }`
+- **THEN** a promotion pushes its claim to `refs/tailrace/ledger/<channel>` on `origin`, and the file names no credential
+
+#### Scenario: A store ledger
+
+- **WHEN** the file names `[store] layout` and `[ledger] store = {}`
+- **THEN** a promotion's chain is walked from the channel's name in that layout, and the layout is not made by the ledger's binding
+
+#### Scenario: A ledger table naming two profiles
+
+- **WHEN** `[ledger]` names both `git_ref` and `store`
+- **THEN** every command bound by the file answers unreadable naming `[ledger]`, and nothing is read or written
+
+#### Scenario: No ledger table
+
+- **WHEN** the file names no `[ledger]` and `tailrace promote` runs
+- **THEN** it answers absent naming `[ledger]`, and nothing is read or written

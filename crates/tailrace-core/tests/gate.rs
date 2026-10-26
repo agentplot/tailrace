@@ -10,14 +10,15 @@ use std::rc::Rc;
 
 use serde_json::json;
 use tailrace_core::{
-    accept, answer_json, following, AcceptAsk, Declared, Followed, Judged, Moved, Published,
-    ToldBy, WhyWanting,
+    accept, answer_json, channel, following, promote, AcceptAsk, Channel, Declared, Followed,
+    Judged, Moved, PromoteAsk, Promoted, Published, To, ToldBy, WhyWanting,
 };
 use tailrace_fakes::{FakeKeeper, FakeSigner, KeeperOp, PolicyOp, SignerOp, StoreOp};
 use tailrace_seams::{
-    Answer, Audience, Branch, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required,
-    RequiredClaim, Revision, Seam, Seams, Signer, SignerId, Source, Store, Version, Why,
+    channel_name, Answer, Audience, Branch, Chain, ChannelName, Check, Claim, ClaimKind,
+    ComponentName, Digest, Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome,
+    Promotion, Put, Required, RequiredClaim, Revision, Satisfied, Seam, Seams, Signer, SignerId,
+    Source, Store, Version, Why,
 };
 use world::{build_of, version_of, World, HOST, LANDING};
 
@@ -1120,9 +1121,13 @@ fn a_build_host_running_the_gate_over_its_own_acceptance_is_refused_not_accepted
 
 // Requirement: The gate moves each following channel after accepting what a publish told it of
 
-/// What `channel` names in the store, if anything.
+/// What `channel`'s name in the store names, if anything.
 fn named_at(world: &World, channel: &str) -> Option<Digest> {
-    world.fakes.store.resolve(&Name::new(channel)).ok()
+    world
+        .fakes
+        .store
+        .resolve(&channel_name(&ChannelName::new(channel)))
+        .ok()
 }
 
 /// The appends the keeper was asked.
@@ -1202,18 +1207,33 @@ fn beta_moved(answer: Answer<Judged>) -> Answer<Moved> {
     moved
 }
 
-/// A promotion of `beta` to `subject`, signed as the gate.
+/// `lib`'s `version` at `index`.
+fn at(version: &str, index: &Digest) -> tailrace_seams::Moved {
+    tailrace_seams::Moved {
+        version: Version::new(version),
+        index: index.clone(),
+    }
+}
+
+/// `beta`'s first promotion, to 0.1.0 at `subject`, signed as the gate.
 fn promotion_to(world: &World, subject: &Digest) -> Envelope {
     let gate = FakeSigner::new();
     gate.hold(&SignerId::new(GATE));
-    let claim = Claim {
-        subject: subject.clone(),
-        kind: ClaimKind::Promotion,
-        revision: world.head.clone(),
-        build: None,
-        body: json!({ "channel": "beta" }),
+    let promotion = Promotion {
+        channel: beta(),
+        component: ComponentName::new("lib"),
+        to: at("0.1.0", subject),
+        from: None,
+        predecessor: None,
+        asked_by: SignerId::new("each publish"),
+        policy: Satisfied {
+            revision: world.head.clone(),
+            claims: vec![],
+        },
+        at: WHEN,
     };
-    gate.sign(&claim, &SignerId::new(GATE)).unwrap()
+    gate.sign(&promotion.claim(world.head.clone()), &SignerId::new(GATE))
+        .unwrap()
 }
 
 #[test]
@@ -1225,9 +1245,9 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
     let (keeper, held) = (world.fakes.keeper.clone(), seen.clone());
     seams.store = Box::new(Hooked {
         on_name: Box::new(move |name| {
-            if name.as_str() == "beta" {
+            if *name == channel_name(&beta()) {
                 held.borrow_mut()
-                    .push(keeper.chain(&beta()).map(|c| c.len()).unwrap_or(0));
+                    .push(keeper.chain(&beta()).map(|c| c.claims.len()).unwrap_or(0));
             }
         }),
         ..Hooked::over(&world.fakes.store)
@@ -1256,7 +1276,7 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
     );
     assert_eq!(named_at(&world, "beta").as_ref(), Some(index));
 
-    let chain = world.fakes.keeper.chain(&beta()).unwrap();
+    let chain = world.fakes.keeper.chain(&beta()).unwrap().claims;
     assert_eq!(chain.len(), 1);
     assert_eq!(chain[0].digest(), promotion);
     assert!(world
@@ -1275,17 +1295,24 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
         (&claim.subject, claim.kind, &claim.revision),
         (index, ClaimKind::Promotion, &world.head)
     );
-    assert_eq!(claim.body["channel"], "beta");
-    assert_eq!(claim.body["from"], json!(null));
-    assert_eq!(claim.body["to"], index.as_str());
-    assert_eq!(claim.body["asked_by"], "each publish");
+    let made = Promotion::of(&claim).expect("the gate's promotion is not of the one body");
+    assert_eq!(made.policy.claims.len(), 2);
     assert_eq!(
-        claim.body["policy"],
-        json!({ "audience": { "channel": "beta" }, "revision": world.head.as_str() })
+        made,
+        Promotion {
+            channel: beta(),
+            component: ComponentName::new("lib"),
+            to: at("0.2.0", index),
+            from: None,
+            predecessor: None,
+            asked_by: SignerId::new("each publish"),
+            policy: Satisfied {
+                revision: world.head.clone(),
+                claims: made.policy.claims.clone(),
+            },
+            at: WHEN,
+        }
     );
-    assert_eq!(claim.body["claims"].as_array().unwrap().len(), 2);
-    assert_eq!(claim.body["when"], WHEN);
-    assert_eq!(claim.body["predecessor"], json!(null));
 }
 
 #[test]
@@ -1299,19 +1326,21 @@ fn a_promotion_names_the_chains_head_and_moves_the_name_from_where_it_left_it() 
     world
         .fakes
         .store
-        .name(&Name::new("beta"), &before, None)
+        .name(&channel_name(&beta()), &before, None)
         .unwrap();
 
     let moved = beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish)));
     let Ok(Moved::Promoted { from, name, .. }) = moved else {
         panic!("beta was not promoted: {moved:?}")
     };
-    assert_eq!(from, Some(before));
+    assert_eq!(from, Some(before.clone()));
     assert_eq!(name, Followed::Moved { to: index.clone() });
-    let chain = world.fakes.keeper.chain(&beta()).unwrap();
+    let chain = world.fakes.keeper.chain(&beta()).unwrap().claims;
     assert_eq!(chain.len(), 2);
-    let claim = Claim::from_envelope(&chain[1]).unwrap();
-    assert_eq!(claim.body["predecessor"], first.digest().as_str());
+    let made = Promotion::of(&Claim::from_envelope(&chain[1]).unwrap()).unwrap();
+    assert_eq!(made.predecessor, Some(first.digest()));
+    assert_eq!(made.from, Some(at("0.1.0", &before)));
+    assert_eq!(made.to, at("0.2.0", index));
     assert_eq!(named_at(&world, "beta").as_ref(), Some(index));
 }
 
@@ -1334,13 +1363,13 @@ impl Keeper for Racing {
         self.appended.set(self.appended.get() + 1);
         self.inner.append(channel, promotion, predecessor)
     }
-    fn chain(&self, channel: &ChannelName) -> Answer<Vec<Envelope>> {
+    fn chain(&self, channel: &ChannelName) -> Answer<Chain> {
         let answer = self.inner.chain(channel);
         if !self.raced.replace(true) {
             let head = answer
                 .as_ref()
                 .ok()
-                .and_then(|c| c.last())
+                .and_then(|c| c.claims.last())
                 .map(|e| e.digest());
             self.inner
                 .append(channel, &self.then, head.as_ref())
@@ -1432,4 +1461,58 @@ fn a_channel_already_at_the_version_is_there_and_nothing_is_written() {
     };
     assert_eq!(beta_moved(answer), Ok(Moved::There { at: index.clone() }));
     assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+#[test]
+fn a_version_the_gate_moved_beta_to_is_taken_by_stable_bound_to_beta() {
+    let (world, published) = beta_world();
+    let (_, index) = version_of(&published);
+    world.fakes.signer.hold(&SignerId::new(GATE));
+    let seams = world.fakes.seams();
+    beta_moved(accept(
+        &seams,
+        &world.history(),
+        &ask("0.2.0", ToldBy::Publish),
+    ))
+    .unwrap();
+    let Ok(Channel::At { head, .. }) = channel(seams.keeper.as_ref(), &beta()) else {
+        panic!("beta's chain does not read from the ledger")
+    };
+    assert_eq!(head.to, at("0.2.0", index));
+
+    let stable = ChannelName::new("stable");
+    world.fakes.policy.require(
+        Audience::Channel(stable.clone()),
+        Required::Channel {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![named(
+                    GATE,
+                    &[ClaimKind::Acceptance, ClaimKind::Promotion],
+                    &[],
+                )],
+            }],
+            bound_to: Some(beta()),
+        },
+    );
+    let answer = promote(
+        &seams,
+        &world.history(),
+        &PromoteAsk {
+            branch: Branch::new("main"),
+            component: Some(ComponentName::new("lib")),
+            channel: stable,
+            to: To::Version(Version::new("0.2.0")),
+            from: None,
+            signer: SignerId::new(GATE),
+            at: WHEN,
+        },
+    );
+    let Ok(Promoted::Moved { to, store, .. }) = answer else {
+        panic!("stable bound to beta did not take what the gate moved beta to: {answer:?}")
+    };
+    assert_eq!(to, at("0.2.0", index));
+    assert!(store.is_ok(), "{store:?}");
+    assert_eq!(named_at(&world, "stable").as_ref(), Some(index));
 }

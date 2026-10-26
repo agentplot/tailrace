@@ -1,7 +1,10 @@
 //! The keeper's group: 120 to 122, and 34, 35 and 105 as a keeper keeps
-//! them (B.8).
+//! them (B.8); and 60 and 61 as C.13 and C.14 keep them, a chain the
+//! keeper cannot reach answered as last read.
 
-use tailrace_seams::{ChannelName, Envelope, Keeper, Not, Seam, Why};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use tailrace_seams::{Chain, ChannelName, Envelope, Keeper, Not, Read, Seam, Why};
 
 use crate::seams::{absent, unreadable};
 use crate::{ok, Rig, Scenario};
@@ -20,8 +23,9 @@ pub trait KeeperRig: Rig {
     /// fork, as the keeper came to hold them.
     fn fork(&self, channel: &ChannelName) -> [Envelope; 2];
 
-    /// The keeper made unreachable, every operation answering unreadable,
-    /// and the words it answers with.
+    /// The keeper made unreachable, and the words it answers with: every
+    /// append, and the chain of a channel it never answered, unreadable
+    /// with them, and a chain it answered before as last read (60, 61).
     fn unreachable(&self) -> String;
 }
 
@@ -58,6 +62,12 @@ pub fn scenarios() -> Vec<Scenario<dyn KeeperRig>> {
             run: a_keeper_that_cannot_be_reached,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "a chain read as last read",
+            plays: None,
+            cites: &[60, 61, 121],
+            run: a_chain_read_as_last_read,
+        },
     ]
 }
 
@@ -91,8 +101,8 @@ fn a_chain_appended_in_order(rig: &dyn KeeperRig) {
     let channel = stable();
     let appended = two(rig, &channel);
     let keeper = rig.keeper();
-    let first = ok(keeper.chain(&channel), "the first reader's chain");
-    let second = ok(keeper.chain(&channel), "the second reader's chain");
+    let first = ok(keeper.chain(&channel), "the first reader's chain").claims;
+    let second = ok(keeper.chain(&channel), "the second reader's chain").claims;
     assert_eq!(first, appended, "the chain is not the promotions in order");
     assert_eq!(first, second, "two readers were answered two chains");
 }
@@ -126,7 +136,7 @@ fn a_stale_predecessor(rig: &dyn KeeperRig) {
         "an append naming no predecessor on a chain that has one",
     );
     assert_eq!(
-        ok(keeper.chain(&channel), "chain"),
+        ok(keeper.chain(&channel), "chain").claims,
         [first, second],
         "a refused append changed the chain"
     );
@@ -174,5 +184,45 @@ fn a_keeper_that_cannot_be_reached(rig: &dyn KeeperRig) {
         Seam::Keeper,
         &words,
         "append",
+    );
+}
+
+fn a_chain_read_as_last_read(rig: &dyn KeeperRig) {
+    let channel = stable();
+    let appended = two(rig, &channel);
+    let third = rig.promotion(&channel, 3);
+    let first_read = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let read = ok(rig.keeper().chain(&channel), "the chain");
+    assert_eq!(
+        read.read,
+        Read::Source,
+        "a chain read from the keeper itself does not say so"
+    );
+    let words = rig.unreachable();
+    match rig.keeper().chain(&channel) {
+        Ok(Chain {
+            claims,
+            read: Read::Kept { at, said },
+        }) => {
+            assert_eq!(
+                claims, appended,
+                "the chain as last read is not the chain read"
+            );
+            assert!(
+                at >= first_read,
+                "the chain was kept at {at}, before it was read at {first_read}"
+            );
+            assert_eq!(said, words, "the chain as last read carries other words");
+        }
+        other => panic!("a chain read before the keeper was unreachable answered {other:?}"),
+    }
+    unreadable(
+        rig.keeper()
+            .append(&channel, &third, Some(&appended[1].digest())),
+        Seam::Keeper,
+        &words,
+        "an append to a chain read as last read",
     );
 }
