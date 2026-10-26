@@ -1,9 +1,9 @@
 Every command runs inside `devenv shell -- <command>`. This unit's code
 starts once bolt tailrace-the-gate-and-the-channels,
-the-store-names-an-artifact-by-ecosystem-name-and-version and
-render-under-a-policy's fix adding requires are on this bolt; tasks 2.4
-and 3.5 start once cargos-registry's range and loop are on it too
-(design, Context). Each group's tasks are verified by the moon tasks
+the-projection-answers-what-an-artifact-requires and
+the-store-names-an-artifact-by-ecosystem-name-and-version are on this
+bolt; tasks 2.4 and 3.5 start once cargos-registry's range and loop are
+on it too (design, Context). Each group's tasks are verified by the moon tasks
 named, which `check-fast` or `check-tools` runs.
 
 ## 1. The seam: serve answers one request
@@ -25,7 +25,7 @@ named, which `check-fast` or `check-tools` runs.
 - [ ] 3.1 Create `crates/tailrace/src/profiles/projection/npm/mod.rs` with `ECOSYSTEM = "npm"` and `NpmProjection::new(store, origin)`, bound in `profiles/projection/mod.rs`'s `bound` beside the others with a store of its own opened as the moon cache's is and `served::origin()`, in `crates/tailrace/src/bindings/mod.rs`; add `flate2`, `tar`, `sha1` and `nodejs-semver` 4.2 to the workspace's `Cargo.toml` and `crates/tailrace/Cargo.toml`, and `tempfile` to the binary's dependencies (proposal, Impact); verify with `moon run cli:test`
 - [ ] 3.2 Write pack as design D6, with unit tests that need no npm for an output with no `package.json` (refused naming it) and a pack with no version (absent naming cache entries); verify with `moon run cli:test`
 - [ ] 3.3 Write pinned's lockfile part as design D7, with unit tests over lockfiles the test writes for the npm-projection spec's "A lockfile's pins", "No lockfile" and "A lockfile npm 6 wrote", shrinkwrap preferred over the lock; verify with `moon run cli:test`
-- [ ] 3.4 Write the family's scopes as design D13, read from the `.npmrc` beside the checkout's `package.json`, and requires as design D14 on the trait as render-under-a-policy's fix gives it, with `nodejs-semver` for a version within a range and the newer of two; unit tests over `.npmrc` files and tarballs the test makes for each scenario of the spec's requires requirement, a scoped line sending a scope elsewhere giving no family, a line carrying a token read for its scope alone, and a `bundleDependencies` name passed over; verify with `moon run cli:test`
+- [ ] 3.4 Write the family's scopes as design D13, read from the `.npmrc` beside the checkout's `package.json`, and requires as design D14 on the trait as the-projection-answers-what-an-artifact-requires gives it, with `nodejs-semver` for a version within a range and npm's order of versions; unit tests over `.npmrc` files and tarballs the test makes for each scenario of the spec's requires requirement, a scoped line sending a scope elsewhere giving no family, a line carrying a token read for its scope alone, and a `bundleDependencies` name passed over; verify with `moon run cli:test`
 - [ ] 3.5 Once cargos-registry's range on the pin is on the bolt, give pinned the ranges of design D7 in that shape: the root's and each workspace's `package.json`, the four dependency fields, aliases, `latest` as `*`, the specs passed over, and a name the lockfile pins at any version given no range; unit tests for the spec's "A first install's ranges", "A name the lockfile already pins" and "No family without the `.npmrc` line", a workspace's own name given no range, and a `package.json` that does not parse unreadable with the parser's words; verify with `moon run cli:test`
 - [ ] 3.6 Write render as design D8, with unit tests over tarballs the test makes and a fake store for each scenario of the spec's render requirement, a tarball whose bytes differ from its layer's digest refused naming both, and the layout's files naming no place on disk; verify with `moon run cli:test`
 - [ ] 3.7 Write serve as design D9, with unit tests for a scoped packument with `%2f` and `%40`, a held tarball, a missed tarball admitted, refused, absent and unreadable each with its status and `error` words, a refused version absent from the packument after its `403`, a packument of a name the layout lacks asking no miss and saying the layout holds no version of it and that `tailrace sync` holds a name `package.json` declares, and `405` for a `POST`; verify with `moon run cli:test`

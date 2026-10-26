@@ -2,15 +2,18 @@
 
 This unit's code starts once bolt tailrace-the-gate-and-the-channels has
 landed on `main` and `main` is taken into bolt/tailrace-sync-and-serve,
-and once the-store-names-an-artifact-by-ecosystem-name-and-version and
-render-under-a-policy's fix adding requires are on this bolt. Its range
-and requires work (D13, D14, and the closure in D4) waits besides on
+and once the-projection-answers-what-an-artifact-requires and
+the-store-names-an-artifact-by-ecosystem-name-and-version, which it comes
+after, are on this bolt. Its ranges on pinned and the closure of a miss
+(D7's second half, and the closure in D4) wait besides on
 cargos-registry, which runs beside it and owns the range a pin carries
 and the core's loop. It is written against them as they stand:
 render-under-a-policy as merged on bolt/tailrace-sync-and-serve at
-`71f8841`, the store-naming unit's change at `c7ac89d`, and the serving
-process as it is on bolt/tailrace-the-gate-and-the-channels at
-`0172321`. The statement is `agentplot/blueprints` `4c14235`.
+`71f8841`, the store-naming unit's change at `c41eb9c`, the planner's
+proposal 154 for the requires unit, which has no change yet, and the
+serving process as it is on bolt/tailrace-the-gate-and-the-channels at
+`0172321`. The statement is `agentplot/blueprints` `f90f5fd`, with 137
+and 140 as ruled at `4c14235`.
 
 What it builds on:
 
@@ -60,22 +63,26 @@ What it builds on:
   &Ecosystem, &EcosystemName) -> Answer<Vec<Version>>`, every version the
   store names `artifact/<ecosystem>/<name>@` at, in no order the core
   relies on, empty where it names none.
-- **requires and the core's loop** (137, 140, ruled at `4c14235`): the
-  projection seam gains requires, given a held version's artifact, the
-  family's names and ranges its manifest requires, as it spells them,
-  and whether a version satisfies a range by the ecosystem's own order;
-  a projection with no manifest answers none. render-under-a-policy's fix
-  adds it to the trait, with the fake's answer and the absent answer of
-  the file, image and moon cache projections. cargos-registry owns the
-  range a pin carries (pinned answering a pin or a name and its range)
-  and the loop in `render.rs`: for each range, list the name's versions
-  through the store, take those within it newest first by the
+- **requires and the core's loop** (137, 140, ruled at `4c14235`;
+  proposal 154): the projection seam gains one question, given a held
+  version's artifact, the family's names and ranges its manifest
+  requires, as it spells them, and whether a version satisfies a range
+  by the ecosystem's own order; a projection with no manifest answers
+  none. the-projection-answers-what-an-artifact-requires adds it to the
+  trait, with the fakes' answer and the absent answer of the file, image
+  and moon cache projections, and lands before this unit. cargos-registry
+  owns the range a pin carries (pinned answering a pin or a name and its
+  range) and the loop in `render.rs`: for each range, list the name's
+  versions through the store, take those within it newest first by the
   projection's order, judge each under the layout's policy until one is
   admitted, hold it; then ask requires of every version held and do the
   same, until nothing held requires a name the layout lacks. The core
   never reads a manifest (core.1). This design names the operations by
-  what they do; their Rust names and types are the fix's and
-  cargos-registry's.
+  what they do; their Rust names and types are the requires unit's and
+  cargos-registry's. As cargos-registry's change spells them today, they
+  are `requires(&Artifact) -> Answer<Vec<Ranged>>` and `within(&Ranged,
+  &[Version]) -> Answer<Vec<Version>>`, newest first, and npm answers
+  whichever shape the requires unit lands.
 - **The bindings**: `profiles::projection::bound(store, checkout)` builds
   every projection, the moon cache given a store opened with
   `profiles::store::bind(store, false)`; `Host::bind` binds a checkout
@@ -113,7 +120,8 @@ over what it requires, and the layout's lock; sync naming and starting
 the process; npm pinned and its tests in the tools layer.
 
 **Non-Goals:** serving any other ecosystem; the range type on the seam
-and the core's loop, cargos-registry's; requires on the trait, the fix's;
+and the core's loop, cargos-registry's; requires on the trait, the
+requires unit's;
 `.npmrc` written by tailrace (the consumer writes its scope line once,
 S4); the store's `artifact/` pointer and listing.
 
@@ -463,8 +471,10 @@ alias read as in D7; a spec that is no range is passed over or read as
 
 Whether a version is within a range is `nodejs_semver::Range::parse`
 then `satisfies`, a version or range that does not parse being within
-nothing; which of two versions is newer is `nodejs_semver::Version`'s
-order (23). Both are npm's own rules, so the version the core holds for
+nothing unless the trait's contract words a range it cannot read
+otherwise; versions are ordered newest first, or the newer of two
+given, by `nodejs_semver::Version`'s order (23), whichever form the
+trait asks. Both are npm's own rules, so the version the core holds for
 a range is the one npm would pick from what the layout offers, prereleases
 left out as npm leaves them.
 
