@@ -9,8 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use tailrace_core::{
-    overview, status, Channel, ChannelStatus, Entry, Filter, History, Kept, Overview, OverviewAsk,
-    Published, StatusAsk, Written,
+    overview, row, status, Channel, ChannelStatus, Entry, Filter, Head, HeadAt, History, Kept,
+    Overview, OverviewAsk, Published, RepositoryName, StatusAsk, Written,
 };
 use tailrace_fakes::{FakeSigner, Fault, KeeperOp, Times};
 use tailrace_seams::{
@@ -670,6 +670,126 @@ fn status_asks_no_store_signer_target_or_projection_and_writes_nothing() {
     );
     assert_eq!(appends(), appended, "status appended to the ledger");
     assert_eq!(files(kept.dir()), record, "status wrote to the record");
+}
+
+// Requirement: Status names the environments it cannot yet read
+
+/// 98: the environments' part is unreadable from the target seam, saying
+/// no target is read.
+fn unread(answer: &tailrace_seams::Answer<tailrace_core::EnvironmentCounts>) {
+    let Err(Not::Unreadable(u)) = answer else {
+        panic!("the environments answered {answer:?}")
+    };
+    assert_eq!(u.source.seam, Seam::Target);
+    assert!(u.what.contains("environments"), "{u:?}");
+    assert!(u.what.contains("no target is read"), "{u:?}");
+}
+
+#[test]
+fn a_target_bound_and_never_asked_leaves_the_environments_unreadable() {
+    let mut world = World::new();
+    let production = world.fakes.target(&EnvironmentName::new("production"));
+    declare(&world, &stable(), "lib", None);
+    promoted(&world, &stable(), &["0.1.0"]);
+    let answer = asked(&world, &ask(&world));
+    unread(&answer.environments);
+    assert_eq!(channels_of(&answer).len(), 1);
+    assert!(matches!(channels_of(&answer)[0].at, Ok(Channel::At { .. })));
+    assert!(production.calls().is_empty(), "status asked the target");
+    let json = serde_json::to_value(&answer).unwrap();
+    assert_eq!(json["environments"]["answer"], "unreadable", "{json}");
+
+    let history = world.history();
+    let unbound = tailrace_core::overview_unbound(
+        Not::absent(&Source::new(Seam::Host, "bindings"), "the bindings"),
+        &Kept::at(&history),
+        &ask(&world),
+    );
+    unread(&unbound.environments);
+}
+
+// Requirement: A repository's row is made from its status
+
+fn repository() -> RepositoryName {
+    RepositoryName::from_remote("https://example.com/o/r.git").unwrap()
+}
+
+#[test]
+fn a_row_names_every_channels_head_and_the_environments_answer() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    declare(&world, &stable(), "lib", Some("beta"));
+    let chain = promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let answer = asked(&world, &ask(&world));
+    let row = row(&repository(), &answer);
+    assert_eq!(row.repository, repository());
+    assert_eq!(
+        row.heads,
+        Ok(vec![
+            Head {
+                component: ComponentName::new("lib"),
+                channel: beta(),
+                at: Ok(HeadAt::Empty),
+            },
+            Head {
+                component: ComponentName::new("lib"),
+                channel: stable(),
+                at: Ok(HeadAt::At {
+                    version: Version::new("0.2.0"),
+                    index: chain[1].1.to.index.clone(),
+                }),
+            },
+        ])
+    );
+    assert_eq!(row.environments, answer.environments);
+    unread(&row.environments);
+    let json = serde_json::to_value(&row).unwrap();
+    assert_eq!(json["repository"]["owner"], "o", "{json}");
+    assert_eq!(json["heads"]["value"][1]["at"]["value"]["state"], "at");
+    assert_eq!(json["environments"]["answer"], "unreadable", "{json}");
+}
+
+#[test]
+fn a_row_whose_channels_cannot_be_read_carries_that_answer() {
+    let world = World::new();
+    declare(&world, &stable(), "lib", None);
+    world.fakes.policy.fault(
+        tailrace_fakes::PolicyOp::Channels,
+        Fault::Unreadable("policy file: expected `]`".into()),
+        Times::Once,
+    );
+    let answer = asked(&world, &ask(&world));
+    let row = row(&repository(), &answer);
+    let Err(Not::Unreadable(u)) = &row.heads else {
+        panic!("the heads answered {:?}", row.heads)
+    };
+    assert_eq!(u.said.as_deref(), Some("policy file: expected `]`"));
+    assert_eq!(Err(Not::Unreadable(u.clone())), answer.channels);
+}
+
+#[test]
+fn one_channels_unreadable_chain_is_that_heads_own_answer() {
+    let world = World::new();
+    declare(&world, &beta(), "lib", None);
+    declare(&world, &stable(), "lib", None);
+    promoted(&world, &beta(), &["0.1.0"]);
+    promoted(&world, &stable(), &["0.1.0"]);
+    world.fakes.keeper.fault(
+        KeeperOp::Chain,
+        Fault::Unreadable("fatal: unable to access".into()),
+        Times::Once,
+    );
+    let row = row(&repository(), &asked(&world, &ask(&world)));
+    let heads = row.heads.expect("the heads answered");
+    let Err(Not::Unreadable(u)) = &heads[0].at else {
+        panic!("beta answered {:?}", heads[0].at)
+    };
+    assert_eq!(u.said.as_deref(), Some("fatal: unable to access"));
+    assert!(
+        matches!(&heads[1].at, Ok(HeadAt::At { version, .. }) if version.as_str() == "0.1.0"),
+        "{:?}",
+        heads[1].at
+    );
 }
 
 // Requirement (serving-process): The repository is in the path, by its

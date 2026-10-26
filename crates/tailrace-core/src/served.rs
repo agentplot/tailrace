@@ -7,6 +7,8 @@
 
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
 /// The name the host's serving process answers at.
 pub const SERVING_HOST: &str = "127.0.0.1";
 
@@ -15,7 +17,7 @@ pub const SERVING_PORT: u16 = 7420;
 
 /// 114: a repository as the serving process's path names it, its owner
 /// and its name.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct RepositoryName {
     pub owner: String,
     pub name: String,

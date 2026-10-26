@@ -12,13 +12,24 @@
 //! channel, carries its own answer, so absent, refused and unreadable are
 //! kept apart at every depth (58, 59), and every surface renders the one
 //! answer made here (57, rule core.31).
+//!
+//! Beside the channels and the record, the environments are a part of
+//! their own, answered unreadable while no target is read, never empty or
+//! a count of none, and asking no target (58, 60, 98). One repository's
+//! row of every channel's head and its environments' counts is made from
+//! its status answer alone, so the host's serving process shows every
+//! repository it knows together from the one core (132; design D14).
 
 use serde::{Deserialize, Serialize, Serializer};
 use tailrace_seams::{
-    Answer, Branch, ChannelName, ComponentName, DeclaredChannel, Not, Revision, Seams,
+    Answer, Branch, ChannelName, ComponentName, DeclaredChannel, Digest, Not, Revision, Seam,
+    Seams, Source, Version,
 };
 
-use crate::{answer_json, channel, channels_at, Channel, Entry, Filter, History, Kept, Landed};
+use crate::{
+    answer_json, channel, channels_at, Channel, Entry, Filter, History, Kept, Landed,
+    RepositoryName,
+};
 
 /// What status is asked: every version this host published, or those of
 /// one component, of one revision, or both.
@@ -89,6 +100,8 @@ pub struct Overview {
     #[serde(serialize_with = "one_answer")]
     pub channels: Answer<Channels>,
     #[serde(serialize_with = "one_answer")]
+    pub environments: Answer<EnvironmentCounts>,
+    #[serde(serialize_with = "one_answer")]
     pub published: Answer<Status>,
 }
 
@@ -158,23 +171,128 @@ pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<C
 }
 
 /// 36, 60: the whole of status, each part its own answer: the channels
-/// over `seams`, and what this host published from `kept`.
+/// over `seams`, the environments, and what this host published from
+/// `kept`.
 pub fn overview(seams: &Seams, history: &History, kept: &Kept, ask: &OverviewAsk) -> Overview {
     Overview {
         branch: ask.branch.clone(),
         asked_at: ask.at,
         channels: channels(seams, history, ask),
+        environments: environments(seams, ask),
         published: status(kept, &record_ask(ask)),
     }
 }
 
 /// The whole of status where no binding could be made, for `not`: the
-/// channels' part that answer, and the record's part answered as ever.
+/// channels' part that answer, the environments' as ever unread, and the
+/// record's part answered as ever.
 pub fn overview_unbound(not: Not, kept: &Kept, ask: &OverviewAsk) -> Overview {
     Overview {
         branch: ask.branch.clone(),
         asked_at: ask.at,
         channels: Err(not),
+        environments: Err(no_target()),
         published: status(kept, &record_ask(ask)),
+    }
+}
+
+/// 98, 132: of a repository's environments, how many run what they
+/// should, how many are behind, how many wait on a person and how many
+/// cannot be read.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct EnvironmentCounts {
+    pub converged: usize,
+    pub behind: usize,
+    pub waiting: usize,
+    pub unreadable: usize,
+}
+
+/// What the environments' part answers while no target is read.
+fn no_target() -> Not {
+    Not::unreadable(
+        &Source::new(Seam::Target, "unread"),
+        "the environments: what each environment should run and runs is read from a target, and no target is read",
+        None,
+    )
+}
+
+/// 58, 60, 98: the environments' part of status, unreadable naming the
+/// environments, since what each should run and runs is read from a
+/// target and no target is read. It asks no target of `seams`, however
+/// many are bound, and the policy lists no environment, so nothing is
+/// counted: a count of none would read as none behind.
+pub fn environments(_seams: &Seams, _ask: &OverviewAsk) -> Answer<EnvironmentCounts> {
+    Err(no_target())
+}
+
+/// 132: one repository's row: every channel's head, or the channels'
+/// part's own answer where it gives none, and its environments' counts,
+/// or the answer given in their place.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Row {
+    pub repository: RepositoryName,
+    #[serde(serialize_with = "one_answer")]
+    pub heads: Answer<Vec<Head>>,
+    #[serde(serialize_with = "one_answer")]
+    pub environments: Answer<EnvironmentCounts>,
+}
+
+/// One channel's head in a row: its component, its name, and the version
+/// it is at, empty, or its chain's own answer (58).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Head {
+    pub component: ComponentName,
+    pub channel: ChannelName,
+    #[serde(serialize_with = "one_answer")]
+    pub at: Answer<HeadAt>,
+}
+
+/// 31: where a channel's head puts it: empty, or at a version and its
+/// index.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum HeadAt {
+    Empty,
+    At { version: Version, index: Digest },
+}
+
+/// 132: every repository the host knows, as of `asked_at`, each row its
+/// own answer, ordered by owner and name.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Repositories {
+    pub asked_at: u64,
+    #[serde(serialize_with = "every_answer")]
+    pub repositories: Vec<Answer<Row>>,
+}
+
+/// 57: a list of answers, each in the one form every surface renders.
+fn every_answer<S: Serializer>(answers: &[Answer<Row>], serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_seq(answers.iter().map(answer_json))
+}
+
+/// 132: `repository`'s row, made from `overview` alone: each channel's
+/// head, its absent, refused or unreadable chain that head's own answer,
+/// or the channels' part's answer in place of the heads; and the
+/// environments as the overview answers them.
+pub fn row(repository: &RepositoryName, overview: &Overview) -> Row {
+    Row {
+        repository: repository.clone(),
+        heads: overview.channels.as_ref().map_err(Not::clone).map(|c| {
+            c.channels
+                .iter()
+                .map(|channel| Head {
+                    component: channel.declared.component.clone(),
+                    channel: channel.declared.name.clone(),
+                    at: channel.at.as_ref().map_err(Not::clone).map(|at| match at {
+                        Channel::Empty => HeadAt::Empty,
+                        Channel::At { head, .. } => HeadAt::At {
+                            version: head.to.version.clone(),
+                            index: head.to.index.clone(),
+                        },
+                    }),
+                })
+                .collect()
+        }),
+        environments: overview.environments.clone(),
     }
 }
