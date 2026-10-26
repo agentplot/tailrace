@@ -155,6 +155,19 @@ name `[signers]` does not hold is refused, naming it; only a channel
 names `bound_to`. The policy is read at the landed revision, never from
 a checkout (65).
 
+Each channel belongs to one component and names only its versions. A
+channel's table names its component with `component`, and may leave it
+out where the repository declares one component, or none: the channel
+then belongs to that one, named `repository` where none is declared
+(123, 125), as `beta` and `stable` above do. A channel is bound only to
+another channel the file declares, in its own component (37). A file
+with a channel that names no component among several, names one the
+file does not declare, or is bound to a channel the file does not
+declare or of another component, is unreadable, naming the channel's
+table. The policy lists a repository's channels, each with its
+component and the channel it is bound to, read the same way as the
+policy for one channel, so the two never disagree (131).
+
 ### The gate and the channels that follow each publish
 
 The gate judges an offered version under `[acceptance]` as it stands at
