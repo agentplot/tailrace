@@ -51,6 +51,13 @@ pub fn bind(table: &Table, repository: &Path, store: Option<&Table>) -> Answer<B
     }
 }
 
+/// The ledger a host binds where its file names no `[ledger]` (118,
+/// C.13): the git ref in the repository at `repository`, read and
+/// written with no remote.
+pub fn given(repository: &Path) -> Box<dyn Keeper> {
+    Box::new(GitRef::new(repository, None))
+}
+
 /// 118: the ledger of a host with no bindings file, for the repository
 /// at `repository`: the git ref, on `remote` where one is given (C.13).
 pub fn unfiled(repository: &Path, remote: Option<String>) -> Box<dyn Keeper> {

@@ -369,8 +369,8 @@ fn missing(file: &Path, table: &str) -> Not {
     )
 }
 
-/// The ledger of a host whose file names no `[ledger]`: every operation
-/// absent naming the table in the file.
+/// The ledger status binds where the file names no `[ledger]`: every
+/// operation absent naming the table in the file.
 struct NoLedger {
     file: PathBuf,
 }
@@ -443,10 +443,10 @@ fn unbound_store() -> Source {
 
 /// The binding the bindings file at `file` names for `command`, in the
 /// repository at `repository`, its `~/` paths expanded against `home`.
-/// A publish or a promote on a host whose file names no `[signing]`, and
-/// a promote on one whose file names no `[ledger]`, is absent naming it
-/// before anything is read; a file naming no `[store]` or no `[landing]`
-/// is absent naming the table. Every table is read before the
+/// A publish or a promote on a host whose file names no `[signing]` is
+/// absent naming it before anything is read; a file naming no `[store]`
+/// or no `[landing]` is absent naming the table, and one naming no
+/// `[ledger]` binds the given git ref (118, C.13). Every table is read before the
 /// layout is made, so a file that cannot bind leaves nothing behind. The
 /// store is named as the file names it, its key and what it names, a
 /// path with `~/` expanded, so the record names a directory a reader
@@ -462,9 +462,6 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
     let signing = bindings.signing.as_ref();
     if matches!(command, For::Publish | For::Promote) && signing.is_none() {
         return Err(unsigned());
-    }
-    if command == For::Promote && bindings.ledger.is_none() {
-        return Err(missing(file, "ledger"));
     }
     let landing = bindings
         .landing
@@ -482,9 +479,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
     let cache = profiles::store::bind(store, false)?;
     let keeper: Box<dyn Keeper> = match &bindings.ledger {
         Some(ledger) => profiles::ledger::bind(ledger, repository, Some(store))?,
-        None => Box::new(NoLedger {
-            file: file.to_path_buf(),
-        }),
+        None => profiles::ledger::given(repository),
     };
     Ok(Binding {
         seams: Seams {

@@ -493,36 +493,19 @@ fn with_no_signing_the_host_only_verifies() {
     }
 }
 
-fn envelope() -> Envelope {
-    Envelope::signed(
-        "a type",
-        vec![],
-        tailrace_seams::Signature {
-            signer: SignerId::new("laptop"),
-            keyid: String::new(),
-            sig: vec![],
-        },
-    )
-}
-
 #[test]
-fn a_file_naming_no_ledger_binds_one_absent_naming_the_table() {
+fn a_file_naming_no_ledger_binds_the_git_ref_in_the_repository() {
     let host = Host::new();
+    let repo = repository(&host);
     let layout = host.dir.path().join("layout");
-    let binding = bound(&host, &layout, true, For::Publish).unwrap();
-    let keeper = &binding.seams.keeper;
-    let absent = Not::absent(
-        &Source::new(Seam::Keeper, "unbound"),
-        format!(
-            "binding of the ledger, [ledger] in {}",
-            host.file().display()
-        ),
-    );
-    assert_eq!(
-        keeper.append(&ChannelName::new("stable"), &envelope(), None),
-        Err(absent.clone())
-    );
-    assert_eq!(keeper.chain(&ChannelName::new("stable")), Err(absent));
+    let binding = bound_with(&host, &repo, &layout, "", true, For::Publish).unwrap();
+    match binding.seams.keeper.chain(&ChannelName::new("stable")) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref"));
+            assert_eq!(a.what, "chain of stable");
+        }
+        other => panic!("the given ledger answered {other:?}"),
+    }
     assert!(binding.seams.targets.is_empty());
     let ecosystems: Vec<&str> = binding
         .seams
@@ -691,29 +674,11 @@ fn a_ledger_table_naming_two_profiles_none_or_an_option_its_profile_does_not_rea
 }
 
 #[test]
-fn a_promote_with_no_ledger_or_no_signing_is_absent_naming_it_before_anything_is_read() {
+fn a_promote_with_no_signing_is_absent_naming_it_before_anything_is_read() {
     let host = Host::new();
     let repo = repository(&host);
     let layout = host.dir.path().join("layout");
-    match bound_with(&host, &repo, &layout, "", true, For::Promote) {
-        Err(Not::Absent(a)) => {
-            assert_eq!(a.source, Source::host(host.file()));
-            assert_eq!(
-                a.what,
-                format!(
-                    "binding of the ledger, [ledger] in {}",
-                    host.file().display()
-                )
-            );
-        }
-        other => panic!("a promote with no ledger answered {:?}", other.err()),
-    }
     match bound_with(&host, &repo, &layout, "git_ref = {}", false, For::Promote) {
-        Err(Not::Absent(a)) => assert!(a.what.contains("[signing]"), "{a:?}"),
-        other => panic!("a promote with no signing answered {:?}", other.err()),
-    }
-    host.write("[ledger]\ngit_ref = {}\n");
-    match bind(&host.file(), Some(&host.home()), &repo, For::Promote) {
         Err(Not::Absent(a)) => assert!(a.what.contains("[signing]"), "{a:?}"),
         other => panic!("a promote with no signing answered {:?}", other.err()),
     }
