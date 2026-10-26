@@ -111,9 +111,13 @@ Out of scope, and what each waits on:
   place and its record: render-under-a-policy, which this unit comes
   after. This unit adds only the render of one missed version and the
   lock that keeps two renders of one layout apart.
-- requires on the projection seam, with the fake's answer and the absent
-  answer of a projection with no manifest: render-under-a-policy's fix on
-  the bolt, which this unit's code waits on.
+- requires on the projection seam, what a held artifact's manifest
+  requires of the family and whether a version satisfies a range by the
+  ecosystem's own order, with the fakes' answer and the absent answer of
+  a projection with no manifest (140):
+  the-projection-answers-what-an-artifact-requires, which this unit comes
+  after. npm answers that question from its own manifest; this unit adds
+  nothing to the trait for it.
 - The range a pin carries on the seam, and the core's loop that lists,
   judges and holds through every level (137): cargos-registry, which owns
   them in `render.rs` and runs beside this unit. npm implements its side
