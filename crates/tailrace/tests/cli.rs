@@ -324,6 +324,27 @@ fn publish_prints_the_notes_beneath_the_versions_line_and_names_them_in_its_json
     assert!(lines[end].starts_with("  gate: "), "{printed}");
 }
 
+// Requirement: Publish fills the checkout it runs in
+
+#[test]
+fn publish_in_a_repository_with_no_working_tree_is_absent_naming_it_and_asks_the_store_nothing() {
+    let host = Host::new();
+    passed(&host, "site-build");
+    git(&host.repo, &["push", "-q", "origin", "main"]);
+    let bare = host.root().join("shared.git");
+    let cli = Cli::try_parse_from(["tailrace", "publish", "HEAD", "--json"]).unwrap();
+    let mut out = Vec::new();
+    let code = run(&cli, &Ok(host.binding()), &bare, &mut out);
+    let printed: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(printed["answer"], "absent", "{printed}");
+    let what = printed["absent"]["what"].as_str().unwrap();
+    assert!(what.starts_with("working tree at "), "{what}");
+    assert!(what.contains("shared.git"), "{what}");
+    assert_eq!(code, tailrace::render::ABSENT);
+    assert_eq!(host.fakes.store.calls(), [], "the store was asked");
+    assert_eq!(host.fakes.landing.calls(), [], "the core was asked");
+}
+
 // Requirement: Sync fills the checkout's cache from a landed revision
 
 /// A passing verdict of `test` on `build` at the host's head, signed as
