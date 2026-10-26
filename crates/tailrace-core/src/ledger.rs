@@ -119,7 +119,7 @@ fn keeper() -> Source {
 /// answers it (105); unreadable naming the chain, with the ledger's
 /// words, where the ledger answered it as last read, whose head may be
 /// behind the one held (60, rule core.6).
-fn held(ledger: &dyn Keeper, channel: &ChannelName) -> Answer<Vec<Envelope>> {
+pub(crate) fn held(ledger: &dyn Keeper, channel: &ChannelName) -> Answer<Vec<Envelope>> {
     match ledger.chain(channel) {
         Ok(Chain {
             read: Read::Kept { said, .. },
@@ -137,7 +137,7 @@ fn held(ledger: &dyn Keeper, channel: &ChannelName) -> Answer<Vec<Envelope>> {
 
 /// The promotion `envelope` holds, unreadable naming its digest where it
 /// holds no promotion claim of tailrace's form.
-fn promotion_of(channel: &ChannelName, envelope: &Envelope) -> Answer<Promotion> {
+pub(crate) fn promotion_of(channel: &ChannelName, envelope: &Envelope) -> Answer<Promotion> {
     Claim::from_envelope(envelope)
         .as_ref()
         .and_then(Promotion::of)

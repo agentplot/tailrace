@@ -10,11 +10,12 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Audience, Branch, Chain, ChannelName, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, Held, Manifest, Name, NamedSigner, Not, Outcome, Read, Required, RequiredClaim,
-    Revision, Seam, Seams, SignerId, Source, Version,
+    channel_name, Answer, Audience, Branch, ChannelName, Claim, ClaimKind, ComponentName, Digest,
+    Envelope, Held, Manifest, Name, NamedSigner, Not, Outcome, Promotion, Required, RequiredClaim,
+    Revision, Satisfied, Seam, Seams, SignerId, Source, Version,
 };
 
+use crate::ledger::{held, promotion_of};
 use crate::{
     answer_json, chosen, follow, policy_at, tell, Declared, Followed, History, Landed, Provenance,
     BOUND, LOCAL, POLICY_FILE,
@@ -199,6 +200,8 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     let mut judging = Judging {
         seams,
         gate: &ask.gate,
+        component: &component.name,
+        version: &ask.version,
         revision: &revision,
         index: &index,
         on_index,
@@ -473,12 +476,14 @@ fn offers_and_accepts(wanted: &RequiredClaim, signer: &SignerId) -> bool {
     })
 }
 
-/// One version being judged by the gate signing as `gate`: its
-/// revision, its index, the claims attached to the index, and each
-/// artifact in the index's order with the claims attached to it.
+/// One version of `component` being judged by the gate signing as
+/// `gate`: its revision, its index, the claims attached to the index,
+/// and each artifact in the index's order with the claims attached to it.
 struct Judging<'a> {
     seams: &'a Seams,
     gate: &'a SignerId,
+    component: &'a ComponentName,
+    version: &'a Version,
     revision: &'a Revision,
     index: &'a Digest,
     on_index: Vec<Envelope>,
@@ -671,12 +676,13 @@ impl Judging<'_> {
     }
 
     /// 33, 35, 39, 105: `channel` judged under its own policy at the head
-    /// and, where satisfied, moved to the index: a promotion signed as the
-    /// gate naming the chain's head as its predecessor, appended to the
-    /// chain, attached to the index, and only then the channel's name
-    /// moved in the store from where the old head left it (rules core.6,
-    /// core.15, core.34). A refused append, a fork or any other answer is
-    /// the channel's, and nothing after it is done or retried.
+    /// and, where satisfied, moved to the index: a promotion in the one
+    /// body every promotion holds, signed as the gate naming the chain's
+    /// head as its predecessor, appended to the chain, attached to the
+    /// index, and only then the channel's name in the store moved from
+    /// where the old head left it (rules core.6, core.15, core.34). A
+    /// refused append, a fork or any other answer is the channel's, and
+    /// nothing after it is done or retried.
     fn promote(&self, at_head: &Landed, channel: &ChannelName, when: u64) -> Answer<Moved> {
         // 1: the channel's own policy at the head (107).
         let audience = Audience::Channel(channel.clone());
@@ -705,78 +711,56 @@ impl Judging<'_> {
             }
         };
 
-        // 2: the chain's head: what the channel moves from, and the
-        // promotion the next one follows (105).
-        let keeper = Source::new(Seam::Keeper, BOUND);
-        let (from, predecessor) = match self.seams.keeper.chain(channel) {
-            // 60: a chain the ledger answered as last read is never moved
-            // from.
-            Ok(Chain {
-                read: Read::Kept { said, .. },
-                ..
-            }) => {
-                return Err(Not::unreadable(
-                    &keeper,
-                    format!("the chain of {channel}"),
-                    Some(said),
-                ))
-            }
-            Ok(chain) => match chain.claims.last() {
-                None => (None, None),
-                Some(head) => match Claim::from_envelope(head) {
-                    Some(claim) if claim.kind == ClaimKind::Promotion => {
-                        (Some(claim.subject), Some(head.digest()))
-                    }
-                    _ => {
-                        return Err(Not::unreadable(
-                            &keeper,
-                            format!("the head of the chain of {channel}, {}", head.digest()),
-                            Some(format!(
-                                "{} holds no promotion claim of tailrace's form",
-                                head.digest()
-                            )),
-                        ))
-                    }
-                },
-            },
-            Err(Not::Absent(_)) => (None, None),
-            Err(not) => return Err(not),
+        // 2: the chain's head, read from the ledger itself: what the
+        // channel moves from, and the promotion the next one follows (60,
+        // 105).
+        let chain = held(self.seams.keeper.as_ref(), channel)?;
+        let head = match chain.last() {
+            Some(envelope) => Some((envelope.digest(), promotion_of(channel, envelope)?)),
+            None => None,
         };
-        if from.as_ref() == Some(self.index) {
+        let from = head.as_ref().map(|(_, p)| p.to.clone());
+        if from.as_ref().is_some_and(|m| m.index == *self.index) {
             return Ok(Moved::There {
                 at: self.index.clone(),
             });
         }
 
-        // 3: the promotion, signed as the gate (33, 39).
-        let promotion = Claim {
-            subject: self.index.clone(),
-            kind: ClaimKind::Promotion,
-            revision: self.revision.clone(),
-            build: None,
-            body: json!({
-                "channel": channel,
-                "from": from,
-                "to": self.index,
-                "asked_by": "each publish",
-                "policy": { "audience": audience, "revision": at_head.revision() },
-                "claims": claims,
-                "when": when,
-                "predecessor": predecessor,
-            }),
+        // 3: the promotion, signed as the gate, asked by the rule that
+        // each publish moves the channel (33, 39, 95).
+        let promotion = Promotion {
+            channel: channel.clone(),
+            component: self.component.clone(),
+            to: tailrace_seams::Moved {
+                version: self.version.clone(),
+                index: self.index.clone(),
+            },
+            from,
+            predecessor: head.map(|(digest, _)| digest),
+            asked_by: SignerId::new("each publish"),
+            policy: Satisfied {
+                revision: at_head.revision().clone(),
+                claims,
+            },
+            at: when,
         };
-        let envelope = sign(self.seams, &promotion, self.gate)?;
+        let envelope = sign(
+            self.seams,
+            &promotion.claim(self.revision.clone()),
+            self.gate,
+        )?;
 
         // 4 to 6: the ledger first, then the index, then the name.
         self.seams
             .keeper
-            .append(channel, &envelope, predecessor.as_ref())?;
+            .append(channel, &envelope, promotion.predecessor.as_ref())?;
         self.seams.store.attach(self.index, &envelope)?;
+        let from = promotion.from.map(|from| from.index);
         let name = follow(
             self.seams.store.as_ref(),
             self.seams.keeper.as_ref(),
             channel,
-            &Name::new(channel.as_str()),
+            &channel_name(channel),
             from.as_ref(),
         )?;
         Ok(Moved::Promoted {
