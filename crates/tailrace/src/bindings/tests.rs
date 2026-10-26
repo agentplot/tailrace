@@ -979,6 +979,7 @@ fn landed(binding: &Binding, head: &tailrace_seams::Revision) -> Answer<bool> {
         .seams
         .landing
         .landed(&tailrace_seams::Branch::new("main"), head)
+        .map(|l| l.landed)
 }
 
 // Requirement: Status is bound with nothing written

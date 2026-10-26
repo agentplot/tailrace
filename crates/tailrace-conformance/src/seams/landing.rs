@@ -109,14 +109,16 @@ fn landed_and_not_landed(rig: &dyn LandingRig) {
         ok(
             landing.landed(&branch, &landed),
             "landed of a landed revision"
-        ),
+        )
+        .landed,
         "{branch} has not landed {landed}, which it landed"
     );
     assert!(
         !ok(
             landing.landed(&branch, &not),
             "landed of a revision not landed"
-        ),
+        )
+        .landed,
         "{branch} has landed {not}, which it did not"
     );
 }
@@ -130,7 +132,7 @@ fn verdicts_as_the_landing_recorded_them(rig: &dyn LandingRig) {
         recorded("lint", Outcome::Fail),
     ];
     let at = rig.landed(&recorded);
-    let read = ok(rig.landing().verdicts_of(&at), "verdicts-of");
+    let read = ok(rig.landing().verdicts_of(&at), "verdicts-of").verdicts;
     assert_eq!(
         read.len(),
         recorded.len(),
@@ -172,7 +174,8 @@ fn a_revision_with_no_verdict(rig: &dyn LandingRig) {
         ok(
             rig.landing().verdicts_of(&at),
             "verdicts-of a revision with none"
-        ),
+        )
+        .verdicts,
         [],
         "a revision with no verdict answered some"
     );
@@ -211,7 +214,7 @@ fn two_signers_each_by_its_own_name(rig: &dyn LandingRig) {
     };
     let recorded = [by("box"), by("forge")];
     let at = rig.landed(&recorded);
-    let read = ok(rig.landing().verdicts_of(&at), "verdicts-of");
+    let read = ok(rig.landing().verdicts_of(&at), "verdicts-of").verdicts;
     assert_eq!(
         read.len(),
         recorded.len(),
