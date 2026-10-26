@@ -16,7 +16,7 @@ anything else on the port.
 
 ### Requirement: The repository is in the path, by its remote's owner and name
 
-The process SHALL answer a repository at `/<owner>/<name>/`, its owner
+The process SHALL answer a repository under `/<owner>/<name>/`, its owner
 and name the last two parts of the path of the address its landing's
 remote has in the repository's git configuration, without a trailing
 `.git`, never a directory or a name an operator chose (49, 114). A
@@ -59,7 +59,7 @@ is gone unreadable naming the path (58).
 
 The process SHALL answer `GET /<owner>/<name>/status.json` with the
 status answer the core gives in the named checkout, as `tailrace
-status --json` prints it there, and `GET /<owner>/<name>/` with a page
+status --json` prints it there, and `GET /<owner>/<name>/status` with a page
 rendering that answer whole: each channel with its component, how it
 moves, its version or that it is empty, its chain, the environments'
 part, and the record of what this host published, every refusal and
