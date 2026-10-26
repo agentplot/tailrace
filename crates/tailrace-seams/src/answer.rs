@@ -1,6 +1,7 @@
 //! The four answers every seam operation gives: what was asked, or
 //! absent, refused or unreadable, each naming the source that answered
-//! (58, 59, rule core.19; design D1).
+//! (58, 59, rule core.19; design D1); and how an answer was read, from
+//! its source or as this host last read it (60, 61, 77).
 
 use std::fmt;
 use std::path::Path;
@@ -90,6 +91,20 @@ pub struct Unreadable {
     pub source: Source,
     pub what: String,
     pub said: Option<String>,
+}
+
+/// How an answer was read: from its source, or as this host last read
+/// or fetched it because the source did not answer (60, 61, 77, C.5,
+/// C.6, C.13, C.14).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Read {
+    /// From the source itself.
+    Source,
+    /// As this host last read or fetched it, at `at`, in seconds since
+    /// the Unix epoch, because the source did not answer, for `said`, its
+    /// own words.
+    Kept { at: u64, said: String },
 }
 
 /// The seam and the profile bound to it that answered.

@@ -4,7 +4,7 @@ Every command runs inside `devenv shell -- <command>`.
 
 ## 1. The seam says how the landing read its answer
 
-- [ ] 1.1 Move `Read` from `crates/tailrace-seams/src/keeper.rs` to `answer.rs`, its form and JSON unchanged and its doc saying how any answer was read (design D1); the keeper's tests pass unchanged: `moon run seams:test`
+- [x] 1.1 Move `Read` from `crates/tailrace-seams/src/keeper.rs` to `answer.rs`, its form and JSON unchanged and its doc saying how any answer was read (design D1); the keeper's tests pass unchanged: `moon run seams:test`
 - [ ] 1.2 Move the UTC rendering `render::utc` holds into `tailrace-seams` beside `Read`, `crates/tailrace/src/render.rs` calling it, with a test in the seams crate of an epoch time and a leap day rendered (design D5): `moon run seams:test cli:test`
 - [ ] 1.3 In `landing.rs`, add `IsLanded { landed, read }` and `Verdicts { verdicts, read }`, change `landed` and `verdicts_of` to answer them, and write the contract's docs from the landing's contract as the seam-contracts delta words it; round-trip tests for both, with `Read::Source` and `Read::Kept`: `moon run seams:test`
 - [ ] 1.4 Add `Why::NotLandedAsFetched { branch, revision, fetched }`, its text naming the time in UTC and saying to ask again once the landing's remote answers (design D5); a test that it and `NotLanded` read back from JSON as made, told apart, the remote's words kept verbatim in `said`: `moon run seams:test`
