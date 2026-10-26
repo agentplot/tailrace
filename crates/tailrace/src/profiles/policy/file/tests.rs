@@ -1338,3 +1338,91 @@ fn a_file_naming_no_provenance_signer_is_answered_as_written() {
         })
     );
 }
+
+// Requirement: Several publishers and no gate is refused in words
+
+/// `[signers.laptop]` and `[signers.desk]`, each for provenance alone,
+/// and no signer that may claim acceptance.
+fn two_publishers() -> String {
+    format!(
+        "[signers.laptop]\nssh = \"{LAPTOP_KEY}\"\nkinds = [\"provenance\"]\n\n\
+         [signers.desk]\nssh = \"ssh-ed25519 DDDD\"\nkinds = [\"provenance\"]\n\n"
+    )
+}
+
+/// That `answer` is the refusal of a policy with several publishers and
+/// no gate, wanting an acceptance no signer may make, in its own words.
+fn refused_for_no_gate(answer: Answer<Required>, what: &str) {
+    assert_eq!(
+        answer,
+        Err(Not::refused(
+            &source(),
+            Why::Wanting {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![],
+            },
+            Some("several publishers and no gate, name an accepting signer".into()),
+        )),
+        "{what}"
+    );
+}
+
+#[test]
+fn two_publishers_and_no_gate_refuse_acceptance_and_the_given_channels_in_words() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
+        two_publishers()
+    ));
+    refused_for_no_gate(
+        repo.policy().policy_for(&at, &Audience::Acceptance),
+        "acceptance",
+    );
+    for channel in ["beta", "stable"] {
+        refused_for_no_gate(channel_policy(&repo, &at, &id(None, channel)), channel);
+    }
+    let bare = repo.at(&two_publishers());
+    refused_for_no_gate(
+        repo.policy().policy_for(&bare, &Audience::Acceptance),
+        "acceptance with no [acceptance] table",
+    );
+}
+
+#[test]
+fn with_two_publishers_and_no_gate_the_layout_and_a_hand_declared_channel_answer_as_written() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[layout]\nrequire = [{{ kind = \"provenance\", signers = [\"desk\"] }}]\n\n\
+         [channels.edge]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
+        two_publishers()
+    ));
+    let desk = NamedSigner {
+        id: SignerId::new("desk"),
+        verified_by: "ssh-ed25519 DDDD".into(),
+        kinds: vec![ClaimKind::Provenance],
+        checks: vec![],
+    };
+    let provenance_by = |signer: NamedSigner| RequiredClaim {
+        kind: ClaimKind::Provenance,
+        check: None,
+        signers: vec![signer],
+    };
+    assert_eq!(
+        repo.policy().policy_for(&at, &Audience::Layout),
+        Ok(Required::Layout {
+            claims: vec![provenance_by(desk)],
+        })
+    );
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "edge")),
+        Ok(Required::Channel {
+            claims: vec![provenance_by(laptop())],
+            bound_to: None,
+            promoted_by: vec![],
+        })
+    );
+    let mut all = givens(None);
+    all.push(declared(id(None, "edge"), Moves::Promotion));
+    assert_eq!(repo.policy().channels(&at), Ok(sorted(all)));
+}

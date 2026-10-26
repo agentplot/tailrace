@@ -5,7 +5,10 @@
 //! layout, each acceptance saying one host offered and accepted; the same
 //! host with no `[gate]` does exactly the same, its file binding the
 //! host's publish as what tells its gate (95, 108, 118, 130, C.6; design
-//! D7). The binary runs with
+//! D7). Where the policy names two publishers and no gate, the publish
+//! offers the version and the gate accepts nothing, refused in the
+//! policy's words, and no channel moves (C.10; design D7a). The binary
+//! runs with
 //! its home and its configuration in the scratch directory, and none of
 //! the `SLUICE_*` or `MOON_*` variables of a gate that may be running
 //! these tests. Needs moon, so it is in the tools layer.
@@ -50,6 +53,20 @@ struct OneHost {
 
 impl OneHost {
     fn new(gate: &str) -> OneHost {
+        OneHost::under(gate, |laptop| {
+            format!(
+                "[signers.{LAPTOP}]\nssh = \"{laptop}\"\nkinds = [\"provenance\", \"acceptance\", \"promotion\"]\n\n\
+                 [acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"{LAPTOP}\"] }}]\n\n\
+                 [channels.beta]\non_each_publish = true\n\
+                 require = [{{ kind = \"acceptance\", signers = [\"{LAPTOP}\"] }}]\n"
+            )
+        })
+    }
+
+    /// The one host as [`OneHost::new`] makes it, its policy's signers,
+    /// audiences and channels the tables `policy` writes given the host
+    /// key's public line.
+    fn under(gate: &str, policy: impl Fn(&str) -> String) -> OneHost {
         let scratch = Scratch::new();
         let repo = &scratch.repo;
         // The shared history the version's name is claimed in (22).
@@ -69,12 +86,8 @@ impl OneHost {
             repo,
             &[("site", "web:build")],
             &format!(
-                "\n[projections]\nsite = \"file\"\n\n\
-                 [signers.{LAPTOP}]\nssh = \"{}\"\nkinds = [\"provenance\", \"acceptance\", \"promotion\"]\n\n\
-                 [acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"{LAPTOP}\"] }}]\n\n\
-                 [channels.beta]\non_each_publish = true\n\
-                 require = [{{ kind = \"acceptance\", signers = [\"{LAPTOP}\"] }}]\n",
-                key.public_key().to_openssh().unwrap()
+                "\n[projections]\nsite = \"file\"\n\n{}",
+                policy(&key.public_key().to_openssh().unwrap())
             ),
         );
 
@@ -285,4 +298,42 @@ fn two_landings_on_the_one_host_each_move_beta_in_the_same_run() {
 #[test]
 fn the_one_host_with_no_gate_table_moves_beta_on_each_landing_as_publish_does() {
     beta_follows_two_landings("");
+}
+
+// Spec policy-file, several publishers and no gate is refused in words:
+// the gate accepts nothing.
+
+#[test]
+fn where_the_policy_names_two_publishers_and_no_gate_the_gate_accepts_nothing() {
+    let desk = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).expect("an Ed25519 key");
+    let desk = desk.public_key().to_openssh().unwrap();
+    let host = OneHost::under("", |laptop| {
+        format!(
+            "[signers.{LAPTOP}]\nssh = \"{laptop}\"\nkinds = [\"provenance\"]\n\n\
+             [signers.desk]\nssh = \"{desk}\"\nkinds = [\"provenance\"]\n\n\
+             [acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"{LAPTOP}\"] }}]\n"
+        )
+    });
+    let landed = host.land("feat: the site");
+    let (code, json) = host.publish(&landed);
+    let (version, index, gate) = offered(&json);
+    assert_eq!(version, "0.1.0", "{json}");
+    assert_eq!(gate["told_by"], "publish", "{json}");
+    assert_eq!(gate["answer"], "refused", "{json}");
+    assert_eq!(
+        gate["refused"]["said"], "several publishers and no gate, name an accepting signer",
+        "{json}"
+    );
+    assert_eq!(
+        gate["refused"]["why"]["wanting"],
+        serde_json::json!({ "kind": "acceptance", "check": null, "signers": [] }),
+        "{json}"
+    );
+    assert_eq!(code, Some(1), "{json}");
+    assert_eq!(host.acceptances(&index), [], "an acceptance was made");
+    assert_eq!(
+        host.ledger_refs(),
+        (String::new(), String::new()),
+        "the ledger was written"
+    );
 }

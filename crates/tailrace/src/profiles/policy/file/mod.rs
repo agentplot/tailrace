@@ -99,7 +99,12 @@
 //! acceptance saying one host (118, 108, C.10). The gate reads this from
 //! the answer and decides nothing of it (rule core.7), and the file is
 //! never rewritten. A file that lets a signer claim acceptance, or none
-//! claim provenance, is answered as written.
+//! claim provenance, is answered as written. Where it lets several claim
+//! provenance and none acceptance, 108 admits no host: the policy for
+//! acceptance, and for every given or made channel, is refused, wanting
+//! an acceptance no signer may make, in the words [`NO_GATE`], and
+//! `[layout]` and a channel declared by hand are answered as written (58,
+//! C.10).
 //!
 //! Every operation begins by reading the fragment and resolving the
 //! revision in the repository, so a fragment or a repository that cannot
@@ -114,6 +119,7 @@ use serde::Deserialize;
 use tailrace_seams::{
     Answer, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
     Moves, NamedSigner, Not, Policy, Required, RequiredClaim, Revision, Seam, SignerId, Source,
+    Why,
 };
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
@@ -123,6 +129,10 @@ mod tests;
 
 /// The policy file, at the root of the revision's tree.
 pub const POLICY_FILE: &str = ".config/tailrace.toml";
+
+/// The words a policy with several publishers and no gate is refused in
+/// (C.10).
+pub const NO_GATE: &str = "several publishers and no gate, name an accepting signer";
 
 /// The given channels shipped with tailrace, a fragment in the policy
 /// file's own form (C.10).
@@ -204,10 +214,13 @@ struct EnvironmentTable {
     after: Vec<String>,
 }
 
-/// The file at a revision, parsed whole, with its signers read.
+/// The file at a revision, parsed whole, with its signers read, and
+/// whether they leave the repository with several publishers and no gate
+/// (108, C.10).
 struct Read {
     file: File,
     signers: BTreeMap<String, NamedSigner>,
+    gateless: bool,
 }
 
 /// One claim an audience requires, its signers by their names in
@@ -314,6 +327,20 @@ impl PolicyFile {
         Ok(Some(self.git(&["cat-file", "blob", &blob], &[0])?.stdout))
     }
 
+    /// 108, C.10: refused, wanting an acceptance no signer may make, in
+    /// [`NO_GATE`]'s words, where several may publish and none accept.
+    fn no_gate(&self) -> Not {
+        Not::refused(
+            self.source(),
+            Why::Wanting {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![],
+            },
+            Some(NO_GATE.into()),
+        )
+    }
+
     /// Unreadable naming the file and the revision, with `said`.
     fn unreadable(&self, revision: &Revision, said: String) -> Not {
         Not::unreadable(
@@ -349,8 +376,13 @@ impl PolicyFile {
         for (name, table) in &file.signers {
             signers.insert(name.clone(), signer(name, table).map_err(unreadable)?);
         }
+        let gateless = several_publishers_and_no_gate(&signers);
         given_gate(&mut signers);
-        Ok(Some(Read { file, signers }))
+        Ok(Some(Read {
+            file,
+            signers,
+            gateless,
+        }))
     }
 }
 
@@ -912,6 +944,18 @@ fn given_gate(signers: &mut BTreeMap<String, NamedSigner>) {
     }
 }
 
+/// 108, C.10: whether no signer of `signers` may claim acceptance and
+/// several may claim provenance, so no host is the one that offers and
+/// accepts.
+fn several_publishers_and_no_gate(signers: &BTreeMap<String, NamedSigner>) -> bool {
+    let may = |kind| {
+        signers
+            .values()
+            .filter(move |s: &&NamedSigner| s.kinds.contains(&kind))
+    };
+    may(ClaimKind::Acceptance).next().is_none() && may(ClaimKind::Provenance).count() > 1
+}
+
 /// 32: the signers that may claim `kind` among `signers`, once each, in
 /// the order first named.
 fn may_claim<'a>(
@@ -1031,15 +1075,28 @@ impl Policy for PolicyFile {
         let unreadable = |said: String| self.unreadable(revision, said);
         let read = self.read(revision)?;
         if let Audience::Channel(channel) = audience {
-            let (file, signers) = match &read {
-                Some(Read { file, signers }) => (file, signers),
-                None => (&File::none(), &BTreeMap::new()),
+            let (file, signers, gateless) = match &read {
+                Some(Read {
+                    file,
+                    signers,
+                    gateless,
+                }) => (file, signers, *gateless),
+                None => (&File::none(), &BTreeMap::new(), false),
             };
             let resolved = resolve(&in_force(file, self.givens()?)).map_err(unreadable)?;
             let entry = resolved.get(channel).ok_or_else(absent)?;
-            return channel_policy(entry, signers).map_err(unreadable);
+            let required = channel_policy(entry, signers).map_err(unreadable)?;
+            if gateless && entry.origin != Origin::Declared {
+                return Err(self.no_gate());
+            }
+            return Ok(required);
         }
-        let Some(Read { file, signers }) = read else {
+        let Some(Read {
+            file,
+            signers,
+            gateless,
+        }) = read
+        else {
             return Err(absent());
         };
         let (table, name) = match audience {
@@ -1047,13 +1104,19 @@ impl Policy for PolicyFile {
             Audience::Layout => (file.layout.as_ref(), "[layout]"),
             Audience::Channel(_) => unreachable!("a channel is answered above"),
         };
-        let table = table.ok_or_else(absent)?;
-        if table.bound_to.is_some() {
-            return Err(unreadable(format!(
-                "{name} names bound_to, and only a channel is bound to another"
-            )));
+        let claims = match table {
+            Some(table) if table.bound_to.is_some() => {
+                return Err(unreadable(format!(
+                    "{name} names bound_to, and only a channel is bound to another"
+                )))
+            }
+            Some(table) => Some(claims_of(name, &table.require, &signers).map_err(unreadable)?),
+            None => None,
+        };
+        if gateless && *audience == Audience::Acceptance {
+            return Err(self.no_gate());
         }
-        let claims = claims_of(name, &table.require, &signers).map_err(unreadable)?;
+        let claims = claims.ok_or_else(absent)?;
         Ok(match audience {
             Audience::Layout => Required::Layout { claims },
             _ => Required::Acceptance { claims },
