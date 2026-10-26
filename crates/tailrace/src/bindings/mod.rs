@@ -47,6 +47,16 @@
 //! publish and a push make the layout they name, and a push needs no
 //! `[signing]`, since it signs nothing (60, rule core.32); a promote
 //! needs `[signing]` and `[ledger]` and makes nothing (C.13, C.14).
+//!
+//! Status asks the landing, the policy and the ledger alone (60): it
+//! needs `[landing]` and no `[signing]`, binds `[ledger]` and `[store]`
+//! where the file names them, the store opened and never made, and a
+//! store answering absent naming `[store]` where it names none. On a
+//! host with no bindings file status is bound as 118 binds such a host,
+//! as far as status asks: the landing and the ledger the landing and
+//! ledger families bind for a repository with no file, each with the
+//! remote `origin` where the repository names one and none otherwise,
+//! no store and no signer, and nothing made (C.5, C.6, C.13; design D2).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -55,8 +65,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
+use tailrace_core::History;
 use tailrace_seams::{
-    Answer, Chain, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, Source,
+    Answer, Chain, ChannelName, Digest, Envelope, Held, Keeper, Manifest, Name, Not, Put, Seam,
+    Seams, Source, Store,
 };
 
 use crate::profiles::signer::Signing;
@@ -182,6 +194,12 @@ impl Table {
         unreadable(&self.file, Some(&self.at()), said)
     }
 
+    /// What a profile answers where it needs `table`, which the file
+    /// beside this table does not hold: absent naming it in the file.
+    pub fn missing(&self, table: &str) -> Not {
+        missing(&self.file, table)
+    }
+
     /// What a seam's profile family answers for a key that names none of
     /// its profiles, `known` the keys it reads.
     pub fn unknown(&self, known: &[&str]) -> Not {
@@ -304,8 +322,9 @@ fn seam(
 
 /// The command a binding is made for: publish or push, which make the
 /// layout the file names the first time; verify, sync or rebuild, which
-/// never make or write one; or promote, which needs the host's signer
-/// and its ledger and never makes the layout.
+/// never make or write one; promote, which needs the host's signer and
+/// its ledger and never makes the layout; or status, which needs the
+/// landing alone and is bound on a host with no file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
@@ -314,6 +333,19 @@ pub enum For {
     Push,
     Rebuild,
     Promote,
+    Status,
+}
+
+/// The remote a host with no bindings file binds, where the repository
+/// names it: the default name of the remote a clone came from.
+pub const ORIGIN: &str = "origin";
+
+/// `table` is not in the file at `file`: absent naming it.
+fn missing(file: &Path, table: &str) -> Not {
+    Not::absent(
+        &source(file),
+        format!("binding of the {table}, [{table}] in {}", file.display()),
+    )
 }
 
 /// The ledger of a host whose file names no `[ledger]`: every operation
@@ -341,6 +373,53 @@ impl Keeper for NoLedger {
     }
 }
 
+/// The store of a binding that names none: every operation absent naming
+/// what was looked for (60).
+struct NoStore {
+    what: String,
+}
+
+impl NoStore {
+    fn absent(&self) -> Not {
+        Not::absent(&Source::new(Seam::Store, "unbound"), &self.what)
+    }
+}
+
+impl Store for NoStore {
+    fn put_bytes(&self, _: &[u8]) -> Answer<Put> {
+        Err(self.absent())
+    }
+
+    fn put_artifact(&self, _: &Manifest) -> Answer<Put> {
+        Err(self.absent())
+    }
+
+    fn attach(&self, _: &Digest, _: &Envelope) -> Answer<Put> {
+        Err(self.absent())
+    }
+
+    fn claims_of(&self, _: &Digest) -> Answer<Vec<Envelope>> {
+        Err(self.absent())
+    }
+
+    fn name(&self, _: &Name, _: &Digest, _: Option<&Digest>) -> Answer<()> {
+        Err(self.absent())
+    }
+
+    fn resolve(&self, _: &Name) -> Answer<Digest> {
+        Err(self.absent())
+    }
+
+    fn read(&self, _: &Digest) -> Answer<Held> {
+        Err(self.absent())
+    }
+}
+
+/// How a binding with no store names it, which status keeps nowhere.
+fn unbound_store() -> Source {
+    Source::new(Seam::Store, "unbound")
+}
+
 /// The binding the bindings file at `file` names for `command`, in the
 /// repository at `repository`, its `~/` paths expanded against `home`.
 /// A publish or a promote on a host whose file names no `[signing]`, and
@@ -355,25 +434,25 @@ impl Keeper for NoLedger {
 /// names first, the one publish signs with, and every other bound
 /// profile after it, verify-only (92).
 pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -> Answer<Binding> {
+    if command == For::Status {
+        return status(file, home, repository);
+    }
     let bindings = read(file, home)?;
     let signing = bindings.signing.as_ref();
     if matches!(command, For::Publish | For::Promote) && signing.is_none() {
         return Err(unsigned());
     }
-    let missing = |table: &str| {
-        Not::absent(
-            &source(file),
-            format!("binding of the {table}, [{table}] in {}", file.display()),
-        )
-    };
     if command == For::Promote && bindings.ledger.is_none() {
-        return Err(missing("ledger"));
+        return Err(missing(file, "ledger"));
     }
     let landing = bindings
         .landing
         .as_ref()
-        .ok_or_else(|| missing("landing"))?;
-    let store = bindings.store.as_ref().ok_or_else(|| missing("store"))?;
+        .ok_or_else(|| missing(file, "landing"))?;
+    let store = bindings
+        .store
+        .as_ref()
+        .ok_or_else(|| missing(file, "store"))?;
     let named = profiles::store::named(store)?;
     let landing = profiles::landing::bind(landing, repository)?;
     let bound = profiles::store::bind(store, matches!(command, For::Publish | For::Push))?;
@@ -381,7 +460,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
     // layout.
     let cache = profiles::store::bind(store, false)?;
     let keeper: Box<dyn Keeper> = match &bindings.ledger {
-        Some(ledger) => profiles::ledger::bind(ledger, repository, store)?,
+        Some(ledger) => profiles::ledger::bind(ledger, repository, Some(store))?,
         None => Box::new(NoLedger {
             file: file.to_path_buf(),
         }),
@@ -402,6 +481,112 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
     })
 }
 
+/// 60, 118: status's binding, of the landing, the policy and the ledger:
+/// from the file at `file` where there is one, needing `[landing]`, the
+/// ledger and the store bound where it names them, the store never made,
+/// and no signer; with no file there, as a host with no file is bound.
+fn status(file: &Path, home: Option<&Path>, repository: &Path) -> Answer<Binding> {
+    let bindings = match read(file, home) {
+        Ok(bindings) => bindings,
+        Err(Not::Absent(_)) => return unfiled(file, repository),
+        Err(not) => return Err(not),
+    };
+    let landing = bindings
+        .landing
+        .as_ref()
+        .ok_or_else(|| missing(file, "landing"))?;
+    let landing = profiles::landing::bind(landing, repository)?;
+    let (store, named): (Box<dyn Store>, Source) = match &bindings.store {
+        Some(store) => (
+            profiles::store::bind(store, false)?,
+            profiles::store::named(store)?,
+        ),
+        None => (
+            Box::new(NoStore {
+                what: format!("binding of the store, [store] in {}", file.display()),
+            }),
+            unbound_store(),
+        ),
+    };
+    let keeper: Box<dyn Keeper> = match &bindings.ledger {
+        Some(ledger) => profiles::ledger::bind(ledger, repository, bindings.store.as_ref())?,
+        None => Box::new(NoLedger {
+            file: file.to_path_buf(),
+        }),
+    };
+    Ok(Binding {
+        seams: Seams {
+            store,
+            build: profiles::build::bind(repository),
+            landing,
+            policy: profiles::policy::bind(repository),
+            keeper,
+            signers: profiles::signer::bind(None),
+            projections: BTreeMap::new(),
+            targets: BTreeMap::new(),
+        },
+        store: named,
+        signer: None,
+    })
+}
+
+/// 118, as far as status asks: a host with no bindings file at `file`,
+/// in the repository at `repository`, bound to the landing and the
+/// ledger each family binds for a repository with no file, with the
+/// remote `origin` where the repository names one; no store and no
+/// signer; and nothing made (C.5, C.6, C.13).
+fn unfiled(file: &Path, repository: &Path) -> Answer<Binding> {
+    let remote = origin(repository)?;
+    Ok(Binding {
+        seams: Seams {
+            store: Box::new(NoStore {
+                what: format!(
+                    "binding of the store, which a host with no bindings file at {} binds none",
+                    file.display()
+                ),
+            }),
+            build: profiles::build::bind(repository),
+            landing: profiles::landing::unfiled(repository, remote.clone()),
+            policy: profiles::policy::bind(repository),
+            keeper: profiles::ledger::unfiled(repository, remote),
+            signers: profiles::signer::bind(None),
+            projections: BTreeMap::new(),
+            targets: BTreeMap::new(),
+        },
+        store: unbound_store(),
+        signer: None,
+    })
+}
+
+/// `origin`, where the repository at `repository` names that remote.
+fn origin(repository: &Path) -> Answer<Option<String>> {
+    Ok(History::open(repository)?
+        .remote_url(ORIGIN)?
+        .map(|_| ORIGIN.to_string()))
+}
+
+/// 114: the remote of the landing status binds in the repository at
+/// `repository`: the one `[landing]` names where the file at `file` is
+/// there, `origin` where it is not and the repository names it, and
+/// none otherwise. It reads the file and binds nothing.
+pub fn landing_remote(
+    file: &Path,
+    home: Option<&Path>,
+    repository: &Path,
+) -> Answer<Option<String>> {
+    match read(file, home) {
+        Ok(bindings) => {
+            let landing = bindings
+                .landing
+                .as_ref()
+                .ok_or_else(|| missing(file, "landing"))?;
+            profiles::landing::remote(landing)
+        }
+        Err(Not::Absent(_)) => origin(repository),
+        Err(not) => Err(not),
+    }
+}
+
 /// The binding for `command` in the repository at `repository`, from the
 /// bindings file this process's `XDG_CONFIG_HOME` or `HOME` places;
 /// absent naming both variables where neither is set.
@@ -417,13 +602,4 @@ pub fn load(repository: &Path, command: For) -> Answer<Binding> {
         )
     })?;
     bind(&file, home.as_deref(), repository, command)
-}
-
-/// What a command that reads no bindings file is handed in place of a
-/// binding: `status`, which needs no seam (60).
-pub fn not_read() -> Not {
-    Not::absent(
-        &Source::new(Seam::Host, "bindings"),
-        "binding, since the command reads no bindings file",
-    )
 }

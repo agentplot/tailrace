@@ -1,7 +1,7 @@
 //! How every command renders the core's answer: the exit code of each of
-//! the four answers, the answer as one JSON document (57), and a reason
-//! with the source's own words on a line of their own (58, 59, rule
-//! core.19).
+//! the four answers, the answer as one JSON document (57), a reason with
+//! the source's own words on a line of their own (58, 59, rule core.19),
+//! and a moment as a person reads a time in UTC.
 
 use std::io::{self, Write};
 
@@ -69,4 +69,29 @@ pub fn not(out: &mut dyn Write, indent: &str, not: &Not) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// `seconds` since the Unix epoch as an RFC 3339 time in UTC, the civil
+/// date from the count of days by the proleptic Gregorian calendar.
+pub fn utc(seconds: u64) -> String {
+    let (days, of_day) = (seconds / 86_400, seconds % 86_400);
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let of_era = z.rem_euclid(146_097);
+    let year_of_era = (of_era - of_era / 1_460 + of_era / 36_524 - of_era / 146_096) / 365;
+    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted = (5 * of_year + 2) / 153;
+    let day = of_year - (153 * shifted + 2) / 5 + 1;
+    let month = if shifted < 10 {
+        shifted + 3
+    } else {
+        shifted - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        of_day / 3_600,
+        of_day % 3_600 / 60,
+        of_day % 60
+    )
 }
