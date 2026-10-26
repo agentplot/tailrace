@@ -4,7 +4,7 @@
 //! no channel a test did not script: the channels a profile gives with
 //! nothing declared are that profile's (C.10).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde_json::json;
 use tailrace_seams::{
@@ -26,8 +26,8 @@ pub enum PolicyOp {
 pub struct PolicyState {
     every: BTreeMap<Audience, Required>,
     at: BTreeMap<(Revision, Audience), Required>,
-    follows: BTreeSet<ChannelId>,
-    follows_at: BTreeSet<(Revision, ChannelId)>,
+    follows: BTreeMap<ChannelId, bool>,
+    follows_at: BTreeMap<(Revision, ChannelId), bool>,
 }
 
 /// A policy in memory.
@@ -66,16 +66,18 @@ impl FakePolicy {
     }
 
     /// 95: `channel`, where a policy is held for it, moves on each
-    /// accepted publish at every revision.
-    pub fn follows(&self, channel: &ChannelId) {
-        self.state().follows.insert(channel.clone());
+    /// accepted publish at every revision, taking prereleases too where
+    /// `prereleases` (C.10).
+    pub fn follows(&self, channel: &ChannelId, prereleases: bool) {
+        self.state().follows.insert(channel.clone(), prereleases);
     }
 
-    /// 95: `channel` moves on each accepted publish at `revision`.
-    pub fn follows_at(&self, revision: &Revision, channel: &ChannelId) {
+    /// 95: `channel` moves on each accepted publish at `revision`, taking
+    /// prereleases too where `prereleases` (C.10).
+    pub fn follows_at(&self, revision: &Revision, channel: &ChannelId, prereleases: bool) {
         self.state()
             .follows_at
-            .insert((revision.clone(), channel.clone()));
+            .insert((revision.clone(), channel.clone()), prereleases);
     }
 }
 
@@ -95,7 +97,8 @@ impl Policy for FakePolicy {
     /// name and then component, each in the component its identity
     /// carries (125): bound where its policy names a binding, moving on
     /// each publish where the test scripted it so, and by a promotion
-    /// alone otherwise. A binding is answered as scripted, never checked.
+    /// alone otherwise, taking prereleases as scripted. A binding is
+    /// answered as scripted, never checked.
     fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>> {
         let given = json!({ "revision": revision });
         self.ask(PolicyOp::Channels, given, "the channels", |s, _| {
@@ -113,12 +116,16 @@ impl Policy for FakePolicy {
             Ok(held
                 .into_iter()
                 .map(|(channel, required)| {
-                    let follows = s.follows.contains(channel)
-                        || s.follows_at.contains(&(revision.clone(), channel.clone()));
+                    let follows = s
+                        .follows_at
+                        .get(&(revision.clone(), channel.clone()))
+                        .or_else(|| s.follows.get(channel));
                     let moves = match (required.bound_to(), follows) {
                         (Some(to), _) => Moves::Bound { to: to.clone() },
-                        (None, true) => Moves::EachPublish,
-                        (None, false) => Moves::Promotion,
+                        (None, Some(prereleases)) => Moves::EachPublish {
+                            prereleases: *prereleases,
+                        },
+                        (None, None) => Moves::Promotion,
                     };
                     DeclaredChannel {
                         channel: channel.clone(),
@@ -231,12 +238,16 @@ mod tests {
             claims: vec![],
             bound_to: bound_to.map(ChannelName::new),
             promoted_by: vec![],
+            approvers: vec![],
         }
     }
 
     fn declared(channel: ChannelId, moves: Moves) -> DeclaredChannel {
         DeclaredChannel { channel, moves }
     }
+
+    /// Moving on each publish with releases alone.
+    const RELEASES: Moves = Moves::EachPublish { prereleases: false };
 
     fn bound(to: &str) -> Moves {
         Moves::Bound {
@@ -260,12 +271,12 @@ mod tests {
             Audience::Acceptance,
             Required::Acceptance { claims: vec![] },
         );
-        policy.follows(&beta);
+        policy.follows(&beta, false);
 
         assert_eq!(
             policy.channels(&at),
             Ok(vec![
-                declared(beta.clone(), Moves::EachPublish),
+                declared(beta.clone(), RELEASES),
                 declared(edge, Moves::Promotion),
                 declared(stable.clone(), bound("beta")),
             ])
@@ -273,7 +284,7 @@ mod tests {
         assert_eq!(
             policy.channels(&other),
             Ok(vec![
-                declared(beta, Moves::EachPublish),
+                declared(beta, RELEASES),
                 declared(stable, bound("beta")),
             ])
         );
@@ -290,20 +301,37 @@ mod tests {
         let (at, other) = (Revision::new("4f2a9c1"), Revision::new("77b0e3d"));
         policy.require(Audience::Channel(beta.clone()), channel(None));
         policy.require(Audience::Channel(edge.clone()), channel(None));
-        policy.follows(&beta);
-        policy.follows_at(&at, &edge);
+        policy.follows(&beta, false);
+        policy.follows_at(&at, &edge, false);
         assert_eq!(
             policy.channels(&at),
             Ok(vec![
-                declared(beta.clone(), Moves::EachPublish),
-                declared(edge.clone(), Moves::EachPublish),
+                declared(beta.clone(), RELEASES),
+                declared(edge.clone(), RELEASES),
             ])
         );
         assert_eq!(
             policy.channels(&other),
             Ok(vec![
-                declared(beta, Moves::EachPublish),
+                declared(beta, RELEASES),
                 declared(edge, Moves::Promotion),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_following_channel_scripted_to_take_prereleases_is_listed_so() {
+        let policy = FakePolicy::new();
+        let (beta, nightly) = (id(None, "beta"), id(None, "nightly"));
+        policy.require(Audience::Channel(beta.clone()), channel(None));
+        policy.require(Audience::Channel(nightly.clone()), channel(None));
+        policy.follows(&beta, false);
+        policy.follows(&nightly, true);
+        assert_eq!(
+            policy.channels(&Revision::new("4f2a9c1")),
+            Ok(vec![
+                declared(beta, RELEASES),
+                declared(nightly, Moves::EachPublish { prereleases: true }),
             ])
         );
     }
@@ -314,12 +342,12 @@ mod tests {
         let (libs, webs) = (id(Some("lib"), "beta"), id(Some("web"), "beta"));
         policy.require(Audience::Channel(webs.clone()), channel(None));
         policy.require(Audience::Channel(libs.clone()), channel(None));
-        policy.follows(&webs);
+        policy.follows(&webs, false);
         assert_eq!(
             policy.channels(&Revision::new("4f2a9c1")),
             Ok(vec![
                 declared(libs, Moves::Promotion),
-                declared(webs, Moves::EachPublish),
+                declared(webs, RELEASES),
             ])
         );
     }
@@ -352,7 +380,7 @@ mod tests {
             Audience::Acceptance,
             Required::Acceptance { claims: vec![] },
         );
-        policy.follows(&id(None, "beta"));
+        policy.follows(&id(None, "beta"), false);
         assert_eq!(policy.channels(&Revision::new("4f2a9c1")), Ok(vec![]));
     }
 

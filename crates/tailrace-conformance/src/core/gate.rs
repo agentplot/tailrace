@@ -192,9 +192,10 @@ fn require(world: &FakeWorld, required: Required) {
             }],
             bound_to: None,
             promoted_by: vec![gate],
+            approvers: vec![],
         },
     );
-    policy.follows(&beta());
+    policy.follows(&beta(), false);
 }
 
 /// The policy file landed, each output built and
@@ -928,9 +929,10 @@ fn beta_of_one_component(_: &FakeWorld) {
                 }],
                 bound_to: None,
                 promoted_by: vec![gate.clone()],
+                approvers: vec![],
             },
         );
-        policy.follows(&channel);
+        policy.follows(&channel, false);
     }
     let publish = ok(world.publish(&world.ask(&head)), "the publish");
     let (_, published) = publish

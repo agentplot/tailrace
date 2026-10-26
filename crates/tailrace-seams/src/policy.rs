@@ -27,8 +27,10 @@ pub struct RequiredClaim {
 
 /// 82, 83: the claims an audience requires, by audience, so the policy
 /// for acceptance has nowhere to name a channel, and the policy for a
-/// channel names the channel it is bound to where it is bound (37) and
-/// the signers whose promotion of it counts (32).
+/// channel names the channel it is bound to where it is bound (37), the
+/// signers whose promotion of it counts (32), and the signers that may
+/// ask for it to move, none meaning any asker the gate verifies (129,
+/// C.10).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Required {
@@ -39,6 +41,7 @@ pub enum Required {
         claims: Vec<RequiredClaim>,
         bound_to: Option<ChannelName>,
         promoted_by: Vec<NamedSigner>,
+        approvers: Vec<NamedSigner>,
     },
     Layout {
         claims: Vec<RequiredClaim>,
@@ -72,16 +75,29 @@ impl Required {
             Required::Acceptance { .. } | Required::Layout { .. } => &[],
         }
     }
+
+    /// 32, C.10: the signers that may ask for this policy's channel to
+    /// move; none where any asker the gate verifies may (129), and none
+    /// for acceptance or a layout, which nothing asks to move. They
+    /// narrow who asks and never widen who signs.
+    pub fn approvers(&self) -> &[NamedSigner] {
+        match self {
+            Required::Channel { approvers, .. } => approvers,
+            Required::Acceptance { .. } | Required::Layout { .. } => &[],
+        }
+    }
 }
 
 /// 131: how a channel moves: on each accepted publish, as the gate's own
-/// act (95); by a promotion alone; or bound to a channel of its own
-/// component, taking only what that channel held (37, 83). One of the
-/// three, so no channel both follows each publish and is bound.
+/// act (95), taking the releases the version rule makes and prereleases
+/// too only where `prereleases` says so (C.10); by a promotion alone; or
+/// bound to a channel of its own component, taking only what that
+/// channel held (37, 83). One of the three, so no channel both follows
+/// each publish and is bound.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "by", rename_all = "snake_case")]
 pub enum Moves {
-    EachPublish,
+    EachPublish { prereleases: bool },
     Promotion,
     Bound { to: ChannelName },
 }
@@ -100,7 +116,7 @@ impl DeclaredChannel {
     pub fn bound_to(&self) -> Option<ChannelId> {
         match &self.moves {
             Moves::Bound { to } => Some(ChannelId::new(self.channel.component.clone(), to.clone())),
-            Moves::EachPublish | Moves::Promotion => None,
+            Moves::EachPublish { .. } | Moves::Promotion => None,
         }
     }
 }
@@ -134,6 +150,15 @@ mod tests {
         }
     }
 
+    fn release() -> NamedSigner {
+        NamedSigner {
+            id: SignerId::new("release"),
+            verified_by: "another public key".into(),
+            kinds: vec![],
+            checks: vec![],
+        }
+    }
+
     fn claims() -> Vec<RequiredClaim> {
         vec![RequiredClaim {
             kind: ClaimKind::Verdict,
@@ -156,10 +181,12 @@ mod tests {
         let acceptance = Required::Acceptance { claims: claims() };
         assert_eq!(acceptance.bound_to(), None);
         assert_eq!(acceptance.promoted_by(), &[]);
+        assert_eq!(acceptance.approvers(), &[]);
         assert_eq!(acceptance.claims(), claims().as_slice());
         let json = serde_json::to_value(&acceptance).unwrap();
         assert!(json["acceptance"].get("bound_to").is_none(), "{json}");
         assert!(json["acceptance"].get("promoted_by").is_none(), "{json}");
+        assert!(json["acceptance"].get("approvers").is_none(), "{json}");
     }
 
     #[test]
@@ -168,9 +195,26 @@ mod tests {
             claims: claims(),
             bound_to: Some(ChannelName::new("beta")),
             promoted_by: vec![gate()],
+            approvers: vec![],
         };
         assert_eq!(stable.bound_to(), Some(&ChannelName::new("beta")));
         assert_eq!(stable.promoted_by(), &[gate()]);
+        assert_eq!(stable.approvers(), &[]);
+    }
+
+    #[test]
+    fn a_channels_approvers_round_trip_and_never_join_its_promoters() {
+        let stable = Required::Channel {
+            claims: claims(),
+            bound_to: None,
+            promoted_by: vec![gate()],
+            approvers: vec![release(), gate()],
+        };
+        assert_eq!(stable.approvers(), &[release(), gate()]);
+        assert_eq!(stable.promoted_by(), &[gate()]);
+        round_trip(stable.clone());
+        let json = serde_json::to_value(&stable).unwrap();
+        assert_eq!(json["channel"]["approvers"][0]["id"], "release", "{json}");
     }
 
     #[test]
@@ -188,6 +232,7 @@ mod tests {
             claims: claims(),
             bound_to: None,
             promoted_by: vec![gate()],
+            approvers: vec![],
         });
         round_trip(Required::Layout { claims: vec![] });
     }
@@ -196,8 +241,12 @@ mod tests {
     fn each_way_a_channel_moves_round_trips_by_what_moves_it() {
         let cases = [
             (
-                Moves::EachPublish,
-                serde_json::json!({ "by": "each_publish" }),
+                Moves::EachPublish { prereleases: false },
+                serde_json::json!({ "by": "each_publish", "prereleases": false }),
+            ),
+            (
+                Moves::EachPublish { prereleases: true },
+                serde_json::json!({ "by": "each_publish", "prereleases": true }),
             ),
             (Moves::Promotion, serde_json::json!({ "by": "promotion" })),
             (
@@ -236,13 +285,13 @@ mod tests {
 
         let edge = DeclaredChannel {
             channel: ChannelId::new(None, ChannelName::new("edge")),
-            moves: Moves::EachPublish,
+            moves: Moves::EachPublish { prereleases: false },
         };
         assert_eq!(
             serde_json::to_value(&edge).unwrap(),
             serde_json::json!({
                 "channel": { "component": null, "name": "edge" },
-                "moves": { "by": "each_publish" },
+                "moves": { "by": "each_publish", "prereleases": false },
             })
         );
         assert_eq!(edge.bound_to(), None);

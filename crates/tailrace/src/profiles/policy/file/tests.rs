@@ -338,7 +338,10 @@ fn bound(to: &str) -> Moves {
 /// `beta` and `stable` of `component`, as every component is given them.
 fn givens(component: Option<&str>) -> Vec<DeclaredChannel> {
     vec![
-        declared(id(component, "beta"), Moves::EachPublish),
+        declared(
+            id(component, "beta"),
+            Moves::EachPublish { prereleases: false },
+        ),
         declared(id(component, "stable"), bound("beta")),
     ]
 }
@@ -387,6 +390,7 @@ fn a_given_channel_with_no_line_requires_the_gates_acceptance_and_is_promoted_by
             claims: vec![by_the_gate(vec![gate(false)])],
             bound_to: Some(ChannelName::new("beta")),
             promoted_by: vec![gate(false)],
+            approvers: vec![],
         })
     );
 }
@@ -412,6 +416,7 @@ fn with_no_file_a_given_channel_is_answered_as_given() {
             claims: vec![by_the_gate(vec![])],
             bound_to: None,
             promoted_by: vec![],
+            approvers: vec![],
         })
     );
     absent(
@@ -526,6 +531,7 @@ fn a_bound_channel_names_the_channel_it_is_bound_to() {
             }],
             bound_to: Some(ChannelName::new("edge")),
             promoted_by: vec![],
+            approvers: vec![],
         })
     );
 }
@@ -578,9 +584,18 @@ fn two_components_channels_are_listed_by_name_then_component() {
     assert_eq!(
         repo.policy().channels(&at),
         Ok(vec![
-            declared(id(Some("lib"), "beta"), Moves::EachPublish),
-            declared(id(Some("web"), "beta"), Moves::EachPublish),
-            declared(id(Some("web"), "edge"), Moves::EachPublish),
+            declared(
+                id(Some("lib"), "beta"),
+                Moves::EachPublish { prereleases: false }
+            ),
+            declared(
+                id(Some("web"), "beta"),
+                Moves::EachPublish { prereleases: false }
+            ),
+            declared(
+                id(Some("web"), "edge"),
+                Moves::EachPublish { prereleases: false }
+            ),
             declared(id(Some("lib"), "next"), bound("beta")),
             declared(id(Some("lib"), "stable"), bound("beta")),
             declared(id(Some("web"), "stable"), bound("beta")),
@@ -652,7 +667,10 @@ fn a_hand_declared_channel_moves_as_its_table_says() {
          [channels.next]\nbound_to = \"edge\"\non_each_publish = false\n",
     );
     let mut all = givens(None);
-    all.push(declared(id(None, "edge"), Moves::EachPublish));
+    all.push(declared(
+        id(None, "edge"),
+        Moves::EachPublish { prereleases: false },
+    ));
     all.push(declared(id(None, "rc"), Moves::Promotion));
     all.push(declared(id(None, "next"), bound("edge")));
     assert_eq!(repo.policy().channels(&at), Ok(sorted(all)));
@@ -699,6 +717,7 @@ fn given_policy(line: Vec<RequiredClaim>, to: Option<&str>) -> Required {
         claims,
         bound_to: to.map(ChannelName::new),
         promoted_by: vec![gate(false)],
+        approvers: vec![],
     }
 }
 
@@ -759,8 +778,8 @@ fn stable_is_rebound_to_alpha_by_the_same_line() {
     assert_eq!(
         repo.policy().channels(&at),
         Ok(vec![
-            declared(id(None, "alpha"), Moves::EachPublish),
-            declared(id(None, "beta"), Moves::EachPublish),
+            declared(id(None, "alpha"), Moves::EachPublish { prereleases: false }),
+            declared(id(None, "beta"), Moves::EachPublish { prereleases: false }),
             declared(id(None, "stable"), bound("alpha")),
         ])
     );
@@ -783,7 +802,9 @@ fn beta_is_made_a_promotion_alone_by_the_same_line() {
         ]
     );
     assert!(
-        !listed.iter().any(|c| c.moves == Moves::EachPublish),
+        !listed
+            .iter()
+            .any(|c| matches!(c.moves, Moves::EachPublish { .. })),
         "a channel still follows each publish: {listed:?}"
     );
 }
@@ -841,6 +862,7 @@ fn beta_with_no_line_requires_the_gates_acceptance_and_names_it_its_one_promoter
             claims: vec![by_the_gate(vec![gate(true)])],
             bound_to: None,
             promoted_by: vec![gate(true)],
+            approvers: vec![],
         })
     );
 }
@@ -966,6 +988,7 @@ fn prod_waits_on_stable_with_a_channel_of_its_own() {
             claims: vec![by_the_gate(vec![gate(false)])],
             bound_to: Some(ChannelName::new("stable")),
             promoted_by: vec![gate(false)],
+            approvers: vec![],
         })
     );
 }
@@ -1148,7 +1171,10 @@ fn another_fragment_gives_its_channels_alone() {
     let policy = PolicyFile::with_givens(repo.path(), "[channels.edge]\non_each_publish = true\n");
     assert_eq!(
         policy.channels(&none),
-        Ok(vec![declared(id(None, "edge"), Moves::EachPublish)])
+        Ok(vec![declared(
+            id(None, "edge"),
+            Moves::EachPublish { prereleases: false }
+        )])
     );
 }
 
@@ -1167,7 +1193,10 @@ fn a_fragment_of_other_names_is_read_with_a_line_under_one() {
     assert_eq!(
         policy.channels(&at),
         Ok(vec![
-            declared(id(None, "nightly"), Moves::EachPublish),
+            declared(
+                id(None, "nightly"),
+                Moves::EachPublish { prereleases: false }
+            ),
             declared(id(None, "release"), bound("nightly")),
         ])
     );
@@ -1195,7 +1224,10 @@ fn alpha_is_switched_on_by_an_empty_table() {
     let repo = Repo::new();
     let at = repo.at(&format!("{}[channels.alpha]\n", gate_table(false)));
     let mut all = givens(None);
-    all.push(declared(id(None, "alpha"), Moves::EachPublish));
+    all.push(declared(
+        id(None, "alpha"),
+        Moves::EachPublish { prereleases: false },
+    ));
     assert_eq!(repo.policy().channels(&at), Ok(sorted(all)));
     assert_eq!(
         channel_policy(&repo, &at, &id(None, "alpha")),

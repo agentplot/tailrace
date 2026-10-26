@@ -36,6 +36,7 @@ fn channel_policy(bound_to: Option<&str>) -> Required {
         claims: vec![],
         bound_to: bound_to.map(ChannelName::new),
         promoted_by: vec![],
+        approvers: vec![],
     }
 }
 
@@ -45,7 +46,7 @@ fn channel_policy(bound_to: Option<&str>) -> Required {
 fn declare(policy: &FakePolicy) {
     policy.require(Audience::Acceptance, acceptance());
     policy.require(Audience::Channel(of("lib", "beta")), channel_policy(None));
-    policy.follows(&of("lib", "beta"));
+    policy.follows(&of("lib", "beta"), false);
     policy.require(Audience::Channel(of("lib", "edge")), channel_policy(None));
     policy.require(
         Audience::Channel(of("lib", "stable")),
@@ -112,7 +113,7 @@ fn an_absent_layout_is_shown_beside_the_channels() {
         Ok(vec![
             listed(
                 of("lib", "beta"),
-                Moves::EachPublish,
+                Moves::EachPublish { prereleases: false },
                 Ok(channel_policy(None))
             ),
             listed(

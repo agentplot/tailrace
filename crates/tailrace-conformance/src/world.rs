@@ -636,6 +636,7 @@ impl FakeWorld {
                 claims,
                 bound_to: bound_to.map(ChannelName::new),
                 promoted_by: vec![gate],
+                approvers: vec![],
             },
         );
     }
@@ -686,6 +687,7 @@ impl FakeWorld {
                     claims: vec![],
                     bound_to: bound_to.map(ChannelName::new),
                     promoted_by: vec![],
+                    approvers: vec![],
                 },
             );
         }

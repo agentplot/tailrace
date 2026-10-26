@@ -359,6 +359,7 @@ fn declare(world: &World, channel: &ChannelId, bound_to: Option<&str>) {
             claims: vec![],
             bound_to: bound_to.map(ChannelName::new),
             promoted_by: vec![],
+            approvers: vec![],
         },
     );
 }

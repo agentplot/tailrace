@@ -539,6 +539,7 @@ fn declared(fakes: &Fakes, channel: &str) {
             claims: vec![],
             bound_to: None,
             promoted_by: vec![],
+            approvers: vec![],
         },
     );
 }
@@ -987,6 +988,7 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
             }],
             bound_to: None,
             promoted_by: vec![host_signer],
+            approvers: vec![],
         },
     );
 }
@@ -1153,13 +1155,14 @@ fn policy_as_text_shows_the_layout_absent_beside_the_channels_and_exits_0() {
     declared(&host.fakes, "beta");
     host.fakes
         .policy
-        .follows(&ChannelId::new(None, ChannelName::new("beta")));
+        .follows(&ChannelId::new(None, ChannelName::new("beta")), false);
     host.fakes.policy.require(
         Audience::Channel(stable()),
         Required::Channel {
             claims: vec![],
             bound_to: Some(ChannelName::new("beta")),
             promoted_by: vec![],
+            approvers: vec![],
         },
     );
     let (code, printed) = host.run(&["policy"]);

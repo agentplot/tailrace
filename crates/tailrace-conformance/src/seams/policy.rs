@@ -164,6 +164,7 @@ fn acceptance_names_no_channel(rig: &dyn PolicyRig) {
                 claims: claims(),
                 bound_to: Some(beta.clone()),
                 promoted_by: vec![],
+                approvers: vec![],
             },
         ),
     ]);
@@ -248,7 +249,11 @@ fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
     let components = [ComponentName::new("lib"), ComponentName::new("web")];
     let channels = [
         declared("edge", Some("lib"), Moves::Promotion),
-        declared("nightly", Some("web"), Moves::EachPublish),
+        declared(
+            "nightly",
+            Some("web"),
+            Moves::EachPublish { prereleases: false },
+        ),
         declared("next", Some("lib"), bound("edge")),
     ];
     // Declared in another order than the answer's, which is by name.
@@ -280,7 +285,7 @@ fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
 
 fn each_way_a_channel_moves(rig: &dyn PolicyRig) {
     let channels = [
-        declared("edge", None, Moves::EachPublish),
+        declared("edge", None, Moves::EachPublish { prereleases: false }),
         declared("rc", None, Moves::Promotion),
         declared("next", None, bound("edge")),
     ];

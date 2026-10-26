@@ -307,7 +307,9 @@ pub fn following(
 ) -> Answer<Vec<ChannelId>> {
     Ok(channels_at(seams.policy.as_ref(), landed)?
         .into_iter()
-        .filter(|c| c.moves == Moves::EachPublish && c.channel.component_name() == *component)
+        .filter(|c| {
+            matches!(c.moves, Moves::EachPublish { .. }) && c.channel.component_name() == *component
+        })
         .map(|c| c.channel)
         .collect())
 }

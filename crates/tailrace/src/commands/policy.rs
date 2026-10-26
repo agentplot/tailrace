@@ -90,7 +90,7 @@ fn required(out: &mut dyn Write, answer: &Answer<Required>) -> io::Result<()> {
 /// requires and its promoters, or its policy's own answer (58).
 fn channel(out: &mut dyn Write, channel: &ChannelInForce) -> io::Result<()> {
     let moves = match &channel.channel.moves {
-        Moves::EachPublish => "each publish".to_string(),
+        Moves::EachPublish { .. } => "each publish".to_string(),
         Moves::Promotion => "promotion".to_string(),
         Moves::Bound { to } => format!("bound to {to}"),
     };

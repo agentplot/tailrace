@@ -235,6 +235,7 @@ fn a_channel_named_alone_is_the_versions_components() {
             claims: vec![],
             bound_to: None,
             promoted_by: vec![],
+            approvers: vec![],
         },
     );
     let verified = verified(

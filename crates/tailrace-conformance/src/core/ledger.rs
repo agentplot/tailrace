@@ -527,6 +527,7 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
                 claims,
                 bound_to: None,
                 promoted_by,
+                approvers: vec![],
             },
         );
         let before = written(world);
@@ -736,6 +737,7 @@ fn given_stable(world: &FakeWorld) {
             }],
             bound_to: Some(ChannelName::new(BETA)),
             promoted_by: vec![gate],
+            approvers: vec![],
         },
     );
     claim_of(

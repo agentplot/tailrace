@@ -225,7 +225,7 @@ fn channels_html(body: &mut String, channels: &Channels) {
 fn channel_html(body: &mut String, channel: &ChannelStatus) {
     let bound = match &channel.declared.moves {
         Moves::Bound { to } => escape(to.as_str()),
-        Moves::EachPublish | Moves::Promotion => String::new(),
+        Moves::EachPublish { .. } | Moves::Promotion => String::new(),
     };
     let at = match &channel.at {
         Ok(Channel::Empty) => "empty".to_string(),

@@ -137,7 +137,7 @@ fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) ->
         };
         text.push_str(&format!("[channels.{table}]\nrequire = []\n"));
         match &channel.moves {
-            Moves::EachPublish => text.push_str("on_each_publish = true\n"),
+            Moves::EachPublish { .. } => text.push_str("on_each_publish = true\n"),
             Moves::Bound { to } => {
                 text.push_str(&format!("bound_to = {}\n", quoted(to.as_str())));
             }
@@ -199,7 +199,7 @@ impl PolicyRig for PolicyFileRig {
                 (_, Some(to)) => Moves::Bound {
                     to: ChannelName::new(to),
                 },
-                (Some(true), None) => Moves::EachPublish,
+                (Some(true), None) => Moves::EachPublish { prereleases: false },
                 _ => Moves::Promotion,
             };
             for component in &scopes {

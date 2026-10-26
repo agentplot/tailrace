@@ -111,9 +111,10 @@ mod tests {
                 claims: vec![],
                 bound_to: None,
                 promoted_by: vec![],
+                approvers: vec![],
             },
         );
-        policy.follows(&beta);
+        policy.follows(&beta, false);
 
         let landed = Landed::check(&landing, &main, &rev).unwrap();
         assert!(policy.calls().is_empty(), "asked before the landing");
@@ -121,7 +122,7 @@ mod tests {
             channels_at(&policy, &landed),
             Ok(vec![DeclaredChannel {
                 channel: beta,
-                moves: Moves::EachPublish,
+                moves: Moves::EachPublish { prereleases: false },
             }])
         );
         let calls = policy.calls();

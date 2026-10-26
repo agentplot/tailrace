@@ -115,9 +115,10 @@ fn following_requires(
             claims,
             bound_to: None,
             promoted_by,
+            approvers: vec![],
         },
     );
-    world.fakes.policy.follows(channel);
+    world.fakes.policy.follows(channel, false);
 }
 
 /// `beta` follows each publish, requires `claims`, and is promoted by
@@ -965,6 +966,7 @@ fn stable_bound(world: &World, component: &str) {
             claims: vec![from_gate()],
             bound_to: Some(ChannelName::new("beta")),
             promoted_by: vec![the_gate()],
+            approvers: vec![],
         },
     );
 }
@@ -1582,6 +1584,7 @@ fn edge_moves_on_each_publish_and_next_bound_to_it_takes_what_the_gate_moved_edg
             claims: vec![from_gate()],
             bound_to: Some(ChannelName::new("edge")),
             promoted_by: vec![the_gate()],
+            approvers: vec![],
         },
     );
     world.fakes.signer.hold(&SignerId::new(GATE));
@@ -1702,9 +1705,10 @@ fn a_gate_over_a_fake_policy_moves_edge_in_a_history_holding_no_policy_file() {
             claims: vec![from_gate()],
             bound_to: None,
             promoted_by: vec![the_gate()],
+            approvers: vec![],
         },
     );
-    fakes.policy.follows(&edge);
+    fakes.policy.follows(&edge, false);
     let mut seams = fakes.seams();
     let gate = FakeSigner::new();
     gate.hold(&SignerId::new(GATE));

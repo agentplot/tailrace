@@ -69,6 +69,7 @@ fn stable_policy(bound_to: Option<&str>) -> Required {
         ],
         bound_to: bound_to.map(ChannelName::new),
         promoted_by: vec![gate()],
+        approvers: vec![],
     }
 }
 
@@ -502,6 +503,7 @@ fn a_host_the_policy_does_not_let_promote_is_refused_before_anything_is_signed()
             )],
             bound_to: None,
             promoted_by: vec![named("approver", &[ClaimKind::Promotion])],
+            approvers: vec![],
         },
     );
     let before = counts(&world);
@@ -527,6 +529,7 @@ fn given_stable(line: Vec<RequiredClaim>) -> Required {
         claims,
         bound_to: None,
         promoted_by: vec![gate],
+        approvers: vec![],
     }
 }
 
@@ -860,6 +863,7 @@ fn bound() -> Two {
             claims: vec![wanted(ClaimKind::Acceptance, vec![gate()])],
             bound_to: None,
             promoted_by: vec![gate()],
+            approvers: vec![],
         },
     );
     two.world

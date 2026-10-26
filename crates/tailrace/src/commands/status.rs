@@ -248,7 +248,7 @@ fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Re
     write!(out, "  {:<width$}  ", channel.name().as_str())?;
     let bound = match &channel.declared.moves {
         Moves::Bound { to } => format!(", bound to {to}"),
-        Moves::EachPublish | Moves::Promotion => String::new(),
+        Moves::EachPublish { .. } | Moves::Promotion => String::new(),
     };
     match &channel.at {
         Ok(Channel::Empty) => writeln!(out, "empty{bound}"),

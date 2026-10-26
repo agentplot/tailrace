@@ -630,7 +630,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
                     "{full} follows each publish and is bound to {bound}, and a bound channel takes no version from a publish (37)"
                 ))
             }
-            (Some(true), None) => Moves::EachPublish,
+            (Some(true), None) => Moves::EachPublish { prereleases: false },
             (_, Some(bound)) => Moves::Bound { to: bound.clone() },
             (_, None) => Moves::Promotion,
         };
@@ -928,9 +928,10 @@ fn channel_policy(
         claims,
         bound_to: match &resolved.moves {
             Moves::Bound { to } => Some(to.clone()),
-            Moves::EachPublish | Moves::Promotion => None,
+            Moves::EachPublish { .. } | Moves::Promotion => None,
         },
         promoted_by,
+        approvers: vec![],
     })
 }
 
