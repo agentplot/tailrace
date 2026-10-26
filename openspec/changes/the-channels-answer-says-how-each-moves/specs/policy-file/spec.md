@@ -9,8 +9,8 @@ claims in the order the verdict reads them, each with its `kind`, its
 `check` where it is a verdict, and the `signers` by their names in
 `[signers]` (82). A channel's table SHALL hold such a list in `require`
 or leave it out, requiring nothing of its own, and MAY name `bound_to`,
-`on_each_publish` or `on` (83, 37, 95, C.10). The acceptance and layout tables
-SHALL name no channel.
+`on_each_publish`, `prereleases` or `approvers` (83, 37, 95, C.10). The
+acceptance and layout tables SHALL name no channel.
 
 #### Scenario: Acceptance requires two claims
 
@@ -36,9 +36,9 @@ SHALL name no channel.
 
 Where the revision holds no policy file, or its file holds no table for
 the audience asked, the answer SHALL be absent naming the audience (82,
-58), except for a channel the givens hold and the table in force has
-on, or one an environment's words make, whose policy SHALL be answered
-as given (C.10). A file that cannot be
+58), except for a channel the givens declare, a held one the
+repository has switched on, or one an environment's words make, whose
+policy SHALL be answered as given (C.10). A file that cannot be
 read or parsed SHALL be unreadable naming the file and the revision,
 with git's or the parser's own words (59).
 
@@ -55,7 +55,7 @@ with git's or the parser's own words (59).
 #### Scenario: A given channel with no line
 
 - **WHEN** the file holds no `[channels]` and the policy for `stable` is asked
-- **THEN** it answers the gate's acceptance as the one claim required, `beta` as the channel it is bound to, and the gate's signers as its promoters
+- **THEN** it answers the gate's acceptance as the one claim required, `beta` as the channel it is bound to, the gate's signers as its promoters, and no approvers
 
 #### Scenario: A channel neither given nor declared
 
@@ -101,7 +101,8 @@ table and the form to use. The profile reads only each component's
 ### Requirement: A channel is bound within its component
 
 A `bound_to` SHALL name a channel of the same component that the table
-in force has on or an environment makes; one that names a channel of no
+in force lists, given, switched on, declared by hand or made by an
+environment; one that names a channel of no
 such kind SHALL be unreadable naming the table and the channel it names
 (37, 125). A channel's component and how it moves SHALL be read the same way
 whether the channels are listed or one channel's policy is asked, so
@@ -125,11 +126,11 @@ the two never disagree (83).
 ### Requirement: The profile lists the channels the file declares
 
 The profile SHALL answer channels with every channel the table in force
-has on, the givens of every component among them, and each channel an
+lists, the givens of every component among them, and each channel an
 environment's words make, once each, ordered by name and then
 component, each with its component and how it moves (131, C.10). Where
-the revision holds no policy file the answer SHALL be the givens that
-are on, of the one component. A revision the repository does not hold, or a
+the revision holds no policy file the answer SHALL be the givens the
+fragment declares, of the one component. A revision the repository does not hold, or a
 file that cannot be read, SHALL answer as policy-for answers it (58,
 59).
 
@@ -170,8 +171,8 @@ bound channel takes no version from a publish (37).
 
 ### Requirement: The given channels' policy names the gate
 
-The policy for a channel the givens hold that the table in force has
-on, or a channel an environment's words make, SHALL require, first, an acceptance by the signers `[signers]`
+The policy for a channel the givens hold that the table in force lists,
+or a channel an environment's words make, SHALL require, first, an acceptance by the signers `[signers]`
 lets claim acceptance, then any `require` a line under it names, in
 order; and SHALL name those same signers, the gate, as its promoters
 whatever the line names (32, C.10). A hand-declared channel's promoters
@@ -191,6 +192,44 @@ SHALL be the signers its `require` names that may claim promotion.
 
 - **WHEN** `[channels.alpha]` requires a promotion from `release`, a signer of kinds `promotion` alone
 - **THEN** the policy for `alpha` requires the gate's acceptance and then that claim, and names only the gate as its promoter
+
+### Requirement: A following channel's prereleases are read from its table
+
+A channel whose table in force moves on each publish SHALL take
+releases alone unless the table names `prereleases = true`, and then
+prereleases too (C.10). `prereleases` in a table in force that does not
+move on each publish SHALL be unreadable naming the table and the key,
+since such a channel takes no version from a publish (37).
+
+#### Scenario: A hand-declared channel taking prereleases
+
+- **WHEN** `[channels.edge]` names `on_each_publish = true` and `prereleases = true`
+- **THEN** `edge` is listed moving on each publish with prereleases
+
+#### Scenario: prereleases on a bound channel
+
+- **WHEN** `[channels.stable]` names `prereleases = true`
+- **THEN** the channels are unreadable naming `[channels.stable]` and `prereleases`
+
+### Requirement: approvers names who may ask
+
+A channel's table MAY name `approvers`, a list of signers by their
+names in `[signers]`, and the policy for the channel SHALL answer them
+as the signers that may ask for it; where no table in force names
+`approvers`, the policy SHALL answer none, any asker the gate verifies
+(129, C.10). A name `[signers]` does not hold SHALL be unreadable naming
+the table and the name, and an empty list SHALL be unreadable naming
+the table, since it would read as naming no one.
+
+#### Scenario: Approvers under a given
+
+- **WHEN** `[signers.ci]` and `[signers.desk]` are declared and `[channels.stable]` names `approvers = ["ci"]`
+- **THEN** the policy for `stable` names `ci` as the one signer that may ask, and its promoters are still the gate's signers
+
+#### Scenario: An approver no table names
+
+- **WHEN** `[channels.stable]` names `approvers = ["nobody"]` and `[signers]` holds no `nobody`
+- **THEN** the channels are unreadable naming `[channels.stable]` and `nobody`
 
 ### Requirement: The environments' words are read
 
@@ -216,6 +255,11 @@ else (C.10).
 - **WHEN** `[environments.site]` names `channel = "stable"` and `bucket = "example-site"`
 - **THEN** the channels are unreadable naming `[environments.site]` and `bucket`, and saying a target's settings sit in the target's table
 
+#### Scenario: Approvers in an environment's table
+
+- **WHEN** `[environments.prod]` names `channel = "stable"`, `policy = "manual"` and `approvers = ["ci"]`
+- **THEN** the channels are unreadable naming `[environments.prod]` and `approvers`, and saying who may ask for `prod` is named under `[channels.prod]`
+
 #### Scenario: An unknown policy word
 
 - **WHEN** `[environments.prod]` names `policy = "sometimes"`
@@ -225,9 +269,9 @@ else (C.10).
 
 The channel a manual or after environment is given SHALL take the
 environment's name, in its component, and a line under it SHALL add
-claims after the gate's acceptance (C.10). A channel so made that
-shares a name with a channel the fragment holds, on or off, or with
-another made channel, or a line under it naming another binding or
+claims after the gate's acceptance or name its approvers (C.10). A
+channel so made that shares a name with a channel the fragment holds,
+held or not, or with another made channel, or a line under it naming another binding or
 `on_each_publish`, SHALL be unreadable naming the table.
 
 #### Scenario: A manual environment named beta
@@ -253,11 +297,11 @@ it holds laid beneath the repository's table of that channel in every
 component, as `[channels.<name>]` where no component is declared and
 `[channels.<component>.<name>]` where components are (C.10, 125). A key
 the repository writes SHALL replace the fragment's; `on_each_publish`
-and `bound_to` SHALL be replaced together where either is written; and
-`on` SHALL be true in a table the repository writes unless it writes
-`on = false`. A fragment that does not parse, or holds a table other
-than a channel's, SHALL make every answer unreadable naming the
-givens; the shipped fragment SHALL parse.
+and `bound_to` SHALL be replaced together where either is written, and
+with them the fragment's `prereleases` unless the repository writes its
+own (C.10). A fragment that does not parse, or holds a table other than
+a channel's, SHALL make every answer unreadable naming the givens; the
+shipped fragment SHALL parse.
 
 #### Scenario: A line under one component's given
 
@@ -277,4 +321,24 @@ givens; the shipped fragment SHALL parse.
 #### Scenario: The shipped fragment
 
 - **WHEN** the shipped fragment is read
-- **THEN** it parses, holds only channels' tables, and has `beta` and `stable` on and `alpha` and `lts` off
+- **THEN** it parses, holds only channels' tables, declares `beta` moving on each publish with releases alone and `stable` bound to `beta`, and holds `alpha` moving on each publish with prereleases and `lts` bound to `stable`, both marked held
+
+### Requirement: The fragment marks what it holds back
+
+The fragment SHALL mark a channel it holds until a repository switches
+it on with `held = true`, a key of the fragment alone: such a channel
+SHALL be in force wherever the repository writes its table, and nowhere
+else (C.10). `held`, or `on`, written in the repository's file SHALL be
+unreadable naming the table and the key, saying that writing a
+channel's table is the switch and that nothing turns `beta` or `stable`
+off.
+
+#### Scenario: A held given switched on by an empty table
+
+- **WHEN** the file declares no component and holds `[channels.lts]` with nothing under it
+- **THEN** `lts` is listed bound to `stable`, its keys the fragment's
+
+#### Scenario: held written by the repository
+
+- **WHEN** `[channels.stable]` names `held = true`
+- **THEN** the channels are unreadable naming `[channels.stable]` and `held`, and saying that nothing turns `stable` off
