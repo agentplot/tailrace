@@ -286,14 +286,30 @@ fn the_channels_a_policy_declares(rig: &dyn PolicyRig) {
 fn each_way_a_channel_moves(rig: &dyn PolicyRig) {
     let channels = [
         declared("edge", None, Moves::EachPublish { prereleases: false }),
+        declared("nightly", None, Moves::EachPublish { prereleases: true }),
         declared("rc", None, Moves::Promotion),
         declared("next", None, bound("edge")),
     ];
     let at = rig.declaring(&[], &channels);
+    let listed = ok(rig.policy().channels(&at), "channels");
     assert_eq!(
-        ok(rig.policy().channels(&at), "channels"),
+        listed,
         with_given(rig, &[], &channels),
         "the policy answered other ways a channel moves than it declares"
+    );
+    let moves = |name: &str| {
+        listed
+            .iter()
+            .find(|c| c.channel.name.as_str() == name)
+            .map(|c| c.moves.clone())
+    };
+    assert_eq!(
+        (moves("nightly"), moves("edge")),
+        (
+            Some(Moves::EachPublish { prereleases: true }),
+            Some(Moves::EachPublish { prereleases: false })
+        ),
+        "a following channel's prereleases are not answered as declared"
     );
     for channel in &channels {
         let policy = ok(
