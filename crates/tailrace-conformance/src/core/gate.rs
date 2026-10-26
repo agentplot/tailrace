@@ -11,8 +11,8 @@ use serde_json::json;
 use tailrace_core::{accept, Judged, Moved, Published, ToldBy, WhyWanting};
 use tailrace_fakes::{FakeKeeper, FakeLanding, FakeSigner, FakeStore, KeeperOp, StoreOp};
 use tailrace_seams::{
-    channel_name, Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, Digest,
-    Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required,
+    channel_name, Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
+    Digest, Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required,
     RequiredClaim, Revision, Seam, Signer, SignerId, Store, Why,
 };
 
@@ -114,6 +114,12 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             plays: None,
             cites: &[27, 108],
             run: a_separated_gate_names_its_offerer,
+        },
+        Scenario {
+            name: "beta of one component",
+            plays: None,
+            cites: &[95, 125, 131],
+            run: beta_of_one_component,
         },
     ]
 }
@@ -884,5 +890,96 @@ fn a_separated_gate_names_its_offerer(world: &FakeWorld) {
             Ok(Judged::Accepted { already: true, .. })
         ),
         "the separated acceptance was not the gate's"
+    );
+}
+
+/// 95, 125, 131: the repository of two components, the fake policy
+/// listing `beta` of each moving on each publish, a version of `lib` a
+/// publish told the gate of: `lib`'s `beta` moves, `app`'s does not, and
+/// the ledger holds one chain. The world's policy file names no channel,
+/// so every channel the gate moves is one the policy seam lists.
+fn beta_of_one_component(_: &FakeWorld) {
+    let world = FakeWorld::two_components();
+    let head = world.head.clone();
+    world.land(&head, &[]);
+    world.outputs(
+        &head,
+        &[("library", Outcome::Pass), ("server", Outcome::Pass)],
+    );
+    let policy = &world.fakes.policy;
+    policy.require(
+        Audience::Acceptance,
+        Required::Acceptance {
+            claims: vec![provenance_from(named(HOST, &[ClaimKind::Provenance], &[]))],
+        },
+    );
+    let gate = named(GATE, &[ClaimKind::Acceptance], &[]);
+    let beta = |component: &str| {
+        ChannelId::new(Some(ComponentName::new(component)), ChannelName::new(BETA))
+    };
+    for channel in [beta("lib"), beta("app")] {
+        policy.require(
+            Audience::Channel(channel.clone()),
+            Required::Channel {
+                claims: vec![RequiredClaim {
+                    kind: ClaimKind::Acceptance,
+                    check: None,
+                    signers: vec![gate.clone()],
+                }],
+                bound_to: None,
+                promoted_by: vec![gate.clone()],
+            },
+        );
+        policy.follows(&channel);
+    }
+    let publish = ok(world.publish(&world.ask(&head)), "the publish");
+    let (_, published) = publish
+        .components
+        .iter()
+        .find(|(c, _)| c.as_str() == "lib")
+        .expect("the publish answered lib");
+    let published = ok(published.clone(), "lib's publish");
+    let (version, index) = version_of(&published);
+
+    let ask = tailrace_core::AcceptAsk {
+        component: Some(ComponentName::new("lib")),
+        ..world.gate_ask(version.as_str(), ToldBy::Publish, GATE)
+    };
+    let (_, _, _, channels) = accepted(world.judge(&ask, &[GATE]));
+    let [(channel, Ok(Moved::Promoted { to, .. }))] = channels.as_slice() else {
+        panic!("lib's beta alone was not promoted: {channels:?}")
+    };
+    assert_eq!(
+        channel,
+        &beta("lib"),
+        "another channel than lib's beta moved"
+    );
+    assert_eq!(to, index);
+    assert_eq!(
+        world
+            .fakes
+            .store
+            .resolve(&channel_name(&beta("lib")))
+            .as_ref(),
+        Ok(index),
+        "lib's beta does not name the version"
+    );
+    assert!(
+        world
+            .fakes
+            .store
+            .resolve(&channel_name(&beta("app")))
+            .is_err(),
+        "app's beta names a version"
+    );
+    assert_eq!(
+        ok(world.fakes.keeper.chain(&beta("lib")), "lib's beta's chain")
+            .claims
+            .len(),
+        1
+    );
+    assert!(
+        matches!(world.fakes.keeper.chain(&beta("app")), Err(Not::Absent(_))),
+        "app's beta has a chain"
     );
 }
