@@ -78,9 +78,9 @@ pub enum Command {
 /// name it, which the host's record keeps of each version (61, 118);
 /// the identity of the party running tailrace, which signs what it
 /// observed (11, 79), `None` on a host that binds no key and only
-/// verifies; and the signers the host trusts, through whom alone a
-/// consumer with no policy of its own counts a publisher's layout policy
-/// (118, C.10), none where the file names no `[trust]`.
+/// verifies; and the signers the host trusts for reading, its own
+/// signer for a sync and those `[trust]` names, through whom a consumer
+/// reads every claim its policy file names no signer for (118, C.10).
 pub struct Binding {
     pub seams: Seams,
     pub store: Source,

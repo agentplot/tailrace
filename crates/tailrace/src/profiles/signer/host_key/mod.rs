@@ -46,6 +46,15 @@ struct Signing {
     key: PathBuf,
 }
 
+/// The file beside a key file that holds its public half, as ssh-keygen
+/// names it: the key's path with `.pub` added, `signing.pub` beside
+/// `signing`.
+pub fn public_half(key: &Path) -> PathBuf {
+    let mut name = key.as_os_str().to_os_string();
+    name.push(".pub");
+    PathBuf::from(name)
+}
+
 impl HostKey {
     /// The host's signer `signer`, signing with the private key at `key`.
     /// Nothing is read until a claim is signed.

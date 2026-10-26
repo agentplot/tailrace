@@ -613,7 +613,7 @@ fn a_profile_no_family_reads_is_unreadable_and_makes_nothing() {
 const GATE_KEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGt gate@box";
 
 #[test]
-fn a_signer_trusted_is_named_with_its_key_and_may_claim_a_layout_policy_alone() {
+fn a_signer_trusted_is_named_with_its_key_and_no_claim_of_its_own() {
     let host = Host::new();
     let layout = host.dir.path().join("layout");
     profiles::store::layout::Layout::create(&layout).unwrap();
@@ -624,7 +624,7 @@ fn a_signer_trusted_is_named_with_its_key_and_may_claim_a_layout_policy_alone() 
     let gate = NamedSigner {
         id: SignerId::new("gate"),
         verified_by: GATE_KEY.into(),
-        kinds: vec![ClaimKind::LayoutPolicy],
+        kinds: vec![],
         checks: vec![],
     };
     assert_eq!(host.read().unwrap().trust, std::slice::from_ref(&gate));
@@ -639,6 +639,80 @@ fn a_file_naming_no_trust_trusts_no_signer_and_binds_as_before() {
     assert_eq!(bound(&host, &layout, true, For::Publish).unwrap().trust, []);
     assert_eq!(host.read().unwrap().trust, []);
     assert_eq!(bound(&host, &layout, true, For::Verify).unwrap().trust, []);
+}
+
+/// A fresh host key's public half written beside `[signing] key` as
+/// [`bound`] names it, `~/.config/tailrace/signing.pub`; answers its line.
+fn own_public_half(host: &Host) -> String {
+    use ssh_key::rand_core::OsRng;
+    use ssh_key::{Algorithm, PrivateKey};
+    let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+    let line = format!("{} laptop@host", key.public_key().to_openssh().unwrap());
+    let public = host.home().join(".config/tailrace/signing.pub");
+    fs::create_dir_all(public.parent().unwrap()).unwrap();
+    fs::write(&public, format!("{line}\n")).unwrap();
+    line
+}
+
+#[test]
+fn a_sync_trusts_the_hosts_own_signer_by_its_public_half_before_the_files() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let line = own_public_half(&host);
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n\n\
+         [trust.gate]\nssh = \"{GATE_KEY}\"\n",
+        layout.display()
+    ));
+    let binding = bind(&host.file(), Some(&host.home()), host.dir.path(), For::Sync).unwrap();
+    let trusted: Vec<(&str, &str)> = binding
+        .trust
+        .iter()
+        .map(|t| (t.id.as_str(), t.verified_by.as_str()))
+        .collect();
+    assert_eq!(trusted, [("laptop", line.as_str()), ("gate", GATE_KEY)]);
+    assert!(binding.trust.iter().all(|t| t.kinds.is_empty()));
+    let publish = bind(
+        &host.file(),
+        Some(&host.home()),
+        host.dir.path(),
+        For::Publish,
+    )
+    .unwrap();
+    assert_eq!(
+        publish
+            .trust
+            .iter()
+            .map(|t| t.id.as_str())
+            .collect::<Vec<_>>(),
+        ["gate"],
+        "a command that reads through no trusted signer read the host's own"
+    );
+}
+
+#[test]
+fn sync_with_no_public_half_beside_the_signing_key_is_unreadable_and_makes_nothing() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    match bound(&host, &layout, true, For::Sync) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Signer);
+            assert!(
+                u.what.contains(".config/tailrace/signing.pub"),
+                "{}",
+                u.what
+            );
+            assert!(u.what.contains("own signer laptop"), "{}", u.what);
+        }
+        other => panic!("answered {:?}", other.err()),
+    }
+    assert!(!layout.exists(), "sync made {}", layout.display());
+    own_public_half(&host);
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound(&host, &layout, true, For::Sync).unwrap();
+    assert_eq!(binding.trust.len(), 1);
 }
 
 #[test]

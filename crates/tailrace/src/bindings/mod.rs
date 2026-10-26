@@ -28,10 +28,12 @@
 //! one table each, by its one key, whose text is what the signer's
 //! profile verifies it by, as the policy file's `[signers]` names one but
 //! with no `kinds` or `checks`: a public key, never a credential (64,
-//! rule core.21). A file with no `[trust]` trusts no signer, the host's
-//! own included; what the host trusts counts the layout policy a
-//! publisher attached for a consumer with no policy of its own, and the
-//! claims it requires (118, C.10; design D12). A path is absolute or begins `~/`, expanded
+//! rule core.21). For reading, the host trusts its own signer, the one
+//! `[signing]` names, by its key's public half beside the key, and the
+//! signers `[trust]` names, so a host consumes what it published itself;
+//! a consumer reads through them every claim its policy file names no
+//! signer for, and every claim where it has no policy file, what each may
+//! claim being the reader's to say (118, C.10; design D12). A path is absolute or begins `~/`, expanded
 //! against the home directory. This module reads each table generically
 //! and names no tool (rule core.1): the key of each seam's table is
 //! matched to its profile by the `bind` function of that seam's profile
@@ -42,7 +44,8 @@
 //! it has them (58, 59, rule core.19).
 //!
 //! The binding made from the file binds the store, the landing and the
-//! signers it names, carries the signers it trusts, and from the repository the command runs in the
+//! signers it names, carries the signers it trusts, its own among them
+//! for a sync, the one command that reads through them, and from the repository the command runs in the
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
 //! through a second binding of `[store]`, opened and never made (design
@@ -58,8 +61,7 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tailrace_seams::{
-    Answer, ChannelName, ClaimKind, Digest, Envelope, Keeper, NamedSigner, Not, Seam, Seams,
-    SignerId, Source,
+    Answer, ChannelName, Digest, Envelope, Keeper, NamedSigner, Not, Seam, Seams, SignerId, Source,
 };
 
 use crate::{profiles, unsigned, Binding};
@@ -81,8 +83,8 @@ pub fn path(xdg_config_home: Option<&OsStr>, home: Option<&Path>) -> Option<Path
 }
 
 /// What the bindings file names: the store's table and the landing's,
-/// where it holds them, the host's signer, and the signers it trusts,
-/// each allowed to claim a layout policy alone.
+/// where it holds them, the host's signer, and the other signers it
+/// trusts, each with no claim of its own to make.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bindings {
     pub file: PathBuf,
@@ -357,9 +359,10 @@ fn signing(file: &Path, home: Option<&Path>, table: &toml::Table) -> Answer<Sign
 }
 
 /// `[trust.<id>]`: the signer `id` the host trusts, by its one key,
-/// whose text is what the signer's profile verifies it by, allowed to
-/// claim a layout policy alone; unreadable naming the table where it names
-/// no key, two, or a key that is not a string (118, C.10).
+/// whose text is what the signer's profile verifies it by, with no claim
+/// of its own to make, since a reader allows it the one claim it reads
+/// through it; unreadable naming the table where it names no key, two, or
+/// a key that is not a string (118, C.10).
 fn trusted(file: &Path, id: &str, value: &toml::Value) -> Answer<NamedSigner> {
     let at = format!("[trust.{id}]");
     let cannot = |said: String| unreadable(file, Some(&at), said);
@@ -387,7 +390,7 @@ fn trusted(file: &Path, id: &str, value: &toml::Value) -> Answer<NamedSigner> {
     Ok(NamedSigner {
         id: SignerId::new(id),
         verified_by: verified_by.to_string(),
-        kinds: vec![ClaimKind::LayoutPolicy],
+        kinds: Vec::new(),
         checks: Vec::new(),
     })
 }
@@ -431,7 +434,9 @@ impl Keeper for NoLedger {
 /// repository at `repository`, its `~/` paths expanded against `home`.
 /// A publish on a host whose file names no `[signing]` is absent naming
 /// it before anything is read; a file naming no `[store]` or no
-/// `[landing]` is absent naming the table. Every table is read before the
+/// `[landing]` is absent naming the table. A sync trusts the host's own
+/// signer before the signers `[trust]` names, its public half read before
+/// the store is bound. Every table is read before the
 /// layout is made, so a file that cannot bind leaves nothing behind. The
 /// store is named as the file names it, its key and what it names, a
 /// path with `~/` expanded, so the record names a directory a reader
@@ -453,6 +458,11 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         .as_ref()
         .ok_or_else(|| missing("landing"))?;
     let store = bindings.store.as_ref().ok_or_else(|| missing("store"))?;
+    let mut trust = Vec::new();
+    if command == For::Sync {
+        trust.extend(profiles::signer::own(signing)?);
+    }
+    trust.extend(bindings.trust.iter().cloned());
     let named = profiles::store::named(store)?;
     let landing = profiles::landing::bind(landing, repository)?;
     let bound = profiles::store::bind(store, matches!(command, For::Publish | For::Push))?;
@@ -472,7 +482,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         },
         store: named,
         signer: signing.map(|s| s.signer.clone()),
-        trust: bindings.trust.clone(),
+        trust,
     })
 }
 
