@@ -2,6 +2,13 @@
 //! own packager, and a local registry rendered from the store, which a
 //! consumer's Cargo reads through source replacement.
 //!
+//! | module | what |
+//! |---|---|
+//! | `pack` | the version written into the manifest that holds it, `cargo package`, the manifest written back (84, 87) |
+//! | `render` | a local registry holding exactly the crates given, each checked before anything is written (85, 48) |
+//! | `index` | a crate's index line, from its normalized manifest |
+//! | `crate_file` | a crate's normalized manifest, read from its bytes |
+//!
 //! It packs no cache entries: a pack with no version and a render of
 //! cache entries answer absent naming them, and read and write nothing
 //! (84, 85). It reaches the store only through the store seam it is
@@ -10,10 +17,9 @@
 mod crate_file;
 #[cfg(test)]
 mod fixture;
-// Its lines are written by render, which its own task builds.
-#[allow(dead_code)]
 mod index;
 mod pack;
+mod render;
 
 use std::path::{Path, PathBuf};
 
@@ -30,8 +36,6 @@ pub const ECOSYSTEM: &str = "cargo";
 
 /// The Cargo projection of one checkout, reading crates from the store it
 /// is handed and running `cargo`.
-// The store is read by render, which its own task builds.
-#[allow(dead_code)]
 pub struct CargoProjection {
     root: PathBuf,
     store: Box<dyn Store>,
@@ -95,12 +99,13 @@ impl Projection for CargoProjection {
         })
     }
 
-    fn render(&self, contents: Contents<'_>, _: &str) -> Answer<Rendered> {
-        let source = CargoProjection::source();
-        let Contents::Artifacts(_) = contents else {
-            return Err(no_cache_entries(&source));
+    /// 85, 48: a local registry at `at` holding exactly `contents`' crates,
+    /// each read through the store and checked before anything is written.
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        let Contents::Artifacts(artifacts) = contents else {
+            return Err(no_cache_entries(&CargoProjection::source()));
         };
-        Err(not_built("render", ECOSYSTEM, &source))
+        self.render_crates(artifacts, at)
     }
 
     fn serve(&self, _: &Layout) -> Answer<Serving> {

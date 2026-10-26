@@ -27,6 +27,7 @@ flate2.workspace = true
 tar.workspace = true
 toml_edit.workspace = true
 tempfile.workspace = true
+semver.workspace = true
 
 # The tests that run moon, sluice or ssh-keygen against a scratch
 # repository: the tools layer (`check-tools`), which `cargo test` without

@@ -18,7 +18,7 @@
 ## 4. Render and serve
 
 - [x] 4.1 Read a crate's normalized `Cargo.toml` from its bytes with `flate2` and `tar`, and write its index line as design D5 lists, `registry` from `registry-index` or crates.io's index URL, `features2` and `v` 2 where needed. Verify: unit tests over in-memory crates with a renamed, an optional, a dev, a target and a crates.io dependency and a `dep:` feature
-- [ ] 4.2 Render: check every artifact first (ecosystem, one layer, digest, name and version), then write each `.crate` and each whole index file by rename, remove files of versions not given, sort lines by `semver`, and answer the versions held (design D5). Verify: unit tests over a layout store for exactly-the-given, a second render equal, a version dropped, bytes of another digest refused with nothing written
+- [x] 4.2 Render: check every artifact first (ecosystem, one layer, digest, name and version), then write each `.crate` and each whole index file by rename, remove files of versions not given, sort lines by `semver`, and answer the versions held (design D5). Verify: unit tests over a layout store for exactly-the-given, a second render equal, a version dropped, bytes of another digest refused with nothing written
 - [ ] 4.3 Serve answers absent naming serve of the cargo projection. Verify: unit test
 
 ## 5. Conformance and proof

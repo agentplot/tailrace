@@ -2396,6 +2396,7 @@ dependencies = [
  "docker_credential",
  "flate2",
  "glob",
+ "semver",
  "serde",
  "serde_json",
  "ssh-key",
