@@ -28,7 +28,6 @@ use tailrace_seams::{
     Not, Output, Packed, Projection, Rendered, Seam, Serving, Source, Store, Version, Why,
 };
 
-use super::not_built;
 use crate::profiles::run::Tool;
 
 /// The ecosystem this projection packs in, as the bindings bind it.
@@ -108,8 +107,14 @@ impl Projection for CargoProjection {
         self.render_crates(artifacts, at)
     }
 
+    /// 86: absent, since Cargo reads a local registry itself through
+    /// source replacement and needs no server.
     fn serve(&self, _: &Layout) -> Answer<Serving> {
-        Err(not_built("serve", ECOSYSTEM, &CargoProjection::source()))
+        Err(Not::absent(
+            &CargoProjection::source(),
+            "serve of the cargo projection, whose local registry Cargo reads itself through \
+             source replacement",
+        ))
     }
 }
 
@@ -153,5 +158,20 @@ mod tests {
             0,
             "the checkout was written"
         );
+    }
+
+    #[test]
+    fn serve_is_absent_naming_serve_of_the_cargo_projection() {
+        let dir = TempDir::new().unwrap();
+        let projection = CargoProjection::new(dir.path(), Box::new(FakeStore::new()));
+        match projection.serve(&Layout {
+            at: "layouts/cargo".into(),
+        }) {
+            Err(Not::Absent(a)) => {
+                assert_eq!(a.source, CargoProjection::source());
+                assert!(a.what.starts_with("serve of the cargo projection"), "{a:?}");
+            }
+            other => panic!("answered {other:?}"),
+        }
     }
 }
