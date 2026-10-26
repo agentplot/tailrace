@@ -22,8 +22,8 @@ use tailrace_core::{
 use tailrace_fakes::{Fakes, StoreOp};
 use tailrace_seams::{
     Audience, Branch, Build, Check, Claim, ClaimKind, Ecosystem, Landing, NamedSigner, Not,
-    OutputName, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version,
-    Why,
+    OutputName, Read, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store,
+    Version, Why,
 };
 
 /// The identity of the party running tailrace, which signs (11, 79).
@@ -182,11 +182,11 @@ fn the_landings_key_is_the_builds_identity() {
     );
     let landed = world.landed_by_sluice(&["app:test"], "app/x.txt");
 
-    let verdicts = Sluice::new(&world.scratch.repo.path, Some("origin".into()))
+    let read = Sluice::new(&world.scratch.repo.path, Some("origin".into()))
         .verdicts_of(&landed)
-        .unwrap()
-        .verdicts;
-    let [verdict] = <[_; 1]>::try_from(verdicts).unwrap();
+        .unwrap();
+    assert_eq!(read.read, Read::Source, "sluice's remote answered");
+    let [verdict] = <[_; 1]>::try_from(read.verdicts).unwrap();
     assert_eq!(verdict.check, Check::new("app:test"));
     let moon = world.moon();
     let app = OutputName::new("app");

@@ -32,7 +32,7 @@ Every command runs inside `devenv shell -- <command>`.
 
 - [x] 5.1 In `crates/tailrace/src/profiles/landing/sluice/`, at every opening read the remote answers, fetch every ref its listing names under `refs/sluice/state/` and `refs/sluice/runs/` in one fetch, and remake the copy whole under `refs/tailrace/landing/sluice/` in two `update-ref --stdin` transactions, old copies deleted then new made (design D2, D3); a test that a ref the remote no longer lists leaves the copy, and that the module's docs no longer say no ref is written: `moon run cli:tools`
 - [x] 5.2 Where the remote's listing or a fetch answers unreadable, read the listing from the copy, make no fetch, and answer landed and verdicts-of over it as from the remote, `Read::Kept` with the copy's time and git's words; the failure itself where the copy holds nothing the operation needs, a branch's log among it; with no remote bound, `Read::Source` (design D4); tests in `crates/tailrace/tests/landing_sluice.rs` for the sluice-landing delta's scenarios: `moon run cli:tools`
-- [ ] 5.3 Give the sluice rig `reads_a_remote`, true, and bring `landings_end_to_end.rs` to the new answers; the landing group passes over sluice with nothing not applicable: `moon run cli:tools`
+- [x] 5.3 Give the sluice rig `reads_a_remote`, true, and bring `landings_end_to_end.rs` to the new answers; the landing group passes over sluice with nothing not applicable: `moon run cli:tools`
 
 ## 6. The suite holds every landing to it
 
