@@ -216,6 +216,7 @@ crates/tailrace/src/profiles/landing/mod.rs
 crates/tailrace/src/profiles/ledger/mod.rs
 crates/tailrace/tests/cli.rs
 crates/tailrace/tests/conformance.rs
+crates/tailrace/tests/laptop.rs
 crates/tailrace/tests/status_across_machines.rs
 crates/tailrace/tests/serve.rs
 crates/tailrace-conformance/src/core/status.rs
