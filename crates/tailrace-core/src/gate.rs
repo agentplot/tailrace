@@ -3,7 +3,10 @@
 //! the gate's own or refused whole naming the claim found wanting, and
 //! each channel that follows each publish moved by the gate itself (25
 //! to 30, 94 to 96, 107, 108, rules core.4, core.7, core.14; design D1).
-//! It imports nothing of publish, and publish nothing of it.
+//! A publish's answer tells it of the index it offered, and the gate
+//! judges that index or nothing (95, 130). It imports nothing of publish,
+//! and publish nothing of it: what calls one and then the other is the
+//! host's binding of what tells the gate, never the core (130).
 
 use std::collections::BTreeMap;
 
@@ -21,12 +24,16 @@ use crate::{
     BOUND, LOCAL, POLICY_FILE,
 };
 
-/// What told the gate of a version (95): a publish's answer, or an asker
-/// or a rule the policy names.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+/// What told the gate of a version (95): a publish's answer, naming the
+/// index it offered, or an asker or a rule the policy names, naming none.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToldBy {
-    Publish,
+    /// A publish's answer, and `index` the digest it named for the
+    /// version: the gate judges that index, and answers unreadable where
+    /// the version's name now resolves to another.
+    Publish { index: Digest },
+    /// Anything else, judged by what the version's name resolves to.
     Asked,
 }
 
@@ -156,8 +163,20 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     let component = chosen(&declared, ask.component.as_ref(), &head)?;
     let tag = format!("{}{}", component.prefix, ask.version);
 
-    // 2: the name resolved in the store (rule core.4).
+    // 2: the name resolved in the store (rule core.4), and the index a
+    // publish told the gate of, or nothing is read further (95).
     let index = seams.store.resolve(&Name::new(&tag))?;
+    if let ToldBy::Publish { index: told } = &ask.told {
+        if *told != index {
+            return Err(Not::unreadable(
+                &Source::new(Seam::Store, BOUND),
+                format!("{tag} as the index a publish named"),
+                Some(format!(
+                    "{tag} resolves to {index}, and the publish named {told}"
+                )),
+            ));
+        }
+    }
 
     // 3: the tag's revision, landed (29, 14).
     let revision = history
@@ -179,7 +198,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     // The channels that follow each publish, read before anything is
     // written and followed only when a publish told the gate (95).
     let followed = match ask.told {
-        ToldBy::Publish => following(history, &at_head, &declared, &component.name)?,
+        ToldBy::Publish { .. } => following(history, &at_head, &declared, &component.name)?,
         ToldBy::Asked => Vec::new(),
     };
 
