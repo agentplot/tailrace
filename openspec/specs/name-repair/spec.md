@@ -56,3 +56,15 @@ the ledger as on any store (109, C.1).
 
 - **WHEN** another writer moves a channel's tag in zot between the store's put and its read back
 - **THEN** the answer reports the lost race naming the other writer's index, and the tag ends at the index the ledger's head is about
+
+### Requirement: A chain read as last read moves no name
+
+Moving a channel's name SHALL refuse to act on a chain the ledger
+answered as last read: the answer SHALL be unreadable naming the
+channel's chain and carrying the ledger's words, and the store SHALL not
+be written (101, 106, core.4).
+
+#### Scenario: The ledger unreachable after a read
+
+- **WHEN** the channel's chain is answered as last read because the ledger cannot be reached
+- **THEN** the answer is unreadable with the ledger's words, and the store is asked nothing
