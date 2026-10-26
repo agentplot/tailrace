@@ -117,6 +117,15 @@ impl Gate {
                 command.env_remove(&name);
             }
         }
+        // git as the scratch repositories are made: none of the host's
+        // configuration, a fixed author; the home is sluice's own.
+        let git = git_command();
+        for (name, value) in git.get_envs() {
+            match value {
+                Some(value) => command.env(name, value),
+                None => command.env_remove(name),
+            };
+        }
         command
             .args(args)
             .current_dir(dir)
@@ -126,15 +135,6 @@ impl Gate {
             .env("XDG_CACHE_HOME", self.home.join("cache"))
             .env("XDG_DATA_HOME", self.home.join("data"))
             .stdin(Stdio::null());
-        // git as the scratch repositories are made: none of the host's
-        // configuration, a fixed author.
-        let git = git_command();
-        for (name, value) in git.get_envs() {
-            match value {
-                Some(value) => command.env(name, value),
-                None => command.env_remove(name),
-            };
-        }
         command.output().expect("sluice runs")
     }
 

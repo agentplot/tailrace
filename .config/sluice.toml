@@ -8,12 +8,6 @@
 runner = "moon"
 toolchain = ["devenv", "print-dev-env"]
 
-# A place starts from the build of the last candidate that passed with the
-# same lock file and compiler.
-[[checkout.cache]]
-key = ["Cargo.lock", ".prototools"]
-paths = ["target"]
-
 [branches."bolt/*"]
 required = ["#check-fast", "#check-tools"]
 parallel = 2
