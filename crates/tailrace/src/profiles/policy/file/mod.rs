@@ -95,7 +95,9 @@
 //! `[environments.<component>.<name>]` alike, each holding C.10's words
 //! and no others: `channel`, `policy`, `after`, `target`, and `approvers`
 //! where it is manual, a target's own settings sitting in the target's
-//! table. A file that breaks any of it is unreadable naming the table.
+//! table. A file that breaks any of it is unreadable naming the table,
+//! and `approvers` on an environment whose policy is auto, which names
+//! no one who could be asked, naming the field too (C.10).
 //!
 //! The policy for a given or made channel requires the gate's
 //! acceptance, by every signer `[signers]` lets claim acceptance, then
