@@ -11,16 +11,20 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
-use serde_json::json;
-use tailrace_core::{publish, verify, Ask, History, Kept, Publish, Verified, VerifyAsk};
+use serde_json::{json, Value};
+use tailrace_core::{
+    artifact_name, publish, sync_checkout, verify, Ask, CheckoutAsk, CheckoutSynced, History, Kept,
+    Layouts, Publish, Verified, VerifyAsk,
+};
 use tailrace_fakes::{
     BuildOp, Call, FakeProjection, FakeSigner, Fakes, KeeperOp, StoreOp, TargetOp,
 };
 use tailrace_seams::{
-    Answer, Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, Contents, Digest,
-    Ecosystem, Envelope, Environment, EnvironmentName, Layout, Manifest, Name, Outcome, Output,
-    OutputName, Packed, Pinned, Projection, Rendered, Report, Revision, Seam, Seams, Serving,
-    Signer, SignerId, Source, Verdict, Version,
+    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, ChannelName, Check, Claim,
+    ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Envelope, Environment,
+    EnvironmentName, IndexMeta, Layout, Manifest, Name, NamedSigner, Outcome, Output, OutputName,
+    Packed, Pinned, Projection, Rendered, Report, Revision, Seam, Seams, Serving, Signer, SignerId,
+    Source, Store, Verdict, Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -473,6 +477,117 @@ impl FakeWorld {
                 .values()
                 .map(|t| t.calls().len())
                 .sum::<usize>()
+    }
+
+    /// `pins`, names and versions, as what the clone's lockfile of
+    /// `ecosystem` pins (137): its fake projection answers them for the
+    /// clone's working tree.
+    pub fn lockfile(&self, ecosystem: &str, pins: &[(&str, &str)]) {
+        let pins: Vec<Pinned> = pins
+            .iter()
+            .map(|(name, version)| Pinned {
+                name: EcosystemName::new(*name),
+                version: Version::new(*version),
+            })
+            .collect();
+        self.fakes.projections[&Ecosystem::new(ecosystem)]
+            .lockfile(&self.repo().path.display().to_string(), &pins);
+    }
+
+    /// `version` of `name` in `ecosystem` held as a version's index naming
+    /// its one artifact, and `artifact/<ecosystem>/<name>@<version>` moved
+    /// to the index, as a publish will name it (138); the index and the
+    /// artifact.
+    pub fn artifact(&self, ecosystem: &str, name: &str, version: &str) -> (Digest, Artifact) {
+        let store = &self.fakes.store;
+        let ecosystem = Ecosystem::new(ecosystem);
+        let meta = ArtifactMeta::new(
+            ecosystem.clone(),
+            EcosystemName::new(name),
+            Version::new(version),
+        )
+        .expect("the metadata names all three");
+        let bytes = format!("{ecosystem} {name} {version}");
+        let layer = store
+            .put_bytes(bytes.as_bytes())
+            .expect("the fake store holds bytes")
+            .digest;
+        let digest = store
+            .put_artifact(&Manifest::Artifact {
+                meta: meta.clone(),
+                layers: vec![layer],
+            })
+            .expect("the fake store holds an artifact")
+            .digest;
+        let artifact = Artifact { digest, meta };
+        let index = IndexMeta::new(
+            ComponentName::new(name),
+            Version::new(version),
+            vec![artifact.clone()],
+        )
+        .expect("the index names its one artifact");
+        let index = store
+            .put_artifact(&Manifest::Index(index))
+            .expect("the fake store holds an index")
+            .digest;
+        let named = artifact_name(
+            &ecosystem,
+            &EcosystemName::new(name),
+            &Version::new(version),
+        );
+        store
+            .name(&named, &index, None)
+            .expect("the name is made from nothing");
+        (index, artifact)
+    }
+
+    /// A claim of `kind` about `subject` with `body`, made at `start`,
+    /// signed by `signer` as another party's signer signs it and attached
+    /// beside its subject; the envelope.
+    pub fn attach(&self, subject: &Digest, kind: ClaimKind, body: Value, signer: &str) -> Envelope {
+        let id = SignerId::new(signer);
+        let theirs = FakeSigner::new();
+        theirs.hold(&id);
+        let claim = Claim {
+            subject: subject.clone(),
+            kind,
+            revision: self.start.clone(),
+            build: None,
+            body,
+        };
+        let envelope = theirs
+            .sign(&claim, &id)
+            .expect("their signer holds their identity");
+        self.fakes
+            .store
+            .attach(subject, &envelope)
+            .expect("the fake store holds the subject");
+        envelope
+    }
+
+    /// The host's record of the clone's layouts, under its own git
+    /// directory (61, 62).
+    pub fn layouts(&self) -> Layouts {
+        Layouts::at(&self.history())
+    }
+
+    /// The clone synced for `revision` on `main`, its cache and then its
+    /// layouts, at `when` by the asker's clock, on a host trusting
+    /// `trusted`.
+    pub fn sync_checkout(
+        &self,
+        revision: &Revision,
+        when: u64,
+        trusted: &[NamedSigner],
+    ) -> Answer<CheckoutSynced> {
+        let ask = CheckoutAsk {
+            branch: self.main.clone(),
+            revision: revision.clone(),
+            tree: self.repo().path.clone(),
+            when,
+            trusted: trusted.to_vec(),
+        };
+        sync_checkout(&self.seams(), &self.layouts(), &ask)
     }
 }
 

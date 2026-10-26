@@ -21,7 +21,6 @@ pub struct Pending {
 const GATE: &str = "bolt 4 · the gate";
 const PROMOTION: &str = "bolt 4 · the keeper and promotion";
 const ACROSS: &str = "bolt 4 · status across machines";
-const RENDER: &str = "bolt 5 · render under a policy";
 const SERVED: &str = "bolt 5 · the first served projection";
 const TARGET: &str = "phase 2 · the first target";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
@@ -53,10 +52,6 @@ pub const PENDING: &[Pending] = &[
     Pending { clause: 125, unit: PROMOTION, why: "A channel belongs to one component, and bolt 1 declares no channel." },
     Pending { clause: 36, unit: ACROSS, why: "A channel resolves to one version for every reader, read across machines." },
     Pending { clause: 98, unit: ACROSS, why: "What each environment should run and runs is told to every asker across machines." },
-    Pending { clause: 47, unit: RENDER, why: "A consumer layout holds only versions its policy satisfies, and bolt 1 renders under no policy." },
-    Pending { clause: 51, unit: RENDER, why: "A layout that cannot be refreshed answers what it holds, and bolt 1 keeps no layout." },
-    Pending { clause: 99, unit: RENDER, why: "A version a layout's policy refuses is answered naming the claim, and bolt 1 renders under no policy." },
-    Pending { clause: 113, unit: RENDER, why: "A consuming repository's layout is rendered under its own policy, and bolt 1 renders under no policy." },
     Pending { clause: 46, unit: SERVED, why: "A consumer reads in its ecosystem's own form, which the first served projection serves." },
     Pending { clause: 49, unit: SERVED, why: "A client's recorded address names no host, which a served layout keeps." },
     Pending { clause: 114, unit: SERVED, why: "A served layout is reached by one fixed name and port, and bolt 1 serves none." },

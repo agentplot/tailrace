@@ -30,7 +30,7 @@
 //! | the ledger | [`core::ledger`] | the `FakeWorld`; bolt 4's keeper and promotion adds the rest |
 //! | the cache | [`core::cache`] | the `FakeWorld` |
 //! | the record | [`core::record`] | the `FakeWorld` |
-//! | the layouts | [`core::layouts`] | nothing yet: bolt 5's render under a policy |
+//! | the layouts | [`core::layouts`] | the `FakeWorld` |
 //! | copy | [`core::copy`] | the `FakeWorld` and a second fake store |
 //!
 //! A seam's group runs over a rig: the seam's profile, what a scenario
@@ -210,7 +210,7 @@ mod tests {
             .filter(|g| g.scenarios.is_empty())
             .map(|g| g.name)
             .collect();
-        assert_eq!(empty, ["gate", "layouts"]);
+        assert_eq!(empty, ["gate"]);
         for seam in [
             "store",
             "build",
