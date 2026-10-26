@@ -18,7 +18,7 @@ adopts it.
 #### Scenario: The clauses listed
 
 - **WHEN** the suite's list of clauses is read
-- **THEN** it holds every number from 1 to 125 exactly once, each under its section of Part A or Part B, and names the statement's revision it was read at
+- **THEN** it holds every number from 1 to 131 exactly once, each under its section of Part A or Part B as agentplot/blueprints 673d334 places it, and names that revision as the one it was read at
 
 ### Requirement: A clause cited by nothing fails the suite
 
