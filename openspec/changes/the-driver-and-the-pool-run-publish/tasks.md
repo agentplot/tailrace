@@ -31,4 +31,4 @@
 
 ## 5. Integration
 
-- [ ] 5.1 Run `moon run ':#check-fast'` and `moon run ':#check-tools'` in the devenv shell and verify both pass, the coverage check reporting no clause newly uncited.
+- [x] 5.1 Run `moon run ':#check-fast'` and `moon run ':#check-tools'` in the devenv shell and verify both pass, the coverage check reporting no clause newly uncited.
