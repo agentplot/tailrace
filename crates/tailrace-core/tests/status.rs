@@ -14,9 +14,9 @@ use tailrace_core::{
 };
 use tailrace_fakes::{FakeSigner, Fault, KeeperOp, Times};
 use tailrace_seams::{
-    Audience, Branch, ChannelName, ComponentName, Digest, Envelope, EnvironmentName, Keeper, Moved,
-    Not, Outcome, Promotion, Read, Required, Revision, Satisfied, Seam, Signer, SignerId, Source,
-    Version, Why,
+    Audience, Branch, ChannelId, ChannelName, ComponentName, Digest, Envelope, EnvironmentName,
+    Keeper, Moved, Moves, Not, Outcome, Promotion, Read, Required, Revision, Satisfied, Seam,
+    Signer, SignerId, Source, Version, Why,
 };
 use world::{World, HOST};
 
@@ -336,28 +336,31 @@ fn an_entry_that_cannot_be_read_is_unreadable_with_the_parsers_words() {
 /// The moment every promotion here was made at.
 const AT: u64 = 1_793_000_000;
 
-fn beta() -> ChannelName {
-    ChannelName::new("beta")
+/// The channel `name` of `component`, as the world declares components
+/// (125).
+fn of(component: &str, name: &str) -> ChannelId {
+    ChannelId::new(Some(ComponentName::new(component)), ChannelName::new(name))
 }
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+fn beta() -> ChannelId {
+    of("lib", "beta")
 }
 
-/// `channel` declared in `component` at every revision, bound to
-/// `bound_to` where it names one.
-fn declare(world: &World, channel: &ChannelName, component: &str, bound_to: Option<&str>) {
+fn stable() -> ChannelId {
+    of("lib", "stable")
+}
+
+/// `channel` declared at every revision, bound to `bound_to` where it
+/// names one.
+fn declare(world: &World, channel: &ChannelId, bound_to: Option<&str>) {
     world.fakes.policy.require(
         Audience::Channel(channel.clone()),
         Required::Channel {
             claims: vec![],
             bound_to: bound_to.map(ChannelName::new),
+            promoted_by: vec![],
         },
     );
-    world
-        .fakes
-        .policy
-        .belongs(channel, &ComponentName::new(component));
 }
 
 fn moved(version: &str) -> Moved {
@@ -371,15 +374,15 @@ fn moved(version: &str) -> Moved {
 /// claim `predecessor`, signed by the gate as the fake signer signs.
 fn sealed(
     world: &World,
-    channel: &ChannelName,
+    channel: &ChannelId,
     to: &str,
     from: Option<&str>,
     predecessor: Option<&Digest>,
     at: u64,
 ) -> (Promotion, Envelope) {
     let promotion = Promotion {
-        channel: channel.clone(),
-        component: ComponentName::new("lib"),
+        channel: channel.name.clone(),
+        component: channel.component_name(),
         to: moved(to),
         from: from.map(moved),
         predecessor: predecessor.cloned(),
@@ -403,7 +406,7 @@ fn sealed(
 
 /// `channel` promoted in the fake keeper to each version in turn, each
 /// from the one before: every promotion with its envelope's digest.
-fn promoted(world: &World, channel: &ChannelName, versions: &[&str]) -> Vec<(Digest, Promotion)> {
+fn promoted(world: &World, channel: &ChannelId, versions: &[&str]) -> Vec<(Digest, Promotion)> {
     let mut chain: Vec<(Digest, Promotion)> = Vec::new();
     for (i, version) in versions.iter().enumerate() {
         let from = i.checked_sub(1).map(|j| versions[j]);
@@ -450,8 +453,8 @@ fn channels_of(overview: &Overview) -> &[ChannelStatus] {
 #[test]
 fn every_channel_is_at_its_version_or_empty_with_the_chain_that_put_it_there() {
     let world = World::new();
-    declare(&world, &beta(), "lib", None);
-    declare(&world, &stable(), "lib", Some("beta"));
+    declare(&world, &beta(), None);
+    declare(&world, &stable(), Some("beta"));
     let chain = promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
 
     let answer = asked(&world, &ask(&world));
@@ -464,9 +467,13 @@ fn every_channel_is_at_its_version_or_empty_with_the_chain_that_put_it_there() {
     let channels = channels_of(&answer);
     let names: Vec<&str> = channels.iter().map(|c| c.name().as_str()).collect();
     assert_eq!(names, ["beta", "stable"]);
-    assert_eq!(channels[0].declared.component, ComponentName::new("lib"));
+    assert_eq!(
+        channels[0].declared.channel.component_name(),
+        ComponentName::new("lib")
+    );
+    assert_eq!(channels[0].declared.moves, Moves::Promotion);
     assert_eq!(channels[0].at, Ok(Channel::Empty));
-    assert_eq!(channels[1].declared.bound_to, Some(beta()));
+    assert_eq!(channels[1].declared.bound_to(), Some(beta()));
     assert_eq!(
         channels[1].at,
         Ok(Channel::At {
@@ -488,11 +495,13 @@ fn every_channel_is_at_its_version_or_empty_with_the_chain_that_put_it_there() {
     assert_eq!(json["asked_at"], AT + 100);
     assert_eq!(json["channels"]["answer"], "ok", "{json}");
     let listed = &json["channels"]["value"]["channels"];
-    assert_eq!(listed[0]["name"], "beta", "{json}");
-    assert_eq!(listed[0]["component"], "lib", "{json}");
+    assert_eq!(listed[0]["channel"]["name"], "beta", "{json}");
+    assert_eq!(listed[0]["channel"]["component"], "lib", "{json}");
+    assert_eq!(listed[0]["moves"]["by"], "promotion", "{json}");
     assert_eq!(listed[0]["at"]["answer"], "ok", "{json}");
     assert_eq!(listed[0]["at"]["value"]["state"], "empty", "{json}");
-    assert_eq!(listed[1]["bound_to"], "beta", "{json}");
+    assert_eq!(listed[1]["moves"]["by"], "bound", "{json}");
+    assert_eq!(listed[1]["moves"]["to"], "beta", "{json}");
     assert_eq!(listed[1]["at"]["value"]["state"], "at", "{json}");
     assert_eq!(listed[1]["at"]["value"]["head"]["to"]["version"], "0.2.0");
     assert_eq!(json["published"]["answer"], "absent", "{json}");
@@ -501,8 +510,8 @@ fn every_channel_is_at_its_version_or_empty_with_the_chain_that_put_it_there() {
 #[test]
 fn a_channel_of_another_component_is_left_out_when_one_is_named() {
     let world = World::new();
-    declare(&world, &beta(), "lib", None);
-    declare(&world, &ChannelName::new("preview"), "web", None);
+    declare(&world, &beta(), None);
+    declare(&world, &of("web", "preview"), None);
     let all = asked(&world, &ask(&world));
     assert_eq!(channels_of(&all).len(), 2);
     let lib = asked(
@@ -529,7 +538,7 @@ fn a_policy_declaring_no_channel_answers_an_empty_list() {
 #[test]
 fn a_head_not_landed_refuses_the_channels_and_the_record_still_answers() {
     let world = World::new();
-    declare(&world, &beta(), "lib", None);
+    declare(&world, &beta(), None);
     let (version, _) = published(&world);
     let unlanded = world.repo.touch("feat: lib grows again", &["crates/lib"]);
     let answer = asked(&world, &ask(&world));
@@ -552,9 +561,9 @@ fn a_head_not_landed_refuses_the_channels_and_the_record_still_answers() {
 #[test]
 fn one_chain_unreadable_and_one_forked_are_each_that_channels_own_answer() {
     let world = World::new();
-    let edge = ChannelName::new("edge");
+    let edge = of("lib", "edge");
     for channel in [beta(), edge.clone(), stable()] {
-        declare(&world, &channel, "lib", None);
+        declare(&world, &channel, None);
     }
     promoted(&world, &beta(), &["0.1.0"]);
     let chain = promoted(&world, &stable(), &["0.1.0"]);
@@ -596,7 +605,7 @@ fn one_chain_unreadable_and_one_forked_are_each_that_channels_own_answer() {
 #[test]
 fn a_chain_answered_as_last_read_is_shown_with_its_time_and_words() {
     let world = World::new();
-    declare(&world, &stable(), "lib", None);
+    declare(&world, &stable(), None);
     let chain = promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
     let before = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -631,8 +640,8 @@ fn a_chain_answered_as_last_read_is_shown_with_its_time_and_words() {
 fn status_asks_no_store_signer_target_or_projection_and_writes_nothing() {
     let mut world = World::new();
     let production = world.fakes.target(&EnvironmentName::new("production"));
-    declare(&world, &beta(), "lib", None);
-    declare(&world, &stable(), "lib", None);
+    declare(&world, &beta(), None);
+    declare(&world, &stable(), None);
     published(&world);
     promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
     let kept = world.kept();
@@ -689,7 +698,7 @@ fn unread(answer: &tailrace_seams::Answer<tailrace_core::EnvironmentCounts>) {
 fn a_target_bound_and_never_asked_leaves_the_environments_unreadable() {
     let mut world = World::new();
     let production = world.fakes.target(&EnvironmentName::new("production"));
-    declare(&world, &stable(), "lib", None);
+    declare(&world, &stable(), None);
     promoted(&world, &stable(), &["0.1.0"]);
     let answer = asked(&world, &ask(&world));
     unread(&answer.environments);
@@ -717,8 +726,8 @@ fn repository() -> RepositoryName {
 #[test]
 fn a_row_names_every_channels_head_and_the_environments_answer() {
     let world = World::new();
-    declare(&world, &beta(), "lib", None);
-    declare(&world, &stable(), "lib", Some("beta"));
+    declare(&world, &beta(), None);
+    declare(&world, &stable(), Some("beta"));
     let chain = promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
     let answer = asked(&world, &ask(&world));
     let row = row(&repository(), &answer);
@@ -728,12 +737,12 @@ fn a_row_names_every_channels_head_and_the_environments_answer() {
         Ok(vec![
             Head {
                 component: ComponentName::new("lib"),
-                channel: beta(),
+                channel: ChannelName::new("beta"),
                 at: Ok(HeadAt::Empty),
             },
             Head {
                 component: ComponentName::new("lib"),
-                channel: stable(),
+                channel: ChannelName::new("stable"),
                 at: Ok(HeadAt::At {
                     version: Version::new("0.2.0"),
                     index: chain[1].1.to.index.clone(),
@@ -752,7 +761,7 @@ fn a_row_names_every_channels_head_and_the_environments_answer() {
 #[test]
 fn a_row_whose_channels_cannot_be_read_carries_that_answer() {
     let world = World::new();
-    declare(&world, &stable(), "lib", None);
+    declare(&world, &stable(), None);
     world.fakes.policy.fault(
         tailrace_fakes::PolicyOp::Channels,
         Fault::Unreadable("policy file: expected `]`".into()),
@@ -770,8 +779,8 @@ fn a_row_whose_channels_cannot_be_read_carries_that_answer() {
 #[test]
 fn one_channels_unreadable_chain_is_that_heads_own_answer() {
     let world = World::new();
-    declare(&world, &beta(), "lib", None);
-    declare(&world, &stable(), "lib", None);
+    declare(&world, &beta(), None);
+    declare(&world, &stable(), None);
     promoted(&world, &beta(), &["0.1.0"]);
     promoted(&world, &stable(), &["0.1.0"]);
     world.fakes.keeper.fault(

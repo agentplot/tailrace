@@ -24,9 +24,9 @@ use tailrace_conformance::seams::store::{self, BYTES};
 use tailrace_core::{copy, follow, End, Followed};
 use tailrace_fakes::FakeKeeper;
 use tailrace_seams::{
-    canonical, Answer, Artifact, ArtifactMeta, ChannelName, Claim, ClaimKind, ComponentName,
-    Digest, Ecosystem, EcosystemName, Envelope, Held, IndexMeta, Keeper, Manifest, Name, Not,
-    Revision, Signature, SignerId, Store, Version, Why, IN_TOTO,
+    canonical, Answer, Artifact, ArtifactMeta, ChannelId, ChannelName, Claim, ClaimKind,
+    ComponentName, Digest, Ecosystem, EcosystemName, Envelope, Held, IndexMeta, Keeper, Manifest,
+    Name, Not, Revision, Signature, SignerId, Store, Version, Why, IN_TOTO,
 };
 use tempfile::TempDir;
 
@@ -936,7 +936,7 @@ fn a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger(kind: Kind) {
             .unwrap()
             .digest
     });
-    let stable = ChannelName::new("stable");
+    let stable = ChannelId::new(None, ChannelName::new("stable"));
     let keeper = FakeKeeper::new();
     let promotion = Envelope::signed(
         IN_TOTO,

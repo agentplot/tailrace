@@ -142,7 +142,7 @@ impl Target for FakeTarget {
 
 #[cfg(test)]
 mod tests {
-    use tailrace_seams::{ChannelName, Source, Version};
+    use tailrace_seams::{ChannelId, ChannelName, ComponentName, Source, Version};
 
     use super::*;
     use crate::{Fault, Times};
@@ -150,7 +150,7 @@ mod tests {
     fn production() -> Environment {
         Environment {
             name: EnvironmentName::new("production"),
-            channel: ChannelName::new("stable"),
+            channel: ChannelId::new(Some(ComponentName::new("web")), ChannelName::new("stable")),
             waits: false,
         }
     }
@@ -164,7 +164,7 @@ mod tests {
         let target = FakeTarget::new();
         assert_eq!(
             target.desired(&production()),
-            Err(Not::absent(&source(), "the head of channel stable"))
+            Err(Not::absent(&source(), "the head of channel web/stable"))
         );
         target.head(&production().name, &Digest::of(b"index"));
         assert_eq!(target.desired(&production()), Ok(Digest::of(b"index")));

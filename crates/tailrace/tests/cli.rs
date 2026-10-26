@@ -14,8 +14,8 @@ use tailrace_core::{
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
-    Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
-    Ecosystem, NamedSigner, Outcome, Output, OutputName, Promotion, Report, Required,
+    Audience, Branch, BuildId, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
+    Digest, Ecosystem, NamedSigner, Outcome, Output, OutputName, Promotion, Report, Required,
     RequiredClaim, Revision, Seam, Signer, SignerId, Source, Verdict, Version,
 };
 use tempfile::TempDir;
@@ -532,10 +532,11 @@ fn now() -> u64 {
 /// to nothing.
 fn declared(fakes: &Fakes, channel: &str) {
     fakes.policy.require(
-        Audience::Channel(ChannelName::new(channel)),
+        Audience::Channel(ChannelId::new(None, ChannelName::new(channel))),
         Required::Channel {
             claims: vec![],
             bound_to: None,
+            promoted_by: vec![],
         },
     );
 }
@@ -543,7 +544,7 @@ fn declared(fakes: &Fakes, channel: &str) {
 /// `channel` promoted over `fakes`' keeper to each version in turn, each
 /// from the one before, signed by the host as the fake signer signs.
 fn chained(host: &Host, channel: &str, versions: &[&str]) {
-    let channel = ChannelName::new(channel);
+    let channel = ChannelId::new(None, ChannelName::new(channel));
     let moved = |v: &str| tailrace_seams::Moved {
         version: Version::new(v),
         index: Digest::of(format!("{v}'s index").as_bytes()),
@@ -551,7 +552,7 @@ fn chained(host: &Host, channel: &str, versions: &[&str]) {
     let mut predecessor: Option<Digest> = None;
     for (i, version) in versions.iter().enumerate() {
         let promotion = Promotion {
-            channel: channel.clone(),
+            channel: channel.name.clone(),
             component: ComponentName::new("repository"),
             to: moved(version),
             from: i.checked_sub(1).map(|j| moved(versions[j])),
@@ -860,8 +861,8 @@ fn with_no_configuration_directory_set_the_file_under_the_home_binds_verify() {
 
 // Requirement: Promote takes a version and a channel
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("stable"))
 }
 
 /// A second feature committed on `main` after the host's head, and its
@@ -918,20 +919,22 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
             .unwrap();
         tailrace_seams::Store::attach(&fakes.store, index, &envelope).unwrap();
     }
+    let host_signer = NamedSigner {
+        id: SignerId::new("host"),
+        verified_by: "the host's key".into(),
+        kinds: vec![ClaimKind::Acceptance, ClaimKind::Promotion],
+        checks: vec![],
+    };
     fakes.policy.require(
         Audience::Channel(stable()),
         Required::Channel {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
-                signers: vec![NamedSigner {
-                    id: SignerId::new("host"),
-                    verified_by: "the host's key".into(),
-                    kinds: vec![ClaimKind::Acceptance, ClaimKind::Promotion],
-                    checks: vec![],
-                }],
+                signers: vec![host_signer.clone()],
             }],
             bound_to: None,
+            promoted_by: vec![host_signer],
         },
     );
 }
@@ -960,7 +963,7 @@ fn promote_through_the_command_line_prints_the_cores_answer_value_for_value() {
         &PromoteAsk {
             branch: Branch::new("main"),
             component: None,
-            channel: stable(),
+            channel: stable().name,
             to: To::Version(Version::new("0.2.0")),
             from: None,
             signer: SignerId::new("host"),

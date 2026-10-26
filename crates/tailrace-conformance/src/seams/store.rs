@@ -8,9 +8,9 @@ use serde_json::json;
 use tailrace_core::{follow, Followed};
 use tailrace_fakes::FakeKeeper;
 use tailrace_seams::{
-    Answer, ArtifactMeta, ChannelName, Claim, ClaimKind, Digest, Ecosystem, EcosystemName,
-    Envelope, Held, Keeper, Manifest, Name, Not, Revision, Seam, Signature, SignerId, Store,
-    Version, Why, IN_TOTO,
+    Answer, ArtifactMeta, ChannelId, ChannelName, Claim, ClaimKind, Digest, Ecosystem,
+    EcosystemName, Envelope, Held, Keeper, Manifest, Name, Not, Revision, Seam, Signature,
+    SignerId, Store, Version, Why, IN_TOTO,
 };
 
 use crate::seams::unreadable;
@@ -426,7 +426,10 @@ fn a_name_moved_from_a_stale_place_repaired_from_the_ledger(rig: &dyn StoreRig) 
         artifact(store, "1.1.0"),
         artifact(store, "1.2.0"),
     );
-    let (channel, name) = (ChannelName::new("stable"), Name::new("stable"));
+    let (channel, name) = (
+        ChannelId::new(None, ChannelName::new("stable")),
+        Name::new("stable"),
+    );
     ok(store.name(&name, &left, None), "a name made from nothing");
     assert_eq!(
         ok(settled(store, within, &name, &left, &[None]), "resolve"),
