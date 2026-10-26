@@ -126,13 +126,13 @@ same remote (114).
 
 ### Requirement: A laptop with nothing written publishes and moves beta
 
-The built binary, on a host with no bindings file and a repository
-sluice gates and moon builds, SHALL publish a landed revision into the
-given layout with a host key it makes. Once the policy lists the key's
-`signing.pub` line for provenance, names no gate and has a channel
-follow each publish, a later landing's publish SHALL be accepted as one
-host and move that channel through the given ledger in the same run,
-and verify SHALL count its provenance (S1, 80, 95, 108, 118).
+The built binary, on a host with no bindings file, SHALL publish a
+landed revision into the given layout with a host key it makes. Once
+the policy lists the key's `signing.pub` line for provenance only and
+writes no channel, a later landing's publish SHALL be accepted as one
+host and move the given `beta` through the given ledger in the same
+run, and verify SHALL count its provenance (S1, 80, 95, 108, 118,
+C.10).
 
 #### Scenario: The first publish on a fresh laptop
 
@@ -141,7 +141,7 @@ and verify SHALL count its provenance (S1, 80, 95, 108, 118).
 
 #### Scenario: beta moves on the next landing
 
-- **WHEN** the repository's policy then lists the host's name with the line `signing.pub` holds, for provenance only, names no gate and has `beta` follow each publish, a later revision that changes the component lands, and the built binary runs `tailrace publish` on the same host
+- **WHEN** the repository's policy then lists the host's name with the line `signing.pub` holds, for provenance only, names no other signer and writes no channel, a later revision that changes the component lands, and the built binary runs `tailrace publish` on the same host
 - **THEN** the same run accepts that version, the acceptance saying one host offered and accepted, `beta`'s chain in `refs/tailrace/ledger/` holds one promotion to its index, nothing is pushed to a remote, and the exit code is 0
 
 #### Scenario: Verify after listing the made key

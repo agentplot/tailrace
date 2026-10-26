@@ -12,7 +12,7 @@ naming no `[signing]` signs nothing. The ledger's unit (ADR 0016) added
 path of its own (`unfiled`), with `origin` as the remote of both its
 landing and its ledger.
 
-Clause 118, as the statement now reads (blueprints ab0dfea), binds a
+Clause 118, as the statement now reads (blueprints ab0dfea, 85bbf54), binds a
 host with no file to the layout under the user's data directory (C.2),
 a host key made on first use (C.8), the branch or sluice where the
 repository is set up for it (C.6, C.5), and the git ref (C.13). Its
@@ -22,7 +22,12 @@ the file names none. Its publish tells the gate as its next step, and
 where the policy names no gate the host is the one 108 admits, its
 acceptance claim saying so; so `beta` moves on a laptop with nothing
 written. The file is for pointing a host at a registry, a key service
-or a shared ledger.
+or a shared ledger. C.10 (blueprints 061bfa8) places that admission in
+the policy: where the file names no signer that may claim acceptance,
+the policy answers the host's own signer, the one it names for
+provenance, as the repository's gate for acceptance and for the given
+channels' promotion, its acceptance claim saying one host, and the gate
+reads this from the policy's answer and decides nothing of it (core.7).
 
 What is there on this bolt:
 
@@ -45,12 +50,22 @@ What is there on this bolt:
   acceptance (`offers_and_accepts`); `count` sets `one_host` where the
   gate's identity made a provenance it counted; `gate_named` finds the
   gate's signer among the signers the acceptance policy and the
-  channels' policies require, for `already` (94).
+  channels' policies require, for `already` (94). This unit's first
+  build added `names_a_gate` and `signer_named` there, with tests in
+  the core's gate tests and a scenario in the conformance suite's gate
+  group; D7 takes them out.
+- The policy file profile (`profiles/policy/file/`, as
+  the-channels-answer-says-how-each-moves leaves it) reads `[signers]`
+  once per revision into the signers every audience's claims name; a
+  given or made channel's policy requires acceptance by, and is promoted
+  by, every signer `may_claim` finds that may claim acceptance
+  (`channel_policy`).
 
 Rules this change keeps: core.1 (the bindings module names no tool, so
 each default lives in its family), core.7 (a claim counts only through
-a signer the policy names), core.14 (the one host is the only host that
-both offers and accepts; this change adds a second way to be it),
+a signer the policy names), core.7 (a claim counts only through a signer the policy names: the
+given gate is a signer the policy's answer names), core.14 (the one
+host is the only host that both offers and accepts),
 core.19 (a broken file is still unreadable, never replaced by a
 default), core.21 (the made key is the host's file, read at use, kept
 nowhere of tailrace's), core.22 (sluice's file is read from a commit,
@@ -65,9 +80,9 @@ nothing).
   bound to the given bindings, by one path through the code.
 - A file binds what it names and leaves the rest given.
 - The given host key is made on first sign and its name is stable.
-- On a host with nothing written, whose policy names no gate, one
-  `tailrace publish` after a landing offers, accepts as one host and
-  moves each channel that follows each publish.
+- On a host with nothing written, whose policy lists its key for
+  provenance only, one `tailrace publish` after a landing offers,
+  accepts as one host and moves the given `beta`.
 
 **Non-Goals:**
 
@@ -219,49 +234,54 @@ the binding's signer, which on a host with no `[signing]` is the given
 signer of D4. This change adds the tests that hold it for a host with
 no file.
 
-### D7. Where the policy names no gate
+### D7. Where the policy file names no gate
 
-A policy names a gate where some signer it requires a claim of may
-claim acceptance, among the signers of the acceptance policy at the
-landed head and of each channel's policy the gate reads there: the same
-walk `gate_named` makes, asking whether any signer, not only the gate's,
-holds `acceptance` among its kinds. `names_a_gate(seams, history,
-at_head, &required) -> Answer<bool>` answers it once per judgment,
-before step 6, from what the gate has already read; a channel's policy
-the gate cannot read answers as `gate_named` answers it.
+The given gate is the policy file profile's, 118's default placed at
+the policy seam (C.10), and never the gate's. When the profile reads
+`[signers]` at a revision, and no signer it names holds `acceptance`
+among its kinds while exactly one holds `provenance`, it adds
+`acceptance` to that one signer's kinds in what it answers. Nothing
+else of the answer changes, and the file is never rewritten.
 
-Where the policy names no gate, the gate reads the signer it signs as,
-as the policy names it for provenance, as the one host 108 admits, and
-nothing else differently:
+Since every audience's claims name signers from that one reading, every
+answer follows from it with no other code:
 
-- `found`: a provenance the gate's own identity made counts, in place of
-  `WhyWanting::OfferedByGate`, as `offers_and_accepts` would admit it.
-- `count`: sets `one_host` as it does today, so the acceptance claim's
-  body says `"offered": { "by": [<signer>], "one_host": true }` (108).
-- `already`: the gate's own signer, as the policy names it, with
-  `acceptance` added to what it may claim for this reading alone, so a
-  second telling of the same version finds the acceptance the first made
-  and answers it `already` (94), rather than attaching another.
+- `[acceptance]`'s required provenance names the signer with
+  `provenance` and `acceptance`, so the gate's `offers_and_accepts`
+  admits a provenance the gate's identity made under that name, and
+  `count` sets `one_host`: the acceptance claim's body says
+  `"offered": { "by": [<signer>], "one_host": true }` (108).
+- A given or made channel's policy requires acceptance by, and is
+  promoted by, the signers that may claim acceptance (`channel_policy`),
+  so `beta` and `stable` with no line written name the same signer as
+  their gate and their promoter (32, C.10).
+- `gate_named` finds that signer for `already`, so a second telling of
+  the same version answers the acceptance the first made (94).
+- `verify` and `tailrace policy` read the same answer (core.31).
 
-Where the gate's own identity is not among the signers the policy names
-for provenance, nothing counts its provenance, and the version is
-refused naming the provenance found wanting, as today: 118 admits the
-host the policy names, never one it does not.
+Where `[signers]` names a signer that may claim acceptance, the answer
+is the file as written: a build host running the gate signing as its
+own identity is refused as offered by the gate (27, 96, S9). Where it
+names several that may claim provenance, 108's one publisher is not
+there, and the answer is the file as written; where it names none, or
+the revision holds no file, there is no signer to name.
 
-Where the policy names a gate, nothing changes: a build host running
-the gate signing as its own identity is refused as offered by the gate
-(27, 96, S9), whether or not that identity is the named gate.
+The gate's code is as the units before this one leave it: this unit
+takes out `names_a_gate`, `signer_named` and the `names_a_gate` field
+its first build added to `gate.rs`, their tests in
+`crates/tailrace-core/tests/gate.rs`, and the gate group's "the policy
+names no gate" scenario, which judged over a fake policy the default
+does not reach. The fake policy answers what it is scripted, so a test
+of the publish over the fakes scripts the host's signer with
+`provenance` and `acceptance`, as the file profile answers it.
 
-The admission is the gate's alone. `verify` and every other verdict
-read the policy as it is written (core.7): an audience that requires an
-acceptance names the signers that may make it, and so names a gate.
+Rule core.14's details gain, under "Not ruled out", the host the policy
+file answers as the gate where `[signers]` names no signer that may
+claim acceptance, its acceptance claim saying one host (118, C.10).
 
-Rule core.14's details gain, under "Not ruled out", the host whose
-policy names no gate, whose acceptance says one host (118, 108).
-
-Rejected: a key in the policy file naming the host as gate. 118 asks
-for nothing written, and the policy already names the host's signer
-for provenance.
+Rejected: the gate reading a policy that names no gate as naming its
+own identity. C.10 places the default in the policy's answer so the
+gate decides nothing of whom the policy names (core.7).
 
 ### D8. Status and the serving name through the same binding
 
@@ -280,17 +300,15 @@ D5's where the file names no `[landing]`, the file there or not.
 
 ### D9. The ADR
 
-A new ADR, the next free number when it is written (the-publishs-host-
-tells-the-gate and the-channels-answer-says-how-each-moves each claim
-0019, so the coder reads `docs/adr/` on the branch first), titled "A
-host with no bindings file is bound to the given profiles", records
-D1 to D7: a missing file and a missing table bind the
-given bindings, how the landing and its remote are chosen, where the
-given key and its name come from, why `HEAD` and not the working tree,
-why the given ledger has no remote, and the gate where the policy names
-no gate. It amends ADR 0013's decisions for a missing file, a missing
-table and a host with no `[signing]`; 0013's status line names the new
-ADR.
+ADR 0021, "A host with no bindings file is bound to the given
+profiles" (0018 is status-on-any-machine's, 0019 and 0020 the units'
+before this one), records D1 to D7: a missing file and a missing table
+bind the given bindings, how the landing and its remote are chosen,
+where the given key and its name come from, why `HEAD` and not the
+working tree, why the given ledger has no remote, and the given gate in
+the policy file's answer, citing C.10. It amends ADR 0013's decisions
+for a missing file, a missing table and a host with no `[signing]`;
+0013's status line names it.
 
 ## Risks / Trade-offs
 
@@ -298,8 +316,9 @@ ADR.
   signer and self-hosting pages say where it is made and how to list it,
   and only publish and promote make it.
 - **A build host with nothing written accepts its own work.** → Only
-  where the repository's policy names no gate, which 118 admits; a team
-  that separates its gate names it in the policy, and from then on the
+  where the repository's policy file names no signer that may claim
+  acceptance and one for provenance, which 118 and C.10 admit; a team
+  that separates its gate names it in `[signers]`, and from then on the
   build host is refused (27, 96, S9). The acceptance claim says one host,
   so a channel's policy may require a separated one (108).
 - **A repository whose `HEAD` is on a branch from before sluice was
@@ -309,18 +328,18 @@ ADR.
 - **A checkout with several remotes and no `origin` is unreadable for
   every command with no file.** → 118 asks for that answer; it names the
   remotes and `[landing] remote`, the one line that fixes it.
-- **The given channels.** → The-channels-answer-says-how-each-moves
-  gives `beta` and `stable` a required acceptance by the `[signers]`
-  that may claim acceptance; where the policy names no gate that list is
-  empty. This change moves only channels whose policy it can count; the
-  pairing is named to the design agent with the commit.
+- **A repository with several publishers and no gate.** → Its policy
+  names no gate and nothing is accepted, as before; the gate's refusal
+  names the acceptance wanting. Telling such a repository more waits on
+  a design ruling.
 - **Two commands racing to make the layout.** → The same as for a named
   layout; `Layout::create` over a missing path is not changed here.
 - **The overlapping units.** → the-publishs-host-tells-the-gate,
   status-on-any-machine and the-channels-answer-says-how-each-moves also
-  edit `bindings/mod.rs`, its tests, `gate.rs` or the self-hosting page;
-  this unit comes after the first, and merges the others by hand where
-  they land first.
+  edit `bindings/mod.rs`, its tests, the policy file profile, the
+  command-line spec or the self-hosting page; this unit comes after all
+  three, and takes in each one's branch, or the bolt once it has landed
+  there, before building on it.
 
 ## Migration Plan
 
@@ -331,7 +350,8 @@ binds the given ones instead of being answered absent, and a host whose
 file holds no `[gate]` tells its own gate; each is what 118 asks. A
 repository whose policy names no gate and whose host publishes now has
 its versions accepted as one host where before they were refused as
-offered by the gate.
+offered by the gate, where its policy file names one signer for
+provenance and none for acceptance.
 
 ## Open Questions
 
@@ -339,8 +359,7 @@ offered by the gate.
   choices; the statement says only "a host key made on first use".
 - The given ledger's remote: 118 names the landing's remote alone, and
   this change gives the ledger none.
-- Where the policy names no gate, what a given channel's required
-  acceptance names (the pairing with the-channels-answer-says-how-each-
-  moves).
+- A policy file naming several signers for provenance and none for
+  acceptance: this change names no gate there (D7).
 
 All three go to the design agent with the commit.

@@ -9,14 +9,16 @@ the table it left out. So a person on a laptop has to write a file
 before anything works, and so does every plugin that runs a command for
 them; and even with a file, a laptop's publish cannot move `beta` unless
 the policy names the laptop as its own gate. The statement says
-otherwise (118, as amended at blueprints ab0dfea): a host with no such
-file is bound to a layout under the user's own data directory, a host
-key made on first use, the branch or sluice, and the git ref; its
-landing remote is the checkout's `origin`, or its one remote; its
-publish tells its own gate; and where the policy names no gate the host
-is the one 108 admits, so `beta` moves on a laptop with nothing written.
-The file is for pointing a host at a registry, a key service or a
-shared ledger. This change makes that true.
+otherwise (118, as amended at blueprints ab0dfea and 85bbf54; C.10 at
+061bfa8): a host with no such file is bound to a layout under the
+user's own data directory, a host key made on first use, the branch or
+sluice, and the git ref; its landing remote is the checkout's `origin`,
+or its one remote; its publish tells its own gate; and where the policy
+file names no signer that may claim acceptance, the policy answers the
+host's own signer as the one host 108 admits, so `beta` moves on a
+laptop with nothing written. The file is for pointing a host at a
+registry, a key service or a shared ledger. This change makes that
+true.
 
 ## What Changes
 
@@ -60,29 +62,37 @@ shared ledger. This change makes that true.
   that. Nothing else makes the key: `verify`, `sync`, `rebuild`, `push`
   and `status` sign nothing, and bind the host key verify-only. Two
   first uses at once end with one key, and both sign with it.
-- **Where the policy names no gate, the publishing host is the gate.**
-  A policy names a gate where some signer it requires a claim of, for
-  acceptance or for any channel, may claim acceptance. Where none may,
-  the gate signing as the host's signer reads that signer as the one
-  host 108 admits: its own provenance counts rather than refusing the
-  version as offered by the gate, its acceptance claim says one host
-  offered and accepted, and a second telling of the same version finds
-  that acceptance rather than making another (94, 108). Where the policy
-  names a gate, nothing changes: a build host running the gate is still
-  refused (27, 96, S9).
+- **Where the policy file names no gate, its answer names the host.**
+  Where `[signers]` names no signer that may claim acceptance and one
+  signer that may claim provenance, the policy file profile answers that
+  signer as one that may claim acceptance too: the repository's gate for
+  acceptance and for the given channels' promotion, the one host 108
+  admits (C.10). Every audience, every verdict and `tailrace policy`
+  read that one answer. The gate decides nothing of it: it already
+  admits a signer the policy names for both provenance and acceptance,
+  and already says one host in that acceptance claim (108, core.7), so
+  the gate's code does not change. Where the file names a signer that
+  may claim acceptance, its answer is the file as written, and a build
+  host running the gate is still refused (27, 96, S9).
 - **So a laptop with nothing written moves `beta`.** A person who has
-  written no bindings file, in a repository whose policy names their
-  host's signer for provenance and no gate, runs `tailrace publish`
-  after a landing, and the same run offers the version, accepts it as
-  one host, and moves each channel that follows each publish through
-  the git ref.
+  written no bindings file, in a repository whose policy lists their
+  host's key for provenance only and writes no channel, runs `tailrace
+  publish` after a landing, and the same run offers the version, accepts
+  it as one host, and moves the given `beta` through the git ref.
+- **The command line says it.** The command-line requirement that an
+  unbound host answers absent goes: `publish`, `verify`, `sync`, `push`
+  and `promote` on a host with no file are bound to the defaults, and
+  answer absent or unreadable only where a default cannot be made: no
+  home and no configuration directory, or several remotes and no
+  `origin` among them.
 - **What the record names stays the same.** The given layout is named in
   the host's record as a written one is, `layout <path>` with the path in
   full (61).
-- **The docs say it.** A new ADR records the given bindings and amends
-  ADR 0013; rule core.14's details admit the host where the policy names
-  no gate beside the one host the policy names; the site's self-hosting,
-  store, landing, signer and ledger pages describe the given bindings.
+- **The docs say it.** ADR 0021 records the given bindings and the
+  policy file's given gate, and amends ADR 0013; rule core.14's details
+  admit the host the policy file answers as the gate where it names
+  none; the site's self-hosting, store, landing, signer and ledger pages
+  describe the given bindings.
 
 Out of scope:
 
@@ -91,10 +101,15 @@ Out of scope:
   where it is a branch, C.5, C.16). Here a person or the landing host's
   own step runs `tailrace publish`; binding that step waits on a unit
   the planner names.
-- The given channels, `beta` and `stable` with no line written, are the
-  `the-channels-answer-says-how-each-moves` unit's. This change moves
-  the channels the policy says follow each publish, in whatever form
-  the bolt reads them when it is built.
+- The given channels, `beta` and `stable` with no line written, and the
+  fragment that gives them, are the `the-channels-answer-says-how-each-moves`
+  unit's. This unit comes after it and adds only the given gate to the
+  policy file profile it leaves.
+- A policy file that names several signers for provenance and none for
+  acceptance: 108 admits one host of a repository with one publisher,
+  so the profile names no gate there and answers the file as written.
+  Whether such a repository should be told so, and how, waits on a
+  design ruling.
 - Telling the person, in the publish's own answer, that a key was just
   made and that their policy must list it before its claims count. The
   site's signer page says how. A later change can add that line to the
@@ -117,8 +132,11 @@ None.
   same way; a laptop with nothing written publishes and moves `beta`.
 - `host-key-signer`: the host's given key is made on first use, with its
   public half beside it, and its signer's name is the host's.
-- `acceptance`: where the policy names no gate, the gate's own signer is
-  the one host 108 admits, and its acceptance says so.
+- `policy-file`: where `[signers]` names no signer that may claim
+  acceptance, the profile answers the one signer it names for
+  provenance as the gate.
+- `command-line`: an unbound host is bound to the defaults, and sync,
+  push and promote on a host with no file are bound like publish.
 
 ## Impact
 
@@ -131,18 +149,28 @@ None.
   names no tool (core.1); the landing family gives the given remote.
 - `crates/tailrace/src/profiles/signer/host_key/`: a host key that makes
   its key on first sign.
-- `crates/tailrace-core/src/gate.rs`: the gate reads a policy that names
-  no gate as naming its own signer as the one host.
+- `crates/tailrace/src/profiles/policy/file/`: the given gate, where
+  `[signers]` names no signer that may claim acceptance.
+- `crates/tailrace/src/commands/serve/host.rs`: the serving address's
+  repository named from the given landing remote.
+- `crates/tailrace-core/src/gate.rs` is not changed: the code this
+  unit's first build put there, and the tests of it in the core's and
+  the conformance suite's gate tests, are taken out again.
 - `Cargo.toml`, `crates/tailrace/Cargo.toml`, `Cargo.lock`: `libc`, for
   the host's name. It is already in the lockfile through other crates.
-- Tests: the bindings' and signers' unit tests, the core's gate tests,
-  the conformance suite's gate group, the publish-tells-the-gate and
-  one-host tests where their policies name no gate, and
-  `crates/tailrace/tests/laptop.rs`.
-- `docs/adr/`: a new ADR amending 0013, and 0013's status line naming
-  it; `docs/architecture/core.md`, core.14's details.
+- Tests: the bindings', signers' and policy file's unit tests, the
+  command line's, host's and promote's tests, the publish-tells-the-gate
+  and one-host tests, `tests/policy_file.rs` and `tests/laptop.rs`.
+- `docs/adr/0021-*`, amending 0013, and 0013's status line naming it;
+  `docs/architecture/core.md`, core.14's details.
 - `site/src/content/docs/guides/`: the self-hosting page and the store,
   landing, signer and ledger integration pages.
+- `openspec/specs/`: the archive writes this change's deltas into the
+  host-bindings, host-key-signer, policy-file and command-line specs.
+- Order: this unit comes after `the-channels-answer-says-how-each-moves`,
+  whose policy file profile and given fragment it builds on, and after
+  `the-publishs-host-tells-the-gate` and `status-on-any-machine`, whose
+  bindings and command-line requirements it edits.
 
 ## Touches
 
@@ -156,21 +184,29 @@ crates/tailrace/src/profiles/signer/mod.rs
 crates/tailrace/src/profiles/signer/tests.rs
 crates/tailrace/src/profiles/signer/host_key/mod.rs
 crates/tailrace/src/profiles/signer/host_key/tests.rs
+crates/tailrace/src/profiles/policy/file/mod.rs
+crates/tailrace/src/profiles/policy/file/tests.rs
+crates/tailrace/src/commands/serve/host.rs
+crates/tailrace/tests/cli.rs
+crates/tailrace/tests/host.rs
+crates/tailrace/tests/promote.rs
 crates/tailrace/tests/laptop.rs
 crates/tailrace/tests/one_host.rs
+crates/tailrace/tests/policy_file.rs
 crates/tailrace/tests/publish_tells_the_gate.rs
 crates/tailrace/Cargo.toml
-crates/tailrace-core/src/gate.rs
-crates/tailrace-core/tests/gate.rs
-crates/tailrace-conformance/src/core/gate.rs
 Cargo.toml
 Cargo.lock
 docs/adr/0013-the-host-binds-its-seams-in-one-file-beside-sluice-s.md
-docs/adr/*-a-host-with-no-bindings-file-is-bound-to-the-given-profiles.md
+docs/adr/0021-a-host-with-no-bindings-file-is-bound-to-the-given-profiles.md
 docs/architecture/core.md
 site/src/content/docs/guides/self-hosting.mdx
 site/src/content/docs/guides/integrations/stores.mdx
 site/src/content/docs/guides/integrations/landings.mdx
 site/src/content/docs/guides/integrations/signers.mdx
 site/src/content/docs/guides/integrations/ledgers.mdx
+openspec/specs/host-bindings/spec.md
+openspec/specs/host-key-signer/spec.md
+openspec/specs/policy-file/spec.md
+openspec/specs/command-line/spec.md
 ```
