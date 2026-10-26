@@ -98,7 +98,7 @@ fn files(dir: &Path, git: bool) -> Vec<(PathBuf, Vec<u8>)> {
 
 /// The scratch remote; machine A, which put two versions of the one
 /// component in its layout, each index carrying the gate's acceptance,
-/// and promoted `lts`, which moves by a promotion alone, to the first,
+/// and promoted `rc`, which moves by a promotion alone, to the first,
 /// then the second, `beta` and `stable` left empty; and machine B, a
 /// clone of the remote whose bindings file names the git ref ledger on
 /// `origin` and nothing else, with an empty home. A host with no file
@@ -127,7 +127,7 @@ impl Two {
                  [signers.{GATE}]\nssh = \"{}\"\nkinds = [\"acceptance\", \"promotion\"]\n\n\
                  [channels.beta]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n\n\
                  [channels.stable]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n\n\
-                 [channels.lts]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n",
+                 [channels.rc]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n",
                 key.public_key().to_openssh().unwrap()
             ),
         );
@@ -199,8 +199,8 @@ impl Two {
         }
         let promote = Ok(binding);
         for args in [
-            &["promote", "0.1.0", "--to", "lts"][..],
-            &["promote", "0.2.0", "--to", "lts", "--from", "0.1.0"][..],
+            &["promote", "0.1.0", "--to", "rc"][..],
+            &["promote", "0.2.0", "--to", "rc", "--from", "0.1.0"][..],
         ] {
             let (code, printed) = ask(&promote, &two.a.path, args);
             assert_eq!(code, 0, "{args:?}: {printed}");
@@ -273,14 +273,11 @@ fn a_machine_that_never_published_answers_every_channel_as_the_one_that_promoted
     // channels.
     let b_tree = files(&two.b.path, false);
     let theirs = status(&two.bind_b(), &two.b.path);
-    let lts = channel(&theirs, "lts");
-    assert_eq!(lts["at"]["answer"], "ok", "{theirs}");
-    assert_eq!(lts["at"]["value"]["head"]["to"]["version"], "0.2.0");
-    assert_eq!(
-        lts["at"]["value"]["chain"].as_array().map(Vec::len),
-        Some(2)
-    );
-    assert_eq!(lts["at"], channel(&ours, "lts")["at"], "{theirs}");
+    let rc = channel(&theirs, "rc");
+    assert_eq!(rc["at"]["answer"], "ok", "{theirs}");
+    assert_eq!(rc["at"]["value"]["head"]["to"]["version"], "0.2.0");
+    assert_eq!(rc["at"]["value"]["chain"].as_array().map(Vec::len), Some(2));
+    assert_eq!(rc["at"], channel(&ours, "rc")["at"], "{theirs}");
     for empty in ["beta", "stable"] {
         assert_eq!(
             channel(&theirs, empty)["at"]["value"]["state"],

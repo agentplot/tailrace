@@ -17,6 +17,9 @@ use tailrace_seams::{
     Required, Revision,
 };
 
+/// The given channels as tailrace ships them, beside the profile (C.10).
+const GIVENS: &str = include_str!("../src/profiles/policy/file/givens.toml");
+
 /// A scratch repository and the policy file over it.
 struct PolicyFileRig {
     scratch: Scratch,
@@ -170,31 +173,44 @@ impl PolicyRig for PolicyFileRig {
         Revision::new(repo.commit("chore: the channels"))
     }
 
-    /// C.10: `beta`, moving on each publish, and `stable`, bound to it,
-    /// of every component, or of the one where none is declared.
+    /// C.10: each channel the shipped fragment has on, of every
+    /// component, or of the one where none is declared, moving as its
+    /// table says, in the order the channels answer them.
     fn given(&self, components: &[ComponentName]) -> Vec<DeclaredChannel> {
+        let fragment: toml::Table = toml::from_str(GIVENS).expect("the shipped fragment parses");
+        let tables = fragment["channels"]
+            .as_table()
+            .expect("the fragment's channels");
         let scopes: Vec<Option<ComponentName>> = if components.is_empty() {
             vec![None]
         } else {
             components.iter().cloned().map(Some).collect()
         };
-        scopes
-            .into_iter()
-            .flat_map(|component| {
-                [
-                    DeclaredChannel {
-                        channel: ChannelId::new(component.clone(), ChannelName::new("beta")),
-                        moves: Moves::EachPublish,
-                    },
-                    DeclaredChannel {
-                        channel: ChannelId::new(component, ChannelName::new("stable")),
-                        moves: Moves::Bound {
-                            to: ChannelName::new("beta"),
-                        },
-                    },
-                ]
-            })
-            .collect()
+        let mut given = Vec::new();
+        for (name, table) in tables {
+            let key = |key: &str| table.get(key);
+            if key("on").and_then(toml::Value::as_bool) == Some(false) {
+                continue;
+            }
+            let moves = match (
+                key("on_each_publish").and_then(toml::Value::as_bool),
+                key("bound_to").and_then(toml::Value::as_str),
+            ) {
+                (_, Some(to)) => Moves::Bound {
+                    to: ChannelName::new(to),
+                },
+                (Some(true), None) => Moves::EachPublish,
+                _ => Moves::Promotion,
+            };
+            for component in &scopes {
+                given.push(DeclaredChannel {
+                    channel: ChannelId::new(component.clone(), ChannelName::new(name)),
+                    moves: moves.clone(),
+                });
+            }
+        }
+        given.sort_by(|a, b| a.channel.cmp(&b.channel));
+        given
     }
 
     /// The repository removed, and git's words for reading it.

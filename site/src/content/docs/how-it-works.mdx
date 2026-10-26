@@ -78,11 +78,16 @@ signer made, for anyone who wants to read the evidence.
 ## Channels moved only by proof
 
 A channel such as `beta` or `stable` is a mutable pointer, a name in the
-store, `channel/stable`, to a version. A landing on `main` makes a
-version and attaches it to `beta`; `tailrace promote <version> --to
-stable` moves `stable` to it, once the version's index carries the
-gate's acceptance and every claim `stable`'s policy requires, and the
-host's signer is one the policy lets promote. Every promotion is a
+store, `channel/stable`, to a version. Every component has both with no
+line written, and where the repository declares components a channel
+is its component and its name, `channel/lib/stable` in the store and
+`refs/tailrace/ledger/lib/stable` in the git ref ledger, so two
+components' channels never share a chain (125, C.13, C.14). A landing
+on `main` makes a version, and the gate, once it accepts it, moves
+`beta`; `tailrace promote <version> --to stable` moves `stable` to a
+version `beta` has held, once the version's index carries the gate's
+acceptance and every claim `stable`'s policy requires, and the host's
+signer is one of the channel's promoters, the gate's for `stable`. Every promotion is a
 signed record that names the one before it: the version and its digest,
 the channel, who promoted it, when, and the policy evidence. The chain
 is the ledger, ordered and tamper-evident wherever it is held, in a git

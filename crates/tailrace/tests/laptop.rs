@@ -160,7 +160,8 @@ impl Laptop {
     /// The repository's moon tasks and policy file, committed and pushed;
     /// sluice gating `main` on both tasks lands a submission; and the
     /// laptop's bindings file names a fresh layout, sluice with the
-    /// remote, and the laptop's key.
+    /// remote, the laptop's key, and the job that tells the gate, since
+    /// the policy lets the laptop offer and not accept (130, C.16).
     fn new() -> Laptop {
         let scratch = Scratch::new();
         let repo = &scratch.repo;
@@ -218,7 +219,8 @@ impl Laptop {
         host.bind(&format!(
             "[store]\nlayout = \"~/.local/share/tailrace/layout\"\n\n\
              [landing]\nsluice = {{ remote = \"origin\" }}\n\n\
-             [signing]\nsigner = \"{LAPTOP}\"\nkey = \"~/.config/tailrace/signing\"\n"
+             [signing]\nsigner = \"{LAPTOP}\"\nkey = \"~/.config/tailrace/signing\"\n\n\
+             [gate]\njob = \"the gate's job a push to main wakes\"\n"
         ));
         Laptop {
             scratch,

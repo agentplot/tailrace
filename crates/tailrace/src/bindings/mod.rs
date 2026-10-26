@@ -71,7 +71,9 @@
 //! verify-only, and the store opened, never made, only for a ledger held
 //! in it, every operation of the store answering absent naming it
 //! otherwise; so status on a host with nothing written reads the given
-//! landing and the given ledger and makes nothing.
+//! landing and the given ledger and makes nothing. The policy command is
+//! bound as status is, with no store whether or not the file names one
+//! (the channels unit's design D11).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -387,8 +389,9 @@ fn seam(
 
 /// The command a binding is made for: publish or push, which make the
 /// layout the first time; verify, sync or rebuild, which never make or
-/// write one; promote, which signs and never makes the layout; or
-/// status, which asks the landing, the policy and the ledger alone.
+/// write one; promote, which signs and never makes the layout; status,
+/// which asks the landing, the policy and the ledger alone; or policy,
+/// bound as status is with no store.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
@@ -398,12 +401,23 @@ pub enum For {
     Rebuild,
     Promote,
     Status,
+    Policy,
 }
 
-/// The store status binds where no ledger is held in it, which status
-/// never asks: every operation answers why it was not opened (60).
+/// The store status binds where no ledger is held in it, and the policy
+/// command always, which neither asks: every operation answers why it
+/// was not opened (60).
 struct Unopened {
     not: Not,
+}
+
+impl Unopened {
+    /// Every operation absent naming `what`, the binding not opened.
+    fn absent(what: String) -> Box<dyn Store> {
+        Box::new(Unopened {
+            not: Not::absent(&Source::new(Seam::Store, "unbound"), what),
+        })
+    }
 }
 
 impl Store for Unopened {
@@ -465,7 +479,7 @@ pub fn bind(
     let gate = Teller::of(bindings.gate.as_ref())?;
     let given_signing;
     let signing = match (&bindings.signing, command) {
-        (_, For::Status) => None,
+        (_, For::Status | For::Policy) => None,
         (Some(signing), _) => Some(signing),
         (None, For::Publish | For::Promote) => {
             given_signing = profiles::signer::given(file)?;
@@ -481,7 +495,10 @@ pub fn bind(
             &given_store
         }
     };
-    let named = profiles::store::named(store)?;
+    let named = match command {
+        For::Policy => Source::new(Seam::Store, "unbound"),
+        _ => profiles::store::named(store)?,
+    };
     let landing = match &bindings.landing {
         Some(landing) => profiles::landing::bind(landing, repository)?,
         None => profiles::landing::given(file, repository)?,
@@ -490,25 +507,22 @@ pub fn bind(
         Some(ledger) => profiles::ledger::bind(ledger, repository, store),
         None => Ok(profiles::ledger::given(repository)),
     };
-    let (bound, keeper, projections) = if command == For::Status {
+    let (bound, keeper, projections) = if matches!(command, For::Status | For::Policy) {
         let keeper = ledger(store)?;
         // No part of status reads the store but a ledger held in it, so a
         // store that is not there leaves every other ledger's chains read.
-        let bound = match &bindings.ledger {
-            Some(ledger) if profiles::ledger::in_store(ledger) => {
+        let bound = match (&bindings.ledger, command) {
+            (_, For::Policy) => {
+                Unopened::absent("binding of the store, which tailrace policy binds none".into())
+            }
+            (Some(ledger), _) if profiles::ledger::in_store(ledger) => {
                 profiles::store::bind(store, false)?
             }
-            _ => Box::new(Unopened {
-                not: Not::absent(
-                    &Source::new(Seam::Store, "unbound"),
-                    format!(
-                        "binding of the store, {} in {}, which status opens only for a ledger \
-                         held in it",
-                        store.at(),
-                        file.display()
-                    ),
-                ),
-            }) as Box<dyn Store>,
+            _ => Unopened::absent(format!(
+                "binding of the store, {} in {}, which status opens only for a ledger held in it",
+                store.at(),
+                file.display()
+            )),
         };
         (bound, keeper, BTreeMap::new())
     } else {

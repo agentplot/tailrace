@@ -30,8 +30,8 @@ const GATE: &str = "gate";
 
 /// A channel declared by hand, moving by a promotion alone, which the
 /// gate promotes as its `require` lets it.
-fn lts() -> ChannelId {
-    ChannelId::new(None, ChannelName::new("lts"))
+fn rc() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("rc"))
 }
 
 fn stable() -> ChannelId {
@@ -143,7 +143,7 @@ fn two() -> Two {
     two_with(
         "[\"acceptance\", \"promotion\"]",
         &format!(
-            "[channels.lts]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n"
+            "[channels.rc]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n"
         ),
     )
 }
@@ -224,16 +224,16 @@ fn a_promotion_on_one_machine_is_read_on_another_from_the_ledger_alone() {
     } = two();
     let binding = a.bind(For::Promote);
     for args in [
-        &["promote", "0.1.0", "--to", "lts"][..],
-        &["promote", "0.2.0", "--to", "lts", "--from", "0.1.0"][..],
-        &["promote", "--back", "--to", "lts"][..],
+        &["promote", "0.1.0", "--to", "rc"][..],
+        &["promote", "0.2.0", "--to", "rc", "--from", "0.1.0"][..],
+        &["promote", "--back", "--to", "rc"][..],
     ] {
         let (code, printed) = a.run(&binding, args);
         assert_eq!(code, 0, "{args:?}: {printed}");
         assert!(printed.contains("the store followed"), "{printed}");
     }
     let layout = Layout::open(a.layout()).unwrap();
-    assert_eq!(layout.resolve(&channel_name(&lts())), Ok(first.clone()));
+    assert_eq!(layout.resolve(&channel_name(&rc())), Ok(first.clone()));
     let on = |index: &Digest| {
         layout
             .claims_of(index)
@@ -246,7 +246,7 @@ fn a_promotion_on_one_machine_is_read_on_another_from_the_ledger_alone() {
 
     let ours = at_of(channel(
         binding.as_ref().unwrap().seams.keeper.as_ref(),
-        &lts(),
+        &rc(),
     ));
     assert_eq!(ours.0.to.index, first);
     assert_eq!(ours.0.from.as_ref().map(|f| &f.index), Some(&second));
@@ -258,7 +258,7 @@ fn a_promotion_on_one_machine_is_read_on_another_from_the_ledger_alone() {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    let read = at_of(channel(theirs.seams.keeper.as_ref(), &lts()));
+    let read = at_of(channel(theirs.seams.keeper.as_ref(), &rc()));
     assert_eq!(read.0, ours.0, "machine B read another head");
     assert_eq!(read.1, ours.1, "machine B read another chain");
     assert_eq!(read.2, Read::Source);
@@ -269,7 +269,7 @@ fn a_promotion_on_one_machine_is_read_on_another_from_the_ledger_alone() {
     );
 
     fs::remove_dir_all(&scratch.remote).unwrap();
-    let kept = at_of(channel(theirs.seams.keeper.as_ref(), &lts()));
+    let kept = at_of(channel(theirs.seams.keeper.as_ref(), &rc()));
     assert_eq!((kept.0, kept.1), (ours.0, ours.1));
     match kept.2 {
         Read::Kept { at, said } => {
@@ -308,7 +308,7 @@ fn a_promotion_found_wanting_on_real_profiles_writes_nothing() {
     );
     let layout = Layout::open(a.layout()).unwrap();
     assert!(matches!(
-        layout.resolve(&channel_name(&lts())),
+        layout.resolve(&channel_name(&rc())),
         Err(Not::Absent(_))
     ));
 }
