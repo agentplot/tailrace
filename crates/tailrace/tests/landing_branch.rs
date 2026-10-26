@@ -103,12 +103,18 @@ fn landed_and_not() {
     let ancestor = Revision::new(rig.scratch.repo.head());
     let head = rig.landed(&[]);
     let elsewhere = rig.not_landed();
-    let landed = |revision: &Revision| rig.landing.landed(&main_branch(), revision);
+    let landed = |revision: &Revision| {
+        rig.landing
+            .landed(&main_branch(), revision)
+            .map(|l| l.landed)
+    };
     assert_eq!(landed(&head), Ok(true));
     assert_eq!(landed(&ancestor), Ok(true));
     assert_eq!(landed(&elsewhere), Ok(false));
     assert_eq!(
-        rig.landing.landed(&Branch::new("no-such-branch"), &head),
+        rig.landing
+            .landed(&Branch::new("no-such-branch"), &head)
+            .map(|l| l.landed),
         Ok(false)
     );
 }
@@ -122,9 +128,15 @@ fn the_remotes_branch() {
     other.push();
     let refs = scratch.repo.git(&["for-each-ref"]);
     let local = PlainBranch::new(&scratch.repo.path, None);
-    assert_eq!(local.landed(&main_branch(), &pushed), Ok(false));
+    assert_eq!(
+        local.landed(&main_branch(), &pushed).map(|l| l.landed),
+        Ok(false)
+    );
     let remote = PlainBranch::new(&scratch.repo.path, Some("origin".into()));
-    assert_eq!(remote.landed(&main_branch(), &pushed), Ok(true));
+    assert_eq!(
+        remote.landed(&main_branch(), &pushed).map(|l| l.landed),
+        Ok(true)
+    );
     assert_eq!(
         scratch.repo.git(&["for-each-ref"]),
         refs,
@@ -136,10 +148,13 @@ fn the_remotes_branch() {
 fn a_landed_revisions_verdicts() {
     let rig = BranchRig::new();
     let landed = rig.landed(&[]);
-    assert_eq!(rig.landing.verdicts_of(&landed), Ok(vec![]));
+    assert_eq!(
+        rig.landing.verdicts_of(&landed).map(|v| v.verdicts),
+        Ok(vec![])
+    );
     let missing = Revision::new("0000000000000000000000000000000000000001");
     assert!(matches!(
-        rig.landing.verdicts_of(&missing),
+        rig.landing.verdicts_of(&missing).map(|v| v.verdicts),
         Err(Not::Absent(a)) if a.what.contains(missing.as_str())
     ));
 }
@@ -169,7 +184,10 @@ fn the_bound_remote_is_gone() {
     let scratch = Scratch::new();
     let landing = PlainBranch::new(&scratch.repo.path, Some("origin".into()));
     let landed = Revision::new(scratch.repo.head());
-    assert_eq!(landing.landed(&main_branch(), &landed), Ok(true));
+    assert_eq!(
+        landing.landed(&main_branch(), &landed).map(|l| l.landed),
+        Ok(true)
+    );
     fs::remove_dir_all(&scratch.remote).unwrap();
     let words = git_fails(&scratch.repo.path, &["ls-remote", "origin", "refs/heads/*"]);
     assert!(

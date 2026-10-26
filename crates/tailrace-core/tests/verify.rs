@@ -167,7 +167,7 @@ impl Policy for Watched {
             .map(|c| {
                 (
                     serde_json::from_value(c.given["revision"].clone()).unwrap(),
-                    c.answer == Ok(json!(true)),
+                    c.answer.as_ref().is_ok_and(|a| a["landed"] == json!(true)),
                 )
             })
             .collect();

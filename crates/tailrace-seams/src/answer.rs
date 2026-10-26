@@ -1,6 +1,7 @@
 //! The four answers every seam operation gives: what was asked, or
 //! absent, refused or unreadable, each naming the source that answered
-//! (58, 59, rule core.19; design D1).
+//! (58, 59, rule core.19; design D1); and how an answer was read, from
+//! its source or as this host last read it (60, 61, 77).
 
 use std::fmt;
 use std::path::Path;
@@ -92,6 +93,45 @@ pub struct Unreadable {
     pub said: Option<String>,
 }
 
+/// How an answer was read: from its source, or as this host last read
+/// or fetched it because the source did not answer (60, 61, 77, C.5,
+/// C.6, C.13, C.14).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Read {
+    /// From the source itself.
+    Source,
+    /// As this host last read or fetched it, at `at`, in seconds since
+    /// the Unix epoch, because the source did not answer, for `said`, its
+    /// own words.
+    Kept { at: u64, said: String },
+}
+
+/// `seconds` since the Unix epoch as an RFC 3339 time in UTC, the civil
+/// date from the count of days by the proleptic Gregorian calendar.
+pub fn utc(seconds: u64) -> String {
+    let (days, of_day) = (seconds / 86_400, seconds % 86_400);
+    let z = days as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let of_era = z.rem_euclid(146_097);
+    let year_of_era = (of_era - of_era / 1_460 + of_era / 36_524 - of_era / 146_096) / 365;
+    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted = (5 * of_year + 2) / 153;
+    let day = of_year - (153 * shifted + 2) / 5 + 1;
+    let month = if shifted < 10 {
+        shifted + 3
+    } else {
+        shifted - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
+        of_day / 3_600,
+        of_day % 3_600 / 60,
+        of_day % 60
+    )
+}
+
 /// The seam and the profile bound to it that answered.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Source {
@@ -167,6 +207,16 @@ pub enum Why {
     /// 14, 65, 77: `branch` has not landed `revision`, so nothing of the
     /// repository is read at it.
     NotLanded { branch: Branch, revision: Revision },
+    /// 77: `branch` had not landed `revision` as the host's copy of the
+    /// landing was last fetched, at `fetched`, in seconds since the Unix
+    /// epoch, because the landing's remote did not answer; asked again
+    /// once it answers, it may have, so nothing of the repository is read
+    /// at it now.
+    NotLandedAsFetched {
+        branch: Branch,
+        revision: Revision,
+        fetched: u64,
+    },
     /// 123: the components `first` and `second` declare one name or one
     /// prefix, `what` naming which and its text.
     DeclaredTwice {
@@ -315,6 +365,15 @@ impl fmt::Display for Why {
             Why::NotLanded { branch, revision } => {
                 write!(f, "{branch} has not landed {revision}")
             }
+            Why::NotLandedAsFetched {
+                branch,
+                revision,
+                fetched,
+            } => write!(
+                f,
+                "{branch} had not landed {revision} as last fetched {}; ask again once the landing's remote answers",
+                utc(*fetched)
+            ),
             Why::DeclaredTwice {
                 first,
                 second,
@@ -574,6 +633,68 @@ mod tests {
             let not = Not::refused(&store(), why.clone(), None);
             assert_eq!(round_trip(&not), not);
         }
+    }
+
+    #[test]
+    fn not_landed_and_not_landed_as_fetched_are_told_apart_through_json() {
+        const GIT: &str = "fatal: unable to access 'https://forge.example/repo.git/': \
+                           Could not resolve host: forge.example\n\t\u{fc} ";
+        let landing = Source::new(Seam::Landing, "bound");
+        let (main, rev) = (Branch::new("main"), Revision::new("4f2a9c1"));
+        let remote = Not::refused(
+            &landing,
+            Why::NotLanded {
+                branch: main.clone(),
+                revision: rev.clone(),
+            },
+            None,
+        );
+        let copy = Not::refused(
+            &landing,
+            Why::NotLandedAsFetched {
+                branch: main.clone(),
+                revision: rev.clone(),
+                fetched: 1_793_000_000,
+            },
+            Some(GIT.into()),
+        );
+        assert_eq!(round_trip(&remote), remote);
+        assert_eq!(round_trip(&copy), copy);
+        assert_ne!(remote, copy);
+
+        let Not::Refused(r) = round_trip(&copy) else {
+            panic!("refused read back as another answer")
+        };
+        assert_eq!(r.said.unwrap().as_bytes(), GIT.as_bytes());
+        let json = serde_json::to_value(&copy).unwrap();
+        let why = &json["refused"]["why"]["not_landed_as_fetched"];
+        assert_eq!(why["fetched"], 1_793_000_000, "{json}");
+        assert_eq!(why["branch"], "main", "{json}");
+        assert!(serde_json::to_value(&remote).unwrap()["refused"]["why"]["not_landed"].is_object());
+
+        let text = copy.to_string();
+        assert!(
+            text.contains(
+                "main had not landed 4f2a9c1 as last fetched 2026-10-26T07:33:20Z; \
+                 ask again once the landing's remote answers"
+            ),
+            "{text}"
+        );
+        assert!(text.ends_with(&format!("it said: {GIT}")), "{text}");
+        let text = remote.to_string();
+        assert!(text.contains("main has not landed 4f2a9c1"), "{text}");
+        assert!(
+            !text.contains("fetched") && !text.contains("ask again"),
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn a_moment_reads_as_a_time_in_utc() {
+        assert_eq!(utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(utc(951_782_400), "2000-02-29T00:00:00Z");
+        assert_eq!(utc(1_709_251_199), "2024-02-29T23:59:59Z");
+        assert_eq!(utc(1_709_251_200), "2024-03-01T00:00:00Z");
     }
 
     #[test]
