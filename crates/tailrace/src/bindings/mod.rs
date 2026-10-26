@@ -78,7 +78,7 @@ use std::path::{Path, PathBuf};
 use serde::de::DeserializeOwned;
 use tailrace_core::History;
 use tailrace_seams::{
-    Answer, Chain, ChannelName, Digest, Envelope, Held, Keeper, Manifest, Name, Not, Put, Seam,
+    Answer, Chain, ChannelId, Digest, Envelope, Held, Keeper, Manifest, Name, Not, Put, Seam,
     Seams, Source, Store,
 };
 
@@ -416,11 +416,11 @@ impl NoLedger {
 }
 
 impl Keeper for NoLedger {
-    fn append(&self, _: &ChannelName, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
+    fn append(&self, _: &ChannelId, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
         Err(self.absent())
     }
 
-    fn chain(&self, _: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, _: &ChannelId) -> Answer<Chain> {
         Err(self.absent())
     }
 }

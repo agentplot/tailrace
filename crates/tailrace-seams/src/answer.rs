@@ -9,7 +9,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArtifactMeta, Branch, BuildId, ChannelName, Check, ClaimKind, ComponentName, Digest, Moved,
+    ArtifactMeta, Branch, BuildId, ChannelId, Check, ClaimKind, ComponentName, Digest, Moved,
     Outcome, OutputName, Revision, SignerId,
 };
 
@@ -275,17 +275,18 @@ pub enum Why {
         check: Option<Check>,
         signers: Vec<SignerId>,
     },
-    /// 35: `channel` is at `at`, its head's version and index, `None`
-    /// when it is empty, and not where the promotion expected it.
+    /// 35: `channel`, with its component (125), is at `at`, its head's
+    /// version and index, `None` when it is empty, and not where the
+    /// promotion expected it.
     ChannelAt {
-        channel: ChannelName,
+        channel: ChannelId,
         at: Option<Moved>,
     },
-    /// 37, 83: `channel` is bound to `bound_to`, whose chain never held
-    /// the version as the subject of a promotion.
+    /// 37, 83: `channel` is bound to `bound_to`, of its component (125),
+    /// whose chain never held the version as the subject of a promotion.
     NeverHeld {
-        channel: ChannelName,
-        bound_to: ChannelName,
+        channel: ChannelId,
+        bound_to: ChannelId,
     },
     /// A refusal that names nothing beyond the source's own words.
     Said,
@@ -858,6 +859,14 @@ mod tests {
         }
     }
 
+    /// A channel of the component `lib`, spelled with it (125).
+    fn lib(name: &str) -> ChannelId {
+        ChannelId::new(
+            Some(ComponentName::new("lib")),
+            crate::ChannelName::new(name),
+        )
+    }
+
     #[test]
     fn the_refusals_of_a_promotion_name_what_their_clauses_say_through_json() {
         let index = Digest::of(b"0.2.0's index");
@@ -880,27 +889,27 @@ mod tests {
             ),
             (
                 Why::ChannelAt {
-                    channel: ChannelName::new("stable"),
+                    channel: lib("stable"),
                     at: Some(Moved {
                         version: crate::Version::new("0.2.0"),
                         index: index.clone(),
                     }),
                 },
-                format!("stable is at 0.2.0 ({index})"),
+                format!("lib/stable is at 0.2.0 ({index})"),
             ),
             (
                 Why::ChannelAt {
-                    channel: ChannelName::new("stable"),
+                    channel: ChannelId::new(None, crate::ChannelName::new("stable")),
                     at: None,
                 },
                 "stable is empty".into(),
             ),
             (
                 Why::NeverHeld {
-                    channel: ChannelName::new("stable"),
-                    bound_to: ChannelName::new("beta"),
+                    channel: lib("stable"),
+                    bound_to: lib("beta"),
                 },
-                "stable is bound to beta, whose chain never held the version".into(),
+                "lib/stable is bound to lib/beta, whose chain never held the version".into(),
             ),
         ];
         for (why, names) in cases {

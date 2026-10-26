@@ -10,12 +10,12 @@ use std::rc::Rc;
 
 use serde_json::json;
 use tailrace_core::{
-    accept, answer_json, channel, following, promote, AcceptAsk, Channel, Declared, Followed,
-    Judged, Moved, PromoteAsk, Promoted, Published, To, ToldBy, WhyWanting,
+    accept, answer_json, channel, following, promote, AcceptAsk, Channel, Followed, Judged, Moved,
+    PromoteAsk, Promoted, Published, To, ToldBy, WhyWanting,
 };
-use tailrace_fakes::{FakeKeeper, FakeSigner, KeeperOp, PolicyOp, SignerOp, StoreOp};
+use tailrace_fakes::{FakeKeeper, FakeSigner, Fault, KeeperOp, PolicyOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
-    channel_name, Answer, Audience, Branch, Chain, ChannelName, Check, Claim, ClaimKind,
+    channel_name, Answer, Audience, Branch, Chain, ChannelId, ChannelName, Check, Claim, ClaimKind,
     ComponentName, Digest, Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome,
     Promotion, Put, Required, RequiredClaim, Revision, Satisfied, Seam, Seams, Signer, SignerId,
     Source, Store, Version, Why,
@@ -72,17 +72,20 @@ fn provenance_only() -> Required {
     }
 }
 
-/// The policy file of the world, with `lib`'s channel `beta` following
-/// each publish.
-fn with_beta() -> String {
-    format!(
-        "{}\n[channels.beta]\non_each_publish = true\ncomponent = \"lib\"\n",
-        world::POLICY
-    )
+/// The channel `name` of `component`, as the world declares components.
+fn of(component: &str, name: &str) -> ChannelId {
+    ChannelId::new(Some(ComponentName::new(component)), ChannelName::new(name))
 }
 
-fn beta() -> ChannelName {
-    ChannelName::new("beta")
+/// `lib`'s `beta`.
+fn beta() -> ChannelId {
+    of("lib", "beta")
+}
+
+/// The gate's signer, as a channel's policy names it among its
+/// promoters (32).
+fn the_gate() -> NamedSigner {
+    named(GATE, &[ClaimKind::Acceptance], &[])
 }
 
 /// The gate's acceptance, which `beta` requires.
@@ -94,15 +97,29 @@ fn from_gate() -> RequiredClaim {
     }
 }
 
-/// `beta` requires `claims`.
-fn beta_requires(world: &World, claims: Vec<RequiredClaim>) {
+/// `channel` follows each publish, requires `claims`, and is promoted by
+/// `promoted_by` (95, 32).
+fn following_requires(
+    world: &World,
+    channel: &ChannelId,
+    claims: Vec<RequiredClaim>,
+    promoted_by: Vec<NamedSigner>,
+) {
     world.fakes.policy.require(
-        Audience::Channel(beta()),
+        Audience::Channel(channel.clone()),
         Required::Channel {
             claims,
             bound_to: None,
+            promoted_by,
         },
     );
+    world.fakes.policy.follows(channel);
+}
+
+/// `beta` follows each publish, requires `claims`, and is promoted by
+/// the gate.
+fn beta_requires(world: &World, claims: Vec<RequiredClaim>) {
+    following_requires(world, &beta(), claims, vec![the_gate()]);
 }
 
 /// A world whose `lib` was published at its head, each output's build
@@ -218,7 +235,7 @@ fn each_answer_renders_in_the_one_form_naming_the_index_and_both_revisions() {
         one_host: false,
         channels: vec![
             (
-                ChannelName::new("beta"),
+                beta(),
                 Ok(Moved::Promoted {
                     from: None,
                     to: index.clone(),
@@ -227,7 +244,7 @@ fn each_answer_renders_in_the_one_form_naming_the_index_and_both_revisions() {
                 }),
             ),
             (
-                ChannelName::new("edge"),
+                of("lib", "edge"),
                 Ok(Moved::Held {
                     artifact: Digest::of(b"artifact"),
                     wanting: wanting.clone(),
@@ -235,7 +252,7 @@ fn each_answer_renders_in_the_one_form_naming_the_index_and_both_revisions() {
                 }),
             ),
             (
-                ChannelName::new("next"),
+                ChannelId::new(None, ChannelName::new("next")),
                 Err(Not::refused(
                     &Source::new(Seam::Keeper, "bound"),
                     Why::NotHead {
@@ -254,7 +271,14 @@ fn each_answer_renders_in_the_one_form_naming_the_index_and_both_revisions() {
     assert_eq!(value["revision"], revision.as_str());
     assert_eq!(value["policy_at"], head.as_str());
     let channels = value["channels"].as_array().unwrap();
-    assert_eq!(channels[0]["channel"], "beta");
+    assert_eq!(
+        channels[0]["channel"],
+        json!({ "component": "lib", "name": "beta" })
+    );
+    assert_eq!(
+        channels[2]["channel"],
+        json!({ "component": null, "name": "next" })
+    );
     assert_eq!(channels[0]["answer"], "ok");
     assert_eq!(channels[0]["value"]["moved"], "promoted");
     assert_eq!(channels[0]["value"]["promotion"], promotion.as_str());
@@ -984,98 +1008,139 @@ fn a_separated_gates_acceptance_names_the_offerer() {
     );
 }
 
-// Requirement: A channel that follows each publish is declared in the policy file
+// Requirement: The channels that follow each publish come from the policy seam
 
-/// What `following` answers for `component` at the world's head: each
-/// channel, and the words of an unreadable one.
-fn followers(world: &World, component: &str) -> Vec<(String, Result<(), String>)> {
-    let landed = common::landed(&world.head);
-    let history = world.history();
-    let declared = Declared::read(&history, &landed).unwrap();
-    following(&history, &landed, &declared, &ComponentName::new(component))
-        .unwrap()
-        .into_iter()
-        .map(|(name, answer)| {
-            let answer = answer.map_err(|not| match not {
-                Not::Unreadable(u) => {
-                    assert!(
-                        u.what.starts_with(&format!("[channels.{name}]")),
-                        "{}",
-                        u.what
-                    );
-                    u.said.unwrap_or_default()
-                }
-                other => panic!("{name} answered {other:?}"),
-            });
-            (name.to_string(), answer)
-        })
-        .collect()
+/// What `following` answers for `component` at the world's head.
+fn followers(world: &World, component: &str) -> Answer<Vec<ChannelId>> {
+    following(
+        &world.fakes.seams(),
+        &common::landed(&world.head),
+        &ComponentName::new(component),
+    )
+}
+
+/// `stable` of `component`, bound to its `beta` and promoted by the gate.
+fn stable_bound(world: &World, component: &str) {
+    world.fakes.policy.require(
+        Audience::Channel(of(component, "stable")),
+        Required::Channel {
+            claims: vec![from_gate()],
+            bound_to: Some(ChannelName::new("beta")),
+            promoted_by: vec![the_gate()],
+        },
+    );
 }
 
 #[test]
-fn beta_follows_each_publish_of_the_one_component() {
-    let world = World::with_policy(
-        r#"
-outputs = ["site"]
-projections = { site = "eco-a" }
+fn beta_given_by_the_policy_follows_each_publish_and_stable_does_not() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    beta_requires(&world, vec![from_gate()]);
+    stable_bound(&world, "lib");
+    assert_eq!(followers(&world, "lib"), Ok(vec![beta()]));
 
-[channels.beta]
-on_each_publish = true
-require = [{ kind = "acceptance", signers = ["gate"] }]
-
-[channels.stable]
-bound_to = "beta"
-"#,
+    let moved = beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish)));
+    assert!(matches!(moved, Ok(Moved::Promoted { .. })), "{moved:?}");
+    assert_eq!(named_at(&world, &beta()).as_ref(), Some(index));
+    assert_eq!(named_at(&world, &of("lib", "stable")), None);
+    assert!(
+        world
+            .fakes
+            .policy
+            .calls()
+            .iter()
+            .filter(|c| c.op == PolicyOp::Channels)
+            .all(|c| c.given["revision"] == world.head.as_str()),
+        "the channels were read at another revision than the head"
     );
+}
+
+#[test]
+fn two_components_beta_only_the_published_ones_moves() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    beta_requires(&world, vec![from_gate()]);
+    following_requires(
+        &world,
+        &of("web", "beta"),
+        vec![from_gate()],
+        vec![the_gate()],
+    );
+    assert_eq!(followers(&world, "lib"), Ok(vec![beta()]));
+    assert_eq!(followers(&world, "web"), Ok(vec![of("web", "beta")]));
+
+    beta_moved(judged(&world, &ask("0.2.0", ToldBy::Publish))).unwrap();
+    assert_eq!(named_at(&world, &beta()).as_ref(), Some(index));
+    assert_eq!(named_at(&world, &of("web", "beta")), None);
     assert_eq!(
-        followers(&world, "repository"),
-        [("beta".to_string(), Ok(()))]
+        world.fakes.keeper.chain(&beta()).map(|c| c.claims.len()),
+        Ok(1)
     );
+    assert!(matches!(
+        world.fakes.keeper.chain(&of("web", "beta")),
+        Err(Not::Absent(_))
+    ));
 }
 
 #[test]
-fn a_publish_of_one_component_follows_only_its_own_channels_in_the_files_order() {
-    let world = World::with_policy(&format!(
-        r#"{}
-[channels.lib-beta]
-on_each_publish = true
-component = "lib"
+fn a_following_channel_whose_promoters_exclude_the_gate_is_refused_while_the_acceptance_stands() {
+    let (world, published) = published_under(acceptance());
+    let (_, index) = version_of(&published);
+    let release = named("release", &[ClaimKind::Promotion], &[]);
+    let edge = of("lib", "edge");
+    following_requires(&world, &edge, vec![from_gate()], vec![release]);
 
-[channels.web-beta]
-on_each_publish = true
-component = "web"
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Publish));
+    let Ok(Judged::Accepted {
+        already: false,
+        acceptance,
+        mut channels,
+        ..
+    }) = answer
+    else {
+        panic!("the version was not accepted: {answer:?}")
+    };
+    assert_eq!(channels.len(), 1, "{channels:?}");
+    let (channel, moved) = channels.remove(0);
+    assert_eq!(channel, edge);
+    let Err(Not::Refused(r)) = moved else {
+        panic!("a channel the gate may not promote was answered {moved:?}")
+    };
+    assert_eq!(
+        r.why,
+        Why::Wanting {
+            kind: ClaimKind::Promotion,
+            check: None,
+            signers: vec![SignerId::new("release")],
+        }
+    );
+    assert!(world
+        .fakes
+        .store
+        .claims_of(index)
+        .unwrap()
+        .iter()
+        .any(|e| e.digest() == acceptance));
+    assert_eq!(appends(&world), 0);
+    assert_eq!(named_at(&world, &edge), None);
+}
 
-[channels.stable]
-on_each_publish = true
-component = "lib"
-bound_to = "lib-beta"
-
-[channels.edge]
-on_each_publish = true
-
-[channels.other]
-on_each_publish = true
-component = "app"
-
-[channels.nightly]
-component = "lib"
-"#,
-        world::POLICY
-    ));
-    let lib = followers(&world, "lib");
-    let names: Vec<&str> = lib.iter().map(|(n, _)| n.as_str()).collect();
-    assert_eq!(names, ["lib-beta", "stable", "edge", "other"]);
-    assert_eq!(lib[0].1, Ok(()));
-    let said = |i: usize| lib[i].1.clone().unwrap_err();
-    assert!(said(1).contains("bound to lib-beta"), "{}", said(1));
-    assert!(said(2).contains("names no component"), "{}", said(2));
-    assert!(said(2).contains("lib, web"), "{}", said(2));
-    assert!(said(3).contains("app"), "{}", said(3));
-
-    let web = followers(&world, "web");
-    let names: Vec<&str> = web.iter().map(|(n, _)| n.as_str()).collect();
-    assert_eq!(names, ["web-beta", "edge", "other"]);
-    assert_eq!(web[0].1, Ok(()));
+#[test]
+fn an_unreadable_channels_answer_accepts_nothing() {
+    let (world, _) = published_under(acceptance());
+    beta_requires(&world, vec![from_gate()]);
+    world.fakes.policy.fault(
+        PolicyOp::Channels,
+        Fault::Unreadable("the policy cannot be read".into()),
+        Times::UntilHealed,
+    );
+    let before = counts(&world);
+    let answer = judged(&world, &ask("0.2.0", ToldBy::Publish));
+    let Err(Not::Unreadable(u)) = answer else {
+        panic!("an unreadable channels answer was answered {answer:?}")
+    };
+    assert_eq!(u.said.as_deref(), Some("the policy cannot be read"));
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
 }
 
 // Requirement: Nothing accepted is un-accepted
@@ -1104,7 +1169,7 @@ fn stricter(world: &World) -> Revision {
 
 #[test]
 fn a_version_the_gate_accepted_is_accepted_again_after_a_stricter_policy_lands() {
-    let (world, _) = published_in(World::with_policy(&with_beta()), acceptance());
+    let (world, _) = published_in(World::new(), acceptance());
     beta_requires(&world, vec![from_gate()]);
     let Ok(Judged::Accepted {
         acceptance: first, ..
@@ -1133,7 +1198,7 @@ fn a_version_the_gate_accepted_is_accepted_again_after_a_stricter_policy_lands()
 
 #[test]
 fn an_acceptance_another_signer_made_is_not_the_gates() {
-    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    let (world, published) = published_in(World::new(), acceptance());
     beta_requires(&world, vec![from_gate()]);
     let (_, index) = version_of(&published);
     let forged = Claim {
@@ -1156,7 +1221,7 @@ fn an_acceptance_another_signer_made_is_not_the_gates() {
 
 #[test]
 fn a_build_host_running_the_gate_over_its_own_acceptance_is_refused_not_accepted_already() {
-    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    let (world, published) = published_in(World::new(), acceptance());
     beta_requires(&world, vec![from_gate()]);
     let (_, index) = version_of(&published);
     let forged = Claim {
@@ -1188,12 +1253,8 @@ fn a_build_host_running_the_gate_over_its_own_acceptance_is_refused_not_accepted
 // Requirement: The gate moves each following channel after accepting what a publish told it of
 
 /// What `channel`'s name in the store names, if anything.
-fn named_at(world: &World, channel: &str) -> Option<Digest> {
-    world
-        .fakes
-        .store
-        .resolve(&channel_name(&ChannelName::new(channel)))
-        .ok()
+fn named_at(world: &World, channel: &ChannelId) -> Option<Digest> {
+    world.fakes.store.resolve(&channel_name(channel)).ok()
 }
 
 /// The appends the keeper was asked.
@@ -1209,19 +1270,19 @@ fn appends(world: &World) -> usize {
 
 #[test]
 fn a_version_asked_of_rather_than_told_by_a_publish_moves_no_channel() {
-    let (world, _) = published_in(World::with_policy(&with_beta()), acceptance());
+    let (world, _) = published_in(World::new(), acceptance());
     beta_requires(&world, vec![from_gate()]);
     let Ok(Judged::Accepted { channels, .. }) = judged(&world, &ask("0.2.0", ToldBy::Asked)) else {
         panic!("the gate did not accept")
     };
     assert!(channels.is_empty(), "{channels:?}");
     assert!(world.fakes.keeper.calls().is_empty());
-    assert_eq!(named_at(&world, "beta"), None);
+    assert_eq!(named_at(&world, &beta()), None);
 }
 
 #[test]
 fn a_channel_requiring_a_review_the_version_lacks_stays_while_the_version_is_accepted() {
-    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    let (world, published) = published_in(World::new(), acceptance());
     let review = RequiredClaim {
         kind: ClaimKind::Review,
         check: None,
@@ -1249,7 +1310,7 @@ fn a_channel_requiring_a_review_the_version_lacks_stays_while_the_version_is_acc
         )]
     );
     assert_eq!(appends(&world), 0);
-    assert_eq!(named_at(&world, "beta"), None);
+    assert_eq!(named_at(&world, &beta()), None);
 }
 
 // Requirement: A following channel moves through the ledger first
@@ -1257,7 +1318,7 @@ fn a_channel_requiring_a_review_the_version_lacks_stays_while_the_version_is_acc
 /// A world whose `lib` was published under acceptance, `beta` following
 /// each publish and requiring the gate's acceptance.
 fn beta_world() -> (World, Published) {
-    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    let (world, published) = published_in(World::new(), acceptance());
     beta_requires(&world, vec![from_gate()]);
     (world, published)
 }
@@ -1286,7 +1347,7 @@ fn promotion_to(world: &World, subject: &Digest) -> Envelope {
     let gate = FakeSigner::new();
     gate.hold(&SignerId::new(GATE));
     let promotion = Promotion {
-        channel: beta(),
+        channel: ChannelName::new("beta"),
         component: ComponentName::new("lib"),
         to: at("0.1.0", subject),
         from: None,
@@ -1340,7 +1401,7 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
         [1],
         "the name moved before the ledger held the promotion"
     );
-    assert_eq!(named_at(&world, "beta").as_ref(), Some(index));
+    assert_eq!(named_at(&world, &beta()).as_ref(), Some(index));
 
     let chain = world.fakes.keeper.chain(&beta()).unwrap().claims;
     assert_eq!(chain.len(), 1);
@@ -1366,7 +1427,7 @@ fn the_ledger_holds_the_promotion_before_the_name_moves() {
     assert_eq!(
         made,
         Promotion {
-            channel: beta(),
+            channel: ChannelName::new("beta"),
             component: ComponentName::new("lib"),
             to: at("0.2.0", index),
             from: None,
@@ -1407,7 +1468,7 @@ fn a_promotion_names_the_chains_head_and_moves_the_name_from_where_it_left_it() 
     assert_eq!(made.predecessor, Some(first.digest()));
     assert_eq!(made.from, Some(at("0.1.0", &before)));
     assert_eq!(made.to, at("0.2.0", index));
-    assert_eq!(named_at(&world, "beta").as_ref(), Some(index));
+    assert_eq!(named_at(&world, &beta()).as_ref(), Some(index));
 }
 
 /// A keeper another writer appends `then` to right after the first
@@ -1422,14 +1483,14 @@ struct Racing {
 impl Keeper for Racing {
     fn append(
         &self,
-        channel: &ChannelName,
+        channel: &ChannelId,
         promotion: &Envelope,
         predecessor: Option<&Digest>,
     ) -> Answer<Digest> {
         self.appended.set(self.appended.get() + 1);
         self.inner.append(channel, promotion, predecessor)
     }
-    fn chain(&self, channel: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, channel: &ChannelId) -> Answer<Chain> {
         let answer = self.inner.chain(channel);
         if !self.raced.replace(true) {
             let head = answer
@@ -1474,7 +1535,7 @@ fn a_chain_moved_between_read_and_append_is_refused_naming_its_head_and_nothing_
         }
     );
     assert_eq!(appended.get(), 1, "the append was retried");
-    assert_eq!(named_at(&world, "beta"), None);
+    assert_eq!(named_at(&world, &beta()), None);
     let promotions = world
         .fakes
         .store
@@ -1511,7 +1572,7 @@ fn a_forked_chain_is_reported_and_nothing_is_appended_or_moved() {
         }
     );
     assert_eq!(appends(&world), before);
-    assert_eq!(named_at(&world, "beta"), None);
+    assert_eq!(named_at(&world, &beta()), None);
 }
 
 #[test]
@@ -1547,21 +1608,7 @@ fn a_version_the_gate_moved_beta_to_is_taken_by_stable_bound_to_beta() {
     assert_eq!(head.to, at("0.2.0", index));
 
     let stable = ChannelName::new("stable");
-    world.fakes.policy.require(
-        Audience::Channel(stable.clone()),
-        Required::Channel {
-            claims: vec![RequiredClaim {
-                kind: ClaimKind::Acceptance,
-                check: None,
-                signers: vec![named(
-                    GATE,
-                    &[ClaimKind::Acceptance, ClaimKind::Promotion],
-                    &[],
-                )],
-            }],
-            bound_to: Some(beta()),
-        },
-    );
+    stable_bound(&world, "lib");
     let answer = promote(
         &seams,
         &world.history(),
@@ -1580,5 +1627,5 @@ fn a_version_the_gate_moved_beta_to_is_taken_by_stable_bound_to_beta() {
     };
     assert_eq!(to, at("0.2.0", index));
     assert!(store.is_ok(), "{store:?}");
-    assert_eq!(named_at(&world, "stable").as_ref(), Some(index));
+    assert_eq!(named_at(&world, &of("lib", "stable")).as_ref(), Some(index));
 }

@@ -11,9 +11,9 @@ use tailrace_core::{
 };
 use tailrace_fakes::{FakeKeeper, FakeStore, Fault, KeeperOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
-    channel_name, Answer, Chain, ChannelName, Claim, ClaimKind, ComponentName, Digest, Envelope,
-    IndexMeta, Keeper, Manifest, Moved, Name, Not, Promotion, Signature, Signer, SignerId, Store,
-    Version, Why, IN_TOTO,
+    channel_name, Answer, Chain, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest,
+    Envelope, IndexMeta, Keeper, Manifest, Moved, Name, Not, Promotion, Signature, Signer,
+    SignerId, Store, Version, Why, IN_TOTO,
 };
 
 use crate::core::publish::{one, passing};
@@ -106,7 +106,7 @@ fn two_indexes(world: &FakeWorld) -> (Digest, Digest) {
 
 fn a_race_lost_on_a_channels_name(world: &FakeWorld) {
     let (index, other) = two_indexes(world);
-    let channel = ChannelName::new(STABLE);
+    let channel = stable();
     let promotion = Claim {
         subject: index.clone(),
         kind: ClaimKind::Promotion,
@@ -169,8 +169,8 @@ fn a_race_lost_on_a_channels_name(world: &FakeWorld) {
 
 const BETA: &str = "beta";
 
-fn stable() -> ChannelName {
-    ChannelName::new(STABLE)
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new(STABLE))
 }
 
 fn to(version: &str) -> To {
@@ -244,7 +244,7 @@ fn written(world: &FakeWorld) -> (usize, usize, usize) {
 }
 
 /// The promotions of `channel`'s chain, in order.
-fn chain_of(world: &FakeWorld, channel: &ChannelName) -> Vec<Promotion> {
+fn chain_of(world: &FakeWorld, channel: &ChannelId) -> Vec<Promotion> {
     ok(world.fakes.keeper.chain(channel), "the chain")
         .claims
         .iter()
@@ -266,7 +266,7 @@ struct Watching {
 }
 
 impl Keeper for Watching {
-    fn append(&self, c: &ChannelName, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
+    fn append(&self, c: &ChannelId, p: &Envelope, d: Option<&Digest>) -> Answer<Digest> {
         let writes = self
             .store
             .calls()
@@ -281,7 +281,7 @@ impl Keeper for Watching {
         self.at.set(Some(writes));
         self.inner.append(c, p, d)
     }
-    fn chain(&self, c: &ChannelName) -> Answer<Chain> {
+    fn chain(&self, c: &ChannelId) -> Answer<Chain> {
         self.inner.chain(c)
     }
 }
@@ -450,7 +450,7 @@ fn a_bound_channel_takes_what_its_bound_channel_held(world: &FakeWorld) {
         ),
         Why::NeverHeld {
             channel: stable(),
-            bound_to: ChannelName::new(BETA),
+            bound_to: ChannelId::new(None, ChannelName::new(BETA)),
         },
         "a version beta never held reached stable"
     );
@@ -488,6 +488,7 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
                 ClaimKind::Acceptance,
                 vec![named("another-gate", &both)],
             )],
+            vec![named("another-gate", &both)],
             ClaimKind::Acceptance,
             "another-gate",
         ),
@@ -499,30 +500,27 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
                     vec![named("verifier", &[ClaimKind::Rebuild])],
                 ),
             ],
+            vec![named(GATE, &both)],
             ClaimKind::Rebuild,
             "verifier",
         ),
         (
-            vec![
-                required(
-                    ClaimKind::Acceptance,
-                    vec![named(GATE, &[ClaimKind::Acceptance])],
-                ),
-                required(
-                    ClaimKind::Promotion,
-                    vec![named("approver", &[ClaimKind::Promotion])],
-                ),
-            ],
+            vec![required(
+                ClaimKind::Acceptance,
+                vec![named(GATE, &[ClaimKind::Acceptance])],
+            )],
+            vec![named("approver", &[ClaimKind::Promotion])],
             ClaimKind::Promotion,
             "approver",
         ),
     ];
-    for (claims, kind, signer) in cases {
+    for (claims, promoted_by, kind, signer) in cases {
         world.fakes.policy.require(
             tailrace_seams::Audience::Channel(stable()),
             tailrace_seams::Required::Channel {
                 claims,
                 bound_to: None,
+                promoted_by,
             },
         );
         let before = written(world);

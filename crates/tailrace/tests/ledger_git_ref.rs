@@ -13,26 +13,26 @@ use tailrace_conformance::seams::keeper::{self, KeeperRig};
 use tailrace_conformance::{run, Rig};
 use tailrace_fakes::FakeSigner;
 use tailrace_seams::{
-    Chain, ChannelName, ComponentName, Digest, Envelope, Keeper, Moved, Not, Promotion, Read,
-    Revision, Satisfied, Signer, SignerId, Version, Why,
+    Chain, ChannelId, ChannelName, ComponentName, Digest, Envelope, Keeper, Moved, Not, Promotion,
+    Read, Revision, Satisfied, Signer, SignerId, Version, Why,
 };
 
 const GATE: &str = "gate";
 
-fn stable() -> ChannelName {
-    ChannelName::new("stable")
+fn stable() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("stable"))
 }
 
-fn ledger(channel: &ChannelName) -> String {
-    format!("refs/tailrace/ledger/{channel}")
+fn ledger(channel: &ChannelId) -> String {
+    format!("refs/tailrace/ledger/{}", channel.spelled())
 }
 
 /// The `n`th promotion of `channel`, signed as the gate, at a time of its
 /// own.
-fn promotion(channel: &ChannelName, n: u32) -> Envelope {
+fn promotion(channel: &ChannelId, n: u32) -> Envelope {
     let body = Promotion {
-        channel: channel.clone(),
-        component: ComponentName::new("lib"),
+        channel: channel.name.clone(),
+        component: channel.component_name(),
         to: Moved {
             version: Version::new(format!("0.{n}.0")),
             index: Digest::of(format!("{channel}'s index {n}").as_bytes()),
@@ -82,13 +82,13 @@ impl KeeperRig for GitRefRig {
         &self.keeper
     }
 
-    fn promotion(&self, channel: &ChannelName, n: u32) -> Envelope {
+    fn promotion(&self, channel: &ChannelId, n: u32) -> Envelope {
         promotion(channel, n)
     }
 
     /// Two promotions appended and read, then the remote's ref forced to
     /// a sibling of the second, naming the first, from another clone.
-    fn fork(&self, channel: &ChannelName) -> [Envelope; 2] {
+    fn fork(&self, channel: &ChannelId) -> [Envelope; 2] {
         let (first, ours, theirs) = (
             promotion(channel, 1),
             promotion(channel, 2),
@@ -176,6 +176,35 @@ fn a_chain_read_from_the_ref_is_a_commit_per_claim_each_on_the_one_before() {
     );
     let status = rig.scratch.repo.git(&["status", "--porcelain"]);
     assert_eq!(status, "", "the working tree or index was touched");
+}
+
+#[test]
+fn a_components_chain_is_held_at_its_ref_alone() {
+    let rig = GitRefRig::new();
+    let lib = ChannelId::new(Some(ComponentName::new("lib")), ChannelName::new("beta"));
+    let first = promotion(&lib, 1);
+    rig.keeper.append(&lib, &first, None).unwrap();
+    for at in [&rig.scratch.repo.path, &rig.scratch.remote] {
+        let refs = git(
+            at,
+            &[
+                "for-each-ref",
+                "--format=%(refname)",
+                "refs/tailrace/ledger/",
+            ],
+        );
+        assert_eq!(refs, "refs/tailrace/ledger/lib/beta");
+    }
+    assert_eq!(rig.keeper.chain(&lib).map(|c| c.claims), Ok(vec![first]));
+    for other in [
+        ChannelId::new(None, ChannelName::new("beta")),
+        ChannelId::new(Some(ComponentName::new("web")), ChannelName::new("beta")),
+    ] {
+        assert!(
+            matches!(rig.keeper.chain(&other), Err(Not::Absent(_))),
+            "{other} holds lib's claim"
+        );
+    }
 }
 
 /// A repository whose `stable` ref names `commit`, read with no remote.
@@ -430,7 +459,7 @@ fn the_remote_gone_after_a_read_answers_the_chain_as_last_fetched_with_gits_word
         "1",
         "the copy alone was appended to"
     );
-    let never = ChannelName::new("beta");
+    let never = ChannelId::new(None, ChannelName::new("beta"));
     match rig.keeper.chain(&never) {
         Err(Not::Unreadable(u)) => assert_eq!(u.said.as_deref(), Some(words.as_str())),
         other => panic!("a chain never fetched answered {other:?}"),

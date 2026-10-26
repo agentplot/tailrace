@@ -17,10 +17,10 @@ use tailrace_fakes::{
     BuildOp, Call, FakeProjection, FakeSigner, Fakes, KeeperOp, StoreOp, TargetOp,
 };
 use tailrace_seams::{
-    Answer, Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, Contents, Digest,
-    Ecosystem, Envelope, Environment, EnvironmentName, Layout, Manifest, Name, Outcome, Output,
-    OutputName, Packed, Projection, Rendered, Report, Revision, Seam, Seams, Serving, Signer,
-    SignerId, Source, Verdict, Version,
+    Answer, Audience, Branch, BuildId, ChannelId, ChannelName, Check, Claim, ClaimKind, Contents,
+    Digest, Ecosystem, Envelope, Environment, EnvironmentName, Layout, Manifest, Name, Outcome,
+    Output, OutputName, Packed, Projection, Rendered, Report, Revision, Seam, Seams, Serving,
+    Signer, SignerId, Source, Verdict, Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -212,7 +212,7 @@ impl FakeWorld {
         fakes.projection(&Ecosystem::new(IMAGE));
         let environment = Environment {
             name: EnvironmentName::new(PRODUCTION),
-            channel: ChannelName::new(STABLE),
+            channel: ChannelId::new(None, ChannelName::new(STABLE)),
             waits: false,
         };
         fakes.target(&environment.name);
@@ -605,10 +605,11 @@ impl FakeWorld {
         envelope.digest()
     }
 
-    /// The fake policy for `channel`: the gate's acceptance required and,
-    /// where `rebuild`, a rebuild by [`REBUILDER`], the gate named for
-    /// acceptance and promotion and the rebuild signer for rebuilds (82,
-    /// 108); bound to `bound_to` where it names a channel (83).
+    /// The fake policy for `channel`, of the one component: the gate's
+    /// acceptance required and, where `rebuild`, a rebuild by
+    /// [`REBUILDER`], the gate named for acceptance and promotion and the
+    /// rebuild signer for rebuilds (82, 108); bound to `bound_to` where it
+    /// names a channel (83); and the gate its one promoter (32).
     pub fn channel_policy(&self, channel: &str, rebuild: bool, bound_to: Option<&str>) {
         let named = |id: &str, kinds: &[ClaimKind]| tailrace_seams::NamedSigner {
             id: SignerId::new(id),
@@ -616,10 +617,11 @@ impl FakeWorld {
             kinds: kinds.to_vec(),
             checks: vec![],
         };
+        let gate = named(GATE, &[ClaimKind::Acceptance, ClaimKind::Promotion]);
         let mut claims = vec![tailrace_seams::RequiredClaim {
             kind: ClaimKind::Acceptance,
             check: None,
-            signers: vec![named(GATE, &[ClaimKind::Acceptance, ClaimKind::Promotion])],
+            signers: vec![gate.clone()],
         }];
         if rebuild {
             claims.push(tailrace_seams::RequiredClaim {
@@ -629,10 +631,11 @@ impl FakeWorld {
             });
         }
         self.fakes.policy.require(
-            Audience::Channel(ChannelName::new(channel)),
+            Audience::Channel(ChannelId::new(None, ChannelName::new(channel))),
             tailrace_seams::Required::Channel {
                 claims,
                 bound_to: bound_to.map(ChannelName::new),
+                promoted_by: vec![gate],
             },
         );
     }

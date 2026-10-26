@@ -24,7 +24,9 @@ use tailrace_core::{
     overview, overview_unbound, Channel, ChannelStatus, Channels, EnvironmentCounts, History, Kept,
     Overview, OverviewAsk, RepositoryName, Status,
 };
-use tailrace_seams::{Answer, Branch, ComponentName, Digest, Not, Promotion, Read, Seam, Source};
+use tailrace_seams::{
+    Answer, Branch, ComponentName, Digest, Moves, Not, Promotion, Read, Seam, Source,
+};
 
 use crate::bindings;
 use crate::commands::serve::{self, host, host::Host};
@@ -233,14 +235,12 @@ fn landing(out: &mut dyn Write, read: &Read) -> io::Result<()> {
 /// Each component's channels in a block of its own, in the order the
 /// policy declares them.
 fn channels(out: &mut dyn Write, channels: &Channels) -> io::Result<()> {
-    let mut components: Vec<(&ComponentName, Vec<&ChannelStatus>)> = Vec::new();
+    let mut components: Vec<(ComponentName, Vec<&ChannelStatus>)> = Vec::new();
     for channel in &channels.channels {
-        match components
-            .iter_mut()
-            .find(|(c, _)| **c == channel.declared.component)
-        {
+        let component = channel.declared.channel.component_name();
+        match components.iter_mut().find(|(c, _)| *c == component) {
             Some((_, of)) => of.push(channel),
-            None => components.push((&channel.declared.component, vec![channel])),
+            None => components.push((component, vec![channel])),
         }
     }
     for (component, of) in components {
@@ -262,12 +262,10 @@ fn channels(out: &mut dyn Write, channels: &Channels) -> io::Result<()> {
 /// with the source's words on a line of their own (58, 59).
 fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Result<()> {
     write!(out, "  {:<width$}  ", channel.name().as_str())?;
-    let bound = channel
-        .declared
-        .bound_to
-        .as_ref()
-        .map(|b| format!(", bound to {b}"))
-        .unwrap_or_default();
+    let bound = match &channel.declared.moves {
+        Moves::Bound { to } => format!(", bound to {to}"),
+        Moves::EachPublish | Moves::Promotion => String::new(),
+    };
     match &channel.at {
         Ok(Channel::Empty) => writeln!(out, "empty{bound}"),
         Ok(Channel::At { head, chain, read }) => {

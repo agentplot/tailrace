@@ -124,9 +124,9 @@ impl Fakes {
 mod tests {
     use serde_json::Value;
     use tailrace_seams::{
-        Artifact, Audience, Branch, BuildId, ChannelName, Claim, ClaimKind, Contents, Environment,
-        IsLanded, Layout, Manifest, Name, NamedSigner, Output, OutputName, Read, Required,
-        Revision, SignerId, Verdicts, Verified, Version,
+        Artifact, Audience, Branch, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
+        Environment, IsLanded, Layout, Manifest, Name, NamedSigner, Output, OutputName, Read,
+        Required, Revision, SignerId, Verdicts, Verified, Version,
     };
 
     use super::*;
@@ -137,7 +137,7 @@ mod tests {
         let (eco_a, eco_b) = (Ecosystem::new("eco-a"), Ecosystem::new("eco-b"));
         let production = Environment {
             name: EnvironmentName::new("production"),
-            channel: ChannelName::new("stable"),
+            channel: ChannelId::new(None, ChannelName::new("stable")),
             waits: false,
         };
         let projection_a = fakes.projection(&eco_a);
@@ -271,7 +271,7 @@ mod tests {
             .unwrap();
         assert_eq!(bound.report(&production).unwrap().digest, index);
 
-        let stable = ChannelName::new("stable");
+        let stable = ChannelId::new(None, ChannelName::new("stable"));
         assert_eq!(
             seams.keeper.append(&stable, &envelope, None),
             Ok(envelope.digest())

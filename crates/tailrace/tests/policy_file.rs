@@ -13,7 +13,8 @@ use tailrace::profiles::policy::file::PolicyFile;
 use tailrace_conformance::seams::policy::{self, PolicyRig};
 use tailrace_conformance::{run, Rig};
 use tailrace_seams::{
-    Audience, ChannelName, ComponentName, DeclaredChannel, NamedSigner, Policy, Required, Revision,
+    Audience, ChannelId, ChannelName, ComponentName, DeclaredChannel, Moves, NamedSigner, Policy,
+    Required, Revision,
 };
 
 /// A scratch repository and the policy file over it.
@@ -71,7 +72,10 @@ fn policy_file(policies: &[(Audience, Required)]) -> String {
         let table = match audience {
             Audience::Acceptance => "acceptance".to_string(),
             Audience::Layout => "layout".to_string(),
-            Audience::Channel(channel) => format!("channels.{channel}"),
+            Audience::Channel(channel) => match &channel.component {
+                Some(component) => format!("channels.{component}.{}", channel.name),
+                None => format!("channels.{}", channel.name),
+            },
         };
         text.push_str(&format!("[{table}]\n"));
         if let Some(bound_to) = required.bound_to() {
@@ -95,7 +99,12 @@ fn policy_file(policies: &[(Audience, Required)]) -> String {
     let mut bound: Vec<&ChannelName> = policies
         .iter()
         .filter_map(|(_, required)| required.bound_to())
-        .filter(|channel| !declared.contains(&&Audience::Channel((*channel).clone())))
+        .filter(|channel| {
+            !declared.contains(&&Audience::Channel(ChannelId::new(
+                None,
+                (*channel).clone(),
+            )))
+        })
         .collect();
     bound.sort_unstable();
     bound.dedup();
@@ -106,8 +115,8 @@ fn policy_file(policies: &[(Audience, Required)]) -> String {
 }
 
 /// The policy file declaring `components`, each with every key the core
-/// requires, and each of `channels` requiring nothing, naming its
-/// component only where several are declared.
+/// requires, and each of `channels` requiring nothing, moving as it says,
+/// in the per-component form where components are declared (C.10).
 fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) -> String {
     let mut text = String::new();
     for name in components {
@@ -119,15 +128,17 @@ fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) ->
         ));
     }
     for channel in channels {
-        text.push_str(&format!("[channels.{}]\nrequire = []\n", channel.name));
-        if components.len() > 1 {
-            text.push_str(&format!(
-                "component = {}\n",
-                quoted(channel.component.as_str())
-            ));
-        }
-        if let Some(bound_to) = &channel.bound_to {
-            text.push_str(&format!("bound_to = {}\n", quoted(bound_to.as_str())));
+        let table = match &channel.channel.component {
+            Some(component) => format!("{component}.{}", channel.channel.name),
+            None => channel.channel.name.to_string(),
+        };
+        text.push_str(&format!("[channels.{table}]\nrequire = []\n"));
+        match &channel.moves {
+            Moves::EachPublish => text.push_str("on_each_publish = true\n"),
+            Moves::Bound { to } => {
+                text.push_str(&format!("bound_to = {}\n", quoted(to.as_str())));
+            }
+            Moves::Promotion => {}
         }
         text.push('\n');
     }
@@ -157,6 +168,33 @@ impl PolicyRig for PolicyFileRig {
         let repo = &self.scratch.repo;
         repo.write(POLICY_FILE, &declaring_file(components, channels));
         Revision::new(repo.commit("chore: the channels"))
+    }
+
+    /// C.10: `beta`, moving on each publish, and `stable`, bound to it,
+    /// of every component, or of the one where none is declared.
+    fn given(&self, components: &[ComponentName]) -> Vec<DeclaredChannel> {
+        let scopes: Vec<Option<ComponentName>> = if components.is_empty() {
+            vec![None]
+        } else {
+            components.iter().cloned().map(Some).collect()
+        };
+        scopes
+            .into_iter()
+            .flat_map(|component| {
+                [
+                    DeclaredChannel {
+                        channel: ChannelId::new(component.clone(), ChannelName::new("beta")),
+                        moves: Moves::EachPublish,
+                    },
+                    DeclaredChannel {
+                        channel: ChannelId::new(component, ChannelName::new("stable")),
+                        moves: Moves::Bound {
+                            to: ChannelName::new("beta"),
+                        },
+                    },
+                ]
+            })
+            .collect()
     }
 
     /// The repository removed, and git's words for reading it.

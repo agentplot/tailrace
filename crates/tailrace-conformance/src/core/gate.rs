@@ -11,9 +11,9 @@ use serde_json::json;
 use tailrace_core::{accept, Judged, Moved, Published, ToldBy, WhyWanting};
 use tailrace_fakes::{FakeKeeper, FakeLanding, FakeSigner, FakeStore, KeeperOp, StoreOp};
 use tailrace_seams::{
-    channel_name, Answer, Audience, ChannelName, Check, Claim, ClaimKind, Digest, Envelope, Held,
-    Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required, RequiredClaim, Revision,
-    Seam, Signer, SignerId, Store, Why,
+    channel_name, Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, Digest,
+    Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required,
+    RequiredClaim, Revision, Seam, Signer, SignerId, Store, Why,
 };
 
 use crate::core::publish::{one, version_of, TAG, VERSION};
@@ -133,8 +133,8 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
 /// The channel that follows each publish.
 const BETA: &str = "beta";
 
-fn beta() -> ChannelName {
-    ChannelName::new(BETA)
+fn beta() -> ChannelId {
+    ChannelId::new(None, ChannelName::new(BETA))
 }
 
 fn named(id: &str, kinds: &[ClaimKind], checks: &[&str]) -> NamedSigner {
@@ -181,29 +181,29 @@ fn acceptance() -> Required {
     }
 }
 
-/// The world's policy file, `beta` following each publish.
-fn following() -> String {
-    format!("{POLICY}\n[channels.{BETA}]\non_each_publish = true\n")
-}
-
-/// Acceptance requires `required`, and `beta` the gate's acceptance.
+/// Acceptance requires `required`, and `beta`, which the policy lists
+/// moving on each publish, the gate's acceptance, the gate its promoter
+/// (95, 131).
 fn require(world: &FakeWorld, required: Required) {
     let policy = &world.fakes.policy;
     policy.require(Audience::Acceptance, required);
+    let gate = named(GATE, &[ClaimKind::Acceptance], &[]);
     policy.require(
         Audience::Channel(beta()),
         Required::Channel {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
-                signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
+                signers: vec![gate.clone()],
             }],
             bound_to: None,
+            promoted_by: vec![gate],
         },
     );
+    policy.follows(&beta());
 }
 
-/// The policy file with `beta` following landed, each output built and
+/// The policy file landed, each output built and
 /// given `verdicts` at that revision, `required` for acceptance, and the
 /// revision published.
 fn offered_with(
@@ -211,7 +211,7 @@ fn offered_with(
     required: Required,
     verdicts: impl Fn(&Revision) -> Vec<tailrace_seams::Verdict>,
 ) -> Published {
-    let revision = world.land_policy(&following());
+    let revision = world.land_policy(POLICY);
     let verdicts = verdicts(&revision);
     world.land(&revision, &verdicts);
     world.outputs(
@@ -292,7 +292,7 @@ fn digests(published: &Published) -> Vec<Digest> {
 /// What a judgment that accepted answered: the acceptance's envelope,
 /// whether it was there already, whether one host offered and accepted,
 /// and each channel's answer.
-type Accepted = (Digest, bool, bool, Vec<(ChannelName, Answer<Moved>)>);
+type Accepted = (Digest, bool, bool, Vec<(ChannelId, Answer<Moved>)>);
 
 fn accepted(answer: Answer<Judged>) -> Accepted {
     match answer {
@@ -354,7 +354,7 @@ fn beta_unmoved(world: &FakeWorld) {
 /// A policy landed after the publish whose acceptance also requires a
 /// review the version lacks; its revision.
 fn stricter(world: &FakeWorld) -> Revision {
-    let later = world.land_policy(&following());
+    let later = world.land_policy(POLICY);
     let Required::Acceptance { mut claims } = acceptance() else {
         unreachable!()
     };
@@ -712,7 +712,7 @@ fn judged_by_the_claims_the_landing_and_the_policy_alone(world: &FakeWorld) {
     let revision = revision_of(&published);
 
     // A version whose revision the landing has not landed.
-    let later = world.land_policy(&following());
+    let later = world.land_policy(POLICY);
     let landing = FakeLanding::new();
     landing.land(&world.main, &later);
     let mut seams = world.seams_holding(&[GATE]);

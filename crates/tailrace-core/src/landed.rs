@@ -94,7 +94,7 @@ pub fn channels_at(policy: &dyn Policy, landed: &Landed) -> Answer<Vec<DeclaredC
 #[cfg(test)]
 mod tests {
     use tailrace_fakes::{FakeLanding, FakePolicy, PolicyOp};
-    use tailrace_seams::{ChannelName, ComponentName};
+    use tailrace_seams::{ChannelId, ChannelName, ComponentName, Moves};
 
     use super::*;
 
@@ -103,25 +103,25 @@ mod tests {
         let (landing, policy) = (FakeLanding::new(), FakePolicy::new());
         let (main, rev) = (Branch::new("main"), Revision::new("4f2a9c1"));
         landing.land(&main, &rev);
-        let beta = ChannelName::new("beta");
+        let beta = ChannelId::new(Some(ComponentName::new("lib")), ChannelName::new("beta"));
         policy.require_at(
             &rev,
             Audience::Channel(beta.clone()),
             Required::Channel {
                 claims: vec![],
                 bound_to: None,
+                promoted_by: vec![],
             },
         );
-        policy.belongs_at(&rev, &beta, &ComponentName::new("lib"));
+        policy.follows(&beta);
 
         let landed = Landed::check(&landing, &main, &rev).unwrap();
         assert!(policy.calls().is_empty(), "asked before the landing");
         assert_eq!(
             channels_at(&policy, &landed),
             Ok(vec![DeclaredChannel {
-                name: beta,
-                component: ComponentName::new("lib"),
-                bound_to: None,
+                channel: beta,
+                moves: Moves::EachPublish,
             }])
         );
         let calls = policy.calls();
