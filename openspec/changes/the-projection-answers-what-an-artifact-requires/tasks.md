@@ -62,4 +62,4 @@ tasks it names, all of which `check-fast` runs.
 
 ## 4. The whole gate
 
-- [ ] 4.1 Run the check-fast layer, which covers format, lint, every touched crate's tests, the coverage check and the site's build. Verify with `moon run ':#check-fast'`, and get a passing `sluice exec main` once committed.
+- [x] 4.1 Run the check-fast layer, which covers format, lint, every touched crate's tests, the coverage check and the site's build. Verify with `moon run ':#check-fast'`, and get a passing `sluice exec main` once committed.
