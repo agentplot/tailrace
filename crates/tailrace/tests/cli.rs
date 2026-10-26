@@ -902,6 +902,36 @@ fn the_built_binary_in_a_checkout_with_several_remotes_and_no_origin_names_them_
 }
 
 #[test]
+fn the_built_binary_with_no_home_and_no_configuration_directory_answers_absent_naming_both() {
+    let host = Host::new();
+    let data = host.root().join("data");
+    let state = host.root().join("state");
+    let out = Command::new(env!("CARGO_BIN_EXE_tailrace"))
+        .args(["publish", "HEAD"])
+        .current_dir(&host.repo)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env_remove("HOME")
+        .env_remove("XDG_CONFIG_HOME")
+        .env("XDG_DATA_HOME", &data)
+        .env("XDG_STATE_HOME", &state)
+        .output()
+        .expect("the binary runs");
+    assert_eq!(out.status.code(), Some(4), "{out:?}");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("neither XDG_CONFIG_HOME nor HOME is set"),
+        "{stdout}"
+    );
+    assert_eq!(git(&host.repo, &["tag", "-l"]), "");
+    assert_eq!(git(&host.repo, &["status", "--porcelain"]), "");
+    let history = History::open(&host.repo).unwrap();
+    assert!(!Kept::at(&history).dir().exists());
+    assert!(!data.exists(), "a layout or a key was made");
+    assert!(!state.exists(), "a record or a lock was made");
+    assert!(!host.bindings_file().exists());
+}
+
+#[test]
 fn the_built_binary_on_a_host_with_no_bindings_file_shows_status_from_the_record_and_the_ledger() {
     let host = Host::new();
     git(&host.repo, &["push", "-q", "origin", "main"]);
