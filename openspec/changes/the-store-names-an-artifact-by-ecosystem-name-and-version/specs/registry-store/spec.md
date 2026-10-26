@@ -1,5 +1,49 @@
 ## ADDED Requirements
 
+### Requirement: A declared component's channels are tags of its own repository
+
+The registry SHALL hold the name `channel/<component>/<name>` as the tag
+`<name>` of the component's repository under the one the binding
+declares, the component escaped into one path component, moved with the
+digest expected and read back there. `channel/<name>`, of a repository
+that declares no component, and every version's tag SHALL stay tags of
+the declared repository (C.1, 109, 125, core.6).
+
+#### Scenario: Two components' channels of one name
+
+- **WHEN** a promotion moves `channel/lib/beta` to one index and another moves `channel/app/beta` to another
+- **THEN** the repository `lib` under the declared one has the tag `beta` at the first index, the repository `app` has the tag `beta` at the second, each resolves to its own, and the declared repository holds neither tag
+
+#### Scenario: A repository that declares no component
+
+- **WHEN** a promotion moves `channel/stable` to an index
+- **THEN** the declared repository holds the channel's tag as it did before this change, and no other repository is written for it
+
+#### Scenario: A channel moved from where it is not
+
+- **WHEN** `channel/lib/beta` is at one index and a move to another names a third as the digest expected
+- **THEN** the move is refused naming the digest the tag is at in the repository `lib`, and the tag does not move
+
+### Requirement: A declared component's repository holds its indexes
+
+When the registry puts an index whose component is a declared one, it
+SHALL hold the index, and every manifest and blob the index names, in
+that component's repository as well as the declared one, mounted or,
+where the registry declines the mount, uploaded under their own
+digests; and before a channel's tag is put there it SHALL hold the
+index the channel moves to, writing only what the repository lacks.
+Attestations SHALL stay in the declared repository (8, C.1, core.5).
+
+#### Scenario: An index published
+
+- **WHEN** a publish of the component `lib` puts its index into a registry store
+- **THEN** the repository `lib` under the declared one holds the index and every artifact manifest and blob it names, untagged, and the declared repository holds them and every attestation
+
+#### Scenario: An index put before this change
+
+- **WHEN** the repository `lib` lacks an index the declared repository holds, and a promotion moves `channel/lib/beta` to it
+- **THEN** the index and what it names are held in `lib` before the tag `beta` is put there
+
 ### Requirement: An artifact's name is a tag of a repository of its own
 
 The registry SHALL hold the name `artifact/<ecosystem>/<name>@<version>`
@@ -98,6 +142,10 @@ words verbatim and naming the repository, and nothing SHALL be retried
 - **WHEN** a registry that makes no repository on push holds the declared repository and not `artifact/eco/site`, and the name `artifact/eco/site@1.3.0` is made
 - **THEN** the make is refused carrying the registry's words and naming `artifact/eco/site` under the declared repository, and no tag is put
 
+#### Scenario: A component's repository missing
+- **WHEN** a registry that makes no repository on push holds the declared repository and not `lib`, and a promotion moves `channel/lib/beta`
+- **THEN** the move is refused carrying the registry's words and naming `lib` under the declared repository, nothing is asked again, and the channel does not move
+
 #### Scenario: A cache repository missing
 - **WHEN** a registry that makes no repository on push holds the declared repository and not `cache/moon`, and a store bound for a push puts a cache entry's bytes, with the moon build profile bound
 - **THEN** the put is refused carrying the registry's words and naming `cache/moon` under the declared repository, nothing is asked again, and the declared repository is not written
@@ -108,17 +156,18 @@ words verbatim and naming the repository, and nothing SHALL be retried
 
 The registry store SHALL hold every blob, manifest, attestation and
 name of the store in the one repository the host names, addressed by
-digest, on every registry, save each artifact's name, which is a tag of
-its own repository under the named one holding what its index names,
-and each cache entry, a tag of its build profile's cache repository
-under the named one holding its bytes (C.1, ADR 0003). It SHALL never
-create a repository of its own accord; a registry that creates
-repositories on push may create the named one, an artifact name's and a
-cache repository on the first put.
+digest, on every registry, save three spaces under the named one: a
+declared component's channels, tags of its own repository holding its
+indexes and what they name; each artifact's name, a tag of its own
+repository holding what its index names; and each cache entry, a tag of
+its build profile's cache repository holding its bytes (C.1, ADR 0003).
+It SHALL never create a repository of its own accord; a registry that
+creates repositories on push may create the named one, a component's,
+an artifact name's and a cache repository on the first put.
 
 #### Scenario: Everything in one repository
 
-- **WHEN** two artifacts of two ecosystem names, an index naming both, an attestation on each and a name that is neither an artifact's nor a cache entry's are put into a registry store
+- **WHEN** two artifacts of two ecosystem names, an index of the undeclared component naming both, an attestation on each and a name that is neither an artifact's, a cache entry's nor a declared component's channel are put into a registry store
 - **THEN** the registry's one named repository holds every one of them, and no other repository is written
 
 #### Scenario: A repository that is not there

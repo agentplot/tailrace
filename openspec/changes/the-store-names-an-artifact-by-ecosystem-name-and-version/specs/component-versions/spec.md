@@ -22,3 +22,34 @@ artifact's, a cache entry's or a channel's name (138).
 
 - **WHEN** a component's prefix is `artifact-v`
 - **THEN** the policy file is read and the component's tags carry that prefix
+
+### Requirement: A component's name names one repository
+
+The policy file SHALL be refused, naming the component and what its
+name would enter, before any version is derived, when a declared
+component is named `artifact`, `cache` or `repository`, or its name
+holds a `/`; and SHALL be refused naming both when two declared
+components' names are equal once lowercased, so every declared
+component has a repository of its own on a registry, apart from the
+store's other spaces and from the one component of a repository that
+declares none (125, C.1).
+
+#### Scenario: A component named for a reserved space
+
+- **WHEN** a policy file declares a component named `cache`
+- **THEN** reading the policy file is refused naming the component and `cache/`, and nothing is derived
+
+#### Scenario: A component named as the undeclared one is
+
+- **WHEN** a policy file declares a component named `repository`
+- **THEN** reading the policy file is refused naming the component
+
+#### Scenario: A name holding a slash
+
+- **WHEN** a policy file declares a component named `web/app`
+- **THEN** reading the policy file is refused naming the component
+
+#### Scenario: Two names differing only by case
+
+- **WHEN** a policy file declares components named `Lib` and `lib`
+- **THEN** reading the policy file is refused naming both components
