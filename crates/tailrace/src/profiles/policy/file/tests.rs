@@ -1472,6 +1472,19 @@ fn alpha_is_switched_on_by_an_empty_table() {
 }
 
 #[test]
+fn lts_is_switched_on_by_an_empty_table_its_keys_the_fragments() {
+    let repo = Repo::new();
+    let at = repo.at(&format!("{}[channels.lts]\n", gate_table(false)));
+    let mut all = givens(None);
+    all.push(declared(id(None, "lts"), bound("stable")));
+    assert_eq!(repo.policy().listed(&at), Ok(sorted(all)));
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "lts")),
+        Ok(given_policy(vec![], Some("stable")))
+    );
+}
+
+#[test]
 fn lts_is_switched_on_for_one_component_alone() {
     let repo = Repo::new();
     let at = repo.at(&format!(
