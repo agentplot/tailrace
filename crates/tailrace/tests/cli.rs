@@ -16,7 +16,7 @@ use tailrace_core::{
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
     Audience, Branch, BuildId, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
-    Ecosystem, NamedSigner, Not, Outcome, Output, OutputName, Promotion, Report, Required,
+    Ecosystem, NamedSigner, Outcome, Output, OutputName, Promotion, Report, Required,
     RequiredClaim, Revision, Seam, Signer, SignerId, Source, Verdict, Version,
 };
 use tempfile::TempDir;
@@ -25,6 +25,10 @@ use tempfile::TempDir;
 fn store() -> Source {
     Source::new(Seam::Store, "layout /srv/tailrace/layout")
 }
+
+/// The job the host's bindings name as what tells the gate, so no
+/// publish here asks it.
+const JOB: &str = "the gate's job in another place";
 
 /// The one component of the repository, its one output packed in `eco`.
 const POLICY: &str = "outputs = [\"site\"]\n\n[projections]\nsite = \"eco\"\n";
@@ -98,10 +102,7 @@ impl Host {
             seams: self.fakes.seams(),
             store: store(),
             signer: Some(SignerId::new("host")),
-            gate: Teller::Nothing(Not::absent(
-                &Source::new(Seam::Host, "bindings"),
-                "binding of what tells the gate, [gate] in the bindings file",
-            )),
+            gate: Teller::Job(JOB.into()),
         }
     }
 
@@ -191,16 +192,14 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
     let (code, printed) = host.run(&["publish", "HEAD", "--json"]);
     assert_eq!(code, 0, "{printed}");
     let mut printed: Value = serde_json::from_str(&printed).unwrap();
-    // The one thing beside the core's answer: nothing tells the gate.
+    // The one thing beside the core's answer: the job that tells the
+    // gate.
     let gate = printed["value"]["components"][0]
         .as_object_mut()
         .unwrap()
         .remove("gate")
         .expect("the offered version names what tells the gate");
-    let Teller::Nothing(nothing) = host.binding().gate else {
-        unreachable!()
-    };
-    assert_eq!(gate, answer_json::<()>(&Err(nothing)));
+    assert_eq!(gate, serde_json::json!({ "told_by": "job", "job": JOB }));
 
     let history = History::open(&host.repo).unwrap();
     let core = publish(

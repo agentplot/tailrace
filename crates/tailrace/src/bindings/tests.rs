@@ -1204,20 +1204,13 @@ fn a_publish_teller_with_options_or_a_job_with_no_words_is_unreadable_naming_its
 }
 
 #[test]
-fn a_file_naming_no_gate_binds_as_before_and_says_nothing_tells_the_gate() {
+fn a_file_naming_no_gate_binds_as_before_and_the_hosts_publish_tells_its_gate() {
     let host = Host::new();
     let layout = host.dir.path().join("layout");
     let binding = bound_telling(&host, &layout, "", For::Publish).unwrap();
     assert_eq!(binding.signer, Some(SignerId::new("laptop")));
     assert!(profiles::store::layout::Layout::open(&layout).is_ok());
-    assert_eq!(
-        binding.gate,
-        Teller::Nothing(Not::absent(
-            &Source::host(host.file()),
-            format!(
-                "binding of what tells the gate, [gate] in {}",
-                host.file().display()
-            ),
-        ))
-    );
+    assert_eq!(binding.gate, Teller::Publish);
+    let named = bound_telling(&host, &layout, "publish = {}", For::Publish).unwrap();
+    assert_eq!(binding.gate, named.gate);
 }

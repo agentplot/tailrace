@@ -5,7 +5,7 @@
 //! D6, and status-on-any-machine's D9).
 
 use clap::Parser;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tailrace::bindings::Teller;
 use tailrace::commands::serve::host::{name, Host};
 use tailrace::commands::serve::respond_with;
@@ -14,7 +14,6 @@ use tailrace_conformance::core::surfaces::{self, Question, Surface};
 use tailrace_conformance::not_applicable;
 use tailrace_conformance::world::FakeWorld;
 use tailrace_core::RepositoryName;
-use tailrace_seams::{Not, Seam, Source};
 use tempfile::TempDir;
 
 /// The world's fakes as the one binding a surface is handed.
@@ -23,12 +22,13 @@ fn binding(world: &FakeWorld) -> Binding {
         seams: world.seams(),
         store: world.store(),
         signer: Some(world.host.clone()),
-        gate: Teller::Nothing(Not::absent(
-            &Source::new(Seam::Host, "bindings"),
-            "binding of what tells the gate, [gate] in the bindings file",
-        )),
+        gate: Teller::Job(JOB.into()),
     }
 }
+
+/// The job the binding names as what tells the gate, so the command
+/// line's publish asks it nothing.
+const JOB: &str = "the gate's job in another place";
 
 /// The command line over a world of fakes, asked as a program asks it.
 struct CommandLine {
@@ -67,7 +67,7 @@ impl Surface for CommandLine {
             &self.world.repo().path,
             &mut out,
         );
-        let printed: Value = serde_json::from_slice(&out).unwrap_or_else(|e| {
+        let mut printed: Value = serde_json::from_slice(&out).unwrap_or_else(|e| {
             panic!(
                 "{question:?} printed no JSON document ({e}): {}",
                 String::from_utf8_lossy(&out)
@@ -77,6 +77,18 @@ impl Surface for CommandLine {
             // The record's part of status, every version the host
             // published.
             Question::Status => printed["value"]["published"].clone(),
+            // The one thing beside the core's answer: each offered
+            // version's job that tells the gate.
+            Question::Publish { .. } => {
+                if let Some(components) = printed["value"]["components"].as_array_mut() {
+                    for component in components {
+                        if let Some(gate) = component.as_object_mut().unwrap().remove("gate") {
+                            assert_eq!(gate, json!({ "told_by": "job", "job": JOB }));
+                        }
+                    }
+                }
+                printed
+            }
             _ => printed,
         }
     }

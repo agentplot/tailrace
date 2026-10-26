@@ -34,8 +34,9 @@
 //! version a publish offered, by one key in the same form (130, C.16):
 //! `publish`, this host's own publish step, or `job`, the operator's
 //! words for a job outside tailrace, which tailrace carries and never
-//! runs. A path is absolute or begins `~/`, expanded against
-//! the home directory. This module reads each table generically and names no
+//! runs. A file with no `[gate]` binds `publish`, the host's default
+//! (118): the publish's own host tells its gate. A path is absolute or
+//! begins `~/`, expanded against the home directory. This module reads each table generically and names no
 //! tool or service (rule core.1): the key of each seam's table is
 //! matched to its profile by the `bind` function of that seam's profile
 //! family, and `[signing]` is read whole by the signer profiles' family,
@@ -52,8 +53,8 @@
 //! through a second binding of `[store]`, opened and never made (design
 //! D6). The ledger is bound where the file names `[ledger]`, and answers
 //! absent naming it where it does not; what tells the gate is bound for
-//! every command, and is absent naming `[gate]` where the file names
-//! none; no target is bound yet. Only a
+//! every command, the host's publish where the file names no `[gate]`;
+//! no target is bound yet. Only a
 //! publish and a push make the layout they name, and a push needs no
 //! `[signing]`, since it signs nothing (60, rule core.32); a promote
 //! needs `[signing]` and `[ledger]` and makes nothing (C.13, C.14).
@@ -113,31 +114,26 @@ pub struct Bindings {
 }
 
 /// What tells this host's gate of a version a publish offered (95, 130,
-/// C.16): the one key of `[gate]`, or nothing where the file holds none.
+/// C.16): the one key of `[gate]`, or the host's own publish where the
+/// file holds none (118).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Teller {
-    /// `[gate] publish = {}`: this host's publish tells its own gate.
+    /// `[gate] publish = {}`, or no `[gate]` (118): this host's publish
+    /// tells its own gate.
     Publish,
     /// `[gate] job = "<words>"`: a job outside tailrace tells it, the
     /// words as written; tailrace runs nothing for it.
     Job(String),
-    /// No `[gate]`: absent naming the table in the file.
-    Nothing(Not),
 }
 
 impl Teller {
-    /// The teller `gate`, the `[gate]` of the file at `file`, names:
-    /// `publish` an empty table, `job` a string with words in it, and
-    /// any other key unreadable naming the two the table reads.
-    pub fn of(file: &Path, gate: Option<&Table>) -> Answer<Teller> {
+    /// The teller `gate`, the file's `[gate]`, names: `publish` an empty
+    /// table, `job` a string with words in it, and any other key
+    /// unreadable naming the two the table reads; the host's publish
+    /// where the file holds no `[gate]` (118).
+    pub fn of(gate: Option<&Table>) -> Answer<Teller> {
         let Some(table) = gate else {
-            return Ok(Teller::Nothing(Not::absent(
-                &source(file),
-                format!(
-                    "binding of what tells the gate, [gate] in {}",
-                    file.display()
-                ),
-            )));
+            return Ok(Teller::Publish);
         };
         match table.key() {
             "publish" => match table.value().as_table() {
@@ -495,7 +491,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         return status(file, home, repository);
     }
     let bindings = read(file, home)?;
-    let gate = Teller::of(file, bindings.gate.as_ref())?;
+    let gate = Teller::of(bindings.gate.as_ref())?;
     let signing = bindings.signing.as_ref();
     if matches!(command, For::Publish | For::Promote) && signing.is_none() {
         return Err(unsigned());
@@ -555,7 +551,7 @@ fn status(file: &Path, home: Option<&Path>, repository: &Path) -> Answer<Binding
         .landing
         .as_ref()
         .ok_or_else(|| missing(file, "landing"))?;
-    let gate = Teller::of(file, bindings.gate.as_ref())?;
+    let gate = Teller::of(bindings.gate.as_ref())?;
     let landing = profiles::landing::bind(landing, repository)?;
     let named = match &bindings.store {
         Some(store) => profiles::store::named(store)?,
@@ -605,7 +601,8 @@ fn status(file: &Path, home: Option<&Path>, repository: &Path) -> Answer<Binding
 /// in the repository at `repository`, bound to the landing and the
 /// ledger each family binds for a repository with no file, with the
 /// remote `origin` where the repository names one; no store and no
-/// signer; and nothing made (C.5, C.6, C.13).
+/// signer; the host's publish as what tells its gate, as a file with no
+/// `[gate]` binds it; and nothing made (C.5, C.6, C.13).
 fn unfiled(file: &Path, repository: &Path) -> Answer<Binding> {
     let remote = origin(repository)?;
     Ok(Binding {
@@ -626,7 +623,7 @@ fn unfiled(file: &Path, repository: &Path) -> Answer<Binding> {
         },
         store: unbound_store(),
         signer: None,
-        gate: Teller::of(file, None)?,
+        gate: Teller::Publish,
     })
 }
 

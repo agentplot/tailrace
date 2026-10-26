@@ -1,11 +1,13 @@
 //! Spec command-line: publish tells the host's gate where the host's
-//! bindings file binds it to, and says what tells the gate where it binds
-//! a job or nothing; over the fakes, through `tailrace::run` (95, 108,
-//! 130; design D5, D7).
+//! bindings file binds it to, by `publish = {}` or by naming no `[gate]`
+//! (118), and says what tells the gate where it binds a job; over the
+//! fakes, through `tailrace::run` (95, 108, 130; design D5, D7).
+
+use std::fs;
 
 use clap::Parser;
 use serde_json::Value;
-use tailrace::bindings::Teller;
+use tailrace::bindings::{self, For, Teller};
 use tailrace::render::{ABSENT, OK, REFUSED};
 use tailrace::{run, Binding, Cli};
 use tailrace_conformance::world::{
@@ -17,13 +19,10 @@ use tailrace_seams::{
     Audience, Chain, ChannelName, Check, Claim, ClaimKind, Digest, Envelope, Keeper, NamedSigner,
     Not, Outcome, Promotion, Required, RequiredClaim, Revision, Seam, Source, Store, Version,
 };
+use tempfile::TempDir;
 
 /// The channel that follows each publish.
 const BETA: &str = "beta";
-
-/// What the file binds where it names no `[gate]`.
-const NO_GATE: &str =
-    "binding of what tells the gate, [gate] in /home/a/.config/tailrace/config.toml";
 
 /// The job a separated gate is told by.
 const JOB: &str = "the release job a push to main wakes";
@@ -440,46 +439,87 @@ fn the_json_gate_member_is_the_gates_own_answer_value_for_value() {
     assert_eq!(gate, answer_json(&core));
 }
 
-// Requirement: Publish says when nothing on the host tells the gate
+/// The teller a host's bindings file holding no `[gate]` binds, read
+/// through the bindings as the host reads its file, in the world's
+/// repository.
+fn teller_of_a_file_naming_none(world: &FakeWorld) -> Teller {
+    let host = TempDir::new().unwrap();
+    let file = host.path().join("config.toml");
+    fs::write(
+        &file,
+        format!(
+            "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+             [signing]\nsigner = \"{HOST}\"\nkey = \"~/signing\"\n",
+            host.path().join("layout").display()
+        ),
+    )
+    .unwrap();
+    match bindings::bind(&file, Some(host.path()), &world.repo().path, For::Publish) {
+        Ok(binding) => binding.gate,
+        Err(not) => panic!("a file naming no [gate] bound nothing: {not}"),
+    }
+}
+
+/// What one publish on the one host with `beta` following each publish
+/// came to, over a world of its own, where `teller` tells the gate: the
+/// exit code; the JSON answer, each promotion's envelope taken out of
+/// it; the acceptances on the index; and `beta`'s promotions, each
+/// moment taken out of it. The moment is the clock's, read by the
+/// command (design D5), so two runs may read two seconds.
+fn one_host_run(
+    teller: impl FnOnce(&FakeWorld) -> Teller,
+) -> (i32, Value, Vec<Claim>, Vec<Promotion>) {
+    let world = FakeWorld::new();
+    let revision = following(&world, one_host());
+    let told = teller(&world);
+    let (code, printed) = publish_through(&world, binding(&world, told), &revision, &["--json"]);
+    let index = index_of(&world, "v0.2.0");
+    let chain = beta_chain(&world);
+    let mut answer = json(&printed);
+    for moved in answer["value"]["components"][0]["gate"]["value"]["channels"]
+        .as_array_mut()
+        .unwrap_or_else(|| panic!("no channel moved: {printed}"))
+    {
+        if let Some(promotion) = moved["value"].as_object_mut().unwrap().remove("promotion") {
+            assert!(
+                chain.iter().any(|c| promotion == c.digest().to_string()),
+                "{promotion} is no promotion of beta's chain"
+            );
+        }
+    }
+    let promotions = chain
+        .iter()
+        .map(|envelope| Promotion {
+            at: 0,
+            ..Promotion::of(&Claim::from_envelope(envelope).unwrap()).unwrap()
+        })
+        .collect();
+    (
+        code,
+        answer,
+        of_kind(&world, &index, ClaimKind::Acceptance),
+        promotions,
+    )
+}
 
 #[test]
-fn with_no_gate_table_the_version_stays_offered_and_says_so() {
-    let world = FakeWorld::new();
-    let revision = following(&world, one_host());
-    let nothing = Not::absent(
-        &Source::host("/home/a/.config/tailrace/config.toml"),
-        NO_GATE,
-    );
-    let (code, printed) = publish_through(
-        &world,
-        binding(&world, Teller::Nothing(nothing.clone())),
-        &revision,
-        &[],
-    );
-    assert_eq!(code, OK, "{printed}");
-    let index = index_of(&world, "v0.2.0");
-    the_gate_untold(&world, &index);
-    assert!(
-        printed.contains("  gate: 0.2.0 is offered, and nothing on this host tells the gate:\n")
-            && printed.contains(&format!("    {nothing}\n")),
-        "{printed}"
-    );
-    assert!(printed.contains("[gate] in /home/a/.config/tailrace/config.toml"));
-
-    let world = FakeWorld::new();
-    let revision = following(&world, one_host());
-    let (code, printed) = publish_through(
-        &world,
-        binding(&world, Teller::Nothing(nothing.clone())),
-        &revision,
-        &["--json"],
-    );
-    assert_eq!(code, OK, "{printed}");
+fn a_file_with_no_gate_table_tells_the_gate_as_publish_does() {
+    let named = one_host_run(|_| Teller::Publish);
+    let naming_none = one_host_run(teller_of_a_file_naming_none);
+    assert_eq!(naming_none.0, OK, "{}", naming_none.1);
+    assert_eq!(naming_none.0, named.0);
+    assert_eq!(naming_none.1, named.1);
     assert_eq!(
-        json(&printed)["value"]["components"][0]["gate"],
-        answer_json::<()>(&Err(nothing))
+        naming_none.1["value"]["components"][0]["gate"]["told_by"],
+        "publish"
     );
+    assert_eq!(naming_none.2.len(), 1, "{:?}", naming_none.2);
+    assert_eq!(naming_none.2, named.2);
+    assert_eq!(naming_none.3.len(), 1, "{:?}", naming_none.3);
+    assert_eq!(naming_none.3, named.3);
 }
+
+// Requirement: Publish says when a job tells the gate
 
 #[test]
 fn a_job_tells_the_gate_in_its_words_and_the_gate_is_not_asked() {
@@ -500,7 +540,10 @@ fn a_job_tells_the_gate_in_its_words_and_the_gate_is_not_asked() {
         )),
         "{printed}"
     );
+}
 
+#[test]
+fn the_json_answer_says_a_job_tells_the_gate_in_its_words() {
     let world = FakeWorld::new();
     let revision = following(&world, one_host());
     let (code, printed) = publish_through(
@@ -510,8 +553,12 @@ fn a_job_tells_the_gate_in_its_words_and_the_gate_is_not_asked() {
         &["--json"],
     );
     assert_eq!(code, OK, "{printed}");
+    let component = &json(&printed)["value"]["components"][0];
+    assert_eq!(component["answer"], "ok", "the version is not offered");
+    assert_eq!(component["value"]["version"], "0.2.0");
     assert_eq!(
-        json(&printed)["value"]["components"][0]["gate"],
+        component["gate"],
         serde_json::json!({ "told_by": "job", "job": JOB })
     );
+    the_gate_untold(&world, &index_of(&world, "v0.2.0"));
 }
