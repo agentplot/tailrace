@@ -143,7 +143,7 @@ crates/tailrace-core/tests/gate.rs
 crates/tailrace-conformance/src/core/gate.rs
 crates/tailrace-conformance/src/world.rs
 crates/tailrace-conformance/src/register.rs
-docs/adr/0019-*.md
+docs/adr/0020-*.md
 docs/architecture/core.md
 site/src/content/docs/guides/self-hosting.mdx
 ```
