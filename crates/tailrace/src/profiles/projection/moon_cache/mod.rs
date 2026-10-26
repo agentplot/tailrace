@@ -18,7 +18,10 @@
 //! artifacts answer absent naming artifacts and read nothing (53). It
 //! reaches the store only through the store seam it is handed (rule
 //! core.2), and serves nothing, since moon reads its outputs directory
-//! before any remote.
+//! before any remote. Moon's cache has no lockfile: pinned answers
+//! absent naming the lockfile for every checkout and reads nothing, and
+//! sync fills the cache from the landing's verdicts, never from a pin
+//! (137).
 
 use std::fs;
 use std::io;
