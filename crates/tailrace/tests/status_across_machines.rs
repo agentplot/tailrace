@@ -1,8 +1,8 @@
-//! Spec channel-status, two machines and one answer, and S12, and spec
-//! host-bindings, status with nothing written, over real profiles: a
-//! bare remote; machine A, a clone bound by a file of its own to a plain
-//! branch landing, an OCI layout, a host key and the git ref ledger on
-//! `origin`, which promotes through `tailrace::run`; and machine B, a
+//! Spec channel-status, two machines and one answer, S10 and S12, and
+//! spec host-bindings, status with nothing written, over real profiles:
+//! a bare remote; machine A, a clone bound by a file of its own to a
+//! plain branch landing, an OCI layout, a host key and the git ref ledger
+//! on `origin`, which promotes through `tailrace::run`; and machine B, a
 //! second clone on a host with no bindings file, bound as 118 binds such
 //! a host; and machine B cut off from that remote, its landing read from
 //! the host's copy of the branch as last fetched and each chain as last
@@ -198,14 +198,26 @@ impl Two {
     }
 
     fn bind_a(&self, command: For) -> Answer<Binding> {
-        bindings::bind(&self.a_binding, Some(&self.a_home), &self.a.path, command)
+        bindings::bind(
+            &self.a_binding,
+            Some(&self.a_home),
+            None,
+            &self.a.path,
+            command,
+        )
     }
 
     /// Machine B's binding: a bindings file's path that is not there,
     /// and the empty home.
     fn bind_b(&self) -> Answer<Binding> {
         assert!(!self.nowhere.exists());
-        bindings::bind(&self.nowhere, Some(&self.b_home), &self.b.path, For::Status)
+        bindings::bind(
+            &self.nowhere,
+            Some(&self.b_home),
+            None,
+            &self.b.path,
+            For::Status,
+        )
     }
 
     /// Machine B as its serving process reads the host.
@@ -214,6 +226,7 @@ impl Two {
             state: self.scratch.path().join("b-host/state/tailrace"),
             config: self.nowhere.clone(),
             home: Some(self.b_home.clone()),
+            data: None,
         }
     }
 }

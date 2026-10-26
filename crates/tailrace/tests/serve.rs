@@ -30,13 +30,14 @@ use tailrace_seams::{
     Satisfied, Seam, Signer, SignerId, Source, Version,
 };
 
-/// The host the tests serve: a state directory, a bindings file and a
-/// home, all in the scratch directory.
+/// The host the tests serve: a state directory, a bindings file, a home
+/// and a data directory, all in the scratch directory.
 fn host_in(dir: &Path) -> Host {
     Host {
         state: dir.join("state/tailrace"),
         config: dir.join("config/tailrace/config.toml"),
         home: Some(dir.join("home")),
+        data: Some(dir.join("data")),
     }
 }
 

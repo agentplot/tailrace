@@ -30,11 +30,18 @@ struct StoreOptions {}
 /// The ledger `[ledger]` names (92, C.13, C.14) for the repository at
 /// `repository`: `git_ref`, with its optional remote, the repository
 /// holding the refs where it names none; or `store`, the chain held in
-/// the store `store` names, through a binding of its own that never
-/// makes it, and kept under the repository's common git directory (61,
-/// 62), absent naming `[store]` where the file names none. Unreadable
-/// naming any other key, or an option its profile does not read.
-pub fn bind(table: &Table, repository: &Path, store: Option<&Table>) -> Answer<Box<dyn Keeper>> {
+/// the store `store` binds, written or given, through a binding of its
+/// own that never makes it, and kept under the repository's common git
+/// directory (61, 62); where `make`, a publish's or a push's, the layout
+/// that binding opens is the one the command makes at its first
+/// operation. Unreadable naming any other key, or an option its profile
+/// does not read.
+pub fn bind(
+    table: &Table,
+    repository: &Path,
+    store: &Table,
+    make: bool,
+) -> Answer<Box<dyn Keeper>> {
     match table.key() {
         "git_ref" => {
             let options: GitRefOptions = table.options()?;
@@ -42,9 +49,8 @@ pub fn bind(table: &Table, repository: &Path, store: Option<&Table>) -> Answer<B
         }
         "store" => {
             let StoreOptions {} = table.options()?;
-            let store = store.ok_or_else(|| table.missing("store"))?;
             let kept = common_dir(repository)?.join("tailrace").join("ledger");
-            let store = crate::profiles::store::bind(store, false)?;
+            let store = crate::profiles::store::bind(store, make)?;
             Ok(Box::new(InStore::new(store, kept)))
         }
         _ => Err(table.unknown(&["git_ref", "store"])),
@@ -58,9 +64,14 @@ pub fn in_store(table: &Table) -> bool {
     table.key() == "store"
 }
 
-/// 118: the ledger of a host with no bindings file, for the repository
-/// at `repository`: the git ref, on `remote` where one is given (C.13).
-pub fn unfiled(repository: &Path, remote: Option<String>) -> Box<dyn Keeper> {
+/// The ledger a host binds where its file names no `[ledger]` (118,
+/// C.13): the git ref over the repository at `repository`, kept on the
+/// landing's remote, `remote`, fetched from it before each read and
+/// pushed to it on each append as the branch is, so every checkout of
+/// the repository reads one chain; and in the repository's own refs,
+/// where it keeps its branch, with nothing pushed, where the landing has
+/// none.
+pub fn given(repository: &Path, remote: Option<String>) -> Box<dyn Keeper> {
     Box::new(GitRef::new(repository, remote))
 }
 

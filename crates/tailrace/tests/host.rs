@@ -107,6 +107,7 @@ impl HostRig for BindingsRig {
         let binding = bindings::bind(
             &file,
             Some(&self.home()),
+            None,
             &self.scratch.repo.path,
             For::Publish,
         )?;
@@ -145,7 +146,8 @@ fn the_host_group_over_the_bindings_file() {
 }
 
 /// Every file the rig writes is the scratch host's own, and the layout is
-/// made by the publish's binding and not before.
+/// made by the publish's first operation of its store, not by its
+/// binding and not before.
 #[test]
 fn the_files_are_the_scratch_hosts_own() {
     let rig = BindingsRig::new();
@@ -156,6 +158,11 @@ fn the_files_are_the_scratch_hosts_own() {
         !rig.layout().exists(),
         "the layout was made before a publish"
     );
-    rig.bind().map(|_| ()).unwrap();
+    let (seams, _) = rig.bind().unwrap();
+    assert!(
+        !rig.layout().exists(),
+        "the publish's binding made the layout"
+    );
+    seams.store.put_bytes(b"abc").unwrap();
     assert!(Layout::open(rig.layout()).is_ok());
 }

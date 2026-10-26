@@ -13,8 +13,8 @@ use tailrace::profiles::policy::file::PolicyFile;
 use tailrace_conformance::seams::policy::{self, PolicyRig};
 use tailrace_conformance::{run, Rig};
 use tailrace_seams::{
-    Audience, ChannelId, ChannelName, ComponentName, DeclaredChannel, HeldChannel, Moves,
-    NamedSigner, Policy, Required, Revision,
+    Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel, HeldChannel,
+    Moves, NamedSigner, Policy, Required, Revision,
 };
 
 /// The given channels as tailrace ships them, beside the profile (C.10).
@@ -48,7 +48,11 @@ fn list<'a>(items: impl IntoIterator<Item = &'a str>) -> String {
 /// signer they name under `[signers]`, verified by the text each is
 /// named with, each audience's table, and a channel one of them is bound
 /// to and `policies` names no policy for, requiring nothing, since the
-/// file binds a channel only to one it declares (37).
+/// file binds a channel only to one it declares (37). Where the signers
+/// they name hold one that may claim provenance and none that may claim
+/// acceptance, the file also lists a gate no audience names, so it
+/// answers those signers as `policies` scripts them and not as the
+/// profile's given gate (118, C.10).
 fn policy_file(policies: &[(Audience, Required)]) -> String {
     let mut signers: BTreeMap<String, &NamedSigner> = BTreeMap::new();
     for named in policies
@@ -69,6 +73,21 @@ fn policy_file(policies: &[(Audience, Required)]) -> String {
             quoted(&named.verified_by),
             list(named.kinds.iter().map(|k| k.name())),
             list(named.checks.iter().map(|c| c.as_str())),
+        ));
+    }
+    let may = |kind| {
+        signers
+            .values()
+            .filter(move |s| s.kinds.contains(&kind))
+            .count()
+    };
+    if may(ClaimKind::Acceptance) == 0 && may(ClaimKind::Provenance) == 1 {
+        let gate = (0..)
+            .map(|n| format!("unnamed-gate-{n}"))
+            .find(|id| !signers.contains_key(id))
+            .unwrap();
+        text.push_str(&format!(
+            "[signers.{gate}]\nkey = \"a gate no audience names\"\nkinds = [\"acceptance\"]\n\n"
         ));
     }
     for (audience, required) in policies {

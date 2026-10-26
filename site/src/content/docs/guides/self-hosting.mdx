@@ -41,20 +41,23 @@ names the profiles a host binds.
 
 ## One laptop
 
-A solo user needs the binary, a directory for the store in the OCI image
-layout, a host key, and the policy file in the repository. sluice lands,
-tailrace pushes into the layout on disk, the same laptop accepts and
-promotes, and `tailrace sync` fills the laptop's own npm cache, Cargo
-registry or Python index from the store. The layout syncs to a registry
-later, or never.
+A solo user needs the binary and the policy file in the repository, and
+writes nothing else: the first publish makes the store, an OCI image
+layout in the user's data directory, and a host key beside it (118).
+sluice lands, tailrace pushes into the layout on disk, the same laptop
+accepts and promotes, and `tailrace sync` fills the laptop's own npm
+cache, Cargo registry or Python index from the store. The layout syncs
+to a registry later, or never.
 
 ## The host's bindings
 
 The operator's bindings for a host are one file,
 `~/.config/tailrace/config.toml`, or under `$XDG_CONFIG_HOME` where it
 is set, beside sluice's own `config.toml` and in the same form, readable
-with any file reader (118). It names the store, the landing and the
-signer the host binds, and nothing the repository binds (92):
+with any file reader (118). A host needs none: the file is for pointing
+a host at a registry, a key service or a shared ledger. It names the
+store, the landing, the ledger, the signer and what tells the gate, and
+nothing the repository binds (92):
 
 ```toml
 [store]
@@ -80,22 +83,59 @@ publish = {}                      # also with no [gate], 118
                                  # or: job = "<the job's words>"
 ```
 
+With no file, and for each table a file leaves out, the host is bound
+to the given ones (118):
+
+- **The store**: an OCI layout at `~/.local/share/tailrace/layout`, or
+  `tailrace/layout` under `$XDG_DATA_HOME` where it is set (C.2), named
+  in the host's record by that path in full.
+- **The landing**: sluice where the repository's `HEAD` commit holds
+  `.config/sluice.toml`, read from the commit and never from the working
+  tree, and a plain branch otherwise (C.5, C.6). Its remote is the
+  checkout's `origin`, else its one remote, else none, the repository's
+  own refs then read. A checkout with several remotes and none of them
+  `origin` answers every command unreadable, naming each remote and
+  `[landing] remote`, the one line that picks one.
+- **The ledger**: the git ref on the landing's remote, written or given,
+  fetched before each read and pushed on each append as the branch is,
+  so a second machine of the same repository reads the same chain with
+  nothing written; the repository's own refs where the landing has no
+  remote (C.13).
+- **The signer**: for a publish or a promote, the host key at
+  `tailrace/host/signing.key` under the same data directory, made by the
+  first claim it signs, its public half beside it as `signing.key.pub`,
+  signing as the host's short name, which that public half fixes (C.8;
+  see [signers](/tailrace/guides/integrations/signers/)). Every other
+  command signs nothing.
+- **What tells the gate**: the host's own publish, as `[gate] publish =
+  {}` binds it (130).
+
+A file that names a table binds exactly what it names, and leaves the
+rest given: `[store] registry` alone writes into that registry and keeps
+the given landing, ledger, key and gate; `[signing] kms` alone signs
+through that key and makes no host key; `[landing] branch = {}` reads
+the repository's own refs, and keeps the given ledger there too. An
+empty file is no file.
+
 - Each seam's table names its profile by its one key; a table naming
   none or two is refused, naming it. A path is absolute or begins `~/`.
-- `tailrace publish`, `verify`, `sync`, `push`, `rebuild` and `promote`
-  read it.
-  With no file they answer absent, naming the file's path; a file that
-  is not well formed is unreadable in the parser's own words. `tailrace
-  status` reads `[landing]`, and `[ledger]` and `[store]` where the file
-  names them, and needs no `[signing]`; on a host with no file it binds
-  the plain branch, or sluice where the repository holds
-  `.config/sluice.toml`, and the git ref ledger, each on `origin` where
-  the repository has it, and writes nothing to bind them (118). A file
-  it cannot read is its channels' answer, and the host's record still
-  answers beside it.
-- Only publish and push make the layout, the first time, where the path
-  is missing or an empty directory; push needs no `[signing]`, since it
-  signs nothing. verify, sync and rebuild never make or write one.
+- `tailrace publish`, `verify`, `sync`, `push`, `rebuild`, `promote` and
+  `status` read it, or bind the given tables where there is none. A file
+  that is not well formed is unreadable in the parser's own words, and
+  binds nothing given in its place: a file that is there is never guessed
+  past. Only where no given path can be placed, neither
+  `XDG_CONFIG_HOME` nor `HOME` set, is the binding absent, naming both.
+  `tailrace status` binds no signer and makes nothing, its fetch of the
+  ledger's refs into the repository's copy aside (60); a file it cannot
+  read is its channels' answer, and the host's record still answers
+  beside it.
+- Only publish and push make the layout, the given one with its parents,
+  where the path is missing or an empty directory, at the first thing
+  they ask of the store, so a publish refused before it asks the store
+  anything, a revision not landed among them, makes none; push needs no
+  `[signing]`, since it signs nothing.
+  verify, sync and rebuild never make or write one, and answer a layout
+  that is not there unreadable, naming its path.
 - The host's record of the versions it published is a file per version
   under the repository's common git directory, `tailrace/published/`,
   which status reads. It can be deleted and rebuilt with `tailrace
@@ -115,9 +155,9 @@ publish = {}                      # also with no [gate], 118
   and its SSO session, or the container's or the instance's role, found
   at each signature and kept nowhere (64). A table naming `kms` with
   `signer` or `key` is refused, naming `[signing]`.
-- A machine that only verifies names no `[signing]`: it verifies by the
-  keys the policy lists and signs nothing, so a copy of the layout and a
-  clone of the repository are all it needs. Every host binds both
+- A machine that only verifies signs nothing: verify reads the keys the
+  policy lists, makes no key, and needs only a copy of the layout and a
+  clone of the repository. Every host binds both
   signers, the one its `[signing]` names signing and the other
   verify-only, so it tells a host key's claims and a KMS key's alike.
 - `[ledger]` names where each channel's chain is held. `git_ref` keeps
@@ -128,9 +168,9 @@ publish = {}                      # also with no [gate], 118
   `store` keeps it as the promotion claims in the store `[store]` names,
   walked from the channel's name there, `channel/<channel>` or
   `channel/<component>/<channel>` (C.14), opened and never made. `tailrace
-  promote` needs `[signing]` and `[ledger]`, and a host whose file names
-  no `[ledger]` answers absent naming it; promote never makes the
-  layout.
+  promote` signs with the host's `[signing]`, or the given key where the
+  file names none, and appends to the ledger `[ledger]` names, or the
+  given git ref on the landing's remote; promote never makes the layout.
 - `[gate]` names what tells the host's gate of a version a publish
   offered, by one key (130). `publish = {}` is this host's own publish:
   once the publish has answered, the same run tells the gate of each
@@ -448,21 +488,75 @@ list, never from the file itself (131). A publish never moves a channel,
 and a version the gate is asked about by anyone else moves none.
 
 The gate never accepts what its own signer offered (27, 96). The one
-laptop that both offers and accepts says so by letting one signer claim
+laptop that both offers and accepts is the one signer that may claim
 both, and its acceptance then says the host accepted what it offered,
-so a reader tells it from a separated one (108):
+so a reader tells it from a separated one (108). A laptop with nothing
+written needs only to list its key for provenance:
 
 ```toml
 [signers.laptop]
-ssh = "ssh-ed25519 AAAA… host@laptop"
-kinds = ["provenance", "acceptance"]
+ssh = "ssh-ed25519 AAAA… laptop"
+kinds = ["provenance"]
 
 [acceptance]
 require = [{ kind = "provenance", signers = ["laptop"] }]
 ```
 
-`beta` needs no line: the laptop, the one signer that may claim
-acceptance, is the gate whose acceptance it requires and its promoter.
+Where `[signers]` names no signer that may claim acceptance and exactly
+one that may claim provenance, the policy file answers that signer as
+one that may claim acceptance too: it is the repository's gate, the one
+host, accepting what it offered and moving `beta` on each publish, with
+no line written for `beta` (118, 108, C.10). The gate reads this from
+the policy's answer and decides nothing of it. Writing
+`kinds = ["provenance", "acceptance"]` says the same in so many words.
+Naming any signer that may claim acceptance ends it: that signer is the
+gate, and the laptop's own provenance is refused as offered by the gate
+when it runs the gate itself.
+
+A policy that names several signers for provenance and none that may
+claim acceptance accepts nothing, since no one host offers and accepts:
+the policy for acceptance, and for `beta` and `stable`, is refused,
+wanting an acceptance no signer may make, in the policy's own words,
+`several publishers and no gate, name an accepting signer` (C.10). Each
+publish offers its version and the gate's answer beside it carries that
+refusal; no channel moves. The line that fixes it names the gate:
+
+```toml
+[signers.gate]
+ssh = "ssh-ed25519 CCCC…"
+kinds = ["acceptance", "promotion"]
+```
+
+On a fresh laptop the first publish makes the key, and its gate's answer
+says the version is not accepted until the policy lists it. List it,
+land the policy, and the next landing's publish is accepted:
+
+1. Print the key's public half, one line naming the host:
+   `cat ~/.local/share/tailrace/host/signing.key.pub`, or
+   `$XDG_DATA_HOME/tailrace/host/signing.key.pub` where that is set.
+2. Copy the line as it stands into the policy under
+   `[signers.<name>]`, the name the line ends with, as `ssh = "<line>"`
+   with `kinds = ["provenance"]`.
+3. Land the policy; from the next landing on, `tailrace publish`
+   accepts as one host and moves `beta`.
+
+Beside that policy, the laptop's bindings file needs no `[gate]` for
+`beta` to move: with none, the laptop's own publish tells its gate
+(118), as naming it does:
+
+```toml
+[gate]
+publish = {}
+```
+
+`beta` then moves on each publish, in the same run: `tailrace publish`
+offers the version, the gate accepts it as the laptop's signer, its
+`[signing]` or the given key, and the promotion is held in the ledger
+before `beta`'s name moves. The answer shows the acceptance and `beta`'s
+move beside the version, and the publish exits as a refusal where the
+gate refused the version or held `beta`, so a landing step that runs it
+fails when `beta` did not move. With no `[ledger]`, the promotion is
+held in the given git ref on the landing's remote.
 
 Beside that policy, the laptop's bindings file needs no `[gate]` for
 `beta` to move: with none, the laptop's own publish tells its gate

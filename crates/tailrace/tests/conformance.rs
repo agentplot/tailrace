@@ -122,6 +122,7 @@ impl Page {
             state: state.path().join("tailrace"),
             config: state.path().join("no bindings file"),
             home: None,
+            data: None,
         };
         let repository = RepositoryName {
             owner: "o".into(),

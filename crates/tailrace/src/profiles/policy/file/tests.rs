@@ -92,6 +92,16 @@ fn laptop() -> NamedSigner {
     }
 }
 
+/// `laptop()` as the profile answers it where the file lets no signer
+/// claim acceptance and laptop alone claim provenance: the given gate,
+/// the one host that offers and accepts (118, 108, C.10).
+fn laptop_the_given_gate() -> NamedSigner {
+    NamedSigner {
+        kinds: vec![ClaimKind::Provenance, ClaimKind::Acceptance],
+        ..laptop()
+    }
+}
+
 /// The two signers of design D3, the laptop's key and the gate's.
 fn signers() -> String {
     format!(
@@ -141,7 +151,7 @@ fn a_host_key_listed_is_a_signer_with_its_verifier_and_reach() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
-                signers: vec![laptop()],
+                signers: vec![laptop_the_given_gate()],
             }],
         }
     );
@@ -179,7 +189,7 @@ fn acceptance_requires_its_claims_in_the_order_written() {
         (claims[0].kind, &claims[0].check),
         (ClaimKind::Provenance, &None)
     );
-    assert_eq!(claims[0].signers, [laptop()]);
+    assert_eq!(claims[0].signers, [laptop_the_given_gate()]);
     assert_eq!(
         (claims[1].kind, &claims[1].check),
         (ClaimKind::Verdict, &Some(Check::new("cli:test")))
@@ -538,7 +548,7 @@ fn a_bound_channel_names_the_channel_it_is_bound_to() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
-                signers: vec![laptop()],
+                signers: vec![laptop_the_given_gate()],
             }],
             bound_to: Some(ChannelName::new("edge")),
             promoted_by: vec![],
@@ -1516,6 +1526,190 @@ fn a_channel_held_off_is_no_channel() {
         channel_policy(&repo, &at, &id(None, "alpha")),
         "the channel alpha",
     );
+}
+
+// Requirement: A file naming no gate names its one provenance signer as
+// the gate
+
+/// `[signers.laptop]` for provenance alone, and `[acceptance]` requiring
+/// its provenance.
+fn laptop_alone() -> String {
+    format!(
+        "[signers.laptop]\nssh = \"{LAPTOP_KEY}\"\nkinds = [\"provenance\"]\n\n\
+         [acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n"
+    )
+}
+
+#[test]
+fn a_laptops_policy_names_it_the_gate_for_acceptance_and_the_given_channels() {
+    let repo = Repo::new();
+    let text = laptop_alone();
+    let at = repo.at(&text);
+    assert_eq!(
+        repo.policy().policy_for(&at, &Audience::Acceptance),
+        Ok(Required::Acceptance {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Provenance,
+                check: None,
+                signers: vec![laptop_the_given_gate()],
+            }],
+        })
+    );
+    for (channel, bound_to) in [("beta", None), ("stable", Some(ChannelName::new("beta")))] {
+        assert_eq!(
+            channel_policy(&repo, &at, &id(None, channel)),
+            Ok(Required::Channel {
+                claims: vec![by_the_gate(vec![laptop_the_given_gate()])],
+                bound_to,
+                promoted_by: vec![laptop_the_given_gate()],
+                approvers: vec![],
+            }),
+            "{channel}"
+        );
+    }
+    // The file at the revision, and the working tree, are as written.
+    assert_eq!(
+        repo.git(&["show", &format!("{at}:{POLICY_FILE}")]),
+        text.trim()
+    );
+    assert_eq!(repo.git(&["status", "--porcelain"]), "");
+}
+
+#[test]
+fn a_file_naming_a_gate_answers_its_provenance_signer_as_written() {
+    let repo = Repo::new();
+    let at = repo.at(&format!("{}{}", gate_table(false), laptop_alone()));
+    assert_eq!(
+        repo.policy().policy_for(&at, &Audience::Acceptance),
+        Ok(Required::Acceptance {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Provenance,
+                check: None,
+                signers: vec![laptop()],
+            }],
+        })
+    );
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "beta")),
+        Ok(Required::Channel {
+            claims: vec![by_the_gate(vec![gate(false)])],
+            bound_to: None,
+            promoted_by: vec![gate(false)],
+            approvers: vec![],
+        })
+    );
+}
+
+#[test]
+fn a_file_naming_no_provenance_signer_is_answered_as_written() {
+    let repo = Repo::new();
+    let at = repo.at(
+        "[signers.box]\nssh = \"ssh-ed25519 BBBB\"\nkinds = [\"verdict\"]\nchecks = [\"cli:test\"]\n\n\
+         [acceptance]\nrequire = [{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"] }]\n",
+    );
+    let required = repo
+        .policy()
+        .policy_for(&at, &Audience::Acceptance)
+        .unwrap();
+    assert_eq!(required.claims()[0].signers[0].kinds, [ClaimKind::Verdict]);
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "beta")),
+        Ok(Required::Channel {
+            claims: vec![by_the_gate(vec![])],
+            bound_to: None,
+            promoted_by: vec![],
+            approvers: vec![],
+        })
+    );
+}
+
+// Requirement: Several publishers and no gate is refused in words
+
+/// `[signers.laptop]` and `[signers.desk]`, each for provenance alone,
+/// and no signer that may claim acceptance.
+fn two_publishers() -> String {
+    format!(
+        "[signers.laptop]\nssh = \"{LAPTOP_KEY}\"\nkinds = [\"provenance\"]\n\n\
+         [signers.desk]\nssh = \"ssh-ed25519 DDDD\"\nkinds = [\"provenance\"]\n\n"
+    )
+}
+
+/// That `answer` is the refusal of a policy with several publishers and
+/// no gate, wanting an acceptance no signer may make, in its own words.
+fn refused_for_no_gate(answer: Answer<Required>, what: &str) {
+    assert_eq!(
+        answer,
+        Err(Not::refused(
+            &source(),
+            Why::Wanting {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![],
+            },
+            Some("several publishers and no gate, name an accepting signer".into()),
+        )),
+        "{what}"
+    );
+}
+
+#[test]
+fn two_publishers_and_no_gate_refuse_acceptance_and_the_given_channels_in_words() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
+        two_publishers()
+    ));
+    refused_for_no_gate(
+        repo.policy().policy_for(&at, &Audience::Acceptance),
+        "acceptance",
+    );
+    for channel in ["beta", "stable"] {
+        refused_for_no_gate(channel_policy(&repo, &at, &id(None, channel)), channel);
+    }
+    let bare = repo.at(&two_publishers());
+    refused_for_no_gate(
+        repo.policy().policy_for(&bare, &Audience::Acceptance),
+        "acceptance with no [acceptance] table",
+    );
+}
+
+#[test]
+fn with_two_publishers_and_no_gate_the_layout_and_a_hand_declared_channel_answer_as_written() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[layout]\nrequire = [{{ kind = \"provenance\", signers = [\"desk\"] }}]\n\n\
+         [channels.edge]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
+        two_publishers()
+    ));
+    let desk = NamedSigner {
+        id: SignerId::new("desk"),
+        verified_by: "ssh-ed25519 DDDD".into(),
+        kinds: vec![ClaimKind::Provenance],
+        checks: vec![],
+    };
+    let provenance_by = |signer: NamedSigner| RequiredClaim {
+        kind: ClaimKind::Provenance,
+        check: None,
+        signers: vec![signer],
+    };
+    assert_eq!(
+        repo.policy().policy_for(&at, &Audience::Layout),
+        Ok(Required::Layout {
+            claims: vec![provenance_by(desk)],
+        })
+    );
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "edge")),
+        Ok(Required::Channel {
+            claims: vec![provenance_by(laptop())],
+            bound_to: None,
+            promoted_by: vec![],
+            approvers: vec![],
+        })
+    );
+    let mut all = givens(None);
+    all.push(declared(id(None, "edge"), Moves::Promotion));
+    assert_eq!(repo.policy().listed(&at), Ok(sorted(all)));
 }
 
 // Requirement: A held given is answered with the line that switches it on

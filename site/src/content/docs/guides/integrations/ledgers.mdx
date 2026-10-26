@@ -38,7 +38,15 @@ choosing.
 
 The host binds one in its bindings file, `[ledger] git_ref = { remote =
 "origin" }` or `[ledger] store = {}`; see
-[self-hosting](/tailrace/guides/self-hosting/).
+[self-hosting](/tailrace/guides/self-hosting/). A host with no file, or
+a file with no `[ledger]`, binds the git ref on the remote its landing
+reads, written in `[landing]` or the checkout's own `origin` or one
+remote (118, C.13): each read fetches the channel's chain from it, and
+each append pushes to it as the branch is pushed, fast-forward only,
+with the host's own git credentials. So a second machine of the same
+repository reads the chain the first appended with nothing written.
+Where the landing has no remote, the repository's own refs hold the
+chain, where it keeps its branch, and nothing is pushed.
 
 ## Read as last read
 

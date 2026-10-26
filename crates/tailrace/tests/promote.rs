@@ -4,8 +4,11 @@
 //! its own. Machine A lands on a plain branch, holds an OCI layout and a
 //! host key the policy file names as the gate, and promotes through
 //! `tailrace::run`; machine B, bound to an empty layout, reads the
-//! channel from the git ref ledger alone. Needs git alone, so it is in
-//! the fast layer.
+//! channel from the git ref ledger alone. And spec command-line, a
+//! promote with no ledger or signing written: a host whose file names a
+//! layout alone promotes with the given host key, as the host's name, to
+//! the given ledger on `origin`. Needs git alone, so it is in the fast
+//! layer.
 
 mod scratch;
 
@@ -92,6 +95,7 @@ impl Machine {
         bindings::bind(
             &self.bindings_file(),
             Some(&self.home()),
+            None,
             &self.repo.path,
             command,
         )
@@ -361,6 +365,115 @@ fn a_given_stable_is_promoted_by_the_gate_with_no_channels_written() {
     );
     let layout = Layout::open(a.layout()).unwrap();
     assert_eq!(layout.resolve(&channel_name(&stable())), Ok(first));
+}
+
+// Spec command-line, a promote with no ledger or signing written, and
+// spec host-bindings, a promote with no ledger table.
+
+fn beta() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("beta"))
+}
+
+#[test]
+fn a_promote_naming_no_signing_landing_or_ledger_signs_as_the_host_and_pushes_to_origin() {
+    let scratch = Scratch::new();
+    let repo = scratch.repo.clone();
+    let machine = Machine {
+        repo: repo.clone(),
+        dir: scratch.path().join("host"),
+    };
+    let data = machine.dir.join("data");
+    Layout::create(machine.layout()).unwrap();
+    let file = machine.bindings_file();
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(
+        &file,
+        format!(
+            "[store]\nlayout = {:?}\n",
+            machine.layout().display().to_string()
+        ),
+    )
+    .unwrap();
+    let bind = || {
+        bindings::bind(
+            &file,
+            Some(&machine.home()),
+            Some(data.as_os_str()),
+            &repo.path,
+            For::Promote,
+        )
+    };
+
+    // The given key, made by its first sign, signing as the host's name.
+    let binding = bind().expect("the host binds");
+    let host = binding.signer.clone().expect("a promote signs");
+    let first = Claim {
+        subject: Digest::of(b"a first claim"),
+        kind: ClaimKind::Acceptance,
+        revision: Revision::new(repo.head()),
+        build: None,
+        body: serde_json::json!({}),
+    };
+    binding.seams.signers[0]
+        .sign(&first, &host)
+        .expect("the given key signs");
+    let public = fs::read_to_string(data.join("tailrace/host/signing.key.pub")).unwrap();
+    assert!(public.trim_end().ends_with(&format!(" {host}")), "{public}");
+
+    // The policy lists the host as the gate and writes no channel; one
+    // version is landed, tagged and accepted.
+    repo.write(
+        POLICY_FILE,
+        &format!(
+            "outputs = [\"site\"]\n\n[projections]\nsite = \"file\"\n\n\
+             [signers.{host}]\nssh = \"{}\"\nkinds = [\"acceptance\"]\n",
+            public.trim()
+        ),
+    );
+    repo.write("site/index.html", "<p>hello</p>");
+    let revision = Revision::new(repo.commit("feat: the site"));
+    repo.git(&["tag", "v0.1.0", revision.as_str()]);
+    repo.git(&["push", "-q", "origin", MAIN, "v0.1.0"]);
+    let store = &binding.seams.store;
+    let meta = IndexMeta::new(
+        ComponentName::new("repository"),
+        Version::new("0.1.0"),
+        vec![],
+    )
+    .unwrap();
+    let index = store.put_artifact(&Manifest::Index(meta)).unwrap().digest;
+    store.name(&Name::new("v0.1.0"), &index, None).unwrap();
+    let acceptance = Claim {
+        subject: index.clone(),
+        kind: ClaimKind::Acceptance,
+        revision,
+        build: None,
+        body: serde_json::json!({ "version": "0.1.0" }),
+    };
+    let envelope = binding.seams.signers[0].sign(&acceptance, &host).unwrap();
+    store.attach(&index, &envelope).unwrap();
+
+    let promote = bind();
+    let (code, printed) = machine.run(&promote, &["promote", "0.1.0", "--to", "beta"]);
+    assert_eq!(code, 0, "{printed}");
+    let chain = promote
+        .as_ref()
+        .unwrap()
+        .seams
+        .keeper
+        .chain(&beta())
+        .unwrap();
+    assert_eq!(chain.claims.len(), 1);
+    assert_eq!(chain.claims[0].sole().unwrap().signer, host);
+    let on_origin = scratch::git(
+        &scratch.remote,
+        &["rev-parse", "--verify", "refs/tailrace/ledger/beta"],
+    );
+    assert_eq!(
+        repo.git(&["rev-parse", "--verify", "refs/tailrace/ledger/beta"]),
+        on_origin,
+        "origin holds another chain"
+    );
 }
 
 /// `[channels.rc]`, promoted by the gate, naming `approvers` as who may
