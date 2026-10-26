@@ -15,6 +15,8 @@ Constraints:
 
 - The core starts nothing after an offer, and what tells the gate is
   named in the host's bindings file and nowhere in the core (130, C.16).
+  Where the host names nothing, the publish's own host tells the gate
+  as its next step (118, as amended at agentplot/blueprints ab0dfea).
 - Rule core.10 rules out a publish that moves `beta`, which is the
   gate's act (95). Rule core.14 lets one host hold both the offering
   and the accepting credential where the policy names it as both (108).
@@ -28,11 +30,11 @@ Constraints:
 
 **Goals:**
 
-- On a host whose file binds `[gate] publish = {}`, one run of `tailrace
-  publish` offers, then tells the gate, and the gate accepts and moves
-  `beta`.
-- A file that names nothing, or names a job, leaves the publish as it is
-  today and says what tells the gate.
+- On a host whose file binds `[gate] publish = {}`, or holds no
+  `[gate]`, one run of `tailrace publish` offers, then tells the gate,
+  and the gate accepts and moves `beta`.
+- A file that names a job leaves the publish as it is today and says
+  what tells the gate.
 
 **Non-Goals:**
 
@@ -41,6 +43,9 @@ Constraints:
 - Any change to how the gate judges, which channels follow each publish,
   or how a promotion is written.
 - Binding what runs a publish after a landing (130's first half).
+- A host with no bindings file, and the host as the one 108 admits where
+  the policy names no gate: the unit
+  `a-host-with-no-bindings-file-is-bound-to-the-defaults` (118).
 
 ## Decisions
 
@@ -63,7 +68,19 @@ name a job. The names are the statement's words: C.16's list starts
 with a step on the landing's host, which is the publish step here, and a
 job that an event wakes covers its forge and store events.
 
+A file with no `[gate]` binds `publish`, the host's default (118): the
+publish's own host tells the gate as its next step. It is the same
+teller as `publish = {}`, so the answer, the exit code and every proof
+are the same for both. `publish = {}` stays a key so an operator can
+write down what the host does.
+
 Alternatives:
+
+- No `[gate]` binds no teller, the publish saying so. Rejected: 118
+  gives the default, and 130 leaves no host where nothing tells the
+  gate; a host whose gate is elsewhere says so with `job`.
+
+Alternatives to the key's form:
 
 - `told_by = "publish"`, one string key. Rejected: it is the flat form
   ADR 0013 turned down for seams, and a separated teller then needs a
@@ -123,21 +140,19 @@ in `bindings/mod.rs`:
 
 ```rust
 pub enum Teller {
-    /// `[gate] publish = {}`: this host's publish tells its own gate.
+    /// `[gate] publish = {}`, or no `[gate]` (118): this host's
+    /// publish tells its own gate.
     Publish,
     /// `[gate] job = "<words>"`: a job outside tailrace tells it.
     Job(String),
-    /// No `[gate]`: absent naming the table in the file.
-    Nothing(Not),
 }
 ```
 
-`bind` sets it for every command; only publish reads it. `Nothing`
-holds the absence publish prints, `binding of what tells the gate,
-[gate] in <file>`, with the host's file as its source, as the
-ledger's absence names `[ledger]`. The test bindings in
-`tests/cli.rs` and `tests/conformance.rs` set `Teller::Nothing`, so
-their answers are unchanged apart from the new `gate` member.
+`bind` sets it for every command; only publish reads it. The test
+bindings in `tests/cli.rs` and `tests/conformance.rs` set
+`Teller::Job` with words of their own, so their publish answers are
+unchanged apart from the new `gate` member and no test there asks the
+gate.
 
 ### D5. The answer and the exit code
 
@@ -151,24 +166,22 @@ gate's part:
   from the clock as `promote` reads it.
 - `Job(words)`: `{ "told_by": "job", "job": words }`; the gate is not
   asked.
-- `Nothing(not)`: the absence.
 
 In JSON, each component's entry gains `gate`: for `Publish`,
 `answer_json` of the gate's answer with `told_by: "publish"` added; for
-`Job`, the object above; for `Nothing`, `answer_json` of the absence. A
-component with any other answer carries no `gate` member. In text, an
-indented `gate:` line follows the version's lines: accepted with the
-acceptance's digest, and "one host" where it is one; each channel's move
-(promoted from → to, there, held naming the claim, or its `Not`);
-refused naming the artifact and the claim; told by the job's words; or
-the absence.
+`Job`, the object above. A component with any other answer carries no
+`gate` member. In text, an indented `gate:` line follows the version's
+lines: accepted with the acceptance's digest, and "one host" where it
+is one; each channel's move (promoted from → to, there, held naming the
+claim, or its `Not`); refused naming the artifact and the claim; or told
+by the job's words.
 
 Exit code: the worst (`render::worst`) of each component's publish code
 and, where the gate was asked, its code. `Judged::Refused` and
 `Moved::Held` count as `REFUSED`, and a channel's `Not` counts by its
-kind. `Job` and `Nothing` add `OK`, because the publish did what it was
-asked to do. A landing step that runs `tailrace publish` on the one host
-still fails when `beta` did not move, and says why.
+kind. `Job` adds `OK`, because the publish did what it was asked to do.
+A landing step that runs `tailrace publish` on the one host still fails
+when `beta` did not move, and says why.
 
 ### D6. The one host signs and appends with what it already binds
 
@@ -190,7 +203,8 @@ refuses `OfferedByGate` and writes nothing (27, 96, S9).
   It checks the run's answer, the JSON `gate` member value for value
   against `accept`'s own answer, the exit codes, unchanged components
   left untold, and the fake keeper's and store's calls (no acceptance or
-  append with `Nothing` or `Job`).
+  append with `Job`). The teller a file with no `[gate]` binds is
+  read through `bindings::bind` and gives the same run as `Publish`.
 - **The one host end to end** (`tests/one_host.rs`, tools layer, added
   to the `tools` task): the built binary, a scratch repository on a
   plain branch (C.6) with moon, a host key the policy names for
@@ -199,21 +213,22 @@ refuses `OfferedByGate` and writes nothing (27, 96, S9).
   `tailrace publish`; `beta`'s chain in `refs/tailrace/ledger/` holds two
   promotions, the second naming the first, the layout's name for `beta`
   is at the second index, and each acceptance says one host. A second
-  run of the same test with no `[gate]` shows the version offered,
-  nothing attached and no ledger ref.
+  run of the same test with no `[gate]` shows the same: `beta` moved on
+  each landing, the default teller being the host's publish (118).
 - **Conformance** (the gate's group, below its marker): the two
   scenarios of the conformance-suite spec, citing 95 and 130. The
   register loses 130.
 
 ### D8. Records
 
-ADR 0018 records D1 to D3: the table, its keys, why the command and not
-the core holds the telling, and why the told index is checked. It
-extends ADR 0013's table list as ADR 0016 did for `[ledger]`.
-`docs/architecture/core.md` gains core.10's "Not ruled out" line (D2).
-The self-hosting guide's laptop section shows `[gate] publish = {}`
-beside the one-host policy, and its team section shows `[gate] job`
-on the hosts that only offer.
+ADR 0019 records D1 to D3: the table, its keys, its default, why the
+command and not the core holds the telling, and why the told index is
+checked. It extends ADR 0013's table list as ADR 0016 did for
+`[ledger]`. `docs/architecture/core.md` gains core.10's "Not ruled out"
+line (D2). The self-hosting guide's laptop section shows `[gate]
+publish = {}` beside the one-host policy and says a file without
+`[gate]` does the same, and its team section shows `[gate] job` on the
+hosts that only offer, saying such a host must name it.
 
 ## Risks / Trade-offs
 
@@ -225,12 +240,13 @@ on the hosts that only offer.
   bound (C.16). The words are carried as written so the person reading
   the publish's answer knows where to look. A teller tailrace builds
   later gets its own key.
-- [ADR number 0018 may be taken by a unit that lands first] → the
+- [ADR number 0019 may be taken by a unit that lands first] → the
   records' numbers check in check-fast catches it; the later unit takes
   the next number at its merge.
-- [A host with no bindings file tells no gate, so a laptop with nothing
-  written never moves `beta`] → this follows 118 as written, which lists
-  no teller among the defaults. It is named to the design agent and left
-  as the statement has it.
+- [A host that only offers and has a file with no `[gate]` now asks its
+  own gate, which refuses where the policy does not let its signer
+  accept, and the publish exits refused] → the refusal names the claim
+  found wanting, and the guide's team section says such a host names
+  its `job`. The version stays offered either way (20).
 - [`ToldBy` loses `Copy`] → its only uses are matches and builders in
   the gate's own tests and the suite, all listed in the touches.

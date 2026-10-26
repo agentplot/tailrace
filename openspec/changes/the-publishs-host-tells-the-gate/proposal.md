@@ -7,10 +7,12 @@ offers a version and stops, so on a laptop that is both the offerer and
 the gate (108) `beta` never moves unless something else runs the gate,
 and no command does. The statement says the core starts nothing after an
 offer: the gate is told by whatever the host binds to tell it, named in
-the host's bindings file (130, C.16). This change gives the bindings
-file that place, and builds the one teller a single host needs: its own
-publish step, which tells its own gate of the version it just offered in
-the same run.
+the host's bindings file (130, C.16), and where the host binds nothing
+the publish's own host tells the gate as its next step (118). This
+change gives the bindings file that place, and builds the one teller a
+single host needs: its own publish step, which tells its own gate of the
+version it just offered in the same run, whether the file names it or
+names no teller at all.
 
 ## What Changes
 
@@ -34,17 +36,19 @@ the same run.
   - A `[gate]` naming no key, two keys, a key not in this list, or a
     value of the wrong form is unreadable, naming the table, as every
     other table is (58, 59, core.19).
-- **A file that names nothing to tell the gate leaves the publish
-  offered and says so.** Where the file holds no `[gate]`, the publish
-  answers as it does today, and each version it offered carries one more
-  line: nothing on this host tells the gate, naming `[gate]` in the file.
-  The exit code is the publish's own.
+- **A file that names no teller falls to the host's default.** Where
+  the file holds no `[gate]`, the host's publish step tells the host's
+  gate, exactly as `publish = {}` does (118). A host that only offers,
+  and whose gate is elsewhere, says so with `job`; a publish there asks
+  the gate nothing. There is no binding under which a publish offers and
+  nothing tells the gate (130).
 - **The gate judges the digest it was told of.** A publish's answer names
   the index. When a publish tells the gate, the gate resolves the
   version's name as it always does (core.4) and, where the name now
   resolves to another digest than the one it was told, answers
   unreadable naming both, and writes nothing.
-- **The publish's answer carries the gate's.** With `publish = {}`, each
+- **The publish's answer carries the gate's.** Where the publish tells
+  the gate, by `publish = {}` or by the default, each
   version offered carries the gate's verdict: accepted, with the
   acceptance claim and each following channel's move, or refused,
   naming the artifact and the first claim found wanting (28, 58). A
@@ -56,9 +60,10 @@ the same run.
   calls one and then the other (130). Rule core.10 gains a line saying
   that this telling is not ruled out, since what the gate then does is
   the gate's own act (95, 108, core.14).
-- **ADR 0018** records the `[gate]` table, its two keys, and why the
-  telling is in the command and not in the core. The self-hosting guide
-  shows it for a laptop and for a separated gate.
+- **ADR 0019** records the `[gate]` table, its two keys, its default,
+  and why the telling is in the command and not in the core. The
+  self-hosting guide shows it for a laptop and for a separated gate, and
+  says a laptop's file needs no `[gate]` for `beta` to move.
 - **Conformance.** The gate's group gains a scenario in which the core's
   publish answers, nothing is accepted and nothing is appended, and the
   gate told of that answer accepts the index it names; and one in which
@@ -78,10 +83,11 @@ Out of scope, and what each waits on:
   planner names.
 - **A host with no bindings file.** The unit
   `a-host-with-no-bindings-file-is-bound-to-the-defaults` binds such a
-  host to the defaults 118 lists. 118 lists no teller, so such a host
-  tells no gate and its publish says so, as a file without `[gate]`
-  does. Whether a host with no file should tell its own gate is a
-  question for the design.
+  host to the defaults 118 lists, the teller among them, and with them
+  the rest of 118's defaults for such a host: its landing remote, and,
+  where the policy names no gate, the host as the one 108 admits. It
+  comes after this unit and completes the gate table this unit adds.
+  Here, a host with no file is absent naming the file, as it is today.
 - **How a channel follows each publish.** The gate reads it from the
   policy file as it does today; the unit
   `the-channels-answer-says-how-each-moves` changes how, and this change
@@ -96,9 +102,9 @@ None.
 ### Modified Capabilities
 
 - `host-bindings`: the file names what tells the gate in a `[gate]`
-  table, and a file without one names nothing.
-- `command-line`: `tailrace publish` tells the host's gate where the file
-  binds its publish to, and says so where it binds nothing or a job.
+  table, and a file without one binds the host's own publish to tell it.
+- `command-line`: `tailrace publish` tells the host's gate unless the
+  file binds a job, and says so where it binds a job.
 - `acceptance`: the gate told by a publish's answer judges the index that
   answer names, and refuses to act on a name that resolves elsewhere.
 - `conformance-suite`: the gate's group holds the publish's answer
@@ -116,7 +122,7 @@ None.
 - `crates/tailrace/tests/`: the fakes' tests of the command (check-fast)
   and one end-to-end test in the tools layer, added to the tools task
   in `crates/tailrace/moon.yml`.
-- `docs/adr/0018-…`, `docs/architecture/core.md` (core.10's details),
+- `docs/adr/0019-…`, `docs/architecture/core.md` (core.10's details),
   `site/src/content/docs/guides/self-hosting.mdx`.
 - No crate, dependency, language or file type is added.
 
@@ -137,7 +143,7 @@ crates/tailrace-core/tests/gate.rs
 crates/tailrace-conformance/src/core/gate.rs
 crates/tailrace-conformance/src/world.rs
 crates/tailrace-conformance/src/register.rs
-docs/adr/0018-*.md
+docs/adr/0019-*.md
 docs/architecture/core.md
 site/src/content/docs/guides/self-hosting.mdx
 ```
