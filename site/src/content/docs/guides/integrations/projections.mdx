@@ -89,30 +89,40 @@ pin the store does not name, as most third-party packages are, is
 answered absent and refuses nothing (51).
 
 Each version is judged under a policy before the layout holds it (47,
-113). The policy is the consuming repository's own, read at the landed
-revision sync runs for and never from the checkout (65): its `[layout]`
-where it writes one, and otherwise the given one, which admits a version
-the gate accepted and no other, the gate being the signers its
-`[signers]` lets claim acceptance (C.10). A repository whose revision
-holds no policy file has no policy of its own, and each version is
-judged under its publisher's: the layout-policy claim the publish
-attached to the version's index, counted only where a signer the host
-trusts made it, and each claim it requires counted only through a signer
-the host trusts too. The host names those in its bindings file, one
-table each, by the key the signer is verified by:
+113), and the policy is a stack. The consuming repository's policy file
+is read at the landed revision sync runs for, never from the checkout
+(65), and where it writes a `[layout]`, that line judges every version.
+Where it writes none, with a file that has no `[layout]` or with no
+policy file at all, each version is judged under its publisher's: the
+layout-policy claim the publish attached to the version's index, which a
+publish attaches only where the publisher's own file writes a
+`[layout]`. That claim counts only where a signer the host trusts made
+it, and each claim it requires counts only through a signer the host
+trusts too. The host names those in its bindings file, one table each,
+by the key the signer is verified by:
 
 ```toml
 [trust.gate]
 ssh = "ssh-ed25519 AAAA… gate@box"
 ```
 
-A host whose file names no `[trust]` trusts no signer, and a consumer
-with no policy file then holds nothing. A version is held only when each
-claim the policy requires, in its order, is attached to its index or its
-artifact by a signer the policy names (47, 9). A version refused is
-named with its index, the first claim found wanting and the signers
-checked, and leaves the layout on the next sync (99); one with no
-policy anywhere is refused naming the publisher's layout policy.
+Where the index carries no such claim, the version is judged under the
+given policy for a layout, which admits a version the gate accepted and
+no other (C.10). For a consumer with a policy file, the gate is the
+signers its `[signers]` lets claim acceptance, or, where it names none,
+the one signer it lets claim provenance. For a consumer with no policy
+file, the gate is the signers the host trusts; a host whose file names
+no `[trust]` trusts no signer, and such a consumer then holds nothing.
+Every version thus has a policy, and the answer and the record name the
+one that judged it: the consumer's own line, the publisher's at the
+revision its claim names, or the given.
+
+A version is held only when each claim its policy requires, in its
+order, is attached to its index or its artifact by a signer the policy
+names (47, 9). A version refused is named with its index, the first
+claim found wanting and the signers checked, and sync prints it, so the
+client's own "no matching version" is never the only word; the version
+leaves the layout on that sync (99).
 
 A layout is at `.tailrace/layouts/<ecosystem>/` under the checkout's
 working tree, the same place on every host, so the client's own
