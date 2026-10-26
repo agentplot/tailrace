@@ -922,7 +922,8 @@ fn acceptance_by(world: &World, index: &Digest, signer: &str) -> Claim {
 
 #[test]
 fn a_build_host_running_the_gate_is_refused_as_offered_by_the_gate() {
-    let (world, published) = published_under(acceptance());
+    let (world, published) = published_in(World::with_policy(&with_beta()), acceptance());
+    beta_requires(&world, vec![from_gate()]);
     let before = counts(&world);
     let as_host = AcceptAsk {
         gate: SignerId::new(HOST),
@@ -931,6 +932,80 @@ fn a_build_host_running_the_gate_is_refused_as_offered_by_the_gate() {
     let (artifact, wanting, why) =
         refusal(accept(&world.fakes.seams(), &world.history(), &as_host));
     assert_eq!(artifact, artifacts(&published)[0]);
+    assert_eq!(wanting.kind, ClaimKind::Provenance);
+    assert_eq!(
+        why,
+        WhyWanting::OfferedByGate {
+            signer: SignerId::new(HOST)
+        }
+    );
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+#[test]
+fn a_policy_that_names_no_gate_accepts_what_the_gates_identity_offered() {
+    let (world, published) = published_under(provenance_only());
+    let (_, index) = version_of(&published);
+    let as_host = AcceptAsk {
+        gate: SignerId::new(HOST),
+        ..ask("0.2.0", told(&published))
+    };
+    let answer = accept(&world.fakes.seams(), &world.history(), &as_host);
+    let Ok(Judged::Accepted {
+        acceptance,
+        already,
+        one_host,
+        ..
+    }) = answer
+    else {
+        panic!("a policy naming no gate refused its host: {answer:?}")
+    };
+    assert!(!already);
+    assert!(one_host);
+    let on_index = world.fakes.store.claims_of(index).unwrap();
+    assert!(on_index.iter().any(|e| e.digest() == acceptance));
+}
+
+#[test]
+fn a_host_a_policy_naming_no_gate_does_not_name_is_refused_with_its_provenance_wanting() {
+    let (world, published) = published_under(Required::Acceptance {
+        claims: vec![provenance_from(named(
+            "laptop",
+            &[ClaimKind::Provenance],
+            &[],
+        ))],
+    });
+    let before = counts(&world);
+    let as_host = AcceptAsk {
+        gate: SignerId::new(HOST),
+        ..ask("0.2.0", told(&published))
+    };
+    let (artifact, wanting, why) =
+        refusal(accept(&world.fakes.seams(), &world.history(), &as_host));
+    assert_eq!(artifact, artifacts(&published)[0]);
+    assert_eq!(wanting.kind, ClaimKind::Provenance);
+    assert_eq!(why, WhyWanting::Missing);
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
+}
+
+#[test]
+fn a_policy_naming_a_gate_for_acceptance_refuses_the_build_host_running_the_gate() {
+    let (world, published) = published_under(Required::Acceptance {
+        claims: vec![RequiredClaim {
+            kind: ClaimKind::Provenance,
+            check: None,
+            signers: vec![
+                named(HOST, &[ClaimKind::Provenance], &[]),
+                named(GATE, &[ClaimKind::Acceptance], &[]),
+            ],
+        }],
+    });
+    let before = counts(&world);
+    let as_host = AcceptAsk {
+        gate: SignerId::new(HOST),
+        ..ask("0.2.0", told(&published))
+    };
+    let (_, wanting, why) = refusal(accept(&world.fakes.seams(), &world.history(), &as_host));
     assert_eq!(wanting.kind, ClaimKind::Provenance);
     assert_eq!(
         why,
@@ -967,6 +1042,57 @@ fn the_solo_laptops_acceptance_says_one_host_offered_and_accepted() {
         claim.body["offered"],
         json!({ "by": [HOST], "one_host": true })
     );
+}
+
+#[test]
+fn the_solo_laptop_with_no_gate_named_says_one_host_offered_and_accepted() {
+    let (world, published) = published_under(provenance_only());
+    let (_, index) = version_of(&published);
+    let as_laptop = AcceptAsk {
+        gate: SignerId::new(HOST),
+        ..ask("0.2.0", ToldBy::Asked)
+    };
+    let answer = accept(&world.fakes.seams(), &world.history(), &as_laptop);
+    assert!(
+        matches!(answer, Ok(Judged::Accepted { one_host: true, .. })),
+        "{answer:?}"
+    );
+    let claim = acceptance_by(&world, index, HOST);
+    assert_eq!(
+        claim.body["offered"],
+        json!({ "by": [HOST], "one_host": true })
+    );
+}
+
+#[test]
+fn told_twice_with_no_gate_named_the_gate_answers_accepted_already_and_attaches_nothing() {
+    let (world, published) = published_under(provenance_only());
+    let as_laptop = AcceptAsk {
+        gate: SignerId::new(HOST),
+        ..ask("0.2.0", told(&published))
+    };
+    let seams = world.fakes.seams();
+    let Ok(Judged::Accepted {
+        acceptance: first, ..
+    }) = accept(&seams, &world.history(), &as_laptop)
+    else {
+        panic!("the laptop did not accept what it offered")
+    };
+    let before = counts(&world);
+    let answer = accept(&seams, &world.history(), &as_laptop);
+    let Ok(Judged::Accepted {
+        acceptance,
+        already,
+        one_host,
+        ..
+    }) = answer
+    else {
+        panic!("told twice, the gate answered {answer:?}")
+    };
+    assert!(already);
+    assert!(one_host);
+    assert_eq!(acceptance, first);
+    assert_eq!(acts_since(&world, before), Vec::<String>::new());
 }
 
 #[test]
