@@ -133,6 +133,12 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             cites: &[95, 125, 131],
             run: beta_of_one_component,
         },
+        Scenario {
+            name: "a prerelease and the channels that follow",
+            plays: None,
+            cites: &[95, 131],
+            run: a_prerelease_and_the_channels_that_follow,
+        },
     ]
 }
 
@@ -204,9 +210,10 @@ fn require(world: &FakeWorld, required: Required) {
             }],
             bound_to: None,
             promoted_by: vec![gate],
+            approvers: vec![],
         },
     );
-    policy.follows(&beta());
+    policy.follows(&beta(), false);
 }
 
 /// The policy file landed, each output built and
@@ -1027,9 +1034,10 @@ fn beta_of_one_component(_: &FakeWorld) {
                 }],
                 bound_to: None,
                 promoted_by: vec![gate.clone()],
+                approvers: vec![],
             },
         );
-        policy.follows(&channel);
+        policy.follows(&channel, false);
     }
     let publish = ok(world.publish(&world.ask(&head)), "the publish");
     let (_, published) = publish
@@ -1080,5 +1088,89 @@ fn beta_of_one_component(_: &FakeWorld) {
     assert!(
         matches!(world.fakes.keeper.chain(&beta("app")), Err(Not::Absent(_))),
         "app's beta has a chain"
+    );
+}
+
+/// 95, 131: `alpha`, which takes prereleases, and `beta`, which takes
+/// releases alone, follow each publish of the world's one component,
+/// each requiring and promoted by the gate's acceptance; then `revision`
+/// landed, built, published and told to the gate: each channel moved, by
+/// name.
+fn followed_on_publish(world: &FakeWorld, revision: &Revision) -> Vec<(String, bool)> {
+    world.land(revision, &[]);
+    world.outputs(
+        revision,
+        &[("site", Outcome::Pass), ("server", Outcome::Pass)],
+    );
+    let policy = &world.fakes.policy;
+    policy.require(
+        Audience::Acceptance,
+        Required::Acceptance {
+            claims: vec![provenance_from(named(HOST, &[ClaimKind::Provenance], &[]))],
+        },
+    );
+    let gate = named(GATE, &[ClaimKind::Acceptance], &[]);
+    for (name, prereleases) in [("alpha", true), (BETA, false)] {
+        let channel = ChannelId::new(None, ChannelName::new(name));
+        policy.require(
+            Audience::Channel(channel.clone()),
+            Required::Channel {
+                claims: vec![RequiredClaim {
+                    kind: ClaimKind::Acceptance,
+                    check: None,
+                    signers: vec![gate.clone()],
+                }],
+                bound_to: None,
+                promoted_by: vec![gate.clone()],
+                approvers: vec![],
+            },
+        );
+        policy.follows(&channel, prereleases);
+    }
+    let publish = ok(world.publish(&world.ask(revision)), "the publish");
+    let published = ok(publish.components[0].1.clone(), "the publish's version");
+    let (version, _) = version_of(&published);
+    let ask = world.gate_ask(version.as_str(), told(&published), GATE);
+    let (_, _, _, channels) = accepted(world.judge(&ask, &[GATE]));
+    channels
+        .into_iter()
+        .map(|(c, moved)| {
+            (
+                c.name.to_string(),
+                matches!(moved, Ok(Moved::Promoted { .. })),
+            )
+        })
+        .collect()
+}
+
+fn a_prerelease_and_the_channels_that_follow(world: &FakeWorld) {
+    assert_eq!(
+        followed_on_publish(world, &world.head),
+        [("alpha".to_string(), true), (BETA.to_string(), true)],
+        "a release did not move both following channels"
+    );
+
+    let other = FakeWorld::new();
+    let repo = other.repo();
+    repo.tag("v0.2.0", &other.head);
+    let tidied = repo.commit(
+        &[("server/main.txt", "the server tidied")],
+        "chore: the server tidied",
+    );
+    repo.push();
+    assert_eq!(
+        followed_on_publish(&other, &tidied),
+        [("alpha".to_string(), true)],
+        "a prerelease moved another channel than the one that takes prereleases"
+    );
+    assert!(
+        matches!(
+            other
+                .fakes
+                .keeper
+                .chain(&ChannelId::new(None, ChannelName::new(BETA))),
+            Err(Not::Absent(_))
+        ),
+        "beta's chain was appended to by a prerelease"
     );
 }

@@ -69,6 +69,7 @@ fn stable_policy(bound_to: Option<&str>) -> Required {
         ],
         bound_to: bound_to.map(ChannelName::new),
         promoted_by: vec![gate()],
+        approvers: vec![],
     }
 }
 
@@ -502,6 +503,7 @@ fn a_host_the_policy_does_not_let_promote_is_refused_before_anything_is_signed()
             )],
             bound_to: None,
             promoted_by: vec![named("approver", &[ClaimKind::Promotion])],
+            approvers: vec![],
         },
     );
     let before = counts(&world);
@@ -527,6 +529,7 @@ fn given_stable(line: Vec<RequiredClaim>) -> Required {
         claims,
         bound_to: None,
         promoted_by: vec![gate],
+        approvers: vec![],
     }
 }
 
@@ -580,6 +583,80 @@ fn a_lines_promotion_signer_is_refused_and_nothing_is_appended() {
         world.fakes.keeper.chain(&stable()),
         Err(Not::Absent(_))
     ));
+}
+
+// Requirement: Only an approver asks for a channel that names approvers
+
+/// `stable` as the policy gives it, who may ask for it named by
+/// `approvers`, none meaning any asker the gate verifies (32, C.10).
+fn stable_asked_by(world: &World, approvers: &[&str]) {
+    let required = match given_stable(vec![]) {
+        Required::Channel {
+            claims,
+            bound_to,
+            promoted_by,
+            ..
+        } => Required::Channel {
+            claims,
+            bound_to,
+            promoted_by,
+            approvers: approvers.iter().map(|a| named(a, &[])).collect(),
+        },
+        other => other,
+    };
+    world
+        .fakes
+        .policy
+        .require(Audience::Channel(stable()), required);
+}
+
+#[test]
+fn an_asker_the_approvers_do_not_name_is_refused_naming_both_and_nothing_is_signed_or_appended() {
+    let Two { world, .. } = two();
+    stable_asked_by(&world, &["ci"]);
+    let before = counts(&world);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let why = refused(answer);
+    assert_eq!(
+        why,
+        Why::NotApprover {
+            channel: stable(),
+            asker: SignerId::new(GATE),
+            approvers: vec![SignerId::new("ci")],
+        }
+    );
+    assert_eq!(
+        why.to_string(),
+        "gate may not ask for lib/stable; ask one of ci"
+    );
+    assert_eq!(writes_since(&world, before), Vec::<String>::new());
+    assert!(matches!(
+        world.fakes.keeper.chain(&stable()),
+        Err(Not::Absent(_))
+    ));
+}
+
+#[test]
+fn a_channel_naming_no_approvers_is_promoted_by_the_gates_signer_asking() {
+    let Two { world, second, .. } = two();
+    stable_asked_by(&world, &[]);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let Ok(Promoted::Moved { to, .. }) = &answer else {
+        panic!("a channel naming no approvers was answered {answer:?}")
+    };
+    assert_eq!(to.index, second);
+    assert_eq!(chain_of(&world, &stable())[0].asked_by, SignerId::new(GATE));
+}
+
+#[test]
+fn an_asker_the_approvers_name_promotes_the_channel() {
+    let Two { world, second, .. } = two();
+    stable_asked_by(&world, &["ci", GATE]);
+    let answer = promoted(&world, &ask(to("0.2.0")));
+    let Ok(Promoted::Moved { to, .. }) = &answer else {
+        panic!("an approver's asking was answered {answer:?}")
+    };
+    assert_eq!(to.index, second);
 }
 
 #[test]
@@ -860,6 +937,7 @@ fn bound() -> Two {
             claims: vec![wanted(ClaimKind::Acceptance, vec![gate()])],
             bound_to: None,
             promoted_by: vec![gate()],
+            approvers: vec![],
         },
     );
     two.world
@@ -1049,13 +1127,44 @@ fn mirror_moves_the_channels_name_back_from_another_writers_index() {
         .any(|c| c.op == KeeperOp::Append));
 }
 
+// Requirement: An empty channel as last read says when
+
+#[test]
+fn an_empty_channel_read_as_last_read_says_when_and_with_the_ledgers_words() {
+    let keeper = FakeKeeper::new();
+    assert_eq!(
+        channel(&keeper, &stable()),
+        Ok(Channel::Empty { read: Read::Source })
+    );
+    keeper.unreachable("fatal: unable to access");
+    let answer = channel(&keeper, &stable());
+    let Ok(Channel::Empty {
+        read: Read::Kept { at, said },
+    }) = &answer
+    else {
+        panic!("an empty channel as last read answered {answer:?}")
+    };
+    assert_eq!(said, "fatal: unable to access");
+    assert_eq!(
+        serde_json::to_value(answer.as_ref().unwrap()).unwrap(),
+        json!({ "state": "empty", "read": { "kept": { "at": at, "said": said } } })
+    );
+    assert_eq!(
+        serde_json::to_value(Channel::Empty { read: Read::Source }).unwrap(),
+        json!({ "state": "empty", "read": "source" })
+    );
+}
+
 // Requirement: A channel is read from the ledger alone
 
 #[test]
 fn a_channel_never_promoted_is_empty_and_the_store_is_asked_nothing() {
     let store = FakeStore::new();
     let keeper = FakeKeeper::new();
-    assert_eq!(channel(&keeper, &stable()), Ok(Channel::Empty));
+    assert_eq!(
+        channel(&keeper, &stable()),
+        Ok(Channel::Empty { read: Read::Source })
+    );
     assert_eq!(store.calls().len(), 0);
 }
 

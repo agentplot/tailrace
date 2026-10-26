@@ -23,8 +23,8 @@ use tailrace_seams::{
 
 use crate::ledger::{held, may_promote, promotion_of};
 use crate::{
-    answer_json, channels_at, chosen, follow, policy_at, tell, Declared, Followed, History, Landed,
-    Provenance, BOUND, LOCAL,
+    answer_json, channels_at, chosen, follow, is_prerelease, policy_at, tell, Declared, Followed,
+    History, Landed, Provenance, BOUND, LOCAL,
 };
 
 /// What told the gate of a version (95): a publish's answer, naming the
@@ -202,7 +202,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     // before anything is written and followed only when a publish told
     // the gate (95, 131).
     let followed = match ask.told {
-        ToldBy::Publish { .. } => following(seams, &at_head, &component.name)?,
+        ToldBy::Publish { .. } => following(seams, &at_head, &component.name, &ask.version)?,
         ToldBy::Asked => Vec::new(),
     };
 
@@ -317,16 +317,24 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
 
 /// 95, 125, 131: the channels of `component` that the policy's channels
 /// answer at the landed head says move on each publish, each as its
-/// identity, in the answer's order; the answer's own where it cannot be
-/// read, so nothing is accepted or moved.
+/// identity, in the answer's order, leaving out those that take releases
+/// alone where `version` is a prerelease (21, C.10); the answer's own
+/// where it cannot be read, so nothing is accepted or moved.
 pub fn following(
     seams: &Seams,
     landed: &Landed,
     component: &ComponentName,
+    version: &Version,
 ) -> Answer<Vec<ChannelId>> {
+    let prerelease = is_prerelease(version);
     Ok(channels_at(seams.policy.as_ref(), landed)?
         .into_iter()
-        .filter(|c| c.moves == Moves::EachPublish && c.channel.component_name() == *component)
+        .filter(|c| match c.moves {
+            Moves::EachPublish { prereleases } => {
+                c.channel.component_name() == *component && (prereleases || !prerelease)
+            }
+            Moves::Promotion | Moves::Bound { .. } => false,
+        })
         .map(|c| c.channel)
         .collect())
 }
@@ -658,8 +666,9 @@ impl Judging<'_> {
             });
         }
 
-        // 3: the promotion, signed as the gate, asked by the rule that
-        // each publish moves the channel (33, 39, 95).
+        // 3: the promotion, signed as the gate and asked by it, its own
+        // act on the publish that told it, whatever approvers the channel
+        // names (33, 39, 95, 129, C.10).
         let promotion = Promotion {
             channel: channel.name.clone(),
             component: self.component.clone(),
@@ -669,7 +678,7 @@ impl Judging<'_> {
             },
             from,
             predecessor: head.map(|(digest, _)| digest),
-            asked_by: SignerId::new("each publish"),
+            asked_by: self.gate.clone(),
             policy: Satisfied {
                 revision: at_head.revision().clone(),
                 claims,

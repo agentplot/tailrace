@@ -13,7 +13,11 @@
 //! fast-forwards, never forced, and a push refused is answered after a
 //! read again, never retried (120, rule core.6). A remote that does not
 //! answer leaves the chain answered from the repository's copy as last
-//! fetched, saying when, with git's words, and nothing appended (60).
+//! fetched, saying when, with git's words, and nothing appended (60). The
+//! copy keeps an empty read as any other: beside the fetched refs, in the
+//! repository's common git directory, `tailrace/fetched/<channel>` holds
+//! when the remote last held none of the channel, so a channel read empty
+//! is answered as a chain of no claims as last read, never absent.
 //! With no remote, the repository's own ref is the ledger, moved only
 //! from the commit it was read at.
 //!
@@ -21,7 +25,10 @@
 //! the moment of use, and the profile keeps none (64, rule core.21).
 
 use std::ffi::OsStr;
+use std::fs;
+use std::io;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tailrace_seams::{
     canonical, Answer, Chain, ChannelId, Claim, Digest, Envelope, Keeper, Not, Promotion, Read,
@@ -60,6 +67,13 @@ fn ledger(channel: &ChannelId) -> String {
 /// every fetch, so its reflog says when the remote was last read.
 fn fetched(channel: &ChannelId) -> String {
     format!("refs/tailrace/fetched/{}", channel.spelled())
+}
+
+/// The time now, in seconds since the Unix epoch.
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 /// A chain as a read found it: each claim by the commit holding it, from
@@ -240,16 +254,74 @@ impl GitRef {
         Ok(newest)
     }
 
+    /// 60, C.13: where the copy keeps when the remote last held none of
+    /// `channel`, in the repository's common git directory beside the
+    /// fetched refs.
+    fn empty_mark(&self, channel: &ChannelId) -> Answer<PathBuf> {
+        let ran = self.git(
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+            &[0],
+        )?;
+        let common = PathBuf::from(String::from_utf8_lossy(&ran.stdout).trim());
+        Ok(common
+            .join("tailrace")
+            .join("fetched")
+            .join(channel.spelled()))
+    }
+
+    fn cannot(path: &std::path::Path, e: &io::Error) -> Not {
+        Not::unreadable(
+            &Source::host(path),
+            path.display().to_string(),
+            Some(e.to_string()),
+        )
+    }
+
+    /// 60: the remote answered that it holds none of `channel`, now: kept
+    /// beside the fetched refs, so a later read the remote does not
+    /// answer is that empty chain as last read.
+    fn keep_empty(&self, channel: &ChannelId) -> Answer<()> {
+        let path = self.empty_mark(channel)?;
+        if let Some(dir) = path.parent() {
+            fs::create_dir_all(dir).map_err(|e| Self::cannot(dir, &e))?;
+        }
+        fs::write(&path, format!("{}\n", now())).map_err(|e| Self::cannot(&path, &e))
+    }
+
+    /// When the remote last held none of `channel`, `None` where no read
+    /// found it so.
+    fn kept_empty(&self, channel: &ChannelId) -> Answer<Option<u64>> {
+        let path = self.empty_mark(channel)?;
+        match fs::read_to_string(&path) {
+            Ok(text) => text.trim().parse::<u64>().map(Some).map_err(|e| {
+                Not::unreadable(
+                    &Source::host(&path),
+                    path.display().to_string(),
+                    Some(e.to_string()),
+                )
+            }),
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(Self::cannot(&path, &e)),
+        }
+    }
+
     /// 60, C.13: the remote not answering, for `failed`, git's own words:
     /// the repository's copy of `channel`'s chain as last fetched or
-    /// appended, saying when; `failed` itself where it holds none.
+    /// appended, saying when, a channel last read holding none a chain of
+    /// no claims; `failed` itself where the copy holds nothing of it.
     fn kept(&self, channel: &ChannelId, failed: Not) -> Answer<Held> {
         let said = match &failed {
             Not::Unreadable(u) => u.said.clone().unwrap_or_default(),
             _ => return Err(failed),
         };
         let Some(local) = self.commit_at(&ledger(channel))? else {
-            return Err(failed);
+            return match self.kept_empty(channel)? {
+                Some(at) => Ok(Held {
+                    links: Vec::new(),
+                    read: Read::Kept { at, said },
+                }),
+                None => Err(failed),
+            };
         };
         let links = self.walk(channel, &local)?;
         let Some(at) = self.when(channel)? else {
@@ -290,10 +362,13 @@ impl GitRef {
         let local = self.commit_at(&name)?;
         let Some(_) = listed else {
             return match local {
-                None => Ok(Held {
-                    links: Vec::new(),
-                    read: Read::Source,
-                }),
+                None => {
+                    self.keep_empty(channel)?;
+                    Ok(Held {
+                        links: Vec::new(),
+                        read: Read::Source,
+                    })
+                }
                 Some(local) => Err(self.lost(channel, remote, &self.walk(channel, &local)?)),
             };
         };
@@ -463,10 +538,12 @@ impl Keeper for GitRef {
 
     /// 121: every claim of `channel` from the first, read from the remote
     /// where one is bound and answers, and from the repository's copy as
-    /// last fetched where it does not (60); absent where none is held.
+    /// last fetched where it does not, a channel last read holding none a
+    /// chain of no claims so read (60); absent where the source holds
+    /// none.
     fn chain(&self, channel: &ChannelId) -> Answer<Chain> {
         let held = self.read(channel)?;
-        if held.links.is_empty() {
+        if held.links.is_empty() && held.read == Read::Source {
             return Err(Not::absent(self.source(), format!("chain of {channel}")));
         }
         Ok(Chain {

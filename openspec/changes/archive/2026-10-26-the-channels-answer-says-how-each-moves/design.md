@@ -43,6 +43,18 @@ so a reader sees that a switched-off `alpha` is one line away. On the
 branch `tailrace policy` shows the channels in force and nothing held
 off, since no answer of the policy seam carries a held given.
 
+The batch 20 rulings at agentplot/blueprints 088430c have the fragment
+mark the givens it holds off with a mark of its own, which a
+repository's file never carries and the profile refuses, and have a
+repository write `approvers` on the environment or on the channel it
+means, never on a channel the core made for an environment, which takes
+its environment's. 131 as amended at 1ae1cc5 has the channels answer
+carry, apart from the channels in force, each given the repository has
+not switched on, marked held and naming the line that switches it on,
+so a surface shows both from one answer; and 136 (d50535a) gives the
+policy seam three operations, policy-for, channels and environments,
+and no other.
+
 ## Goals / Non-Goals
 
 **Goals:**
@@ -143,14 +155,18 @@ channel's `promoted_by` is empty.
 `claims` for a given or made channel is an acceptance by the gate's
 signers, then the `require` of the table in force, in order.
 
-`approvers` are the signers the channel's table in force names under
-`approvers`, by their names in `[signers]`, whatever each may claim:
-who may ask for the channel to move (32, C.10). Empty means any asker
-the gate verifies, the host's own signer while no identity provider
-stands (129). A list the file writes empty is unreadable naming the
-table, since it would read as naming no one and answer anyone. The
-approvers never join the promoters: they narrow who asks, never who
-signs (C.10).
+`approvers` are who may ask for the channel to move (32, C.10), by
+their names in `[signers]`, whatever each may claim: for a given or
+hand-declared channel, the signers its table in force names under
+`approvers`; for a channel a manual environment makes, the signers the
+environment's table names, since a repository writes `approvers` on the
+environment or on the channel it means and never on a channel the core
+made for an environment, which takes its environment's (C.10, as ruled
+at 088430c). Empty means any asker the gate verifies, the host's own
+signer while no identity provider stands (129). A list the file writes
+empty is unreadable naming the table, since it would read as naming no
+one and answer anyone. The approvers never join the promoters: they
+narrow who asks, never who signs (C.10).
 
 Alternatives: append `promotion` to the gate signer's `kinds` in a
 given channel's answer. Rejected: it rewrites what a signer may claim,
@@ -239,11 +255,16 @@ each step unreadable naming the table on the first break:
 4. The environments: `[environments.<name>]` or
    `[environments.<component>.<name>]`, whose keys are C.10's words and
    no others: `channel`, `policy` (`auto` or `manual`, `auto` unless
-   written), `after` and `target`. The profile reads the first three and
-   leaves `target` to the target's reader, reading nothing of its value;
-   any other key is unreadable naming the table and the key, since a
-   target's own settings sit in the target's table (C.10). `manual` makes a
-   channel named for the environment, bound to the channel it names;
+   written), `after`, `target`, and `approvers` where the environment
+   is manual. The profile reads all but `target`, which it leaves to the
+   target's reader, reading nothing of its value. `approvers` is who may
+   say yes, each a `[signers]` name and the list never empty, as on a
+   channel's table; on an environment that is not manual it is
+   unreadable naming the table and the key, since no one says yes to
+   it. Any other key is unreadable naming the table and the key, since
+   a target's own settings sit in the target's table (C.10). `manual` makes a
+   channel named for the environment, bound to the channel it names,
+   whose approvers are the environment's;
    `after` makes one bound to the channel the named environments follow
    (their own where they have one, else the one they name), all named
    agreeing; where both words are written, `after`'s binding holds.
@@ -254,10 +275,9 @@ each step unreadable naming the table on the first break:
    held or not, or as another made channel, is unreadable.
 5. A table under a made channel is a line under it: read only where it
    restates how the channel moves, its `require` the claims after the
-   gate's acceptance and its `approvers` who may ask, which is where a
-   manual environment's approvers are written, since the environment's
-   table holds C.10's four words alone; another way is unreadable naming
-   the table (C.10).
+   gate's acceptance; another way is unreadable naming the table, and
+   so is `approvers` under it, saying that who may ask for a channel an
+   environment makes is written on the environment (C.10).
 6. Bindings: every `Bound { to }` names a channel of the same component
    in force after steps 3 and 4, and an environment's `channel` names
    one too; a cycle of bindings is unreadable naming a table in it,
@@ -267,7 +287,7 @@ each step unreadable naming the table on the first break:
 none is resolved, otherwise `claims`, `bound_to`, `promoted_by` and `approvers` as
 D3 says. The module's doc and TOML example change to the per-component
 form, a given switched on, a line under one, approvers, and a manual
-environment with its approvers under its made channel.
+environment naming its approvers.
 
 Alternatives: the givens as Rust constants. Rejected: C.10 has the core
 know no channel's name, and a reader could not see them in the file's
@@ -369,7 +389,7 @@ register changes nothing: 41 and 97 stay pending with the target.
 | stable promoted by the gate's signer | ledger | 32, 9, 125 |
 | a prerelease and the channels that follow | gate | 95, 131 |
 | an asker the approvers do not name | ledger | 32, 33 |
-| the givens held off | policy | C.10 |
+| the givens held off | policy | 131, C.10 |
 
 The "each way a channel moves" scenario declares a second following
 channel taking prereleases. The approvers scenario cites 32, not 129,
@@ -387,10 +407,10 @@ is the statement's, not this unit's reading (53f6d44): writing its
 table is the switch, there is no `on` key, and nothing turns `beta` or
 `stable` off. So the record's outcome and consequences name no `on` key, its considered
 options keep an `on` key only as an option weighed and rejected, its
-Deciders line puts to the user only what is still this unit's reading,
-the fragment's `held` mark and a manual environment's approvers under
-its made channel, and its policy command shows the givens held off
-with their lines (b1267d7). It is numbered 0019 because two units in
+Deciders line names no reading of this unit's, the fragment's own hold
+mark and where approvers are written being ruled (088430c), and its
+policy command shows the givens held off with their lines, carried by
+the channels answer (b1267d7, 1ae1cc5). It is numbered 0019 because two units in
 flight on this bolt propose an 0018; whichever lands later renumbers.
 
 ### D11. `tailrace policy` asks the core for the policy in force
@@ -400,10 +420,12 @@ flight on this bolt propose an 0018; whichever lands later renumbers.
 resolves the branch's head, checks it landed (`Landed::check`), and
 answers `InForce { branch, revision, acceptance, layout, channels }`,
 each policy an `Answer<Required>` of its own and `channels` an
-`Answer<Vec<ChannelInForce { channel: DeclaredChannel, policy:
-Answer<Required> }>>`, so an absent layout or one unreadable channel
-leaves the rest standing (58). It asks the landing and the policy
-alone, and writes nothing (60, core.32).
+`Answer<ChannelsInForce { in_force: Vec<ChannelInForce { channel:
+DeclaredChannel, policy: Answer<Required> }>, held: Vec<HeldChannel>
+}>`, the one channels answer (D13) with each channel in force given its
+policy, so an absent layout or one unreadable channel leaves the rest
+standing (58). It asks the landing and the policy alone, and writes
+nothing (60, core.32).
 
 `crates/tailrace/src/commands/policy.rs`: `tailrace policy [--branch
 main] [--json]`, bound as status is (the landing and the policy; no
@@ -416,23 +438,20 @@ moves (`each publish`, `each publish, prereleases too`, `promotion`,
 ask (`any asker` where it names no approvers). Beneath the channels,
 under `held off`, it prints one row per held given (D13): the channel
 spelled, how it would move, in the same words, and `switch on with
-<line>`; the heading and its rows are printed only where the held
-answer lists any, and an unreadable held answer prints its words there,
-the rest standing. `--json` prints the core's answer. It exits
+<line>`; the heading and its rows are printed only where the channels
+answer holds any off. An unreadable channels answer prints its words
+once, in place of both parts, the acceptance and the layout standing.
+`--json` prints the core's answer. It exits
 0 whenever an answer is made, and the answer's own code where the head
 cannot be resolved or has not landed.
-
-`InForce` gains `held: Answer<Vec<HeldChannel>>`, asked of the policy
-seam at the landed head beside the channels and serialized as one
-answer like them, so an unreadable held answer leaves the table in
-force shown (58).
 
 This shows the table in force and what is held off through the seam's
 answers, so the command reads no file and the core no profile (core.2,
 core.31). Alternative: a policy seam operation answering the merged
 file in its TOML form. Rejected: B.5 names no such operation, and it
 would carry the whole of the file profile's form across the seam, where
-the held answer carries one line of it, opaque to the core.
+the channels answer carries one line of it for each held given, opaque
+to the core.
 
 ### D12. An empty channel as last read says when
 
@@ -469,64 +488,77 @@ Alternative: answer an empty chain `Chain { claims: [] }` from the
 source too, and retire the absence. Rejected: 121 answers "that none is
 held", and every caller of `chain` reads that as absent today.
 
-### D13. The policy answers the givens held off
+### D13. The channels answer carries the givens held off
 
 C.10, as amended at b1267d7, has the policy command show each given
-held off with the line that would switch it on, read from the fragment.
-The fragment is the policy profile's, and the command calls the core,
-which reaches the profile through the policy seam alone (core.2,
-core.31); so the seam answers it, as a third operation beside
-`policy_for` and `channels`:
+held off with the line that would switch it on, read from the fragment;
+131, as amended at 1ae1cc5, has the channels answer carry them, apart
+from the channels in force, so a surface shows both from one answer,
+and 136 leaves the policy seam no operation for them. The channels
+answer becomes:
 
 ```rust
 pub struct HeldChannel { pub channel: DeclaredChannel, pub switch: String }
 
-/// C.10: every given the policy at `revision` holds that the
-/// repository has not switched on, once each, ordered by name and then
-/// component, each with how it would move and the line that switches it
-/// on; an empty list where none is held.
-fn held(&self, revision: &Revision) -> Answer<Vec<HeldChannel>>;
+pub struct PolicyChannels {
+    /// 131: every channel in force, once each, ordered by name and then
+    /// component, each with how it moves.
+    pub in_force: Vec<DeclaredChannel>,
+    /// C.10: every given the repository has not switched on, once each,
+    /// ordered by name and then component, each with how it would move
+    /// and the line that switches it on; never a channel in force.
+    pub held: Vec<HeldChannel>,
+}
+
+fn channels(&self, revision: &Revision) -> Answer<PolicyChannels>;
 ```
 
-`HeldChannel` is defined in `crates/tailrace-seams/src/policy.rs` and
-serializes as the declared channel flattened with `"switch":
-"[channels.alpha]"`. `switch` is the profile's own words, which the
-core and the command carry and never parse; the trait has no default,
-so every profile says what it holds.
+Both are defined in `crates/tailrace-seams/src/policy.rs`. The answer
+serializes as `{"in_force": [...], "held": [...]}`, a held channel as
+the declared channel flattened with `"switch": "[channels.alpha]"`.
+Being in `held`, as a `HeldChannel`, is the mark: no reader can take a
+held given for a channel in force. `switch` is the profile's own words,
+which the core and the command carry and never parse. One answer, so
+it is read, unreadable or absent as a whole: the held givens can never
+disagree with the channels in force.
 
-- **The file profile** answers it from the same `in_force` as the
-  channels: for every channel the fragment marks `held` and every
-  component (the one component where none is declared) whose table the
-  repository does not write, the channel with the fragment's table read
-  as step 3 of the resolution reads one (how it would move, its
-  `prereleases`), and `switch` the table's header in the file's form,
-  `[channels.<name>]` or `[channels.<component>.<name>]`. Wherever the
-  resolution is unreadable, the held answer is unreadable with the same
-  words, so the two never disagree. A held given never appears in the
-  channels answer, and a switched-on one never in the held.
-- **The fake policy** answers what a test scripts with `holds(&ChannelId,
-  moves, switch)`, an empty list where none is scripted, recorded and
-  faultable like `channels`. `Nowhere` answers the seam's absence as it
-  does for the other two, and every wrapping `Policy` in the workspace
-  (`Watched` in the suite and the core's tests, `OneUnreadable`)
-  delegates it.
+- **The file profile** answers `held` from the same `in_force` and
+  resolution as the channels in force: for every channel the fragment
+  marks `held` and every component (the one component where none is
+  declared) whose table the repository does not write, the channel with
+  the fragment's table read as step 3 of the resolution reads one (how
+  it would move, its `prereleases`), and `switch` the table's header in
+  the file's form, `[channels.<name>]` or
+  `[channels.<component>.<name>]`. A held given never appears in
+  `in_force`, and a switched-on one never in `held`.
+- **The fake policy** carries in `held` what a test scripts with
+  `holds(&ChannelId, moves, switch)`, an empty list where none is
+  scripted; the call is recorded and faulted as `channels` is today.
+  `Nowhere` answers `channels` as it does now, and every wrapping
+  `Policy` in the workspace (`Watched` in the suite and the core's
+  tests, `OneUnreadable`) delegates it as now, taking the new type.
 - **The suite**: `PolicyRig::held(components) -> Vec<HeldChannel>`
   answers what the profile holds off with nothing declared, none for
   the fake; for the file, read by the rig from the shipped `givens.toml`
   per component, naming no channel in its Rust. "the givens held off"
-  below the policy group's marker, citing C.10, holds the answer to the
-  rig's word and no channel it names to the channels answer; the
-  unreachable policy's scenario asks both.
-- **The core**: `landed.rs` gains `held_at` beside `channels_at`, and
-  `in_force` asks it (D11). Nothing else in the core reads it: the gate
-  and the ledger move only what the channels answer lists.
+  below the policy group's marker, citing 131 and C.10, holds the
+  answer's `held` to the rig's word and apart from its `in_force`; the
+  unreachable policy's scenario needs nothing more, the held givens
+  being part of the one answer it already asks.
+- **The core**: `landed.rs` gains `policy_channels_at`, answering the
+  whole answer at the landed head, and `channels_at` answers its
+  `in_force` alone, so the gate, the ledger and status read the
+  channels in force as before and never see a held given. `in_force`
+  alone reads `policy_channels_at` (D11).
 
-Alternatives: the channels answer carrying held givens marked held.
-Rejected: 131 answers the channels the policy declares, and the gate,
-the ledger and status would each have to leave the held ones out. The
-command reading the fragment itself: rejected, since a surface would
-then read a profile's data (core.31) and a profile with other givens
-would be shown the file's.
+Alternatives: a third operation answering the held givens. Rejected:
+136 gives the policy seam policy-for, channels and environments and no
+other, and two answers could disagree at one revision. A held given
+listed among the channels with a mark on each: rejected, since every
+reader of the channels in force would have to leave the held ones out.
+The command reading the fragment itself: rejected, since a surface
+would then read a profile's data (core.31) and a profile with other
+givens would be shown the file's.
 
 ## Risks / Trade-offs
 
@@ -541,15 +573,10 @@ would be shown the file's.
 - [`gate.rs` is also edited by `the-publishs-host-tells-the-gate`] →
   this unit changes only how channels are found and moved; the told-by
   path is untouched.
-- [The fragment's `held = true` mark is this unit's reading of C.10:
-  the ruling says the repository's switch is its table and names no
-  form for how the fragment holds a channel back] → a key of the
-  fragment alone, refused in the repository's file; recorded in ADR 0019
-  and named for the design agent.
-- [`approvers` for a manual environment written under its made channel,
-  `[channels.<environment>]`, is this unit's reading: C.10 says
-  "under it" and batch 17 gives an environment's table four words
-  alone] → named for the design agent.
+- [`approvers` on an environment that is not manual is refused: the
+  ruling at 088430c admits the key where the environment names who may
+  say yes, and no one says yes to an `auto` environment] → named for
+  the design agent.
 - [While no identity provider stands the asker is the host's own
   signer, which must also be a promoter, so `approvers` naming no gate
   signer leaves the channel unmovable] → `tailrace policy` shows both
@@ -571,11 +598,9 @@ would be shown the file's.
   and accepted as 102 says, and the channels answer and the policy for
   each given carry `beta` and `stable` as declared, never "not
   declared"; spec `channel-movement` says so with a scenario.
-- [B.5 names `policy-for` and `channels`, and no operation for the held
-  givens the policy command now shows] → `held` is added to the policy
-  seam as D13 gives it, the narrowest answer that lets the command show
-  them without a surface reading a profile's data; named for the design
-  agent, as an operation B.5 may name.
+- [Every reader of the channels answer takes a new type] → `channels_at`
+  keeps answering the channels in force, so the gate, the ledger and
+  status change only where they call the seam directly.
 - [Several provenance signers and no accepting one, which C.10 now
   refuses in words] → that refusal belongs with the host-as-gate
   default, `a-host-with-no-bindings-file-is-bound-to-the-defaults`'s;

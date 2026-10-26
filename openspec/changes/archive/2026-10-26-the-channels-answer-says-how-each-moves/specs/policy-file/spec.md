@@ -215,9 +215,10 @@ since such a channel takes no version from a publish (37).
 
 A channel's table MAY name `approvers`, a list of signers by their
 names in `[signers]`, and the policy for the channel SHALL answer them
-as the signers that may ask for it; where no table in force names
-`approvers`, the policy SHALL answer none, any asker the gate verifies
-(129, C.10). A name `[signers]` does not hold SHALL be unreadable naming
+as the signers that may ask for it; for a channel a manual environment
+makes, the policy SHALL answer the `approvers` the environment's table
+names; where neither names `approvers`, the policy SHALL answer none,
+any asker the gate verifies (129, C.10). A name `[signers]` does not hold SHALL be unreadable naming
 the table and the name, and an empty list SHALL be unreadable naming
 the table, since it would read as naming no one.
 
@@ -237,11 +238,15 @@ An environment SHALL be declared as `[environments.<name>]` where no
 component is declared and `[environments.<component>.<name>]` where
 components are. Its keys SHALL be C.10's words and no others: its
 `channel`, `policy` (`auto` or `manual`, `auto` where unwritten),
-`after`, a list of environment names of the same component, and
-`target`, which the profile SHALL leave to the target's reader, reading
-nothing of its value (C.10). Any other `policy`, or a `channel` the
-file does not declare, give or make, SHALL be unreadable naming the
-table. Any other key SHALL be unreadable naming the table and the key,
+`after`, a list of environment names of the same component, `target`,
+which the profile SHALL leave to the target's reader, reading nothing
+of its value, and, where the environment is manual, `approvers`, the
+signers that may say yes, read as a channel's `approvers` is (C.10, as
+ruled at agentplot/blueprints 088430c). Any other `policy`, or a
+`channel` the file does not declare, give or make, SHALL be unreadable
+naming the table. `approvers` on an environment that is not manual
+SHALL be unreadable naming the table and the key, since no one says yes
+to it. Any other key SHALL be unreadable naming the table and the key,
 since a target's own settings sit in the target's table and nowhere
 else (C.10).
 
@@ -255,10 +260,15 @@ else (C.10).
 - **WHEN** `[environments.site]` names `channel = "stable"` and `bucket = "example-site"`
 - **THEN** the channels are unreadable naming `[environments.site]` and `bucket`, and saying a target's settings sit in the target's table
 
-#### Scenario: Approvers in an environment's table
+#### Scenario: Approvers in a manual environment's table
 
-- **WHEN** `[environments.prod]` names `channel = "stable"`, `policy = "manual"` and `approvers = ["ci"]`
-- **THEN** the channels are unreadable naming `[environments.prod]` and `approvers`, and saying who may ask for `prod` is named under `[channels.prod]`
+- **WHEN** `[signers.ci]` is declared and `[environments.prod]` names `channel = "stable"`, `policy = "manual"` and `approvers = ["ci"]`
+- **THEN** the channels answer lists `prod` bound to `stable`, and the policy for `prod` names `ci` as the one signer that may ask
+
+#### Scenario: Approvers on an environment that moves on its own
+
+- **WHEN** `[environments.site]` names `channel = "stable"` and `approvers = ["ci"]`, and no `policy`
+- **THEN** the channels are unreadable naming `[environments.site]` and `approvers`
 
 #### Scenario: An unknown policy word
 
@@ -269,10 +279,13 @@ else (C.10).
 
 The channel a manual or after environment is given SHALL take the
 environment's name, in its component, and a line under it SHALL add
-claims after the gate's acceptance or name its approvers (C.10). A
-channel so made that shares a name with a channel the fragment holds,
-held or not, or with another made channel, or a line under it naming another binding or
-`on_each_publish`, SHALL be unreadable naming the table.
+claims after the gate's acceptance (C.10). A channel so made that
+shares a name with a channel the fragment holds, held or not, or with
+another made channel, or a line under it naming another binding or
+`on_each_publish`, SHALL be unreadable naming the table; so SHALL a
+line under it naming `approvers`, saying that who may ask for it is
+written on the environment, since the made channel takes its
+environment's (C.10, as ruled at agentplot/blueprints 088430c).
 
 #### Scenario: A manual environment named beta
 
@@ -283,6 +296,11 @@ held or not, or with another made channel, or a line under it naming another bin
 
 - **WHEN** the manual environment `prod` names `stable`, and `[channels.prod]` names `bound_to = "stable"` and a `require`
 - **THEN** `prod` is listed bound to `stable`, and its policy requires the gate's acceptance and then the line's claims
+
+#### Scenario: Approvers under a made channel
+
+- **WHEN** the manual environment `prod` names `stable`, and `[channels.prod]` names `approvers = ["ci"]`
+- **THEN** the channels are unreadable naming `[channels.prod]` and `approvers`, and saying who may ask for `prod` is written on `[environments.prod]`
 
 #### Scenario: A manual environment named for a held given
 

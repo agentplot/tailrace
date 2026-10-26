@@ -14,9 +14,9 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelId, ChannelName, Claim,
     ClaimKind, ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope,
-    Environment, EnvironmentName, Keeper, Landing, Moves, NamedSigner, Outcome, Output, OutputName,
-    Policy, Projection, Report, Required, Revision, Seams, Signature, Signer, SignerId, Store,
-    Target, Verdict, Verified, Version, IN_TOTO,
+    Environment, EnvironmentName, HeldChannel, Keeper, Landing, Moves, NamedSigner, Outcome,
+    Output, OutputName, Policy, Projection, Report, Required, Revision, Seams, Signature, Signer,
+    SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
@@ -417,10 +417,11 @@ impl PolicyRig for FakePolicyRig {
                     claims: vec![],
                     bound_to: channel.bound_to().map(|c| c.name),
                     promoted_by: vec![],
+                    approvers: vec![],
                 },
             );
-            if channel.moves == Moves::EachPublish {
-                self.policy.follows_at(&at, &channel.channel);
+            if let Moves::EachPublish { prereleases } = channel.moves {
+                self.policy.follows_at(&at, &channel.channel, prereleases);
             }
         }
         at
@@ -429,6 +430,10 @@ impl PolicyRig for FakePolicyRig {
     /// The fake gives no channel a test did not script (C.10 is the
     /// file's).
     fn given(&self, _: &[ComponentName]) -> Vec<DeclaredChannel> {
+        Vec::new()
+    }
+
+    fn held(&self, _: &[ComponentName]) -> Vec<HeldChannel> {
         Vec::new()
     }
 

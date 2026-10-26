@@ -35,7 +35,7 @@ share that state with every copy the test hands to the core.
 #### Scenario: A scripted given held off
 
 - **WHEN** a test scripts the fake policy with `canary` held off, moving on each publish, with the line `[channels.canary]`, and scripts no other
-- **THEN** the held givens answer `canary` with how it would move and its line, channels does not list it, and a fake scripted with none held answers an empty list, with the call recorded and faultable like channels
+- **THEN** the channels answer carries `canary` held, with how it would move and its line, apart from the channels in force, which do not include it, and a fake scripted with none held carries an empty list held, the one call recorded and faultable as before
 
 #### Scenario: The fake keeper's two components
 

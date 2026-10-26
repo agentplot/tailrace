@@ -12,9 +12,9 @@ use serde_json::json;
 use tailrace_core::{verify, Published, Told, Verified, VerifyAsk};
 use tailrace_fakes::{Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
-    Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
-    DeclaredChannel, Envelope, NamedSigner, Not, Outcome, Policy, Required, RequiredClaim,
-    Revision, Seam, SignerId, Store, Version, Why,
+    Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName, Envelope,
+    NamedSigner, Not, Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam,
+    SignerId, Store, Version, Why,
 };
 use world::{build_of, World, HOST, LANDING};
 
@@ -175,7 +175,7 @@ impl Policy for Watched {
         self.inner.policy_for(revision, audience)
     }
 
-    fn channels(&self, revision: &Revision) -> Answer<Vec<DeclaredChannel>> {
+    fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         self.inner.channels(revision)
     }
 }
@@ -235,6 +235,7 @@ fn a_channel_named_alone_is_the_versions_components() {
             claims: vec![],
             bound_to: None,
             promoted_by: vec![],
+            approvers: vec![],
         },
     );
     let verified = verified(

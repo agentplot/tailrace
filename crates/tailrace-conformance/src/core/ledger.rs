@@ -12,7 +12,7 @@ use tailrace_core::{
 use tailrace_fakes::{FakeKeeper, FakeStore, Fault, KeeperOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
     channel_name, Answer, Chain, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, IndexMeta, Keeper, Manifest, Moved, Name, Not, Promotion, Signature, Signer,
+    Envelope, IndexMeta, Keeper, Manifest, Moved, Name, Not, Promotion, Read, Signature, Signer,
     SignerId, Store, Version, Why, IN_TOTO,
 };
 
@@ -84,6 +84,12 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             plays: None,
             cites: &[32, 9, 125],
             run: stable_promoted_by_the_gates_signer,
+        },
+        Scenario {
+            name: "an asker the approvers do not name",
+            plays: None,
+            cites: &[32, 33],
+            run: an_asker_the_approvers_do_not_name,
         },
     ]
 }
@@ -527,6 +533,7 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
                 claims,
                 bound_to: None,
                 promoted_by,
+                approvers: vec![],
             },
         );
         let before = written(world);
@@ -679,7 +686,7 @@ fn the_store_rewritten_from_the_ledger(world: &FakeWorld) {
 fn a_channel_read_from_the_ledger_alone(world: &FakeWorld) {
     assert_eq!(
         ok(channel(&world.fakes.keeper, &stable()), "an empty channel"),
-        Channel::Empty
+        Channel::Empty { read: Read::Source }
     );
     let (first, second) = two_versions(world);
     let (one, _) = moved(
@@ -736,6 +743,7 @@ fn given_stable(world: &FakeWorld) {
             }],
             bound_to: Some(ChannelName::new(BETA)),
             promoted_by: vec![gate],
+            approvers: vec![],
         },
     );
     claim_of(
@@ -779,4 +787,61 @@ fn stable_promoted_by_the_gates_signer(world: &FakeWorld) {
         matches!(other.fakes.keeper.chain(&stable()), Err(Not::Absent(_))),
         "stable's chain was appended to"
     );
+}
+
+/// 32, 33: stable, given and promoted by the gate's signer, naming
+/// `approvers` as who may ask for it; the host's signer asks.
+fn stable_asked_by(world: &FakeWorld, approvers: &[&str]) {
+    let named = |id: &str, kinds: Vec<ClaimKind>| tailrace_seams::NamedSigner {
+        id: SignerId::new(id),
+        verified_by: format!("{id}'s key"),
+        kinds,
+        checks: vec![],
+    };
+    let gate = named(GATE, vec![ClaimKind::Acceptance]);
+    world.fakes.policy.require(
+        tailrace_seams::Audience::Channel(stable()),
+        tailrace_seams::Required::Channel {
+            claims: vec![tailrace_seams::RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![gate.clone()],
+            }],
+            bound_to: Some(ChannelName::new(BETA)),
+            promoted_by: vec![gate],
+            approvers: approvers.iter().map(|a| named(a, vec![])).collect(),
+        },
+    );
+}
+
+fn an_asker_the_approvers_do_not_name(world: &FakeWorld) {
+    given_stable(world);
+    stable_asked_by(world, &["ci"]);
+    let before = written(world);
+    assert_eq!(
+        refused(
+            world.promote(&world.promote_ask(STABLE, to("0.2.0"))),
+            "stable to 0.2.0 asked by the gate"
+        ),
+        Why::NotApprover {
+            channel: stable(),
+            asker: SignerId::new(GATE),
+            approvers: vec![SignerId::new("ci")],
+        },
+        "an asker the approvers do not name moved stable"
+    );
+    assert_eq!(written(world), before, "a refused asking wrote or signed");
+    assert!(
+        matches!(world.fakes.keeper.chain(&stable()), Err(Not::Absent(_))),
+        "stable's chain was appended to"
+    );
+
+    stable_asked_by(world, &["ci", GATE]);
+    claim_of(
+        world.promote(&world.promote_ask(STABLE, to("0.2.0"))),
+        "stable to 0.2.0 asked by an approver",
+    );
+    let chain = chain_of(world, &stable());
+    assert_eq!(chain.len(), 1, "stable's chain holds other than the move");
+    assert_eq!(chain[0].asked_by, SignerId::new(GATE));
 }

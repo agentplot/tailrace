@@ -124,30 +124,31 @@ binding or environment.
 
 ### Requirement: A held given is answered with the line that switches it on
 
-The policy SHALL answer every given it holds that the repository has
-not switched on, for every component, with how it would move once
-switched on and the line that would switch it on, read from the
-fragment: `[channels.<name>]` where the repository declares no
-component and `[channels.<component>.<name>]` where it declares
-components (C.10, as amended at agentplot/blueprints b1267d7). A given
-the repository switches on SHALL leave the held answer and join the
-channels answer, and one it does not SHALL never be in the channels
-answer.
+The channels answer SHALL carry, apart from the channels in force,
+every given the profile holds that the repository has not switched on,
+for every component, marked held, with how it would move once switched
+on and the line that would switch it on, read from the fragment:
+`[channels.<name>]` where the repository declares no component and
+`[channels.<component>.<name>]` where it declares components (C.10 as
+amended at agentplot/blueprints b1267d7, 131 as amended at 1ae1cc5). A
+given the repository switches on SHALL leave the held givens and join
+the channels in force, and one it does not SHALL never be among the
+channels in force.
 
 #### Scenario: Nothing switched on
 
 - **WHEN** the policy file writes no channel and declares no component
-- **THEN** the held givens are `alpha`, moving on each publish with prereleases, with the line `[channels.alpha]`, and `lts`, bound to `stable`, with the line `[channels.lts]`
+- **THEN** the channels answer holds off `alpha`, moving on each publish with prereleases, with the line `[channels.alpha]`, and `lts`, bound to `stable`, with the line `[channels.lts]`
 
 #### Scenario: One component's alpha switched on
 
 - **WHEN** the file declares `lib` and `web` and holds `[channels.lib.alpha]`
-- **THEN** the held givens are `alpha` of `web` with the line `[channels.web.alpha]` and `lts` of each with its component's line, and `alpha` of `lib` is in the channels answer alone
+- **THEN** the channels answer holds off `alpha` of `web` with the line `[channels.web.alpha]` and `lts` of each with its component's line, and carries `alpha` of `lib` among the channels in force alone
 
 #### Scenario: Another fragment's held given
 
 - **WHEN** the profile is given, in place of the shipped fragment, one holding `edge` moving on each publish and `canary` held, bound to `edge`
-- **THEN** the held givens are `canary` with the line `[channels.canary]`, and the channels answer is `edge` alone
+- **THEN** the channels answer holds off `canary` with the line `[channels.canary]`, and its channels in force are `edge` alone
 
 ### Requirement: The same line overrides a given
 
@@ -232,10 +233,12 @@ never widen who signs.
 An environment whose `policy` is `manual` SHALL give it a channel of
 its own, named for the environment, in the component of the channel it
 names and bound to that channel, moved only at an asking (41, 97,
-C.10). Who may ask for it SHALL be named by `approvers` in the made
-channel's own table, `[channels.<environment>]`, since an environment's
-table holds C.10's four words alone. An environment whose `policy` is
-`auto`, or unwritten, SHALL make no channel.
+C.10). Who may ask for it SHALL be named by `approvers` on the
+environment, `[environments.<environment>]`, which the made channel
+takes as its own; never under the made channel, which the repository
+does not write approvers on (C.10, as ruled at agentplot/blueprints
+088430c). An environment whose `policy` is `auto`, or unwritten, SHALL
+make no channel.
 
 #### Scenario: prod waits on stable
 
@@ -249,7 +252,7 @@ table holds C.10's four words alone. An environment whose `policy` is
 
 #### Scenario: Who may say yes to prod
 
-- **WHEN** the manual environment `prod` names `stable`, and `[channels.prod]` names `approvers = ["ci"]`
+- **WHEN** the manual environment `prod` names `stable` and `approvers = ["ci"]`
 - **THEN** `prod` is listed bound to `stable`, and its policy names `ci` as the one signer that may ask for it
 
 ### Requirement: An after environment has a channel bound to theirs
@@ -276,10 +279,11 @@ through `after` SHALL make the channels unreadable naming the table.
 A channel an environment's words make SHALL be listed, judged and
 promoted like a given channel: its policy requires the gate's
 acceptance and its promotion is signed by the gate's signer (131,
-C.10). A line under it SHALL add claims after the gate's acceptance or
-name its approvers, and one naming another way it moves SHALL be
-unreadable naming its table, since the environment's words say how it
-moves.
+C.10). A line under it SHALL add claims after the gate's acceptance;
+one naming another way it moves SHALL be unreadable naming its table,
+since the environment's words say how it moves, and one naming
+`approvers` SHALL be unreadable naming its table, since who may ask for
+it is written on the environment (C.10).
 
 #### Scenario: Promoting prod
 

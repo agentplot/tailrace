@@ -2,16 +2,21 @@
 //! head, the one table the givens and the repository's file make, as the
 //! policy seam answers it: what acceptance and a layout require, and
 //! every channel, the givens beside the repository's own, with how each
-//! moves, the claims it requires and its promoters (82, 131, C.10; design
-//! D11). It is bound as status is, to the landing and the policy, binds
-//! no store and no signer, and writes nothing (60, rule core.32).
+//! moves, whether a following one takes prereleases, the claims it
+//! requires, its promoters and who may ask for it; and beneath them each
+//! given held off, with how it would move and the line that switches it
+//! on, from the same channels answer (82, 131, 32, C.10; design D11,
+//! D13). It is bound as status is, to the landing and the policy, binds no
+//! store and no signer, and writes nothing (60, rule core.32).
 
 use std::io::{self, Write};
 use std::path::Path;
 
 use clap::Args;
 use tailrace_core::{in_force, ChannelInForce, History, InForce, InForceAsk};
-use tailrace_seams::{Answer, Branch, Moves, NamedSigner, Not, Required, RequiredClaim};
+use tailrace_seams::{
+    Answer, Branch, HeldChannel, Moves, NamedSigner, Not, Required, RequiredClaim,
+};
 
 use crate::{render, Binding};
 
@@ -62,13 +67,44 @@ fn text(out: &mut dyn Write, in_force: &InForce) -> io::Result<()> {
     writeln!(out, "channels")?;
     match &in_force.channels {
         Ok(channels) => {
-            for channel in channels {
+            for channel in &channels.in_force {
                 self::channel(out, channel)?;
+            }
+            if channels.held.is_empty() {
+                return Ok(());
+            }
+            writeln!(out)?;
+            writeln!(out, "held off")?;
+            for held in &channels.held {
+                self::held(out, held)?;
             }
             Ok(())
         }
         Err(not) => render::not(out, "  ", not),
     }
+}
+
+/// How a channel moves, or would once switched on, in the words the
+/// channels are shown with.
+fn moves(moves: &Moves) -> String {
+    match moves {
+        Moves::EachPublish { prereleases: false } => "each publish".to_string(),
+        Moves::EachPublish { prereleases: true } => "each publish, prereleases too".to_string(),
+        Moves::Promotion => "promotion".to_string(),
+        Moves::Bound { to } => format!("bound to {to}"),
+    }
+}
+
+/// One given held off, spelled, how it would move, and the line that
+/// switches it on, as the policy words it (C.10).
+fn held(out: &mut dyn Write, held: &HeldChannel) -> io::Result<()> {
+    writeln!(
+        out,
+        "  {}, {}, switch on with {}",
+        held.channel.channel,
+        moves(&held.channel.moves),
+        held.switch
+    )
 }
 
 /// The claims an audience requires, by kind, its check and its signers,
@@ -87,14 +123,15 @@ fn required(out: &mut dyn Write, answer: &Answer<Required>) -> io::Result<()> {
 }
 
 /// One channel, spelled, and how it moves; then the claims its policy
-/// requires and its promoters, or its policy's own answer (58).
+/// requires, its promoters and who may ask for it, any asker where it
+/// names none, or its policy's own answer (58).
 fn channel(out: &mut dyn Write, channel: &ChannelInForce) -> io::Result<()> {
-    let moves = match &channel.channel.moves {
-        Moves::EachPublish => "each publish".to_string(),
-        Moves::Promotion => "promotion".to_string(),
-        Moves::Bound { to } => format!("bound to {to}"),
-    };
-    writeln!(out, "  {}, {moves}", channel.channel.channel)?;
+    writeln!(
+        out,
+        "  {}, {}",
+        channel.channel.channel,
+        moves(&channel.channel.moves)
+    )?;
     match &channel.policy {
         Ok(policy) => {
             let claims: Vec<String> = policy.claims().iter().map(claim).collect();
@@ -103,7 +140,12 @@ fn channel(out: &mut dyn Write, channel: &ChannelInForce) -> io::Result<()> {
             } else {
                 writeln!(out, "    requires {}", claims.join(", then "))?;
             }
-            writeln!(out, "    promoted by {}", signers(policy.promoted_by()))
+            writeln!(out, "    promoted by {}", signers(policy.promoted_by()))?;
+            let askers = match policy.approvers() {
+                [] => "any asker".to_string(),
+                approvers => signers(approvers),
+            };
+            writeln!(out, "    may be asked for by {askers}")
         }
         Err(not) => render::not(out, "    ", not),
     }

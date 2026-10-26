@@ -215,26 +215,6 @@ says the digests matched; the gate SHALL make no rebuild (30).
 - **WHEN** a second signer's rebuild claim on an artifact says the digests did not match
 - **THEN** it does not count, and the version is refused naming the required rebuild
 
-### Requirement: A channel that follows each publish is declared in the policy file
-
-The core SHALL read, at the governed branch's landed head, which
-channels follow each publish: each `[channels.<name>]` table of
-`.config/tailrace.toml` with `on_each_publish = true`, belonging to the
-component its `component` key names, or to the one component where the
-repository declares one (32, 125). A following channel that names no
-component in a repository of several, or that names `bound_to`, SHALL
-be unreadable naming its table (37).
-
-#### Scenario: beta follows each publish
-
-- **WHEN** the policy file at the branch's head holds `[channels.beta]` with `on_each_publish = true` in a repository of one component
-- **THEN** `beta` follows each publish of that component
-
-#### Scenario: A following channel bound to another
-
-- **WHEN** `[channels.stable]` holds both `on_each_publish = true` and `bound_to = "beta"`
-- **THEN** the gate's answer for `stable` is unreadable naming the table, and `stable` does not move
-
 ### Requirement: The gate moves each following channel after accepting what a publish told it of
 
 When the gate accepts a version it was told of by a publish's answer, it
@@ -301,3 +281,70 @@ signer that made its provenance (9, 27, 96, S9).
 
 - **WHEN** a publish offers a version in a repository where `beta` follows each publish, and no gate runs
 - **THEN** `beta` names nothing new, the chain of `beta` holds no new promotion, and the version is offered and not accepted
+
+### Requirement: The channels that follow each publish come from the policy seam
+
+The gate SHALL read, at the governed branch's landed head, which
+channels follow each publish from the policy seam's channels answer
+alone: each channel of the component published that the answer says
+moves on each accepted publish (95, 125, 131). The gate SHALL read no
+key of the policy file itself, and SHALL find the signer it accepts as
+through the policy for acceptance and for each channel listed (core.1,
+core.2, core.7).
+
+#### Scenario: beta follows each publish with no line written
+
+- **WHEN** the policy at the branch's head writes no channel in a repository of one component, and the gate accepts a version a publish told it of
+- **THEN** `beta` follows that publish, and `stable` does not
+
+#### Scenario: Two components' beta
+
+- **WHEN** the repository declares `lib` and `web` and the gate accepts a version of `lib` a publish told it of
+- **THEN** `beta` of `lib` follows that publish and `beta` of `web` does not
+
+#### Scenario: A channels answer that cannot be read
+
+- **WHEN** the policy's channels answer is unreadable at the branch's head
+- **THEN** the gate's answer is unreadable with the policy's words, and nothing is accepted or moved
+
+### Requirement: The gate moves a following channel only as its promoter
+
+The gate SHALL move a channel that follows each publish only where the
+signer it accepts as is among the promoters the channel's policy names;
+otherwise that channel's answer SHALL be refused naming the promotion
+and its promoters, and the acceptance SHALL stand (32, 9, core.7).
+
+#### Scenario: A following channel the gate may not promote
+
+- **WHEN** a hand-declared channel moves on each publish and its policy names `release`, not the gate's signer, as its promoter
+- **THEN** the version is accepted, the channel does not move, and its answer is refused naming the promotion and `release`
+
+### Requirement: A prerelease moves only the channels that take prereleases
+
+The gate SHALL move, of the channels that follow each publish, every
+one with an accepted release, and with an accepted prerelease only
+those the channels answer says take prereleases (C.10, 95, 131). A
+version is a prerelease where the version rule made it one, its
+semantic version carrying a prerelease part (21). The acceptance SHALL
+stand whichever channels move.
+
+#### Scenario: A prerelease accepted
+
+- **WHEN** `[channels.alpha]` is written, and the gate accepts the prerelease `1.3.0-pre.2` a publish told it of
+- **THEN** `alpha` moves to it, `beta` does not, and the version is accepted
+
+#### Scenario: A release accepted
+
+- **WHEN** `[channels.alpha]` is written, and the gate accepts the release `1.3.0` a publish told it of
+- **THEN** both `alpha` and `beta` move to it
+
+### Requirement: The gate's move on a publish is no asking
+
+The gate SHALL move a channel that follows each publish as its own act,
+recording its own signer as who asked and the publish as the cause,
+whatever `approvers` the channel's policy names (95, 129, C.10).
+
+#### Scenario: beta's approvers and a publish
+
+- **WHEN** `[channels.beta]` names `approvers = ["ci"]`, and the gate signing as `desk` accepts a version a publish told it of
+- **THEN** `beta` moves, its claim naming `desk` as who asked

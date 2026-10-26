@@ -413,3 +413,31 @@ fn the_store_gone_after_a_read_answers_the_chain_as_kept_with_its_time_and_words
         other => panic!("a chain never read answered {other:?}"),
     }
 }
+
+#[test]
+fn an_empty_channel_read_then_the_store_gone_answers_no_claims_as_last_read() {
+    let rig = StoreRig::new();
+    let beta = ChannelId::new(None, ChannelName::new("beta"));
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    assert!(matches!(rig.keeper.chain(&beta), Err(Not::Absent(_))));
+    let next = rig.nth(&beta, 1);
+    let words = rig.unreachable();
+    match rig.keeper.chain(&beta) {
+        Ok(Chain {
+            claims,
+            read: Read::Kept { at, said },
+        }) => {
+            assert_eq!(claims, []);
+            assert!(at >= before, "kept at {at}, read at {before}");
+            assert_eq!(said, words);
+        }
+        other => panic!("an empty channel with the store gone answered {other:?}"),
+    }
+    match rig.keeper.append(&beta, &next, None) {
+        Err(Not::Unreadable(u)) => assert_eq!(u.said.as_deref(), Some(words.as_str())),
+        other => panic!("an append with the store gone answered {other:?}"),
+    }
+}

@@ -96,11 +96,14 @@ pub struct Mirrored {
 
 /// 31, 101: a channel as its chain holds it: empty, which is an answer
 /// and not an error, or at its head's version, with every promotion in
-/// order by its envelope's digest and how the chain was read (60).
+/// order by its envelope's digest; either with how the chain was read,
+/// an empty one from the source or as last read, saying when (60).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Channel {
-    Empty,
+    Empty {
+        read: Read,
+    },
     At {
         head: Promotion,
         chain: Vec<(Digest, Promotion)>,
@@ -280,8 +283,10 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
         }
     }
 
-    // 8: judged, and the host's signer one the channel's policy names
-    // among its promoters (9, 31, 32).
+    // 8: the asker one the channel's policy lets ask, judged, and the
+    // host's signer one the channel's policy names among its promoters
+    // (9, 31, 32, C.10).
+    may_ask(&required, channel, &ask.signer)?;
     let claims = judge(seams, &required, &to.index)?;
     may_promote(&required, &ask.signer)?;
 
@@ -429,6 +434,27 @@ pub fn judge(seams: &Seams, required: &Required, index: &Digest) -> Answer<Vec<D
     Ok(satisfied)
 }
 
+/// 32, C.10: `asker`, the host's own signer while no identity provider
+/// stands (129), is among the signers the policy for `channel` lets ask,
+/// or the policy names none, so any asker the gate verifies may;
+/// refused [`Why::NotApprover`], naming the asker and who may ask,
+/// otherwise.
+fn may_ask(required: &Required, channel: &ChannelId, asker: &SignerId) -> Answer<()> {
+    let approvers = required.approvers();
+    if approvers.is_empty() || approvers.iter().any(|s| s.id == *asker) {
+        return Ok(());
+    }
+    Err(Not::refused(
+        &Source::new(Seam::Policy, BOUND),
+        Why::NotApprover {
+            channel: channel.clone(),
+            asker: asker.clone(),
+            approvers: approvers.iter().map(|s| s.id.clone()).collect(),
+        },
+        None,
+    ))
+}
+
 /// 9, 32: `signer` is among the signers the channel's policy names as
 /// its promoters (rule core.7); refused [`Why::Wanting`] a promotion,
 /// naming them, otherwise.
@@ -474,12 +500,14 @@ pub fn mirror(store: &dyn Store, ledger: &dyn Keeper, channel: &ChannelId) -> An
 /// 31, 60, 101: `channel` as its chain holds it, asked of the ledger
 /// alone: nothing of the store is read, and nothing is written (rule
 /// core.32). A chain the ledger answers as last read is answered so,
-/// saying when and with its words; a claim of it holding no promotion of
-/// tailrace's form is unreadable naming its digest.
+/// saying when and with its words, an empty one among them, and one the
+/// ledger answers absent is empty as the source holds it; a claim of it
+/// holding no promotion of tailrace's form is unreadable naming its
+/// digest.
 pub fn channel(ledger: &dyn Keeper, channel: &ChannelId) -> Answer<Channel> {
     let chain = match ledger.chain(channel) {
         Ok(chain) => chain,
-        Err(Not::Absent(_)) => return Ok(Channel::Empty),
+        Err(Not::Absent(_)) => return Ok(Channel::Empty { read: Read::Source }),
         Err(not) => return Err(not),
     };
     let mut read = Vec::new();
@@ -487,7 +515,7 @@ pub fn channel(ledger: &dyn Keeper, channel: &ChannelId) -> Answer<Channel> {
         read.push((envelope.digest(), promotion_of(channel, envelope)?));
     }
     Ok(match read.last() {
-        None => Channel::Empty,
+        None => Channel::Empty { read: chain.read },
         Some((_, head)) => Channel::At {
             head: head.clone(),
             chain: read,

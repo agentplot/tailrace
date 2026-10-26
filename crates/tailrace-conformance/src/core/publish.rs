@@ -754,6 +754,7 @@ fn channels_declared_or_not(world: &FakeWorld) {
             claims: vec![],
             bound_to: None,
             promoted_by: vec![],
+            approvers: vec![],
         },
     );
     let plain = ok(world.publish(&world.ask(&world.head)), "the publish");

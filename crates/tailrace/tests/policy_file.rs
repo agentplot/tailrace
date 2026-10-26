@@ -13,8 +13,8 @@ use tailrace::profiles::policy::file::PolicyFile;
 use tailrace_conformance::seams::policy::{self, PolicyRig};
 use tailrace_conformance::{run, Rig};
 use tailrace_seams::{
-    Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel, Moves,
-    NamedSigner, Policy, Required, Revision,
+    Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel, HeldChannel,
+    Moves, NamedSigner, Policy, Required, Revision,
 };
 
 /// The given channels as tailrace ships them, beside the profile (C.10).
@@ -156,7 +156,12 @@ fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) ->
         };
         text.push_str(&format!("[channels.{table}]\nrequire = []\n"));
         match &channel.moves {
-            Moves::EachPublish => text.push_str("on_each_publish = true\n"),
+            Moves::EachPublish { prereleases } => {
+                text.push_str("on_each_publish = true\n");
+                if *prereleases {
+                    text.push_str("prereleases = true\n");
+                }
+            }
             Moves::Bound { to } => {
                 text.push_str(&format!("bound_to = {}\n", quoted(to.as_str())));
             }
@@ -165,6 +170,56 @@ fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) ->
         text.push('\n');
     }
     text
+}
+
+/// C.10: each channel the shipped fragment declares, of every component
+/// of `components`, or of the one where none is declared, moving as its
+/// table says, prereleases among it, with whether the fragment marks it
+/// held and its table's header in the file's form, in the order the
+/// channels answer them.
+fn fragment(components: &[ComponentName]) -> Vec<(DeclaredChannel, bool, String)> {
+    let fragment: toml::Table = toml::from_str(GIVENS).expect("the shipped fragment parses");
+    let tables = fragment["channels"]
+        .as_table()
+        .expect("the fragment's channels");
+    let scopes: Vec<Option<ComponentName>> = if components.is_empty() {
+        vec![None]
+    } else {
+        components.iter().cloned().map(Some).collect()
+    };
+    let mut channels = Vec::new();
+    for (name, table) in tables {
+        let key = |key: &str| table.get(key);
+        let held = key("held").and_then(toml::Value::as_bool) == Some(true);
+        let moves = match (
+            key("on_each_publish").and_then(toml::Value::as_bool),
+            key("bound_to").and_then(toml::Value::as_str),
+        ) {
+            (_, Some(to)) => Moves::Bound {
+                to: ChannelName::new(to),
+            },
+            (Some(true), None) => Moves::EachPublish {
+                prereleases: key("prereleases").and_then(toml::Value::as_bool) == Some(true),
+            },
+            _ => Moves::Promotion,
+        };
+        for component in &scopes {
+            let header = match component {
+                Some(component) => format!("[channels.{component}.{name}]"),
+                None => format!("[channels.{name}]"),
+            };
+            channels.push((
+                DeclaredChannel {
+                    channel: ChannelId::new(component.clone(), ChannelName::new(name)),
+                    moves: moves.clone(),
+                },
+                held,
+                header,
+            ));
+        }
+    }
+    channels.sort_by(|a, b| a.0.channel.cmp(&b.0.channel));
+    channels
 }
 
 impl Rig for PolicyFileRig {
@@ -192,44 +247,24 @@ impl PolicyRig for PolicyFileRig {
         Revision::new(repo.commit("chore: the channels"))
     }
 
-    /// C.10: each channel the shipped fragment has on, of every
-    /// component, or of the one where none is declared, moving as its
-    /// table says, in the order the channels answer them.
+    /// C.10: each channel the shipped fragment declares and does not
+    /// mark held.
     fn given(&self, components: &[ComponentName]) -> Vec<DeclaredChannel> {
-        let fragment: toml::Table = toml::from_str(GIVENS).expect("the shipped fragment parses");
-        let tables = fragment["channels"]
-            .as_table()
-            .expect("the fragment's channels");
-        let scopes: Vec<Option<ComponentName>> = if components.is_empty() {
-            vec![None]
-        } else {
-            components.iter().cloned().map(Some).collect()
-        };
-        let mut given = Vec::new();
-        for (name, table) in tables {
-            let key = |key: &str| table.get(key);
-            if key("on").and_then(toml::Value::as_bool) == Some(false) {
-                continue;
-            }
-            let moves = match (
-                key("on_each_publish").and_then(toml::Value::as_bool),
-                key("bound_to").and_then(toml::Value::as_str),
-            ) {
-                (_, Some(to)) => Moves::Bound {
-                    to: ChannelName::new(to),
-                },
-                (Some(true), None) => Moves::EachPublish,
-                _ => Moves::Promotion,
-            };
-            for component in &scopes {
-                given.push(DeclaredChannel {
-                    channel: ChannelId::new(component.clone(), ChannelName::new(name)),
-                    moves: moves.clone(),
-                });
-            }
-        }
-        given.sort_by(|a, b| a.channel.cmp(&b.channel));
-        given
+        fragment(components)
+            .into_iter()
+            .filter(|(_, held, _)| !held)
+            .map(|(channel, ..)| channel)
+            .collect()
+    }
+
+    /// C.10: each channel the shipped fragment marks held, with its
+    /// table's header as the line that switches it on.
+    fn held(&self, components: &[ComponentName]) -> Vec<HeldChannel> {
+        fragment(components)
+            .into_iter()
+            .filter(|(_, held, _)| *held)
+            .map(|(channel, _, switch)| HeldChannel { channel, switch })
+            .collect()
     }
 
     /// The repository removed, and git's words for reading it.

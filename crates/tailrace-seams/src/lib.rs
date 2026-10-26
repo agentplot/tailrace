@@ -161,7 +161,7 @@ mod tests {
         fn policy_for(&self, _: &Revision, _: &Audience) -> Answer<Required> {
             nothing(Seam::Policy, "policy-for")
         }
-        fn channels(&self, _: &Revision) -> Answer<Vec<DeclaredChannel>> {
+        fn channels(&self, _: &Revision) -> Answer<PolicyChannels> {
             nothing(Seam::Policy, "channels")
         }
     }
