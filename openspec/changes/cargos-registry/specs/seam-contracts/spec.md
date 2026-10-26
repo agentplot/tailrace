@@ -1,54 +1,5 @@
 ## MODIFIED Requirements
 
-### Requirement: One interface per seam
-Each seam of Part B SHALL be exactly one interface holding that seam's
-operations as the statement names them and no other: the store (66 to
-72, and the listing of the versions a name holds, 138), the build (74, 75), the
-landing (77, 78), the signer (79, 80), the policy (82), a projection (84
-to 86, 137), a target (88 to 91) and the keeper (120, 121). A profile
-implements one interface and nothing of the core (core.2).
-
-#### Scenario: Each seam's operations
-- **WHEN** a reader lists the operations of each seam's interface
-- **THEN** the store has put-bytes, put-artifact, attach, claims-of, name, resolve, read and versions; the build has ensure and report; the landing has landed and verdicts-of; the signer has sign and verify; the policy has policy-for; a projection has pack, render, serve and pinned; a target has desired, current, apply and report; the keeper has append and chain; and no interface has any other
-
-#### Scenario: The seams name no tool
-- **WHEN** the seams' code is searched for the names core.1 rules out
-- **THEN** none appears, and the code imports nothing of any profile
-
-### Requirement: The store's contract
-
-The store SHALL answer put-bytes with the digest and whether it held
-the bytes already (66, 5); put-artifact with the artifact's digest
-(67); attach with the attestation held beside its digest (68, 8);
-claims-of with every attestation as attached, or absent (69); name
-with the name moved, or refused naming where it is (70); resolve with
-a digest, or absent (71); read with what the digest holds, or
-absent (72); and versions, given an ecosystem and a name, with the
-version of every pointer `artifact/<ecosystem>/<name>@<version>` it
-holds, in no order a reader relies on, none where it holds none, and
-unreadable where it cannot list (138, 23, 58).
-
-#### Scenario: A name moved only from where it is expected
-
-- **WHEN** name is asked to move a name from a digest it is not at
-- **THEN** the answer is refused, naming the digest the name is at, and the name does not move
-
-#### Scenario: A name made from nothing
-
-- **WHEN** name is asked to move a name that names nothing, from nothing
-- **THEN** the name is made
-
-#### Scenario: An artifact read back
-
-- **WHEN** read is asked for the digest put-artifact answered
-- **THEN** it answers the artifact's metadata and the digests it names
-
-#### Scenario: The versions a name holds
-
-- **WHEN** a store holding the names `artifact/cargo/fam-a@1.0.0`, `artifact/cargo/fam-a@1.1.0+build.5`, `artifact/cargo/fam-ab@1.0.0` and `fam-v1.0.0` is asked for the versions of `fam-a` in `cargo`
-- **THEN** it answers `1.0.0` and `1.1.0+build.5` and no other, and asked for a name it holds no pointer of, it answers none
-
 ### Requirement: A projection's contract
 A projection SHALL answer pack, given an output at a build identity and,
 where the bytes are an artifact's, the version, the component the output
@@ -58,16 +9,19 @@ repository, with the ecosystem's own bytes, their metadata only where a
 version was given, and whether the same outputs and version, or the same
 build identity, pack to the same bytes (84, 87, 100, 110, 123); render,
 given artifacts and their metadata or cache entries by build identity,
-with a consumer layout and the versions or build identities it holds
-(85); serve, given a layout, one request of the ecosystem's own client
-with the base address it is served at, and a way to ask the core for a
+with a consumer layout and the versions or build identities it holds,
+and given besides a range and the artifacts of its name, holding the
+newest of them within the range by the ecosystem's own rules or none
+(85, 137, 23); serve, given a layout, one request of the ecosystem's
+own client with the base address it is served at, and a way to ask the core for a
 version the layout lacks, with the response to that request in the
 client's own protocol, or absent naming serving, for every request, from
 a projection whose ecosystem's clients read files (86, 115); and pinned,
 given a checkout, with the ecosystem names and versions its lockfile
-pins as the lockfile spells them, or absent where the checkout holds no
-lockfile of that ecosystem (137). A projection SHALL never reach the
-store but through the store it is handed, nor the policy or a version's
+pins as the lockfile spells them, and, for a name its manifest declares
+and no lockfile pins, the manifest's range as the manifest spells it, or
+absent where the checkout holds no lockfile of that ecosystem (137). A
+projection SHALL never reach the store but through the store it is handed, nor the policy or a version's
 claims at all, nor match a component's paths itself: a version a served
 layout lacks is asked of the core, which judges it, and whether the
 component's paths hold a path is asked of the core through pack's input
@@ -98,8 +52,16 @@ component's paths hold a path is asked of the core through pack's input
 - **THEN** the answer is absent naming the lockfile, never refused and never an empty list of pins
 
 #### Scenario: A pin written and read back
-- **WHEN** a pin, an ecosystem name and a version, is written in its machine-readable form and read back
-- **THEN** it is the same pin
+- **WHEN** a pin, an ecosystem name and a version, and a range, an ecosystem name and a range's text, are each written in its machine-readable form and read back
+- **THEN** each is the same as written
+
+#### Scenario: A projection with no ranges asked to render one
+- **WHEN** the file, image or moon cache projection is asked to render artifacts with a range
+- **THEN** the answer is refused naming that its ecosystem declares no range, and nothing is written
+
+#### Scenario: An output packed with its component
+- **WHEN** pack is given an output with the version, the component the output belongs to, the component's declared outputs and a way to ask whether the component's paths hold a path
+- **THEN** the file, image, moon cache and npm projections each answer the same bytes and metadata they answer given that version alone
 
 #### Scenario: A request served
 - **WHEN** a projection whose clients read no files is asked to serve a request for a version its layout holds

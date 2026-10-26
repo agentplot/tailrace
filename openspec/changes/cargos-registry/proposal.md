@@ -2,16 +2,19 @@
 
 A family repository's `cargo build` cannot yet take a family crate from
 anything tailrace holds: no projection packs a crate, reads what a
-consumer's `Cargo.lock` pins, renders a registry Cargo reads, or answers
-Cargo over its protocol. Bolt 5's Cargo unit closes that gap
+consumer's `Cargo.lock` pins or its manifests declare, renders a
+registry Cargo reads, or answers Cargo over its protocol. Bolt 5's Cargo
+unit closes that gap
 (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 5,
 "Cargo's registry"), on the Cargo row of C.11 as the statement has it at
-blueprints `fbecdbf` (`design/tailrace/requirements.md`, 84, 85, 87, 99,
-123, 138, C.1, C.11): a crate published by one family repository is
+blueprints `b720017` (`design/tailrace/requirements.md`, 84, 85, 87, 99,
+123, 137, 138, C.1, C.11): a crate published by one family repository is
 built against by another from a sparse registry the host's one serving
 process answers at `sparse+http://127.0.0.1:7420/<owner>/<name>/cargo/`,
 the same address on every host, named `tailrace` in the checkout's cargo
-configuration; the lockfile names that address and no path; and a
+configuration; the lockfile names that address and no path; a crate a
+manifest declares and no lockfile pins yet resolves to the newest
+version the policy admits within the manifest's requirement; and a
 version the policy refuses never reaches Cargo with only Cargo's own
 words.
 
@@ -34,16 +37,16 @@ words.
   with `cargo package --no-verify --exclude-lockfile`, so each path
   dependency on a sibling crate becomes a dependency on that version in
   the registry `tailrace`, as Cargo does for any publish (84, 110, C.11).
-  A sibling none of the component's outputs packs is refused naming it,
-  since that version of it would never be published. Every edited
-  manifest gets its own bytes back.
+  A sibling the component does not declare as an output is refused
+  naming it, since a consumer could resolve nothing for it (C.11). Every
+  edited manifest gets its own bytes back.
 - **A crate of another component is depended on as the manifest
   writes.** A crate belongs to the component whose paths hold its
   manifest (123). A path dependency on a crate of another component keeps
   the version requirement the manifest writes for it and is packed as a
   dependency on that requirement in the registry `tailrace`. Pack picks
-  no version of it: which version a build uses is the consumer's
-  lockfile's. Where the store holds no version within the requirement,
+  no version of it. Where the store's listing of that crate's versions,
+  which the store-naming unit adds, holds none within the requirement,
   the pack is refused naming the crate, the requirement and the versions
   held (C.11, 138).
 - **The same outputs and version pack to the same bytes.** Cargo writes
@@ -51,22 +54,23 @@ words.
   lockfile a crate is a function of the tree, the version and the
   manifests' text, so the projection promises the same bytes again (87).
   It packs no cache entries.
-- **The store lists the versions a name holds** (138). The store seam
-  answers, for an ecosystem and a name, the versions it holds under
-  `artifact/<ecosystem>/<name>@<version>`: the registry from the tag list
-  of the repository C.1 maps that name to, each tag read back to its
-  version; the layout store from its index's names; the fake from its
-  names. Cargo's pack asks it of the store it is bound with.
 - **Pinned** (137): the names and versions a checkout's `Cargo.lock`
-  pins from a registry, spelled as the lockfile spells them, read from
-  the file alone; absent where the checkout holds no `Cargo.lock`.
-- **Render** (85, 48): the sparse registry's files at the place given,
-  holding exactly the crates given, each read through the store seam and
-  checked against its digest, and an index file per name written from
-  each crate's own normalized manifest. A dependency on a crate of any
-  family repository's served registry is written as one of this registry,
-  so a consumer resolves it here (49, 138). Rendering the same crates
-  again gives the same layout, and the layout names no address.
+  pins from a registry, spelled as the lockfile spells them; and, for
+  each crate the checkout's manifests declare in the registry `tailrace`
+  that the lockfile pins no version of, the requirement the manifest
+  writes, as its range. Read from the files alone; absent where the
+  checkout holds no `Cargo.lock`.
+- **Render** (85, 137, 48): the sparse registry's files at the place
+  given, holding exactly the crates given, and of each range's
+  candidates the newest within the range by Cargo's own requirement
+  rules, or none; each crate read through the store seam and checked
+  against its digest, and an index file per name written from each
+  crate's own normalized manifest. A dependency on a crate of any family
+  repository's served registry is written as one of this registry, so a
+  consumer resolves it here (49, 138). Rendering the same crates again
+  gives the same layout, and the layout names no address. So a consumer
+  that adds a family crate to its manifest syncs, builds, and Cargo
+  writes the pin.
 - **Serve** (86, 115): Cargo's sparse protocol, answered inside the
   host's one serving process under the consuming repository's path: the
   registry's configuration, each name's index file from the layout, and
@@ -86,8 +90,10 @@ words.
   consumer's `Cargo.lock` pinning a publisher's two sibling crates is
   synced, and `cargo build --locked` resolves both from the host's
   serving process, the lockfile's checksums matching the crates packed,
-  its source naming the served address and no path, and a refused
-  version printed by sync and answered with its claim.
+  its source naming the served address and no path, a refused version
+  printed by sync and answered with its claim, and a crate the manifest
+  adds by range resolved to the newest admitted version and pinned by
+  Cargo.
 - The site's projections page says how a family repository publishes a
   crate and how a consumer names the registry; ADR 0006's consequences
   say Cargo is served.
@@ -107,10 +113,13 @@ they land them:
   is served, and has `tailrace sync` start it (114, 115); this change
   implements serve for Cargo on that route.
 - **the store names an artifact by ecosystem, name and version** makes
-  `artifact/<ecosystem>/<name>@<version>` at each publish, and on the
-  registry makes it in the repository C.1 maps it to, with the version as
-  its tag (138, C.1). This change's listing reads what that unit makes,
-  by the same spelling.
+  `artifact/<ecosystem>/<name>@<version>` at each publish, adds the
+  store's listing of the versions a name holds on every store (138,
+  C.1), reshapes pinned to answer a manifest's range beside a lockfile's
+  pins, and has the core list a range's name, judge each version under
+  the layout's policy and hand render the admitted ones as candidates
+  (137). This change reads that listing in pack and implements the
+  range in Cargo's pinned and render.
 
 Out of scope, and what each waits on:
 
@@ -120,19 +129,13 @@ Out of scope, and what each waits on:
 - The serving process, its route, its lifetime and `tailrace sync`
   starting it: npm, rendered and served, and the gate-and-the-channels
   bolt's process it extends (114, 115, core.36).
-- Making `artifact/<ecosystem>/<name>@<version>` at publish, and on the
-  registry its repository and tag (138, C.1): the store-naming unit.
+- The store's listing of a name's versions, on every store profile, and
+  making `artifact/<ecosystem>/<name>@<version>` with, on the registry,
+  its repository and tag; listing a range's name and judging each
+  version; and 138's and 137's range scenarios in the suite: the
+  store-naming unit (138, C.1, 137).
 - A copy of a version to another store carrying its artifacts' names
-  (103, 138): later work; the clause comes with the unit that does it.
-- A name the checkout's manifest declares and no lockfile pins yet
-  (137): pinned answers the lockfile's pins alone, as npm's does; the
-  listing this change adds is what such a range resolves by (138), and
-  the planner places the rest.
-- A conformance scenario citing 138: it comes with the store-naming
-  unit. The suite's statement list stops at blueprints `5b00e15`, before
-  126 to 138, so the register cannot name 138 until the commit adopting
-  the statement past it, which registers it with that unit. Each store
-  profile's listing is proved by that profile's own tests here.
+  (103, 138): later work.
 - Writing a checkout's `.cargo/config.toml`: the repository's authors
   commit the one `[registries.tailrace]` line, as a consumer writes its
   own `.npmrc`; tailrace writes none (core.21).
@@ -148,12 +151,9 @@ Out of scope, and what each waits on:
 
 ### Modified Capabilities
 
-- `seam-contracts`: the store lists the versions a name holds; pack is
-  given, with the version, the output's component, its declared outputs
-  and a way to ask whether the component's paths hold a path.
-- `registry-store`: lists a name's versions from its repository's tags.
-- `layout-store`: lists a name's versions from its index.
-- `seam-fakes`: the fake store lists a name's versions.
+- `seam-contracts`: pack is given, with the version, the output's
+  component, its declared outputs and a way to ask whether the
+  component's paths hold a path.
 - `publishing`: a publish hands each pack its component, the component's
   outputs as the build left them, and its paths' match.
 
@@ -161,12 +161,10 @@ Out of scope, and what each waits on:
 
 - New profile directory `crates/tailrace/src/profiles/projection/cargo/`
   and its binding in `profiles/projection/mod.rs` and `bindings/mod.rs`.
-- The store seam gains its listing; every store implementation answers
-  it: the registry and layout profiles, the fake store, and the stores
-  tests wrap.
 - The projection seam's pack takes what it packs at; every projection
   implementation and every caller follows: the file, image, moon cache
-  and npm profiles, the fake, the conformance rigs, the core's tests.
+  and npm profiles, the fake and the fakes' own tests, the conformance
+  rigs, the core's cache push and tests.
 - Publish hands pack the component, its outputs and its paths' match.
 - Dependencies `flate2`, `tar` and `toml_edit`, appended (phase-1 plan,
   "Two shared files"); `Cargo.lock` follows.
@@ -175,14 +173,15 @@ Out of scope, and what each waits on:
   Cargo needs no server.
 - Rules kept: core.1 and core.2 (all Cargo naming inside the profile; the
   store reached only through the store seam; the component's paths
-  matched by the core), core.4 and core.5 (bytes read by digest and
-  checked, the packager's crate never rewritten), core.13 (the version is
-  written into the manifests by the projection after the build ran,
-  never handed to the build), core.18 (the address the lockfile records
-  names no host), core.19 (absent, refused and unreadable are three
-  responses, cargo's words carried verbatim; a store that holds no
-  version of a name answers none, a listing that fails answers
-  unreadable), core.21 (no credential written into a cargo
+  matched by the core; which versions are within a range decided by the
+  projection, which may be held by the core under the policy), core.4
+  and core.5 (bytes read by digest and checked, the packager's crate
+  never rewritten), core.13 (the version is written into the manifests by
+  the projection after the build ran, never handed to the build),
+  core.18 (the address the lockfile records names no host), core.19
+  (absent, refused and unreadable are three responses, cargo's words
+  carried verbatim; a crate the store lists no version of answers the
+  pack refused naming it), core.21 (no credential written into a cargo
   configuration), core.26 (cargo is the devenv's), core.33 (the whole
   projection group runs), core.37 (a sibling is a crate of the packed
   one's component, by its paths).
@@ -191,21 +190,18 @@ Out of scope, and what each waits on:
 
 ```
 crates/tailrace/src/profiles/projection/**
-crates/tailrace/src/profiles/store/**
 crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
 crates/tailrace/tests/**
 crates/tailrace/moon.yml
 crates/tailrace/Cargo.toml
 crates/tailrace-seams/src/projection.rs
-crates/tailrace-seams/src/store.rs
 crates/tailrace-seams/src/lib.rs
 crates/tailrace-core/src/publish.rs
-crates/tailrace-core/src/copy.rs
-crates/tailrace-core/src/repair.rs
+crates/tailrace-core/src/cache.rs
 crates/tailrace-core/tests/**
-crates/tailrace-fakes/src/store.rs
 crates/tailrace-fakes/src/projection.rs
+crates/tailrace-fakes/src/lib.rs
 crates/tailrace-conformance/src/**
 crates/tailrace-conformance/tests/**
 Cargo.toml

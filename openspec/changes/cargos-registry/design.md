@@ -35,11 +35,38 @@ what it implements:
   `served::layout_address(repository, ecosystem)` spells
   `http://127.0.0.1:7420/<owner>/<name>/<ecosystem>/`.
 
+- **the store names an artifact by ecosystem, name and version** (its
+  design, D7, D10, D11) adds the store's listing,
+
+  ```rust
+  fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>>;
+  ```
+
+  answering every version the store names `artifact/<ecosystem>/<name>@`
+  at, in no order the core relies on, or absent where it names none, on
+  every store profile (138, C.1). It makes pinned answer `Vec<Pin>`,
+  `Pin::Version(Pinned)` for a lockfile's pin or `Pin::Range(Ranged {
+  name, range })` for a name a manifest declares and no lockfile pins,
+  `Range` the manifest's text, which the core never reads; and it gives
+  render
+
+  ```rust
+  Contents::Ranged { held: &[Artifact], within: &[Within] }
+  pub struct Within { pub range: Ranged, pub candidates: Vec<Artifact> }
+  ```
+
+  where `held` is held as given and of each `within`'s candidates, every
+  version of the range's name the policy admitted, render holds the
+  newest by the ecosystem's own rules within the range, or none, its
+  `Holds::Versions` saying which (137, 23). The core lists, judges and
+  records; which versions fall within a range, and which is newest, are
+  the projection's.
+
 Built here already: the profile, its binding with a store of its own,
 render writing a crate per version and an index file per name, the index
 line, the race check after pack, and the conformance rig.
 
-C.11's Cargo row, at blueprints `fbecdbf`: pack the crate file with
+C.11's Cargo row, at blueprints `b720017`: pack the crate file with
 `cargo package --no-verify` after the component's version is set on every
 crate of the component, a path dependency on a sibling rewritten to that
 version's requirement as cargo does (110); a crate belongs to the
@@ -50,13 +77,10 @@ the store holds no such version (138); render a sparse registry under the
 served address (49, 114), named `tailrace` in the checkout's cargo
 configuration; serve from the host's one process. 84 gives pack the
 component the output belongs to with its declared outputs, so a
-projection knows which outputs are the component's own. 138 says the
-store lists the versions a name holds, a registry by the tags of
-`artifact/<ecosystem>/<name>` and a layout by its index's names; C.1 maps
-that pointer onto the registry as the repository
-`artifact/<ecosystem>/<name>`, lowercased and escaped as the protocol
-allows, with the version as its tag, a tag's characters the protocol
-refuses, `+` among them, escaped one way and read back. 99 says a
+projection knows which outputs are the component's own. 137 has pinned answer, for a name
+the checkout's manifest declares and no lockfile pins yet, the manifest's
+range, and render hold the newest version the layout's policy admits
+within it, resolved by the store's listing (138). 99 says a
 sparse-index client's refusal reaches it by omission from the listing,
 by the bytes' answer and by sync's words.
 
@@ -105,31 +129,40 @@ reference (registries, registry index, `cargo package`):
   `checksum`. `source` is `registry+<url>` or `sparse+<url>` for a
   registry, `git+<url>#<sha1>` for git, and absent for a workspace member
   or a path dependency.
-- The OCI distribution specification lists a repository's tags at
-  `GET /v2/<name>/tags/list`, answering `{"name", "tags"}`, paged with
-  `n` and `last` and a `Link: <…>; rel="next"` header while more remain;
-  a repository the registry does not know answers `404` with
-  `NAME_UNKNOWN`. A repository name's components are
-  `[a-z0-9]+((\.|_|__|-+)[a-z0-9]+)*`; a tag is
-  `[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}`.
+- A dependency's requirement is Cargo's: a bare version `0.3` reads as
+  `^0.3`, and Cargo parses requirements with the `semver` crate's
+  `VersionReq`, whose `matches` leaves out a prerelease unless a
+  comparator names a prerelease of the same major, minor and patch, as
+  Cargo resolves. A dependency written with no `version` and no `path`
+  or `git` reads as `*`.
+- `cargo build` without `--locked`, given a `Cargo.lock` that pins no
+  version of a dependency the manifest declares, resolves it from the
+  registry's index file and adds its `[[package]]` with `source` and
+  `checksum` to the lockfile.
+- A workspace's members are the root manifest's `workspace.members`,
+  glob patterns relative to the root, less `workspace.exclude`, and the
+  root's own `[package]` where it has one; a member's dependency written
+  `{ workspace = true }` takes the requirement and registry of the root's
+  `workspace.dependencies` entry of that key, and one written with
+  `package = "<name>"` depends on that name under another key.
 
 ## Goals / Non-Goals
 
 **Goals:** pack, pinned, render and serve for Cargo on the seams the
 units above land, held to the whole projection group; a crate's
 siblings and its other components' crates told apart by the component's
-paths, and its siblings checked against the component's outputs; the
-store's listing of a name's versions on every store; `cargo build
+paths, and its siblings checked against the component's outputs; a
+manifest's range answered and resolved by Cargo's rules; `cargo build
 --locked` proven against the host's serving process after `tailrace
-sync`.
+sync`, and a crate added by range resolved and pinned by Cargo.
 
 **Non-Goals:** choosing versions, the policy, the layout's place and
 `tailrace sync` (render under a policy); the process, its route and its
 lifetime (npm, rendered and served); making the
 `artifact/<ecosystem>/<name>@<version>` pointer and its registry
-repository (the store-naming unit); a copy carrying those pointers;
-writing a checkout's cargo configuration; a manifest's range where no
-lockfile pins a name (137).
+repository, the store's listing, and listing and judging a range's
+versions (the store-naming unit); a copy carrying those pointers;
+writing a checkout's cargo configuration.
 
 ## Decisions
 
@@ -149,7 +182,7 @@ is refused naming the crate. Alternative: a `Cargo.toml` among the
 output's files; refused because the design declares the output as the
 packaging task that leaves the crate file.
 
-### D2. What pack is given, and the store's listing
+### D2. What pack is given
 
 The seam's pack is given, where the bytes are an artifact's, what it
 packs at (84):
@@ -182,37 +215,11 @@ glob. Alternative: the paths' match as a method of `Component` in the
 seams; refused because the seams crate then takes `glob` and a second
 reading of the patterns the version rule already owns.
 
-The store seam gains one operation:
-
-```rust
-/// 138: the versions the store holds of `name` in `ecosystem`, each a
-/// pointer `artifact/<ecosystem>/<name>@<version>` it holds, in no order
-/// a reader relies on (23); none where it holds none.
-fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>>;
-```
-
-- The registry profile lists the tags of the repository C.1 maps the
-  pointer to, `artifact/<ecosystem>/<name>` lowercased and escaped, at
-  `tags/list`, following `Link` while it names a next page, and reads
-  each tag back to its version by the inverse of the version's tag
-  spelling (a referrers tag, or one no version spells to, skipped). The
-  spellings are the ones the store-naming unit's name and resolve use for
-  a pointer (C.1); this change adds the reading back beside them, in
-  `registry/tag.rs`. `404` `NAME_UNKNOWN` answers none, since no version
-  of the name was ever made; any other failure is unreadable with the
-  registry's words (core.19).
-- The layout store answers, from the ref names of `index.json`'s
-  entries that begin `artifact/<ecosystem>/<name>@`, what follows the
-  `@`, each once.
-- The fake store answers the same from its names map's keys.
-- Every store a test wraps delegates or answers as its test needs.
-
-The Cargo projection asks it of the store it is bound with (D8), the
-store the publish puts into; reaching the store through the store seam
-is the projection's way (core.2). Why an operation of a name's versions
-and not of names under any prefix: C.1 holds a name's versions as one
-repository's tag list, and a registry lists no names across
-repositories but by its catalog, which the profile does not read.
+The Cargo projection asks the store it is bound with (D8), the store the
+publish puts into, for a name's versions by the store-naming unit's
+`versions`, and reaches the store no other way (core.2). It adds no
+operation to the store seam and no listing to any store profile: the
+listing is that unit's alone (138).
 
 ### D3. The component's version on its own crates, and nothing picked of another's
 
@@ -228,9 +235,8 @@ dev dependency with no version from the packed crate.
 
 The component's outputs say which crates it publishes: each output's one
 crate file, read as D1 reads the packed output's, names a package. A
-sibling no output names is refused naming it and the component, since
-the requirement pack writes for it would name a version never published
-(84). An output whose files hold no crate file is no crate of the
+sibling no output names is refused naming it and the component, since a
+consumer could resolve nothing for it (C.11, 84). An output whose files hold no crate file is no crate of the
 component and is passed over here; its own pack refuses it (D1).
 
 With `toml_edit`, each edit in the file and the table where its value is
@@ -252,7 +258,10 @@ Before cargo runs, each crate of another component is checked against
 the store: `versions` of it in `cargo`, read with `semver`'s
 `VersionReq`, Cargo's own, against the manifest's requirement. None
 within it refuses the pack naming the crate, the requirement and the
-versions the store holds (C.11, 138), and no cargo runs. Pack picks no
+versions the store holds; `versions` answering absent refuses it naming
+the crate, the requirement and that the store holds no version of it;
+an unreadable listing is the pack's answer as the store gave it (C.11,
+138, core.19). In each case no cargo runs. Pack picks no
 version of it: the packed crate names the requirement alone, and which
 version a build uses is the consumer's lockfile's (137).
 
@@ -291,18 +300,38 @@ Cargo pack with a version answers `same_again` true (87). A host with
 another cargo may pack other bytes; a repeat publish there is refused
 naming the artifact (18), the clause's own remedy.
 
-### D5. Pinned reads the lockfile and nothing else
+### D5. Pinned reads the lockfile and the manifests, and nothing else
 
 Pinned reads `Cargo.lock` at the checkout's root with `toml_edit` and
-answers, for each `[[package]]` whose `source` begins `registry+` or
-`sparse+`, its `name` and `version` as written (137). A package with no
-source is the checkout's own, and one from git is pinned by commit; both
-are left out. crates.io's pins are answered like any other: the core
-finds no name for them in the store. No `Cargo.lock` answers absent
-naming it; a file that is not TOML, or a package with no name or version,
-is refused naming the file and carrying the parser's words (58, 59).
-Pinned runs no cargo, since `cargo metadata` may write the lockfile, and
-writes nothing.
+answers `Pin::Version` for each `[[package]]` whose `source` begins
+`registry+` or `sparse+`, its `name` and `version` as written (137). A
+package with no source is the checkout's own, and one from git is pinned
+by commit; both are left out. crates.io's pins are answered like any
+other: the core finds no name for them in the store.
+
+Then the ranges. Pinned reads the root `Cargo.toml` and each member's,
+the members found as Cargo finds them (vendor facts): `workspace.members`
+expanded with `glob` against the root, less `workspace.exclude`, and the
+root's own `[package]`. In each member's `dependencies`,
+`dev-dependencies`, `build-dependencies` and each `target.<cfg>` table of
+them, a dependency is of the registry `tailrace` where it writes
+`registry = "tailrace"`, or `workspace = true` and the root's
+`workspace.dependencies` entry of its key writes it. Its name is its
+`package` where it writes one, else its key; its range is the `version`
+it, or the inherited entry, writes, as written, or `*` where it writes
+none. One with a `path` or a `git` is left out: Cargo builds it from
+there. For each name and range so declared whose name the lockfile pins
+at no version from a registry, pinned answers `Pin::Range` once, two
+ranges of one name each once. Only the registry `tailrace` is read: a
+range of any other registry is resolved by Cargo against that registry,
+and the store holds only family crates (138).
+
+No `Cargo.lock` answers absent naming it, as 137 says and the seam's
+contract has it, though the root manifest declares crates of
+`tailrace`. A lockfile or manifest that is not TOML, or a lockfile
+package with no name or version, is refused naming the file and
+carrying the parser's words (58, 59). Pinned runs no cargo, since cargo
+may write the lockfile, and writes nothing.
 
 ### D6. Render writes the registry's files, from the store alone
 
@@ -315,6 +344,22 @@ the place given:
 index/<path>                 each name's index file, <path> as the sparse protocol names it
 <name>-<version>.crate       each crate
 ```
+
+Given `Contents::Ranged`, render checks the held artifacts and every
+range's candidates as above, then takes of each range the one candidate
+it holds: `VersionReq::parse` of the range's text, Cargo's own parser,
+and of the candidates whose metadata's version parses as a `semver`
+version and `matches` the requirement, the greatest. A range whose text
+does not parse is refused naming the name, the range and the parser's
+words, before anything is written; a candidate whose version is not a
+Cargo version is within no range; a range with no candidate within it
+holds none. The crates written are then the held ones and each range's
+one, and `Holds::Versions` names each, which is how the core learns
+which candidate render took. A version both pinned and a range's
+candidate is written once. Candidates not taken are never read from the
+store, past the check, and never written, so the name's index file lists
+only what the layout holds and Cargo, resolving the requirement against
+it, takes the version render took and writes its pin.
 
 Crates are written beside their place and renamed onto it; each index
 file is written whole and renamed. Crate and index files of versions not
@@ -382,10 +427,8 @@ moon cache, since a `Box<dyn Store>` is not shared (core.2).
 
 Unit tests in the profile build crates in memory with `flate2` and
 `tar` for the index line, render and serve, and read lockfiles written as
-text for pinned; they run in `check-fast` with no cargo needed. The
-store listing has unit tests in the layout and fake stores and a
-tools-layer test against the registry the tools layer runs. The
-conformance group and the proofs run cargo, so they sit behind the
+text and workspaces written as text for pinned; they run in
+`check-fast` with no cargo needed. The conformance group and the proofs run cargo, so they sit behind the
 `tools` feature in the `tools` task (check-tools), with a sealed
 `CARGO_HOME` and `HOME` per test:
 
@@ -421,17 +464,23 @@ conformance group and the proofs run cargo, so they sit behind the
   Then a version the policy refuses is pinned: sync's answer names it and
   the claim found wanting, its name's index file lists no line for it,
   the build fails, and a request for its download answers `403` carrying
-  the same words.
+  the same words. Then the range: the publisher's `fam-b` is also packed
+  at a second version within `1`, newer, and a third outside it, all
+  three named in the store, and a second consumer, whose `Cargo.lock`
+  pins only its own package, declares `fam-b = { version = "1", registry
+  = "tailrace" }`; sync's answer names the range and the newer version
+  within it, the served index file of `fam-b` lists that version alone,
+  `cargo build` succeeds, and the consumer's `Cargo.lock` now pins
+  `fam-b` at that version from the served address with its packed
+  checksum. `fam-b` depends on no family crate, so the range proves
+  nothing about what such a crate's own family dependencies need (Open
+  Questions).
 
 ## Risks / Trade-offs
 
 - [The store's listing grows with every version published] → a pack
-  reads it once per crate of another component it reaches, and a
-  registry pages it; render under a policy never lists.
-- [The registry's listing reads the repository the store-naming unit
-  makes a pointer in] → this change reads it by the spelling that unit's
-  name and resolve use; a pointer made elsewhere is not listed, and the
-  tools-layer test makes its names through the store seam's own name.
+  reads it once per crate of another component it reaches; a sync lists
+  a name only for a range, which only a name no lockfile pins has.
 - [A crate packed without its own lockfile] → a `cargo install` of a
   family binary from the registry resolves its dependencies afresh, as
   it does for any crate published without one; a library's lockfile is
@@ -450,12 +499,20 @@ conformance group and the proofs run cargo, so they sit behind the
 
 ## Open Questions
 
-For the design agent, neither of which changes what this change builds:
+For the design agent; this change builds as written either way:
 
-- A sibling none of the component's outputs packs is refused, naming it
-  and the component (D3): 84 gives pack the component's outputs so a
-  projection knows the component's own, and no clause says what a pack
-  does with a sibling no output publishes.
-- C.1 escapes a version's characters the protocol refuses "one way";
-  this change reads tags back by the spelling the store-naming unit
-  writes (D2), and the statement could name that spelling.
+- A first install. 137 answers absent where a checkout holds no
+  lockfile, and a range only where a manifest declares a name "no
+  lockfile pins yet", so a Cargo checkout with no `Cargo.lock` at all
+  gets no layout, and Cargo cannot write one without the registry. This
+  change follows 137 as written (D5); a consumer gets a first lockfile
+  by writing one that pins only its own package, as the proof does.
+  Whether a checkout with a manifest and no lockfile answers its
+  manifest's ranges is the statement's to say.
+- A range's crate's own family dependencies. Render holds, of a range,
+  the one version taken; a family crate that version depends on is
+  neither pinned nor declared by the consumer's manifest, so no layout
+  holds it, and Cargo's resolution fails on its index file until a
+  lockfile pins it. 137 names only the names a manifest declares; the
+  statement could say whether sync follows a held version's dependencies
+  in the store, and under which policy.

@@ -13,7 +13,7 @@ becomes a dependency of the registry as Cargo does for any publish (84,
 110, C.11). A crate SHALL be of the component whose paths hold its
 manifest, as the core matches them (123). A sibling that none of the
 component's declared outputs packs SHALL be refused naming it and the
-component (84). It SHALL answer the package's crate with metadata naming
+component, since a consumer could resolve nothing for it (C.11, 84). It SHALL answer the package's crate with metadata naming
 the ecosystem `cargo`, the package's name and the version, and
 `same_again` true, and SHALL never open the archive to edit it (87).
 
@@ -38,10 +38,11 @@ A path dependency on a crate of another component SHALL be packed as a
 dependency on the version requirement the manifest writes for it, in the
 registry `tailrace`, with no version of it picked: the packed crate SHALL
 name the requirement alone, and that crate's manifest SHALL never be
-given this component's version (C.11, 123, 124, 137). Where the store
-holds no version of that crate within the requirement, the pack SHALL be
-refused naming the crate, the requirement and the versions the store
-holds; a path dependency on a crate of another component that writes no
+given this component's version (C.11, 123, 124, 137). Where the store's
+listing of that crate's versions holds none within the requirement, or
+the store names no version of it, the pack SHALL be refused naming the
+crate, the requirement and the versions the store holds, or that it
+holds none; a path dependency on a crate of another component that writes no
 version requirement SHALL be refused naming the crate (C.11, 138).
 
 #### Scenario: Another component's crate the store holds within the requirement
@@ -58,6 +59,11 @@ version requirement SHALL be refused naming the crate (C.11, 138).
 
 - **WHEN** the same crate is packed and the store holds that crate only at 0.4.0
 - **THEN** the pack is refused naming the crate, the requirement `0.3` and the version 0.4.0, and no cargo package ran
+
+#### Scenario: Another component's crate the store names at no version
+
+- **WHEN** the same crate is packed and the store's listing of that crate answers absent
+- **THEN** the pack is refused naming the crate, the requirement `0.3` and that the store holds no version of it, and no cargo package ran
 
 ### Requirement: A pack leaves the checkout as it was and refuses what it cannot promise
 
@@ -93,20 +99,35 @@ nothing (84, 85).
 - **WHEN** pack is asked with no version, or render is asked for cache entries
 - **THEN** each answers absent naming cache entries and nothing is written
 
-### Requirement: The pins a Cargo lockfile holds
+### Requirement: The pins a Cargo lockfile holds and the ranges its manifests declare
 
 The Cargo projection SHALL answer pinned for a checkout with the name
 and version of each package its root `Cargo.lock` pins from a registry,
-as the lockfile spells them, reading the file alone and running no
-cargo (137). A package with no source, or from git, SHALL be left out.
-A checkout with no `Cargo.lock` SHALL answer absent naming it, and a
-lockfile that cannot be read as one SHALL be refused naming the file
-with the parser's own words (58, 59).
+as the lockfile spells them, and, for each crate a workspace member's
+manifest declares in the registry `tailrace`, by its own table or
+inherited from the workspace's, that the lockfile pins at no version
+from a registry, the requirement the manifest writes as its range, as
+written, `*` where it writes none (137). A package with no source, or
+from git, and a dependency with a path or a git source, SHALL be left
+out. It SHALL read the files alone, run no cargo and write nothing. A
+checkout with no `Cargo.lock` SHALL answer absent naming it, and a
+lockfile or manifest that cannot be read as one SHALL be refused naming
+the file with the parser's own words (58, 59).
 
 #### Scenario: A lockfile's registry pins
 
 - **WHEN** a checkout's `Cargo.lock` holds a workspace member, a crate from a sparse registry, a crate from crates.io and a crate from git
 - **THEN** pinned answers the sparse registry's crate and crates.io's crate by name and version as written, and neither the member nor the git crate
+
+#### Scenario: A crate the manifest declares and no lockfile pins
+
+- **WHEN** a workspace's member declares `fam-b = { version = "1", registry = "tailrace" }`, another member inherits `fam-c` from `workspace.dependencies` where it is written `{ version = "0.3", registry = "tailrace" }`, a third declares `fam-d` in `tailrace` with a `path`, and the `Cargo.lock` pins none of them
+- **THEN** pinned answers `fam-b` by the range `1` and `fam-c` by the range `0.3`, and nothing of `fam-d`
+
+#### Scenario: A declared crate the lockfile pins
+
+- **WHEN** a member declares `fam-b` in `tailrace` by `1` and the `Cargo.lock` pins `fam-b` at 1.1.0 from the served address
+- **THEN** pinned answers `fam-b` at 1.1.0, and no range of it
 
 #### Scenario: No lockfile
 
@@ -135,6 +156,31 @@ SHALL give the same layout (48). It SHALL answer the versions it holds.
 
 - **WHEN** a crate depending on a crate at a family repository's served Cargo address, on a crate of another registry, and on a crate of crates.io is rendered
 - **THEN** its index line names the first dependency as of the registry serving the line, the second by its index URL, and the third by crates.io's index URL
+
+### Requirement: A range holds the newest candidate within it by Cargo's rules
+
+Given a range and the candidates of its name, the Cargo projection SHALL
+hold, of the candidates whose version is within the range by Cargo's own
+requirement rules, the greatest by Cargo's version order, and no other
+of them, or none where none is within it; and SHALL answer which it
+holds among the versions the layout holds (137, 23). A range Cargo's
+rules cannot read SHALL be refused naming the name, the range and the
+parser's own words, before anything is written.
+
+#### Scenario: The newest within the range
+
+- **WHEN** render is given the range `1` of `fam-b` with candidates 1.2.0, 1.4.0, 1.5.0-rc.1 and 2.0.0
+- **THEN** the layout holds `fam-b` 1.4.0 alone of them, its index file lists only 1.4.0, and the answer names 1.4.0 among the versions held
+
+#### Scenario: Nothing within the range
+
+- **WHEN** render is given the range `^1.5` of `fam-b` with candidates 1.2.0 and 2.0.0
+- **THEN** the layout holds no version of `fam-b`, and the answer names none of it
+
+#### Scenario: A range Cargo cannot read
+
+- **WHEN** render is given the range `not-a-range` of `fam-b`
+- **THEN** render is refused naming `fam-b`, `not-a-range` and the parser's words, and no file is written
 
 ### Requirement: A render refuses what it cannot hold before writing
 
@@ -202,3 +248,8 @@ layout path or store (46, 49).
 
 - **WHEN** a publisher's crate and the sibling it depends on by path are packed and named in the store, and a consumer's `Cargo.lock` pinning both at the served address is synced
 - **THEN** `cargo build --locked` succeeds, reading both crates from the host's serving process, and `Cargo.lock` records that address and each crate's checksum as written
+
+#### Scenario: A crate added by range is resolved and pinned by Cargo
+
+- **WHEN** the store names `fam-b` at two versions within `1` and one outside it, and a consumer whose `Cargo.lock` pins only its own package declares `fam-b` in `tailrace` by `1` and syncs and builds
+- **THEN** sync's answer names the range and the newer version within it, the served index file of `fam-b` lists that version alone, `cargo build` succeeds, and the consumer's `Cargo.lock` pins `fam-b` at that version from the served address with its packed checksum
