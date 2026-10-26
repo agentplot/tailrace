@@ -272,12 +272,16 @@ fn no_file_and_no_table_are_absent_naming_the_audience() {
 }
 
 /// The policy for a layout at `text`'s revision, which must be the given
-/// one requiring acceptance alone; answers the signers it names.
+/// one, marked as given, requiring acceptance alone; answers the signers
+/// it names.
 fn given(text: &str) -> Vec<NamedSigner> {
     let repo = Repo::new();
     let at = repo.at(text);
     match repo.policy().policy_for(&at, &Audience::Layout) {
-        Ok(Required::Layout { claims, .. }) => match <[RequiredClaim; 1]>::try_from(claims) {
+        Ok(Required::Layout {
+            claims,
+            given: true,
+        }) => match <[RequiredClaim; 1]>::try_from(claims) {
             Ok([claim]) => {
                 assert_eq!((claim.kind, claim.check), (ClaimKind::Acceptance, None));
                 claim.signers

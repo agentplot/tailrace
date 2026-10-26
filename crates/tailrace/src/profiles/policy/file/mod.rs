@@ -36,13 +36,16 @@
 //! to the reader that owns them.
 //!
 //! A file with no `[layout]` answers for a layout the given policy for
-//! one, a version the gate accepted and no other (C.10): acceptance by
-//! every signer `[signers]` lets claim acceptance, in the file's order;
-//! where it names none and exactly one that may claim provenance, by that
-//! one, as the one host 108 admits; otherwise by no signer, so the given
-//! admits no version. A `[layout]` written is answered as written, with
-//! nothing of the given beneath it. Only a revision holding no policy
-//! file is absent for a layout (design D11).
+//! one, marked as given, a version the gate accepted and no other (C.10):
+//! acceptance by every signer `[signers]` lets claim acceptance, in the
+//! file's order; where it names none and exactly one that may claim
+//! provenance, by that one, as the one host 108 admits; otherwise by no
+//! signer, so the given admits no version. The given names no signer of
+//! its own: its gate is read from the file alone (116). The mark lets a
+//! consumer stack its publisher's layout policy above the given (113). A
+//! `[layout]` written is answered as written, not marked, with nothing of
+//! the given beneath it. Only a revision holding no policy file is absent
+//! for a layout (design D11).
 //!
 //! Every operation begins by resolving the revision in the repository,
 //! so a repository that cannot be read answers unreadable with git's
@@ -249,7 +252,7 @@ fn given_layout(signers: &[NamedSigner]) -> Vec<RequiredClaim> {
 impl Policy for PolicyFile {
     /// 82, 83: the claims `audience` requires in the policy file at
     /// `revision`, each signer with its verifier and its reach; for a
-    /// layout with no `[layout]`, the given (C.10); absent naming the
+    /// layout with no `[layout]`, the given, marked so (C.10); absent naming the
     /// audience where the file, or the table of acceptance or a channel,
     /// is missing, and unreadable naming the file and the revision, with
     /// git's or the parser's words, where it cannot be read.
@@ -289,7 +292,7 @@ impl Policy for PolicyFile {
             (None, Audience::Layout) => {
                 return Ok(Required::Layout {
                     claims: given_layout(&signers),
-                    given: false,
+                    given: true,
                 })
             }
             (None, _) => return Err(absent()),
