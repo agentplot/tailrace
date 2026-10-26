@@ -45,14 +45,14 @@ SHALL leave nothing written for every command that reads the file (58,
 - **WHEN** `[gate]` holds `job = ""`
 - **THEN** the answer is unreadable naming `[gate] job`
 
-### Requirement: A file naming nothing to tell the gate binds no teller
+### Requirement: A file naming no teller binds the host's own publish to tell its gate
 
-A bindings file with no `[gate]` table SHALL bind no teller: the binding
-SHALL say that nothing on this host tells the gate, naming `[gate]` in
-the file, and every command SHALL bind otherwise as it does without one
-(130).
+A bindings file with no `[gate]` table SHALL bind the host's default
+teller: the host's own publish step tells the host's own gate, as
+`[gate] publish = {}` does (118, 130). Every command SHALL bind
+otherwise as it does without one.
 
 #### Scenario: No gate table
 
 - **WHEN** the bindings file names a store, a landing and a signer and holds no `[gate]`
-- **THEN** the binding binds them as before and says nothing tells the gate, naming `[gate]` in the file's path
+- **THEN** the binding binds them as before and says the host's publish step tells the host's gate, the same binding `[gate] publish = {}` makes
