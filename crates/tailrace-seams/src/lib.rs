@@ -9,7 +9,7 @@
 //! | the landing | [`Landing`] | B.3, 77, 78 |
 //! | the signer | [`Signer`] | B.4, 79 to 81 |
 //! | the policy | [`Policy`] | B.5, 82, 83 |
-//! | a projection | [`Projection`] | B.6, 84 to 87 |
+//! | a projection | [`Projection`] | B.6, 84 to 87, 137 |
 //! | a target | [`Target`] | B.7, 88 to 91 |
 //! | the ledger | [`Keeper`] | B.8, 120 to 122 |
 //!
@@ -173,6 +173,9 @@ mod tests {
         fn serve(&self, _: &Layout) -> Answer<Serving> {
             nothing(Seam::Projection, "serve")
         }
+        fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+            nothing(Seam::Projection, "pinned")
+        }
     }
 
     impl Target for Nowhere {
@@ -281,6 +284,7 @@ mod tests {
                 "at",
             )),
             asked(projection.serve(&Layout { at: "at".into() })),
+            asked(projection.pinned("checkout")),
             asked(target.desired(&environment)),
             asked(target.current(&environment)),
             asked(target.apply(
@@ -314,7 +318,10 @@ mod tests {
         assert_eq!(named(Seam::Landing), ["landed", "verdicts-of"]);
         assert_eq!(named(Seam::Signer), ["sign", "verify"]);
         assert_eq!(named(Seam::Policy), ["policy-for"]);
-        assert_eq!(named(Seam::Projection), ["pack", "render", "serve"]);
+        assert_eq!(
+            named(Seam::Projection),
+            ["pack", "render", "serve", "pinned"]
+        );
         assert_eq!(
             named(Seam::Target),
             ["desired", "current", "apply", "report"]

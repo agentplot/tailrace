@@ -10,7 +10,7 @@
 //! | the landing | [`FakeLanding`] | revisions landed per branch, verdicts per revision |
 //! | the signer | [`FakeSigner`] | the identity at hand, the identities expired |
 //! | the policy | [`FakePolicy`] | what each audience requires, per revision |
-//! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes, whether it packs cache entries, the build identities it holds no archive for |
+//! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes, whether it packs cache entries, the build identities it holds no archive for, each checkout's pins, each render of artifacts |
 //! | a target | [`FakeTarget`] | per environment, its channel's head and what it runs |
 //! | the keeper | [`FakeKeeper`] | per channel, a chain of promotion claims |
 //!

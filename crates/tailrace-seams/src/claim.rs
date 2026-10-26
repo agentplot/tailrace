@@ -52,10 +52,14 @@ pub enum ClaimKind {
     /// Another party's claim, carried as made, and where it was found
     /// (12).
     Carried,
+    /// The publisher's policy for layouts, about a version's index: the
+    /// claims a layout must require, as the publishing repository
+    /// declared them at the revision the claim names (113).
+    LayoutPolicy,
 }
 
 impl ClaimKind {
-    const ALL: [ClaimKind; 8] = [
+    const ALL: [ClaimKind; 9] = [
         ClaimKind::Provenance,
         ClaimKind::Verdict,
         ClaimKind::Test,
@@ -64,6 +68,7 @@ impl ClaimKind {
         ClaimKind::Acceptance,
         ClaimKind::Promotion,
         ClaimKind::Carried,
+        ClaimKind::LayoutPolicy,
     ];
 
     pub fn name(self) -> &'static str {
@@ -76,6 +81,7 @@ impl ClaimKind {
             ClaimKind::Acceptance => "acceptance",
             ClaimKind::Promotion => "promotion",
             ClaimKind::Carried => "carried",
+            ClaimKind::LayoutPolicy => "layout_policy",
         }
     }
 
@@ -326,6 +332,42 @@ mod tests {
                 kind
             );
         }
+    }
+
+    #[test]
+    fn a_layout_policy_about_an_index_reads_back_with_its_revision_and_body() {
+        let required = json!({"claims": [{
+            "kind": "acceptance",
+            "check": null,
+            "signers": [{
+                "id": "gate",
+                "verified_by": "the gate's key",
+                "kinds": ["acceptance"],
+                "checks": [],
+            }],
+        }]});
+        let c = Claim {
+            subject: Digest::of(b"index"),
+            kind: ClaimKind::LayoutPolicy,
+            revision: Revision::new("4f2a9c1"),
+            build: None,
+            body: required.clone(),
+        };
+        let statement: Value = serde_json::from_slice(&c.payload()).unwrap();
+        assert_eq!(
+            statement["predicateType"],
+            "https://agentplot.github.io/tailrace/claim/layout_policy/v1"
+        );
+        let back = Claim::from_envelope(&sealed(&c, "host")).unwrap();
+        assert_eq!(back.kind, ClaimKind::LayoutPolicy);
+        assert_eq!(back.subject, Digest::of(b"index"));
+        assert_eq!(back.revision, Revision::new("4f2a9c1"));
+        assert_eq!(back.build, None);
+        assert_eq!(back.body, required);
+        assert_eq!(
+            serde_json::to_value(ClaimKind::LayoutPolicy).unwrap(),
+            "layout_policy"
+        );
     }
 
     #[test]

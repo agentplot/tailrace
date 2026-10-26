@@ -190,7 +190,7 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
 /// its maker may claim its kind, and for a verdict its check (9, 116,
 /// rule core.7); an expired maker is reported beside and still counts
 /// (81, 117).
-fn tell(
+pub(crate) fn tell(
     seams: &Seams,
     signers: &[NamedSigner],
     on: &Digest,

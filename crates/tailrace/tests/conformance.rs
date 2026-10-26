@@ -39,6 +39,7 @@ impl Surface for CommandLine {
             seams: self.world.seams(),
             store: self.world.store(),
             signer: Some(self.world.host.clone()),
+            trust: Vec::new(),
         };
         let mut out = Vec::new();
         run(&cli, &Ok(binding), &self.world.repo().path, &mut out);

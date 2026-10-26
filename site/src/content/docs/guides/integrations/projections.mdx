@@ -13,7 +13,7 @@ at once, by the repository's authors (92).
 
 ## The contract
 
-The seam is three operations (84 to 86). **pack** takes an output at a
+The seam is four operations (84 to 86, 137). **pack** takes an output at a
 build identity and, where the bytes are an artifact's, the version, and
 answers the ecosystem's own bytes for it and the metadata the ecosystem
 gives them. A cache entry packs with no version, and its bytes carry no
@@ -22,7 +22,9 @@ and their metadata, or of cache entries by build identity, and answers a
 consumer layout in the ecosystem's own form, and which versions, or which
 build identities, it holds. **serve** takes a consumer layout and answers
 the ecosystem's own clients over the protocol they read, for an ecosystem
-whose clients read no files. The same outputs and the same version, or
+whose clients read no files. **pinned** takes a checkout and answers the
+names and versions its lockfile pins, as the lockfile spells them, or
+absent where it holds no lockfile of the ecosystem. The same outputs and the same version, or
 the same build identity, pack to the same bytes, or the projection says
 it cannot promise so (87). A projection that packs no cache entries
 answers absent for one, as the file and image projections do. A layout
@@ -74,6 +76,69 @@ The repository binds its projections: the policy file's `[projections]`
 names the ecosystem of the projection that packs each output, such as
 `site = "file"` or `api = "image"` (C.10). A projection not yet built
 answers render and serve absent, naming the operation.
+
+## Layouts under a policy
+
+`tailrace sync` fills each ecosystem's layout in the checkout after the
+cache. Each bound projection says what the checkout's lockfile pins; one
+with no lockfile is passed over, and no layout of it is made. Each pin is
+found in the store by its ecosystem, name and version alone, through the
+name `artifact/<ecosystem>/<name>@<version>` and the version's index
+(138), and the layout holds the lockfile's versions and no other (50). A
+pin the store does not name, as most third-party packages are, is
+answered absent and refuses nothing (51).
+
+Each version is judged under a policy before the layout holds it (47,
+113), and the policy is a stack. The consuming repository's policy file
+is read at the landed revision sync runs for, never from the checkout
+(65), and where it writes a `[layout]`, that line judges every version.
+Where it writes none, with a file that has no `[layout]` or with no
+policy file at all, each version is judged under its publisher's: the
+layout-policy claim the publish attached to the version's index, which a
+publish attaches only where the publisher's own file writes a
+`[layout]`. That claim counts only where a signer the host trusts made
+it, and each claim it requires counts only through a signer the host
+trusts too. The host names those in its bindings file, one table each,
+by the key the signer is verified by:
+
+```toml
+[trust.gate]
+ssh = "ssh-ed25519 AAAA… gate@box"
+```
+
+Where the index carries no such claim, the version is judged under the
+given policy for a layout, which admits a version the gate accepted and
+no other (C.10). For a consumer with a policy file, the gate is the
+signers its `[signers]` lets claim acceptance, or, where it names none,
+the one signer it lets claim provenance. For a consumer with no policy
+file, the gate is the signers the host trusts; a host whose file names
+no `[trust]` trusts no signer, and such a consumer then holds nothing.
+Every version thus has a policy, and the answer and the record name the
+one that judged it: the consumer's own line, the publisher's at the
+revision its claim names, or the given.
+
+A version is held only when each claim its policy requires, in its
+order, is attached to its index or its artifact by a signer the policy
+names (47, 9). A version refused is named with its index, the first
+claim found wanting and the signers checked, and sync prints it, so the
+client's own "no matching version" is never the only word; the version
+leaves the layout on that sync (99).
+
+A layout is at `.tailrace/layouts/<ecosystem>/` under the checkout's
+working tree, the same place on every host, so the client's own
+configuration names it once and the lockfile names no host (49).
+`.tailrace/` ignores itself to git. The host keeps what each layout
+holds under the checkout's own git directory, at
+`tailrace/layouts/<ecosystem>.json`, a file any reader opens, rebuilt by
+the next sync if it is deleted (61 to 63).
+
+Every read of a layout comes before anything is written. Where the
+store or the policy cannot be read, or the render fails, the layout is
+left as it was, and sync answers what it holds, when it was last
+rendered and under which policy, beside the source's own words; it
+never answers an absent version as refused, or a refused one as absent
+(51, 58). The exit is the worst answer among the cache's entries and
+the pins that are not absent.
 
 ## Adding one
 

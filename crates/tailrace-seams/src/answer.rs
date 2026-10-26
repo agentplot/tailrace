@@ -8,7 +8,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArtifactMeta, Branch, BuildId, ComponentName, Digest, Outcome, OutputName, Revision, SignerId,
+    ArtifactMeta, Branch, BuildId, ComponentName, Digest, Outcome, OutputName, RequiredClaim,
+    Revision, SignerId,
 };
 
 /// What every seam operation answers: what was asked, or [`Not`].
@@ -217,6 +218,16 @@ pub enum Why {
     /// 123: the repository declares several components, `declared`, and
     /// the question named none of them.
     WhichComponent { declared: Vec<ComponentName> },
+    /// 47, 99: `version`, whose index is `index`, lacks `wanting`, the
+    /// first claim in the policy's order that no claim attached to the
+    /// index or the artifact satisfies; `checked` the signers it was
+    /// checked against.
+    Wanting {
+        version: ArtifactMeta,
+        index: Digest,
+        wanting: RequiredClaim,
+        checked: Vec<SignerId>,
+    },
     /// A refusal that names nothing beyond the source's own words.
     Said,
 }
@@ -347,6 +358,29 @@ impl fmt::Display for Why {
                 "several components are declared, {}, and none was named",
                 list(declared)
             ),
+            Why::Wanting {
+                version,
+                index,
+                wanting,
+                checked,
+            } => {
+                write!(
+                    f,
+                    "{} {} {} at {index} wants a claim of {}",
+                    version.ecosystem(),
+                    version.name(),
+                    version.version(),
+                    wanting.kind
+                )?;
+                if let Some(check) = &wanting.check {
+                    write!(f, " for the check {check}")?;
+                }
+                write!(
+                    f,
+                    ", made by none of the signers checked: {}",
+                    list(checked)
+                )
+            }
             Why::Said => write!(f, "it refused"),
         }
     }
@@ -599,6 +633,70 @@ mod tests {
         );
         let json = serde_json::to_value(&record).unwrap();
         assert_eq!(json["seam"], "host");
+    }
+
+    #[test]
+    fn a_version_wanting_a_claim_names_it_and_the_signers_checked() {
+        let version = ArtifactMeta::new(
+            crate::Ecosystem::new("eco"),
+            crate::EcosystemName::new("pkg"),
+            crate::Version::new("1.3.0"),
+        )
+        .unwrap();
+        let index = Digest::of(b"index");
+        let named = |id: &str| crate::NamedSigner {
+            id: SignerId::new(id),
+            verified_by: format!("{id}'s key"),
+            kinds: vec![crate::ClaimKind::Verdict],
+            checks: vec![crate::Check::new("test")],
+        };
+        let wanting = RequiredClaim {
+            kind: crate::ClaimKind::Verdict,
+            check: Some(crate::Check::new("test")),
+            signers: vec![named("landing"), named("gate")],
+        };
+        let why = Why::Wanting {
+            version,
+            index: index.clone(),
+            wanting,
+            checked: vec![SignerId::new("landing"), SignerId::new("gate")],
+        };
+        assert_eq!(
+            why.to_string(),
+            format!(
+                "eco pkg 1.3.0 at {index} wants a claim of verdict for the check test, \
+                 made by none of the signers checked: landing, gate"
+            )
+        );
+        let not = Not::refused(&Source::new(Seam::Policy, "bound"), why.clone(), None);
+        assert_eq!(round_trip(&not), not);
+        let json = serde_json::to_value(&not).unwrap();
+        let wanting = &json["refused"]["why"]["wanting"];
+        assert_eq!(wanting["version"]["version"], "1.3.0", "{json}");
+        assert_eq!(wanting["index"], index.to_string(), "{json}");
+        assert_eq!(wanting["wanting"]["kind"], "verdict", "{json}");
+        assert_eq!(wanting["checked"], serde_json::json!(["landing", "gate"]));
+
+        let Why::Wanting { version, .. } = why else {
+            unreachable!()
+        };
+        let none = Why::Wanting {
+            version,
+            index: index.clone(),
+            wanting: RequiredClaim {
+                kind: crate::ClaimKind::Acceptance,
+                check: None,
+                signers: vec![],
+            },
+            checked: vec![],
+        };
+        assert_eq!(
+            none.to_string(),
+            format!(
+                "eco pkg 1.3.0 at {index} wants a claim of acceptance, \
+                 made by none of the signers checked: none"
+            )
+        );
     }
 
     #[test]

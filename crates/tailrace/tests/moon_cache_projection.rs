@@ -3,7 +3,9 @@
 //! checkout and its layout store in a temporary directory (design D9).
 //!
 //! Only the group's two scenarios of a projection that packs cache
-//! entries run. The group's other scenarios each pack or render at a
+//! entries run, and the pinned scenarios, whose lockfile one is not
+//! applicable, since moon's cache has no lockfile. The group's other
+//! scenarios each pack or render at a
 //! version, which the moon cache answers absent naming artifacts, since
 //! it packs no artifact (53), so they are not run over it: a departure
 //! from core.33, which asks every profile to pass the one suite, as
@@ -17,13 +19,16 @@ use tailrace::profiles::projection::moon_cache::MoonCache;
 use tailrace::profiles::store::layout::Layout;
 use tailrace_conformance::seams::projection::{self, ProjectionRig};
 use tailrace_conformance::{run, Rig, Scenario};
-use tailrace_seams::{Artifact, Output, OutputName, Projection, Store};
+use tailrace_seams::{Artifact, Output, OutputName, Pinned, Projection, Store};
 use tempfile::TempDir;
 
-/// The scenarios of a projection that packs cache entries.
-const CACHE: [&str; 2] = [
+/// The scenarios of a projection that packs cache entries, and of
+/// pinned.
+const CACHE: [&str; 4] = [
     "a cache entry packed with no version",
     "a layout of the build identities given",
+    "pinned as the lockfile spells it",
+    "no lockfile, absent",
 ];
 
 /// The task hashes the group packs at.
@@ -95,6 +100,15 @@ impl ProjectionRig for MoonCacheRig {
         true
     }
 
+    fn has_lockfile(&self) -> bool {
+        false
+    }
+
+    /// The checkout, which holds moon's outputs and no lockfile.
+    fn checkout(&self, _: bool) -> (String, Vec<Pinned>) {
+        (self.checkout.display().to_string(), Vec::new())
+    }
+
     /// The outputs directory replaced by a file, and the operating
     /// system's words for reading an archive through it.
     fn unreachable(&self) -> String {
@@ -117,5 +131,17 @@ fn the_cache_entry_scenarios_over_the_moon_cache() {
         ("moon-cache", CACHE.len())
     );
     report.assert();
-    assert_eq!(report.not_applicable, [], "{report}");
+    let inapplicable: Vec<(&str, &str)> = report
+        .not_applicable
+        .iter()
+        .map(|n| (n.scenario, n.why.as_str()))
+        .collect();
+    assert_eq!(
+        inapplicable,
+        [(
+            "pinned as the lockfile spells it",
+            "the ecosystem has no lockfile"
+        )],
+        "{report}"
+    );
 }

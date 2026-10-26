@@ -1,16 +1,17 @@
 //! The fake projection (B.6): its ecosystem, the name each output takes,
-//! whether it packs cache entries, and the build identities it holds no
-//! archive for. A pack is the canonical JSON of
-//! what it was given, read from no disk; a render writes nothing (design
-//! D7).
+//! whether it packs cache entries, the build identities it holds no
+//! archive for, and the pins of each checkout's lockfile. A pack is the
+//! canonical JSON of what it was given, read from no disk; a render
+//! writes nothing and keeps the place and the artifacts it was given;
+//! pinned reads no checkout (design D7).
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::json;
 use tailrace_seams::{
-    canonical, no_cache_entries, Answer, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName,
-    Holds, Layout, Not, Output, OutputName, Packed, Projection, Rendered, Seam, Serving, Version,
-    Why,
+    canonical, no_cache_entries, no_lockfile, Answer, Artifact, ArtifactMeta, BuildId, Contents,
+    Ecosystem, EcosystemName, Holds, Layout, Not, Output, OutputName, Packed, Pinned, Projection,
+    Rendered, Seam, Serving, Version, Why,
 };
 
 use crate::Fake;
@@ -21,11 +22,13 @@ pub enum ProjectionOp {
     Pack,
     Render,
     Serve,
+    Pinned,
 }
 
 /// The projection's ecosystem, the names outputs take in it, whether its
-/// packing is the same twice, whether it packs cache entries, and the
-/// build identities it holds no archive for.
+/// packing is the same twice, whether it packs cache entries, the build
+/// identities it holds no archive for, the pins of each checkout holding
+/// a lockfile, and each render of artifacts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectionState {
     ecosystem: Ecosystem,
@@ -34,6 +37,8 @@ pub struct ProjectionState {
     caches: bool,
     no_archive: BTreeSet<BuildId>,
     packs: u64,
+    lockfiles: BTreeMap<String, Vec<Pinned>>,
+    renders: Vec<(String, Vec<Artifact>)>,
 }
 
 /// A projection in memory.
@@ -53,6 +58,8 @@ impl FakeProjection {
                 caches: true,
                 no_archive: BTreeSet::new(),
                 packs: 0,
+                lockfiles: BTreeMap::new(),
+                renders: Vec::new(),
             },
         )
     }
@@ -84,6 +91,21 @@ impl FakeProjection {
     /// the build left no archive on.
     pub fn no_archive(&self, build: &BuildId) {
         self.state().no_archive.insert(build.clone());
+    }
+
+    /// 137: the checkout at `checkout` holds the ecosystem's lockfile,
+    /// pinning `pins` in the order given; every other checkout holds
+    /// none.
+    pub fn lockfile(&self, checkout: &str, pins: &[Pinned]) {
+        self.state()
+            .lockfiles
+            .insert(checkout.to_string(), pins.to_vec());
+    }
+
+    /// 85: each render of artifacts answered, in order: the place it was
+    /// asked at and the artifacts it was given.
+    pub fn renders(&self) -> Vec<(String, Vec<Artifact>)> {
+        self.state().renders.clone()
     }
 }
 
@@ -151,6 +173,7 @@ impl Projection for FakeProjection {
             |s, source| {
                 let holds = match contents {
                     Contents::Artifacts(artifacts) => {
+                        s.renders.push((at.to_string(), artifacts.to_vec()));
                         Holds::Versions(artifacts.iter().map(|a| a.meta.clone()).collect())
                     }
                     Contents::CacheEntries(_) if !s.caches => return Err(no_cache_entries(source)),
@@ -176,6 +199,21 @@ impl Projection for FakeProjection {
                 Ok(Serving {
                     address: format!("fake://{}/{}", s.ecosystem, layout.at),
                 })
+            },
+        )
+    }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+        let given = json!({ "checkout": checkout });
+        self.ask(
+            ProjectionOp::Pinned,
+            given,
+            format!("the lockfile of {checkout}"),
+            |s, source| {
+                s.lockfiles
+                    .get(checkout)
+                    .cloned()
+                    .ok_or_else(|| no_lockfile(source))
             },
         )
     }
@@ -366,6 +404,66 @@ mod tests {
         );
     }
 
+    fn pin(name: &str, version: &str) -> Pinned {
+        Pinned {
+            name: EcosystemName::new(name),
+            version: Version::new(version),
+        }
+    }
+
+    #[test]
+    fn pins_set_for_a_checkout_are_answered_in_the_order_set() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let pins = [pin("pkg", "1.1.0"), pin("lib", "0.3.0")];
+        projection.lockfile("/work/checkout", &pins);
+        assert_eq!(projection.pinned("/work/checkout").unwrap(), pins);
+        match projection.pinned("/work/another") {
+            Err(Not::Absent(a)) => {
+                assert_eq!(a.source.seam, Seam::Projection);
+                assert_eq!(a.what, "lockfile");
+            }
+            other => panic!("a checkout with no lockfile answered {other:?}"),
+        }
+        projection.lockfile("/work/empty", &[]);
+        assert_eq!(projection.pinned("/work/empty").unwrap(), []);
+    }
+
+    #[test]
+    fn a_render_of_artifacts_keeps_the_place_and_the_artifacts_given() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let artifacts: Vec<Artifact> = ["1.0.0", "1.1.0"]
+            .into_iter()
+            .map(|v| Artifact {
+                digest: Digest::of(v.as_bytes()),
+                meta: artifact_pack(&projection, v).meta.unwrap(),
+            })
+            .collect();
+        let rendered = projection
+            .render(
+                Contents::Artifacts(&artifacts),
+                "/work/.tailrace/layouts/eco",
+            )
+            .unwrap();
+        assert_eq!(
+            rendered.holds,
+            Holds::Versions(artifacts.iter().map(|a| a.meta.clone()).collect())
+        );
+        assert_eq!(
+            projection.renders(),
+            [("/work/.tailrace/layouts/eco".to_string(), artifacts)]
+        );
+        projection
+            .render(
+                Contents::CacheEntries(&[CacheEntry {
+                    build: b7e1(),
+                    digest: Digest::of(b"b7e1"),
+                }]),
+                "layouts/cache",
+            )
+            .unwrap();
+        assert_eq!(projection.renders().len(), 1, "a cache entry was kept");
+    }
+
     #[test]
     fn every_operation_can_be_faulted_and_is_recorded() {
         let projection = FakeProjection::new(Ecosystem::new("eco"));
@@ -373,24 +471,29 @@ mod tests {
             ProjectionOp::Pack,
             ProjectionOp::Render,
             ProjectionOp::Serve,
+            ProjectionOp::Pinned,
         ] {
             projection.fault(op, Fault::Refused("no".into()), Times::Once);
         }
         assert!(projection.pack(&output(), &b7e1(), None).is_err());
         assert!(projection.render(Contents::Artifacts(&[]), "at").is_err());
         assert!(projection.serve(&Layout { at: "at".into() }).is_err());
+        assert!(projection.pinned("checkout").is_err());
+        assert_eq!(projection.renders(), [], "a faulted render was kept");
         let calls = projection.calls();
         assert_eq!(
             calls.iter().map(|c| c.op).collect::<Vec<_>>(),
             [
                 ProjectionOp::Pack,
                 ProjectionOp::Render,
-                ProjectionOp::Serve
+                ProjectionOp::Serve,
+                ProjectionOp::Pinned
             ]
         );
         assert_eq!(calls[0].given["build"], "b7e1");
         assert_eq!(calls[0].given["version"], serde_json::Value::Null);
         assert_eq!(calls[1].given["contents"]["artifacts"], json!([]));
         assert_eq!(calls[1].given["at"], "at");
+        assert_eq!(calls[3].given["checkout"], "checkout");
     }
 }

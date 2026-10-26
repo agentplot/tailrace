@@ -27,7 +27,10 @@ pub struct RequiredClaim {
 
 /// 82, 83: the claims an audience requires, by audience, so the policy
 /// for acceptance has nowhere to name a channel and the policy for a
-/// channel names the channel it is bound to where it is bound (37).
+/// channel names the channel it is bound to where it is bound (37). The
+/// policy for a layout says whether it is the given laid beneath a file
+/// that writes none (C.10), so a consumer stacks the publisher's policy
+/// above the given and never above its own line (113).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Required {
@@ -40,7 +43,13 @@ pub enum Required {
     },
     Layout {
         claims: Vec<RequiredClaim>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        given: bool,
     },
+}
+
+fn is_false(given: &bool) -> bool {
+    !given
 }
 
 impl Required {
@@ -48,7 +57,7 @@ impl Required {
         match self {
             Required::Acceptance { claims }
             | Required::Channel { claims, .. }
-            | Required::Layout { claims } => claims,
+            | Required::Layout { claims, .. } => claims,
         }
     }
 
@@ -73,6 +82,7 @@ pub trait Policy {
 mod tests {
     use super::*;
     use crate::{round_trip, SignerId};
+    use serde_json::json;
 
     fn claims() -> Vec<RequiredClaim> {
         vec![RequiredClaim {
@@ -116,6 +126,36 @@ mod tests {
             claims: claims(),
             bound_to: None,
         });
-        round_trip(Required::Layout { claims: vec![] });
+        round_trip(Required::Layout {
+            claims: vec![],
+            given: false,
+        });
+    }
+
+    #[test]
+    fn a_layout_policy_reads_back_given_or_written() {
+        let given = Required::Layout {
+            claims: claims(),
+            given: true,
+        };
+        round_trip(given.clone());
+        let json = serde_json::to_value(&given).unwrap();
+        assert_eq!(json["layout"]["given"], true, "{json}");
+
+        let written = Required::Layout {
+            claims: claims(),
+            given: false,
+        };
+        round_trip(written.clone());
+        let json = serde_json::to_value(&written).unwrap();
+        assert!(json["layout"].get("given").is_none(), "{json}");
+        let read: Required = serde_json::from_value(json!({ "layout": { "claims": [] } })).unwrap();
+        assert_eq!(
+            read,
+            Required::Layout {
+                claims: vec![],
+                given: false
+            }
+        );
     }
 }

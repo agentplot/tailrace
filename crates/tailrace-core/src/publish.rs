@@ -2,20 +2,25 @@
 //! component it publishes, in the statement's order: landed, declared,
 //! ensured, judged, claimed, packed, put, attested, indexed, named,
 //! recorded, answered (14 to 22, rules core.10 to core.13; design D1).
+//! Where the repository's file writes a policy for layouts at the landed
+//! revision, the index carries it as the publisher's layout-policy claim,
+//! attached before the version is named (113, 8); the given is never
+//! carried, and a consumer lays it beneath itself (C.10).
 //! A publish offers and does nothing more: it never accepts, promotes,
 //! moves a channel or reaches a target (20, rule core.10).
 
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, Branch, BuildId, ClaimKind, Component, ComponentName, Digest,
-    Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Name, Not, Outcome, Output, OutputName,
-    Projection, Report, Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
+    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim, ClaimKind, Component,
+    ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Name, Not, Outcome,
+    Output, OutputName, Projection, Report, Required, Revision, Seam, Seams, SignerId, Source,
+    Verdict, Version, Why,
 };
 
 use crate::{
-    claim, derive, touched, Carried, Declared, Derived, Entry, History, Kept, Landed, Provenance,
-    Versioned, BOUND, LOCAL, POLICY_FILE,
+    claim, derive, layout_policy_body, policy_at, touched, Carried, Declared, Derived, Entry,
+    History, Kept, Landed, Provenance, Versioned, BOUND, LOCAL, POLICY_FILE,
 };
 
 /// What a publish is asked: the revision, the branch that landed it, the
@@ -155,6 +160,7 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
         landed: &landed,
         declared: &declared,
         verdicts: None,
+        layout: None,
     };
     let components = versions
         .into_iter()
@@ -176,7 +182,8 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
 }
 
 /// One publish's state across its components: the landing's verdicts,
-/// read once for the revision (78).
+/// read once for the revision (78), and the policy for layouts, read once
+/// at it where an index is put (113).
 struct Run<'a> {
     seams: &'a Seams,
     history: &'a History,
@@ -185,6 +192,7 @@ struct Run<'a> {
     landed: &'a Landed,
     declared: &'a Declared,
     verdicts: Option<Answer<Vec<Verdict>>>,
+    layout: Option<Answer<Required>>,
 }
 
 /// An output with what the build reported of it, the ecosystem and
@@ -212,6 +220,52 @@ impl<'a> Run<'a> {
         self.verdicts
             .get_or_insert_with(|| seams.landing.verdicts_of(revision))
             .clone()
+    }
+
+    /// 113, 8: the layout line the repository's file writes at the landed
+    /// revision, signed as the party running the publish about `index`,
+    /// naming the revision and no build identity, and attached to it
+    /// (rules core.8, core.9; design D8). The given, which a file with no
+    /// layout line answers, and a revision with no policy file attach
+    /// nothing: a consumer lays the given beneath itself (C.10). A policy
+    /// that cannot be read stops the publish before the name moves. An
+    /// index already carrying a layout-policy claim of the same body has
+    /// nothing signed (18).
+    fn layout_policy(&mut self, index: &Digest) -> Answer<()> {
+        let (seams, landed) = (self.seams, self.landed);
+        let required = self
+            .layout
+            .get_or_insert_with(|| policy_at(seams.policy.as_ref(), landed, &Audience::Layout))
+            .clone();
+        let required = match required {
+            Ok(Required::Layout { given: true, .. }) | Err(Not::Absent(_)) => return Ok(()),
+            Ok(required) => required,
+            Err(not) => return Err(not),
+        };
+        let body = layout_policy_body(required.claims());
+        let carried = seams
+            .store
+            .claims_of(index)?
+            .iter()
+            .filter_map(Claim::from_envelope)
+            .any(|c| c.kind == ClaimKind::LayoutPolicy && c.subject == *index && c.body == body);
+        if carried {
+            return Ok(());
+        }
+        let signer = seams
+            .signers
+            .first()
+            .ok_or_else(|| Not::absent(&bound(Seam::Signer), "signer bound"))?;
+        let claim = Claim {
+            subject: index.clone(),
+            kind: ClaimKind::LayoutPolicy,
+            revision: landed.revision().clone(),
+            build: None,
+            body,
+        };
+        let envelope = signer.sign(&claim, &self.ask.signer)?;
+        seams.store.attach(index, &envelope)?;
+        Ok(())
     }
 
     fn component(&mut self, versioned: &Versioned) -> Answer<Published> {
@@ -334,6 +388,7 @@ impl<'a> Run<'a> {
             .store
             .put_artifact(&Manifest::Index(meta))?
             .digest;
+        self.layout_policy(&index)?;
         self.seams.store.name(&name, &index, None)?;
         let artifacts = artifacts.into_iter().map(|(_, a)| a).collect();
         self.record(versioned, component, &claimed.revision, index, artifacts)

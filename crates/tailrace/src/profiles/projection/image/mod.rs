@@ -12,11 +12,12 @@
 //! It packs no cache entries: a pack with no version and a render of
 //! cache entries answer absent naming them, and read and write nothing
 //! (84, 85). Its render of artifacts and serve are not built and answer
-//! absent.
+//! absent. An image has no lockfile, so pinned answers absent naming the
+//! lockfile for every checkout, and reads nothing (137).
 
 use tailrace_seams::{
-    no_cache_entries, Answer, BuildId, Contents, Layout, Not, Output, Packed, Projection, Rendered,
-    Seam, Serving, Source, Version, Why,
+    no_cache_entries, no_lockfile, Answer, BuildId, Contents, Layout, Not, Output, Packed, Pinned,
+    Projection, Rendered, Seam, Serving, Source, Version, Why,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -227,6 +228,12 @@ impl Projection for ImageProjection {
     fn serve(&self, _: &Layout) -> Answer<Serving> {
         Err(not_built("serve", ECOSYSTEM, &ImageProjection::source()))
     }
+
+    /// 137: absent naming the lockfile for every checkout, since an image
+    /// has no lockfile.
+    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+        Err(no_lockfile(&ImageProjection::source()))
+    }
 }
 
 #[cfg(test)]
@@ -377,6 +384,24 @@ mod tests {
             }
             other => panic!("a removed file answered {other:?}"),
         }
+    }
+
+    #[test]
+    fn the_pins_of_a_checkout_are_absent_naming_the_lockfile() {
+        let dir = TempDir::new().unwrap();
+        let output = api(dir.path(), &fixture::archive());
+        let absent = Not::absent(&ImageProjection::source(), "lockfile");
+        for checkout in [dir.path().to_path_buf(), dir.path().join("no checkout")] {
+            assert_eq!(
+                ImageProjection.pinned(checkout.to_str().unwrap()),
+                Err(absent.clone()),
+                "the pins of {}",
+                checkout.display()
+            );
+        }
+        assert!(Path::new(&output.files[0]).exists());
+        let held: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(held.len(), 1, "pinned wrote into the checkout");
     }
 
     #[test]

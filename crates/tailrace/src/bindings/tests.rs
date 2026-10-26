@@ -213,7 +213,7 @@ fn what_the_repository_binds_and_no_ledger_are_unreadable_naming_the_table() {
         ),
         (
             "targets",
-            "[targets] is no table of the bindings file, which binds [store], [landing] and [signing]",
+            "[targets] is no table of the bindings file, which binds [store], [landing], [signing] and [trust]",
         ),
     ] {
         host.write(&format!("[store]\nlayout = \"/layout\"\n\n[{table}]\nx = 1\n"));
@@ -607,4 +607,79 @@ fn a_profile_no_family_reads_is_unreadable_and_makes_nothing() {
         other => panic!("answered {:?}", other.err()),
     }
     assert!(!layout.exists(), "a file that cannot bind made the layout");
+}
+
+/// The host's key for the gate, as `[trust.gate]` names it.
+const GATE_KEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGt gate@box";
+
+#[test]
+fn a_signer_trusted_is_named_with_its_key_and_may_claim_a_layout_policy_alone() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[trust.gate]\nssh = \"{GATE_KEY}\"\n",
+        layout.display()
+    ));
+    let gate = NamedSigner {
+        id: SignerId::new("gate"),
+        verified_by: GATE_KEY.into(),
+        kinds: vec![ClaimKind::LayoutPolicy],
+        checks: vec![],
+    };
+    assert_eq!(host.read().unwrap().trust, std::slice::from_ref(&gate));
+    let binding = bind(&host.file(), Some(&host.home()), host.dir.path(), For::Sync).unwrap();
+    assert_eq!(binding.trust, [gate]);
+}
+
+#[test]
+fn a_file_naming_no_trust_trusts_no_signer_and_binds_as_before() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    assert_eq!(bound(&host, &layout, true, For::Publish).unwrap().trust, []);
+    assert_eq!(host.read().unwrap().trust, []);
+    assert_eq!(bound(&host, &layout, true, For::Verify).unwrap().trust, []);
+}
+
+#[test]
+fn a_trust_table_naming_no_key_two_or_no_string_is_unreadable_naming_it() {
+    let host = Host::new();
+    host.write("[trust.gate]\nssh = \"ssh-ed25519 AAAA\"\nkms = \"a key's name\"\n");
+    assert_eq!(
+        host.unreadable(Some("[trust.gate]")),
+        "[trust.gate] names kms, ssh, and a signer is verified by one key"
+    );
+    host.write("[trust.gate]\n");
+    assert_eq!(
+        host.unreadable(Some("[trust.gate]")),
+        "[trust.gate] names no key that verifies it"
+    );
+    host.write("[trust.gate]\nssh = 7\n");
+    assert_eq!(
+        host.unreadable(Some("[trust.gate]")),
+        "[trust.gate] ssh is not a string"
+    );
+    host.write("[trust]\ngate = \"ssh-ed25519 AAAA\"\n");
+    assert!(host
+        .unreadable(Some("[trust.gate]"))
+        .starts_with("[trust.gate] is not a table"));
+}
+
+#[test]
+fn sync_on_a_broken_trust_table_is_unreadable_and_makes_nothing() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+         [trust.gate]\nssh = \"ssh-ed25519 AAAA\"\nkms = \"a key's name\"\n",
+        layout.display()
+    ));
+    match bind(&host.file(), Some(&host.home()), host.dir.path(), For::Sync) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::host(host.file()));
+            assert_eq!(u.what, format!("{}, [trust.gate]", host.file().display()));
+        }
+        other => panic!("answered {:?}", other.err()),
+    }
+    assert!(!layout.exists(), "sync made {}", layout.display());
 }

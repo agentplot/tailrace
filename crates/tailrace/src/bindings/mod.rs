@@ -16,12 +16,22 @@
 //! [signing]
 //! signer = "laptop"
 //! key = "~/.config/tailrace/signing"
+//!
+//! [trust.gate]
+//! ssh = "ssh-ed25519 AAAA… gate@box"
 //! ```
 //!
 //! `[store]` and `[landing]` each name their profile by their one key,
 //! so a later profile is a new key and not a new shape; `[signing]`
 //! names the host's signer and its key file, in the landing's own
-//! `[signing]` shape. A path is absolute or begins `~/`, expanded
+//! `[signing]` shape. `[trust.<signer>]` names a signer the host trusts,
+//! one table each, by its one key, whose text is what the signer's
+//! profile verifies it by, as the policy file's `[signers]` names one but
+//! with no `kinds` or `checks`: a public key, never a credential (64,
+//! rule core.21). A file with no `[trust]` trusts no signer, the host's
+//! own included; what the host trusts counts the layout policy a
+//! publisher attached for a consumer with no policy of its own, and the
+//! claims it requires (118, C.10; design D12). A path is absolute or begins `~/`, expanded
 //! against the home directory. This module reads each table generically
 //! and names no tool (rule core.1): the key of each seam's table is
 //! matched to its profile by the `bind` function of that seam's profile
@@ -32,7 +42,7 @@
 //! it has them (58, 59, rule core.19).
 //!
 //! The binding made from the file binds the store, the landing and the
-//! signers it names, and from the repository the command runs in the
+//! signers it names, carries the signers it trusts, and from the repository the command runs in the
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
 //! through a second binding of `[store]`, opened and never made (design
@@ -48,7 +58,8 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tailrace_seams::{
-    Answer, ChannelName, Digest, Envelope, Keeper, Not, Seam, Seams, SignerId, Source,
+    Answer, ChannelName, ClaimKind, Digest, Envelope, Keeper, NamedSigner, Not, Seam, Seams,
+    SignerId, Source,
 };
 
 use crate::{profiles, unsigned, Binding};
@@ -70,13 +81,15 @@ pub fn path(xdg_config_home: Option<&OsStr>, home: Option<&Path>) -> Option<Path
 }
 
 /// What the bindings file names: the store's table and the landing's,
-/// where it holds them, and the host's signer.
+/// where it holds them, the host's signer, and the signers it trusts,
+/// each allowed to claim a layout policy alone.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bindings {
     pub file: PathBuf,
     pub store: Option<Table>,
     pub landing: Option<Table>,
     pub signing: Option<Signing>,
+    pub trust: Vec<NamedSigner>,
 }
 
 /// A seam's table: the one key naming its profile, and that key's value.
@@ -218,6 +231,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
         store: None,
         landing: None,
         signing: None,
+        trust: Vec::new(),
     };
     for (name, value) in tables {
         let at = format!("[{name}]");
@@ -225,13 +239,21 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
             return Err(unreadable(
                 file,
                 Some(&name),
-                format!("{name} is not a table; the file binds [store], [landing] and [signing]"),
+                format!(
+                    "{name} is not a table; the file binds [store], [landing], [signing] \
+                     and [trust]"
+                ),
             ));
         };
         match name.as_str() {
             "store" => bindings.store = Some(seam(file, home, "store", table)?),
             "landing" => bindings.landing = Some(seam(file, home, "landing", table)?),
             "signing" => bindings.signing = Some(signing(file, home, table)?),
+            "trust" => {
+                for (id, value) in table {
+                    bindings.trust.push(trusted(file, id, value)?);
+                }
+            }
             "build" | "projections" => {
                 return Err(unreadable(
                     file,
@@ -255,7 +277,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
                     Some(&at),
                     format!(
                         "{at} is no table of the bindings file, which binds [store], \
-                         [landing] and [signing]"
+                         [landing], [signing] and [trust]"
                     ),
                 ))
             }
@@ -331,6 +353,42 @@ fn signing(file: &Path, home: Option<&Path>, table: &toml::Table) -> Answer<Sign
     Ok(Signing {
         signer: SignerId::new(signer),
         key,
+    })
+}
+
+/// `[trust.<id>]`: the signer `id` the host trusts, by its one key,
+/// whose text is what the signer's profile verifies it by, allowed to
+/// claim a layout policy alone; unreadable naming the table where it names
+/// no key, two, or a key that is not a string (118, C.10).
+fn trusted(file: &Path, id: &str, value: &toml::Value) -> Answer<NamedSigner> {
+    let at = format!("[trust.{id}]");
+    let cannot = |said: String| unreadable(file, Some(&at), said);
+    let table = value.as_table().ok_or_else(|| {
+        cannot(format!(
+            "{at} is not a table naming the key {id} is verified by"
+        ))
+    })?;
+    let mut keys: Vec<&String> = table.keys().collect();
+    keys.sort_unstable();
+    let key = match keys.as_slice() {
+        [key] => key.as_str(),
+        [] => return Err(cannot(format!("{at} names no key that verifies it"))),
+        several => {
+            let names: Vec<&str> = several.iter().map(|k| k.as_str()).collect();
+            return Err(cannot(format!(
+                "{at} names {}, and a signer is verified by one key",
+                names.join(", ")
+            )));
+        }
+    };
+    let verified_by = table[key]
+        .as_str()
+        .ok_or_else(|| cannot(format!("{at} {key} is not a string")))?;
+    Ok(NamedSigner {
+        id: SignerId::new(id),
+        verified_by: verified_by.to_string(),
+        kinds: vec![ClaimKind::LayoutPolicy],
+        checks: Vec::new(),
     })
 }
 
@@ -414,6 +472,7 @@ pub fn bind(file: &Path, home: Option<&Path>, repository: &Path, command: For) -
         },
         store: named,
         signer: signing.map(|s| s.signer.clone()),
+        trust: bindings.trust.clone(),
     })
 }
 

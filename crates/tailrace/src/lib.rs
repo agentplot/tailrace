@@ -20,7 +20,7 @@ use std::io::Write;
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
-use tailrace_seams::{Answer, Not, Seam, Seams, SignerId, Source};
+use tailrace_seams::{Answer, NamedSigner, Not, Seam, Seams, SignerId, Source};
 
 pub mod bindings;
 pub mod commands;
@@ -63,7 +63,8 @@ pub enum Command {
     /// The versions this host published, from its own record.
     Status(commands::status::StatusArgs),
     /// Render the cache entries a landed revision's passing verdicts name
-    /// into this checkout, where its tools read them.
+    /// into this checkout, where its tools read them, and each layout of
+    /// the versions its lockfiles pin that the policy admits.
     Sync(commands::sync::SyncArgs),
     /// Write the cache entries of a landing's passing builds to the store,
     /// from what its build left on this host, after the landing.
@@ -75,13 +76,16 @@ pub enum Command {
 
 /// What a host binds (92): the seams; the store as the host's bindings
 /// name it, which the host's record keeps of each version (61, 118);
-/// and the identity of the party running tailrace, which signs what it
+/// the identity of the party running tailrace, which signs what it
 /// observed (11, 79), `None` on a host that binds no key and only
-/// verifies.
+/// verifies; and the signers the host trusts, through whom alone a
+/// consumer with no policy of its own counts a publisher's layout policy
+/// (118, C.10), none where the file names no `[trust]`.
 pub struct Binding {
     pub seams: Seams,
     pub store: Source,
     pub signer: Option<SignerId>,
+    pub trust: Vec<NamedSigner>,
 }
 
 /// `cli` asked in the repository at `at`, over the binding the host's

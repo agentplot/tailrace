@@ -389,3 +389,18 @@ fn serve_is_absent() {
         Err(Not::Absent(_))
     ));
 }
+
+#[test]
+fn the_pins_of_a_checkout_are_absent_naming_the_lockfile() {
+    let rig = Rig::new();
+    let absent = Not::absent(&MoonCache::source(), "lockfile");
+    for checkout in [rig.checkout.clone(), rig.checkout.join("no checkout")] {
+        assert_eq!(
+            rig.projection().pinned(checkout.to_str().unwrap()),
+            Err(absent.clone()),
+            "the pins of {}",
+            checkout.display()
+        );
+    }
+    assert_eq!(files(&rig.checkout), [], "a file was written");
+}

@@ -239,3 +239,42 @@ fn two_worktrees_of_one_repository_answer_one_common_directory() {
     elsewhere.commit("chore: start", &[("a", "a")]);
     assert_ne!(elsewhere.history().common_dir(), here);
 }
+
+#[test]
+fn two_worktrees_of_one_repository_answer_two_git_directories() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a", "a")]);
+    let other = fixture.path("other");
+    repo.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "other",
+        other.to_str().unwrap(),
+    ]);
+
+    let (here, there) = (repo.history(), History::open(&other).unwrap());
+    assert_ne!(here.git_dir(), there.git_dir());
+    assert_eq!(here.common_dir(), there.common_dir());
+    assert_eq!(
+        here.git_dir(),
+        repo.path.join(".git").canonicalize().unwrap()
+    );
+    let theirs = repo.git(&[
+        "-C",
+        other.to_str().unwrap(),
+        "rev-parse",
+        "--absolute-git-dir",
+    ]);
+    assert_eq!(
+        there.git_dir(),
+        std::path::Path::new(&theirs).canonicalize().unwrap()
+    );
+    assert!(
+        there.git_dir().starts_with(here.common_dir()),
+        "{} is not under the common directory",
+        there.git_dir().display()
+    );
+}
