@@ -1,10 +1,11 @@
 //! A projection's group: 84 to 87, and 48 and 50 as far as a projection
 //! keeps them (B.6), for artifacts and, where the projection packs them,
-//! cache entries.
+//! cache entries; and what a checkout's lockfile pins (137), cited as 50
+//! and 58 until the suite's statement list holds 137.
 
 use tailrace_seams::{
-    Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Output, Projection, Seam,
-    Version,
+    Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Output, Pinned,
+    Projection, Seam, Version,
 };
 
 use crate::seams::{absent, unreadable};
@@ -30,6 +31,16 @@ pub trait ProjectionRig: Rig {
     /// Whether the projection packs cache entries; one that packs none
     /// answers absent for one (84, 85).
     fn caches(&self) -> bool;
+
+    /// Whether the ecosystem has a lockfile a checkout pins its versions
+    /// in (137).
+    fn has_lockfile(&self) -> bool;
+
+    /// A checkout the rig stages, holding the ecosystem's lockfile where
+    /// `lockfile` and none of the ecosystem's otherwise: where it is, and
+    /// the pins its lockfile holds, as the lockfile spells them, none
+    /// where it holds none.
+    fn checkout(&self, lockfile: bool) -> (String, Vec<Pinned>);
 
     /// The projection made unreachable, every operation answering
     /// unreadable, and the words it answers with.
@@ -80,6 +91,18 @@ pub fn scenarios() -> Vec<Scenario<dyn ProjectionRig>> {
             plays: None,
             cites: &[84, 85],
             run: a_projection_that_packs_no_cache_entries,
+        },
+        Scenario {
+            name: "pinned as the lockfile spells it",
+            plays: None,
+            cites: &[50, 58],
+            run: pinned_as_the_lockfile_spells_it,
+        },
+        Scenario {
+            name: "no lockfile, absent",
+            plays: None,
+            cites: &[50, 58],
+            run: no_lockfile_absent,
         },
     ]
 }
@@ -278,5 +301,28 @@ fn a_projection_that_packs_no_cache_entries(rig: &dyn ProjectionRig) {
         Seam::Projection,
         "cache entries",
         "render of a cache entry",
+    );
+}
+
+fn pinned_as_the_lockfile_spells_it(rig: &dyn ProjectionRig) {
+    if !rig.has_lockfile() {
+        not_applicable("the ecosystem has no lockfile");
+    }
+    let (at, pins) = rig.checkout(true);
+    assert!(!pins.is_empty(), "the rig's lockfile pins nothing");
+    let pinned = ok(rig.projection().pinned(&at), "pinned");
+    assert_eq!(
+        pinned, pins,
+        "pinned answered other names or versions than the lockfile pins"
+    );
+}
+
+fn no_lockfile_absent(rig: &dyn ProjectionRig) {
+    let (at, _) = rig.checkout(false);
+    absent(
+        rig.projection().pinned(&at),
+        Seam::Projection,
+        "lockfile",
+        "pinned of a checkout with no lockfile",
     );
 }

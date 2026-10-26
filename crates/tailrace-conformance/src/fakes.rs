@@ -14,8 +14,9 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelName, Claim, ClaimKind,
     Digest, Ecosystem, EcosystemName, Envelope, Environment, EnvironmentName, Keeper, Landing,
-    NamedSigner, Outcome, Output, OutputName, Policy, Projection, Report, Required, Revision,
-    Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
+    NamedSigner, Outcome, Output, OutputName, Pinned, Policy, Projection, Report, Required,
+    Revision, Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version,
+    IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
@@ -481,6 +482,32 @@ impl ProjectionRig for FakeProjectionRig {
         self.projection.caches()
     }
 
+    fn has_lockfile(&self) -> bool {
+        true
+    }
+
+    /// The checkout `checkouts/with-lockfile`, its lockfile set to pin a
+    /// scoped name and a prerelease as a lockfile spells them, or
+    /// `checkouts/without`, which holds none.
+    fn checkout(&self, lockfile: bool) -> (String, Vec<Pinned>) {
+        if !lockfile {
+            return ("checkouts/without".into(), Vec::new());
+        }
+        let at = "checkouts/with-lockfile";
+        let pins = vec![
+            Pinned {
+                name: EcosystemName::new("@scope/site"),
+                version: Version::new("1.2.0-rc.1"),
+            },
+            Pinned {
+                name: EcosystemName::new("left-pad"),
+                version: Version::new("1.3.0"),
+            },
+        ];
+        self.projection.lockfile(at, &pins);
+        (at.into(), pins)
+    }
+
     fn unreachable(&self) -> String {
         let projection = &self.projection;
         unreachable(
@@ -489,6 +516,7 @@ impl ProjectionRig for FakeProjectionRig {
                 ProjectionOp::Pack,
                 ProjectionOp::Render,
                 ProjectionOp::Serve,
+                ProjectionOp::Pinned,
             ],
         )
     }
