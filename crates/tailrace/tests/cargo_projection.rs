@@ -16,7 +16,7 @@ use scratch::{on_path, Repo, Scratch};
 use tailrace::profiles::projection::cargo::{CargoProjection, ECOSYSTEM};
 use tailrace::profiles::store::layout::Layout;
 use tailrace_conformance::seams::projection::{self, ProjectionRig};
-use tailrace_conformance::{run, Rig, Scenario};
+use tailrace_conformance::{run, Rig};
 use tailrace_fakes::FakeStore;
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, Ecosystem, EcosystemName, Manifest, Output, OutputName,
@@ -201,35 +201,24 @@ impl ProjectionRig for CargoRig {
     }
 }
 
-/// The group's scenarios named `names`.
-fn scenarios(names: &[&str]) -> Vec<Scenario<dyn ProjectionRig>> {
-    projection::scenarios()
-        .into_iter()
-        .filter(|s| names.contains(&s.name))
-        .collect()
-}
+/// The scenarios a projection that packs no cache entries is not held
+/// to, by the group's own word.
+const CACHE: [&str; 2] = [
+    "a cache entry packed with no version",
+    "a layout of the build identities given",
+];
 
 #[test]
-fn a_cargo_that_cannot_be_run_is_unreadable_in_the_operating_systems_words() {
-    let report = run(
-        projection::GROUP,
-        &scenarios(&["a projection that cannot be reached"]),
-        &|| Box::new(CargoRig::new()),
+fn every_scenario_of_the_projection_group_over_the_cargo_projection() {
+    let scenarios = projection::scenarios();
+    let report = run(projection::GROUP, &scenarios, &|| Box::new(CargoRig::new()));
+    assert_eq!(
+        (report.profile.as_str(), report.ran),
+        (ECOSYSTEM, scenarios.len())
     );
-    assert_eq!((report.profile.as_str(), report.ran), (ECOSYSTEM, 1));
     report.assert();
-}
-
-#[test]
-fn the_cargo_projection_packs_no_cache_entries() {
-    let report = run(
-        projection::GROUP,
-        &scenarios(&["a projection that packs no cache entries"]),
-        &|| Box::new(CargoRig::new()),
-    );
-    assert_eq!((report.profile.as_str(), report.ran), (ECOSYSTEM, 1));
-    report.assert();
-    assert_eq!(report.not_applicable, [], "{report}");
+    let inapplicable: Vec<&str> = report.not_applicable.iter().map(|n| n.scenario).collect();
+    assert_eq!(inapplicable, CACHE, "{report}");
 }
 
 // Requirement: A pack leaves the checkout as it was and refuses what it
