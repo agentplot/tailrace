@@ -1,10 +1,11 @@
 //! The layouts' group: a checkout's layouts rendered from the store with
-//! the versions its lockfiles pin, each under the consumer's policy for
-//! layouts or, through the signers the host trusts, its publisher's,
-//! holding only what the policy admits, S4 among them; a refusal answered
-//! naming the claim found wanting, a layout that cannot be refreshed
-//! answering what it holds, and the host's record of each layout, rebuilt
-//! when deleted (47, 50, 51, 61 to 63, 99, 113; design D10).
+//! the versions its lockfiles pin, each under a stacked policy, the
+//! consumer's written layout line, else, through the signers the host
+//! trusts, its publisher's, else the given, holding only what the policy
+//! admits, S4 among them; a refusal answered naming the claim found
+//! wanting, a layout that cannot be refreshed answering what it holds,
+//! and the host's record of each layout, rebuilt when deleted (47, 50,
+//! 51, 61 to 63, 99, 113; design D10).
 
 use std::fs;
 use std::path::Path;
@@ -45,10 +46,10 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             run: a_pin_the_store_does_not_name,
         },
         Scenario {
-            name: "the consumer's own policy at its landed revision",
+            name: "the consumer's written line at its landed revision",
             plays: None,
             cites: &[113],
-            run: the_consumers_own_policy_at_its_landed_revision,
+            run: the_consumers_written_line_at_its_landed_revision,
         },
         Scenario {
             name: "the publisher's policy through the host's trust",
@@ -57,10 +58,16 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             run: the_publishers_policy_through_the_hosts_trust,
         },
         Scenario {
-            name: "no policy anywhere",
+            name: "the publisher's above the consumer's given",
             plays: None,
-            cites: &[47],
-            run: no_policy_anywhere,
+            cites: &[113],
+            run: the_publishers_above_the_consumers_given,
+        },
+        Scenario {
+            name: "the given where neither writes one",
+            plays: None,
+            cites: &[47, 113],
+            run: the_given_where_neither_writes_one,
         },
         Scenario {
             name: "a version refused naming its claim",
@@ -127,8 +134,8 @@ fn trusts(ids: &[&str]) -> Vec<NamedSigner> {
         .collect()
 }
 
-/// The world's head landed with no verdict, and the consumer's policy for
-/// layouts at it requiring `claims`, where it has one.
+/// The world's head landed with no verdict, and the consumer's file
+/// writing at it a layout line requiring `claims`, where it has one.
 fn landed(world: &FakeWorld, claims: Option<Vec<RequiredClaim>>) -> Revision {
     world.land(&world.head, &[]);
     if let Some(claims) = claims {
@@ -142,6 +149,19 @@ fn landed(world: &FakeWorld, claims: Option<Vec<RequiredClaim>>) -> Revision {
         );
     }
     world.head.clone()
+}
+
+/// The consumer's file at `revision` writing no layout line, so the
+/// policy answers its given, requiring `claims` (C.10).
+fn given_at(world: &FakeWorld, revision: &Revision, claims: Vec<RequiredClaim>) {
+    world.fakes.policy.require_at(
+        revision,
+        Audience::Layout,
+        Required::Layout {
+            claims,
+            given: true,
+        },
+    );
 }
 
 /// `version` of `site` held in the store under its `artifact/` name; and,
@@ -320,7 +340,7 @@ fn a_pin_the_store_does_not_name(world: &FakeWorld) {
     );
 }
 
-fn the_consumers_own_policy_at_its_landed_revision(world: &FakeWorld) {
+fn the_consumers_written_line_at_its_landed_revision(world: &FakeWorld) {
     world.fakes.policy.require(
         Audience::Layout,
         Required::Layout {
@@ -347,7 +367,7 @@ fn the_consumers_own_policy_at_its_landed_revision(world: &FakeWorld) {
         Some(PolicyOf::Own {
             revision: revision.clone()
         }),
-        "the version was judged under another policy than the consumer's"
+        "the version was judged under another policy than the consumer's line"
     );
     assert_eq!(wanting(refused).0, acceptance());
     let asked: Vec<_> = world
@@ -415,28 +435,89 @@ fn the_publishers_policy_through_the_hosts_trust(world: &FakeWorld) {
     assert_eq!(strangers, 1, "the untrusted signer's claim was not kept");
 }
 
-fn no_policy_anywhere(world: &FakeWorld) {
+fn the_publishers_above_the_consumers_given(world: &FakeWorld) {
     let revision = landed(world, None);
-    site(world, "1.0.0", true);
+    given_at(world, &revision, vec![acceptance()]);
+    let (published, artifact) = site(world, "1.0.0", false);
+    publishers(world, &published, &[provenance()], GATE);
+    world.attach(&artifact.digest, ClaimKind::Provenance, json!({}), HOST);
+    site(world, "1.1.0", true);
+    world.lockfile(FILE, &[("site", "1.0.0"), ("site", "1.1.0")]);
+    let synced = synced(world, &revision, 1, &trusts(&[GATE, HOST]));
+
+    let layout = refreshed(&synced);
+    assert_eq!(
+        layout.policy,
+        Under::Publisher,
+        "the consumer's given was read as a layout line it writes"
+    );
+    let publishers = pin(layout, "1.0.0");
+    assert!(
+        publishers.answer.is_ok(),
+        "the version under its trusted publisher's policy answered {:?}",
+        publishers.answer
+    );
+    assert_eq!(
+        publishers.policy,
+        Some(PolicyOf::Publisher {
+            revision: world.start.clone()
+        }),
+        "the consumer's given was laid above its publisher's policy"
+    );
+    let givens = pin(layout, "1.1.0");
+    assert!(
+        givens.answer.is_ok(),
+        "the version under the consumer's given answered {:?}",
+        givens.answer
+    );
+    assert_eq!(
+        givens.policy,
+        Some(PolicyOf::Given {
+            revision: Some(revision)
+        }),
+        "a version with no publisher's policy was judged under another than the consumer's given"
+    );
+}
+
+fn the_given_where_neither_writes_one(world: &FakeWorld) {
+    let revision = landed(world, None);
+    let (index, _) = site(world, "1.0.0", true);
     world.lockfile(FILE, &[("site", "1.0.0")]);
-    let layout_policy = |checked: &[&str]| RequiredClaim {
-        kind: ClaimKind::LayoutPolicy,
-        check: None,
-        signers: trusts(checked),
-    };
 
     let trusting = synced(world, &revision, 1, &trusts(&[GATE]));
-    let (claim, checked) = wanting(pin(refreshed(&trusting), "1.0.0"));
-    assert_eq!(claim, layout_policy(&[GATE]));
-    assert_eq!(checked, [SignerId::new(GATE)]);
+    let held = pin(refreshed(&trusting), "1.0.0");
+    assert!(
+        held.answer.is_ok(),
+        "the version its host's trusted gate accepted answered {:?}",
+        held.answer
+    );
+    assert_eq!(
+        held.policy,
+        Some(PolicyOf::Given { revision: None }),
+        "the version was judged under another policy than the given"
+    );
+    let path = world.layouts().path(&Ecosystem::new(FILE));
+    let text = fs::read_to_string(&path).expect("the record is a file a reader opens");
+    let record: Value = serde_json::from_str(&text).expect("the record is JSON");
+    assert_eq!(record["held"][0]["index"], json!(index));
+    assert_eq!(
+        record["held"][0]["policy"],
+        json!({ "given": { "revision": null } }),
+        "the record names another policy than the given with no revision"
+    );
 
     let trusting_none = synced(world, &revision, 2, &[]);
     let (claim, checked) = wanting(pin(refreshed(&trusting_none), "1.0.0"));
-    assert_eq!(claim, layout_policy(&[]));
+    assert_eq!(
+        (claim.kind, claim.check),
+        (ClaimKind::Acceptance, None),
+        "a host that trusts no signer refused naming another claim than acceptance"
+    );
     assert_eq!(checked, [], "a host that trusts no signer checked one");
-    assert!(
-        renders(world).iter().all(Vec::is_empty),
-        "a version judged under no policy was rendered"
+    assert_eq!(
+        renders(world).last(),
+        Some(&vec![]),
+        "a version no signer the host trusts accepted was rendered"
     );
 }
 
