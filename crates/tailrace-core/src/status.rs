@@ -7,9 +7,9 @@
 
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::json;
-use tailrace_seams::{Answer, ComponentName, Not, Revision, Source};
+use tailrace_seams::{Answer, ComponentName, Revision};
 
-use crate::{answer_json, notes, Commit, Entry, Filter, History, Kept, Noted, LOCAL};
+use crate::{answer_json, notes, Entry, Filter, History, Kept, Noted};
 
 /// What status is asked: every version this host published, or those of
 /// one component, of one revision, or both.
@@ -90,32 +90,17 @@ pub fn status(history: &History, kept: &Kept, ask: &StatusAsk) -> Answer<Status>
 }
 
 /// 134: `entry`'s notes, the commits `noted` names read from the local
-/// history and rendered in the one form a publish renders (design D2,
-/// D7); unreadable naming a commit the history no longer holds (58).
+/// history and rendered as a publish renders them, under the template its
+/// revision holds (134; design D7); unreadable naming a commit the history
+/// no longer holds (58).
 fn notes_of(history: &History, entry: &Entry, noted: &Noted) -> Answer<String> {
-    let mut commits = Vec::new();
-    for revision in &noted.commits {
-        let message = history.message(revision).map_err(|not| match not {
-            Not::Absent(_) => Not::unreadable(
-                &Source::history(LOCAL),
-                format!(
-                    "the notes of {} {}, rendered from {revision}",
-                    entry.component, entry.version
-                ),
-                Some(format!("the history holds no commit {revision}")),
-            ),
-            not => not,
-        })?;
-        commits.push(Commit {
-            revision: revision.clone(),
-            message,
-        });
-    }
     let rendered = notes::render(
+        history,
         &entry.component,
         &entry.version,
-        noted.last.as_deref(),
-        &commits,
+        &entry.tag,
+        &entry.revision,
+        noted,
     )?;
     Ok(rendered.text)
 }

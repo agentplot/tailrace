@@ -9,6 +9,7 @@ use tailrace_seams::{
     Verdict, Version, Why,
 };
 
+use crate::fixture::DATE;
 use crate::world::{build_of, FakeWorld, Write, FILE, IMAGE, LANDING};
 use crate::{ok, Scenario};
 
@@ -234,12 +235,12 @@ fn a_landed_revision_published(world: &FakeWorld) {
         notes.text.as_bytes(),
         "the answer's notes are not the bytes the store holds"
     );
-    let short = &world.head.as_str()[..7];
+    // The repository keeps no template, so git-cliff's own default
+    // renders them, dated the day of the tagged revision.
+    let day = &DATE[..10];
     assert_eq!(
         notes.text,
-        format!(
-            "## {VERSION}\n\nSince v0.1.0.\n\n### Features\n\n- the server answers ({short})\n"
-        ),
+        format!("## [{VERSION}] - {day}\n\n### 🚀 Features\n\n- The server answers\n"),
         "the notes are not the commits the version is derived from"
     );
 
