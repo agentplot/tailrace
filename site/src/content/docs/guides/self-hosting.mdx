@@ -263,9 +263,11 @@ naming a table, since no version could reach the channel.
 
 `approvers` under a channel names who may ask for it to move, signers
 `[signers]` holds; with none named, any asker the gate verifies may, the
-host's own signer while no identity provider stands (129). It narrows
-who asks and never who signs, and an empty list is unreadable, since it
-would read as naming no one:
+host's own signer while no identity provider stands (129). You write it
+on the channel you mean, or on a manual environment for the channel that
+environment makes, never under a channel an environment makes. It
+narrows who asks and never who signs, and an empty list is unreadable,
+since it would read as naming no one:
 
 ```toml
 [signers.ci]
@@ -330,15 +332,19 @@ to the channel the environments it names follow:
 [environments.us]
 channel = "stable"
 policy = "manual"           # makes us, bound to stable
+approvers = ["ci"]          # only ci may say yes to us
 
 [environments.eu]
 channel = "stable"
 after = ["us"]              # makes eu, bound to us
 ```
 
-These are listed like a channel of your own, are promoted by the gate's
-signers as a given channel is, and take a line that adds claims and
-never changes how they move or names who may ask. An environment's other
+These are listed like a channel of your own and are promoted by the
+gate's signers as a given channel is. Who may say yes to a manual
+environment is its own `approvers`, which the channel it makes takes as
+who may ask for it. A line under a made channel adds claims; one that
+changes how it moves, or names `approvers`, is unreadable naming its
+table, since the environment's words say both. An environment's other
 keys are its target's. `policy` other than `auto` or `manual`, a made
 channel named as any channel the fragment holds, held or not,
 environments named in
@@ -357,7 +363,11 @@ two never disagree (131).
 head, the givens beside your own lines: what acceptance and a layout
 require, then every channel in force, with how it moves, whether it
 takes prereleases, the claims its versions must carry, who promotes it
-and who may ask for it. Each part is its own answer, so a missing
+and who may ask for it. Beneath them, under `held off`, it shows each
+given you have not switched on, with how it would move and the line that
+switches it on, so a channel left off is seen one line away (C.10). The
+channels and the givens held off come in one answer of the policy, which
+carries them apart (131). Each part is its own answer, so a missing
 `[layout]` is shown as absent beside the rest:
 
 ```text
@@ -383,6 +393,9 @@ channels
     requires acceptance by gate, then verdict of core:test by box
     promoted by gate
     may be asked for by ci
+
+held off
+  lts, bound to stable, switch on with [channels.lts]
 ```
 
 `--branch` names another governed branch, and `--json` prints the
