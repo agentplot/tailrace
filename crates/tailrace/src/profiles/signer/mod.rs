@@ -31,8 +31,9 @@ pub enum Signing {
     Given { signer: SignerId, key: PathBuf },
 }
 
-/// Where the given host key is, beside the bindings file.
-pub const GIVEN_KEY: &str = "signing";
+/// Where the given host key is, under the user's data directory, beside
+/// the host's other made state and apart from its configuration.
+pub const HOST_KEY: &str = "tailrace/host/signing.key";
 
 impl Signing {
     /// The identity the host signs as.
@@ -44,13 +45,14 @@ impl Signing {
     }
 }
 
-/// What a publish or a promote signs with where the bindings file at
-/// `file` names no `[signing]` (118, C.8; design D3, D4): the given host
-/// key at [`GIVEN_KEY`] beside the file, signing as [`given_signer`]
-/// names it from the key's public half. That public half is the one
-/// file read, and nothing is made: the key is made by its first sign.
-pub fn given(file: &Path) -> Answer<Signing> {
-    let key = file.with_file_name(GIVEN_KEY);
+/// What a publish or a promote signs with where the bindings file names
+/// no `[signing]` (118, C.8; design D2, D3, D4): the given host key at
+/// [`HOST_KEY`] under `data`, the user's data directory the given layout
+/// is under, signing as [`given_signer`] names it from the key's public
+/// half, `signing.key.pub`. That public half is the one file read, and
+/// nothing is made: the key is made by its first sign.
+pub fn given(data: &Path) -> Answer<Signing> {
+    let key = data.join(HOST_KEY);
     let signer = given_signer(&public_half(&key))?;
     Ok(Signing::Given { signer, key })
 }

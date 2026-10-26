@@ -7,7 +7,7 @@ pub mod registry;
 
 use std::ffi::OsStr;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tailrace_seams::{Answer, Not, Seam, Source, Store};
 
@@ -29,19 +29,15 @@ pub const GIVEN_LAYOUT: &str = "tailrace/layout";
 /// written one is. Absent naming both variables where neither is set,
 /// since no given layout can be placed; nothing is read.
 pub fn given(file: &Path, xdg_data_home: Option<&OsStr>, home: Option<&Path>) -> Answer<Table> {
-    let data = match (xdg_data_home, home) {
-        (Some(dir), _) if !dir.is_empty() => PathBuf::from(dir),
-        (_, Some(home)) => home.join(".local/share"),
-        (_, None) => {
-            return Err(Not::absent(
-                &bindings::source(file),
-                format!(
-                    "binding of the store: neither XDG_DATA_HOME nor HOME is set to place \
-                     {GIVEN_LAYOUT}"
-                ),
-            ))
-        }
-    };
+    let data = bindings::data(xdg_data_home, home).ok_or_else(|| {
+        Not::absent(
+            &bindings::source(file),
+            format!(
+                "binding of the store: neither XDG_DATA_HOME nor HOME is set to place \
+                 {GIVEN_LAYOUT}"
+            ),
+        )
+    })?;
     let layout = data.join(GIVEN_LAYOUT);
     let text = layout.to_str().ok_or_else(|| {
         bindings::unreadable(
@@ -111,6 +107,8 @@ fn missing_or_empty(path: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     fn file() -> PathBuf {

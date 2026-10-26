@@ -280,22 +280,31 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
+/// The given host key's path under the data directory `data`.
+fn given_key(data: &Path) -> PathBuf {
+    data.join("tailrace/host/signing.key")
+}
+
 #[test]
-fn a_host_naming_no_signer_publishes_with_the_given_key_as_its_public_halfs_name() {
+fn a_host_naming_no_signer_publishes_with_the_given_key_in_the_data_directory_as_its_public_halfs_name(
+) {
     let dir = TempDir::new().unwrap();
     let file = unsigned_file(dir.path());
-    let key = file.with_file_name("signing");
+    let data = dir.path().join("data");
+    let key = given_key(&data);
+    fs::create_dir_all(key.parent().unwrap()).unwrap();
     // A key file no read could open, so a bind that read it would say so.
     fs::write(&key, "not a key").unwrap();
     fs::set_permissions(&key, fs::Permissions::from_mode(0o000)).unwrap();
     fs::write(public_half(&key), public_line("laptop")).unwrap();
     let laptop = SignerId::new("laptop");
     for command in [For::Publish, For::Promote] {
-        let binding = bindings::bind(&file, None, None, dir.path(), command).unwrap();
+        let binding =
+            bindings::bind(&file, None, Some(data.as_os_str()), dir.path(), command).unwrap();
         assert_eq!(binding.signer, Some(laptop.clone()), "{command:?}");
         assert_eq!(binding.seams.signers.len(), 2);
     }
-    let signing = given(&file).unwrap();
+    let signing = given(&data).unwrap();
     assert_eq!(
         signing,
         Signing::Given {
@@ -312,16 +321,29 @@ fn a_host_naming_no_signer_publishes_with_the_given_key_as_its_public_halfs_name
     );
     fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
     assert_eq!(fs::read(&key).unwrap(), b"not a key");
+    assert_eq!(
+        names(key.parent().unwrap()),
+        ["signing.key", "signing.key.pub"]
+    );
+    assert_eq!(names(file.parent().unwrap()), ["config.toml"]);
 }
 
 #[test]
 fn with_no_public_half_the_given_signer_is_the_hosts_name_and_nothing_is_made() {
     let dir = TempDir::new().unwrap();
     let file = unsigned_file(dir.path());
-    let public = public_half(&file.with_file_name("signing"));
-    let host = given_signer(&public).unwrap();
-    let binding = bindings::bind(&file, None, None, dir.path(), For::Publish).unwrap();
+    let data = dir.path().join("data");
+    let host = given_signer(&public_half(&given_key(&data))).unwrap();
+    let binding = bindings::bind(
+        &file,
+        None,
+        Some(data.as_os_str()),
+        dir.path(),
+        For::Publish,
+    )
+    .unwrap();
     assert_eq!(binding.signer, Some(host));
+    assert!(!data.exists(), "binding made {}", data.display());
     assert_eq!(names(file.parent().unwrap()), ["config.toml"]);
 }
 
@@ -329,12 +351,15 @@ fn with_no_public_half_the_given_signer_is_the_hosts_name_and_nothing_is_made() 
 fn a_host_naming_no_signer_binds_both_verify_only_for_every_other_command() {
     let dir = TempDir::new().unwrap();
     let file = unsigned_file(dir.path());
+    let data = dir.path().join("data");
     // A public half no read could parse, so a bind that read it would
     // say so.
-    let public = public_half(&file.with_file_name("signing"));
+    let public = public_half(&given_key(&data));
+    fs::create_dir_all(public.parent().unwrap()).unwrap();
     fs::write(&public, "no key here\n").unwrap();
     for command in [For::Verify, For::Sync, For::Push, For::Rebuild] {
-        let binding = bindings::bind(&file, None, None, dir.path(), command).unwrap();
+        let binding =
+            bindings::bind(&file, None, Some(data.as_os_str()), dir.path(), command).unwrap();
         assert_eq!(binding.signer, None, "{command:?}");
         assert_eq!(binding.seams.signers.len(), 2);
     }
@@ -342,10 +367,28 @@ fn a_host_naming_no_signer_binds_both_verify_only_for_every_other_command() {
         plan(None),
         [Bound::HostKey(HostKey::verifying()), Bound::Kms(None)]
     );
-    assert_eq!(
-        names(file.parent().unwrap()),
-        ["config.toml", "signing.pub"]
-    );
+    assert_eq!(names(public.parent().unwrap()), ["signing.key.pub"]);
+    assert_eq!(names(file.parent().unwrap()), ["config.toml"]);
+}
+
+#[test]
+fn with_neither_the_data_directory_nor_the_home_a_publish_naming_no_signer_is_absent() {
+    let dir = TempDir::new().unwrap();
+    let file = unsigned_file(dir.path());
+    match bindings::bind(&file, None, None, dir.path(), For::Publish) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::host(&file));
+            assert_eq!(
+                a.what,
+                "binding of the signer: neither XDG_DATA_HOME nor HOME is set to place \
+                 tailrace/host/signing.key"
+            );
+        }
+        other => panic!(
+            "a publish with no data directory answered {:?}",
+            other.err()
+        ),
+    }
 }
 
 // Requirement: A table the file leaves out is bound to its given profile

@@ -49,9 +49,11 @@
 //! the repository's `HEAD` commit is set up for (C.5, C.6), over the
 //! checkout's `origin` or its one remote; the ledger the git ref on the
 //! landing's remote, written or given, or in the repository's own refs
-//! where the landing has none (C.13); for a publish or a promote, the host key made on its first
-//! sign beside the file, signing as the host's name (C.8); and the host's
-//! own publish as what tells its gate (130). A file that is there is
+//! where the landing has none (C.13); for a publish or a promote, the
+//! host key at `tailrace/host/signing.key` under the same data
+//! directory, made on its first sign and signing as the host's name
+//! (C.8); and the host's own publish as what tells its gate (130). A
+//! file that is there is
 //! never guessed past: a broken one is unreadable naming the file and the
 //! table or key, with the parser's words where it has them (58, 59, rule
 //! core.19), and binds nothing given in its place.
@@ -103,6 +105,17 @@ pub fn path(xdg_config_home: Option<&OsStr>, home: Option<&Path>) -> Option<Path
         _ => home?.join(".config"),
     };
     Some(config.join(FILE))
+}
+
+/// The user's data directory, where the given layout and the given host
+/// key are made (118, C.2, C.8): under `xdg_data_home` where it is set
+/// and not empty, else `home`'s `.local/share`; `None` where neither is
+/// set.
+pub fn data(xdg_data_home: Option<&OsStr>, home: Option<&Path>) -> Option<PathBuf> {
+    match xdg_data_home {
+        Some(dir) if !dir.is_empty() => Some(PathBuf::from(dir)),
+        _ => Some(home?.join(".local/share")),
+    }
 }
 
 /// What the bindings file names: the store's table, the landing's, the
@@ -457,9 +470,10 @@ impl Store for Unopened {
 /// each it leaves out, or every table where there is no file, binds what
 /// its seam's profile family gives: the layout under the data directory,
 /// the landing the repository is set up for over the checkout's remote,
-/// the git ref on the landing's remote, and for a publish or a promote the given
-/// host key, signing as the name its public half gives (C.2, C.5, C.6,
-/// C.8, C.13); every other command binds both signers verify-only.
+/// the git ref on the landing's remote, and for a publish or a promote
+/// the given host key under the same data directory, signing as the name
+/// its public half gives (C.2, C.5, C.6, C.8, C.13); every other command
+/// binds both signers verify-only.
 /// Every table is read before the layout is made, `[gate]` among them,
 /// so a file that cannot bind leaves nothing behind. The store is named
 /// as the file names it or as it is given, its key and what it names, a
@@ -482,7 +496,17 @@ pub fn bind(
         (_, For::Status | For::Policy) => None,
         (Some(signing), _) => Some(signing),
         (None, For::Publish | For::Promote) => {
-            given_signing = profiles::signer::given(file)?;
+            let data = data(xdg_data_home, home).ok_or_else(|| {
+                Not::absent(
+                    &source(file),
+                    format!(
+                        "binding of the signer: neither XDG_DATA_HOME nor HOME is set to place \
+                         {}",
+                        profiles::signer::HOST_KEY
+                    ),
+                )
+            })?;
+            given_signing = profiles::signer::given(&data)?;
             Some(&given_signing)
         }
         (None, _) => None,

@@ -1490,7 +1490,7 @@ fn given_store(host: &Host) -> Source {
 
 /// The signer the given host key signs as on this host.
 fn given_signer(host: &Host) -> SignerId {
-    profiles::signer::given(&host.file()).unwrap().signer()
+    profiles::signer::given(&host.data()).unwrap().signer()
 }
 
 /// That `binding`, in `repo`, a repository with no remote and no file
@@ -1540,7 +1540,7 @@ fn no_file_and_an_empty_file_bind_the_given_profiles() {
         assert_eq!(promote.signer, Some(given_signer(&host)));
         assert_eq!(host.file().exists(), text.is_some(), "a file was written");
         assert!(
-            !host.file().with_file_name("signing").exists(),
+            !host.data().join(profiles::signer::HOST_KEY).exists(),
             "binding made a key"
         );
     }
@@ -1687,7 +1687,7 @@ fn a_malformed_file_is_unreadable_and_binds_nothing_given() {
         !host.data().exists(),
         "a malformed file made the given layout"
     );
-    assert!(!host.file().with_file_name("signing").exists());
+    assert!(!host.data().join(profiles::signer::HOST_KEY).exists());
 }
 
 #[test]
