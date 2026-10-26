@@ -44,6 +44,11 @@ impl Host {
         self.dir.path().join("data")
     }
 
+    /// Where the given layout is, under the data directory.
+    fn given_layout(&self) -> PathBuf {
+        self.data().join("tailrace/layout")
+    }
+
     fn read(&self) -> Answer<Bindings> {
         read(&self.file(), Some(&self.home()))
     }
@@ -987,30 +992,6 @@ fn committed(host: &Host, origin: Option<&Path>) -> (PathBuf, tailrace_seams::Re
     (repo, tailrace_seams::Revision::new(head))
 }
 
-/// What the landing bound for status answers of `head` on `main`.
-fn landed(binding: &Binding, head: &tailrace_seams::Revision) -> Answer<bool> {
-    binding
-        .seams
-        .landing
-        .landed(&tailrace_seams::Branch::new("main"), head)
-}
-
-// Requirement: Status is bound with nothing written
-
-#[test]
-fn no_file_and_no_origin_binds_the_branch_and_the_git_ref_with_no_remote() {
-    let host = Host::new();
-    let (repo, head) = committed(&host, None);
-    let before = files(host.dir.path());
-    let binding = host.bind(&repo, For::Status).unwrap();
-    assert_eq!(landed(&binding, &head), Ok(true));
-    match binding.seams.keeper.chain(&stable()) {
-        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
-        other => panic!("the ledger answered {other:?}"),
-    }
-    assert_eq!(files(host.dir.path()), before, "binding status made a file");
-}
-
 #[test]
 fn the_landings_remote_is_the_files_or_origin_with_no_file_or_none() {
     let host = Host::new();
@@ -1255,4 +1236,260 @@ fn a_written_landing_with_no_remote_reads_its_own_refs_in_a_clone() {
         remote_read(&host, binding.seams.landing.as_ref(), &head),
         None
     );
+}
+
+// Requirement: A host with no bindings file is bound to the given
+// profiles
+
+/// The store's name for the given layout under the host's data
+/// directory.
+fn given_store(host: &Host) -> Source {
+    Source::new(
+        Seam::Store,
+        format!("layout {}", host.given_layout().display()),
+    )
+}
+
+/// The signer the given host key signs as on this host.
+fn given_signer(host: &Host) -> SignerId {
+    profiles::signer::given(&host.file()).unwrap().signer()
+}
+
+/// That `binding`, in `repo`, a repository with no remote and no file
+/// of the landing's own, at `head`, is bound to the given profiles: the
+/// given layout, a plain branch reading the repository's own refs, the
+/// git ref with no remote, both signers, and the host's own publish
+/// telling its gate.
+fn assert_given(host: &Host, binding: &Binding, repo: &Path, head: &tailrace_seams::Revision) {
+    assert_eq!(binding.store, given_store(host));
+    assert_eq!(
+        remote_read(host, binding.seams.landing.as_ref(), head),
+        None
+    );
+    assert_eq!(
+        landing_source(binding.seams.landing.as_ref(), repo),
+        branch()
+    );
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Absent(a)) => {
+            assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref"));
+            assert_eq!(a.what, "chain of stable");
+        }
+        other => panic!("the given ledger answered {other:?}"),
+    }
+    assert_eq!(binding.seams.signers.len(), 2);
+    assert_eq!(binding.gate, Teller::Publish);
+}
+
+#[test]
+fn no_file_and_an_empty_file_bind_the_given_profiles() {
+    for text in [None, Some("")] {
+        let host = Host::new();
+        let (repo, head) = committed(&host, None);
+        if let Some(text) = text {
+            host.write(text);
+        }
+        let publish = host.bind(&repo, For::Publish).unwrap();
+        assert_given(&host, &publish, &repo, &head);
+        assert_eq!(publish.signer, Some(given_signer(&host)), "{text:?}");
+        for command in [For::Verify, For::Sync, For::Rebuild, For::Push] {
+            let binding = host.bind(&repo, command).unwrap();
+            assert_given(&host, &binding, &repo, &head);
+            assert_eq!(binding.signer, None, "{command:?}");
+        }
+        let promote = host.bind(&repo, For::Promote).unwrap();
+        assert_given(&host, &promote, &repo, &head);
+        assert_eq!(promote.signer, Some(given_signer(&host)));
+        assert_eq!(host.file().exists(), text.is_some(), "a file was written");
+        assert!(
+            !host.file().with_file_name("signing").exists(),
+            "binding made a key"
+        );
+    }
+}
+
+#[test]
+fn status_with_no_file_binds_the_given_landing_and_the_git_ref_with_no_remote_and_makes_nothing() {
+    let host = Host::new();
+    let (repo, head) = with_remotes(&host, &["origin"]);
+    let before = files(host.dir.path());
+    let binding = host
+        .bind(&repo, For::Status)
+        .unwrap_or_else(|not| panic!("status bound nothing: {not}"));
+    assert_eq!(
+        remote_read(&host, binding.seams.landing.as_ref(), &head).as_deref(),
+        Some("origin")
+    );
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
+        other => panic!("the given ledger answered {other:?}, not from the repository"),
+    }
+    assert_eq!(binding.store, given_store(&host));
+    match binding.seams.store.resolve(&Name::new("v0.1.0")) {
+        Err(Not::Unreadable(u)) => assert_eq!(u.source.seam, Seam::Store),
+        other => panic!("a given layout that is not there answered {other:?}"),
+    }
+    assert_eq!(binding.signer, None);
+    assert_eq!(binding.seams.signers.len(), 2);
+    assert!(binding.seams.projections.is_empty() && binding.seams.targets.is_empty());
+    assert_eq!(binding.gate, Teller::Publish);
+    assert_eq!(files(host.dir.path()), before, "binding status made a file");
+}
+
+#[test]
+fn a_registry_alone_binds_it_and_the_given_rest() {
+    let host = Host::new();
+    let (repo, head) = committed(&host, None);
+    host.write("[store]\nregistry = \"localhost:5000/tailrace\"\n");
+    let binding = host.bind(&repo, For::Publish).unwrap();
+    assert_eq!(
+        binding.store,
+        Source::new(Seam::Store, "registry localhost:5000/tailrace")
+    );
+    assert_eq!(
+        remote_read(&host, binding.seams.landing.as_ref(), &head),
+        None
+    );
+    assert_eq!(
+        landing_source(binding.seams.landing.as_ref(), &repo),
+        branch()
+    );
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
+        other => panic!("the given ledger answered {other:?}"),
+    }
+    assert_eq!(binding.signer, Some(given_signer(&host)));
+    assert_eq!(binding.gate, Teller::Publish);
+    assert!(
+        !host.data().exists(),
+        "a registry host made the given layout"
+    );
+}
+
+#[test]
+fn the_given_layout_is_under_the_data_directory_or_the_home() {
+    let host = Host::new();
+    let (repo, _) = committed(&host, None);
+    let binding = host.bind(&repo, For::Publish).unwrap();
+    assert_eq!(binding.store, given_store(&host));
+    assert!(host.given_layout().join("oci-layout").is_file());
+    let home = host.home().join(".local/share/tailrace/layout");
+    for data in [None, Some(OsStr::new(""))] {
+        let binding = bind(&host.file(), Some(&host.home()), data, &repo, For::Publish).unwrap();
+        assert_eq!(
+            binding.store,
+            Source::new(Seam::Store, format!("layout {}", home.display()))
+        );
+    }
+}
+
+#[test]
+fn a_store_ledger_over_the_given_layout_holds_the_chain_there_and_never_makes_it() {
+    let host = Host::new();
+    let (repo, _) = committed(&host, None);
+    host.write("[ledger]\nstore = {}\n");
+    for command in [For::Verify, For::Status] {
+        match host.bind(&repo, command) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source.seam, Seam::Store, "{command:?}");
+                assert!(
+                    u.what
+                        .starts_with(&host.given_layout().display().to_string()),
+                    "{u:?}"
+                );
+            }
+            other => panic!(
+                "{command:?} over no given layout answered {:?}",
+                other.err()
+            ),
+        }
+        assert!(!host.given_layout().exists(), "{command:?} made the layout");
+    }
+    let binding = host.bind(&repo, For::Publish).unwrap();
+    assert_eq!(binding.store, given_store(&host));
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "store")),
+        other => panic!("the store ledger answered {other:?}"),
+    }
+    match chain_of(host.bind(&repo, For::Status)) {
+        Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "store")),
+        other => panic!("status's store ledger answered {other:?}"),
+    }
+}
+
+#[test]
+fn a_malformed_file_is_unreadable_and_binds_nothing_given() {
+    let host = Host::new();
+    let (repo, _) = committed(&host, None);
+    let text = "[store\nlayout = \"/layout\"\n";
+    host.write(text);
+    let words = toml::from_str::<toml::Table>(text).unwrap_err().to_string();
+    for command in [For::Publish, For::Verify, For::Status] {
+        match host.bind(&repo, command) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source, Source::host(host.file()));
+                assert_eq!(u.what, host.file().display().to_string());
+                assert_eq!(u.said.as_deref(), Some(words.as_str()));
+            }
+            other => panic!(
+                "{command:?} over a malformed file answered {:?}",
+                other.err()
+            ),
+        }
+    }
+    assert!(
+        !host.data().exists(),
+        "a malformed file made the given layout"
+    );
+    assert!(!host.file().with_file_name("signing").exists());
+}
+
+#[test]
+fn several_remotes_none_origin_are_unreadable_for_every_command_and_make_no_layout() {
+    let host = Host::new();
+    let (repo, _) = with_remotes(&host, &["github", "gitlab"]);
+    let said = format!(
+        "the checkout has the remotes github, gitlab, none of them origin; name one in \
+         [landing] remote of {}",
+        host.file().display()
+    );
+    for command in [For::Publish, For::Verify, For::Status] {
+        match host.bind(&repo, command) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source, branch(), "{command:?}");
+                assert_eq!(u.said.as_deref(), Some(said.as_str()));
+            }
+            other => panic!("{command:?} answered {:?}", other.err()),
+        }
+    }
+    assert!(!host.data().exists(), "an unreadable landing left a layout");
+    host.write("[landing]\nbranch = { remote = \"github\" }\n");
+    assert!(host.bind(&repo, For::Publish).is_ok());
+}
+
+#[test]
+fn publish_makes_the_given_layout_with_its_parents_and_verify_over_none_makes_nothing() {
+    let host = Host::new();
+    let (repo, _) = committed(&host, None);
+    let layout = host.given_layout();
+    match host.bind(&repo, For::Verify) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Store);
+            assert!(u.what.starts_with(&layout.display().to_string()), "{u:?}");
+        }
+        other => panic!("verify over no given layout answered {:?}", other.err()),
+    }
+    assert!(
+        !host.data().exists(),
+        "verify made {}",
+        host.data().display()
+    );
+    let binding = host.bind(&repo, For::Publish).unwrap();
+    assert!(
+        layout.join("oci-layout").is_file(),
+        "publish made no layout"
+    );
+    let held = binding.seams.store.put_bytes(b"abc").unwrap();
+    assert_eq!(held.digest, Digest::of(b"abc"));
+    assert!(host.bind(&repo, For::Verify).is_ok());
 }

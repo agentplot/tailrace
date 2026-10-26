@@ -44,11 +44,11 @@
 //!
 //! A host with no file is bound as one whose file is empty, and a table
 //! the file leaves out is bound to the binding its seam's profile family
-//! gives in its place (118, design D1, D2): the store an OCI layout at
+//! gives in its place (118, design D1, D2): the store a layout at
 //! `tailrace/layout` under the user's data directory (C.2); the landing
-//! sluice where the repository's `HEAD` commit holds sluice's file and a
-//! plain branch otherwise (C.5, C.6), over the checkout's `origin` or its
-//! one remote; the ledger the git ref in the repository, with no remote
+//! the repository's `HEAD` commit is set up for (C.5, C.6), over the
+//! checkout's `origin` or its one remote; the ledger the git ref in the
+//! repository, with no remote
 //! (C.13); for a publish or a promote, the host key made on its first
 //! sign beside the file, signing as the host's name (C.8); and the host's
 //! own publish as what tells its gate (130). A file that is there is

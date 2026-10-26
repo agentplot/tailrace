@@ -347,3 +347,42 @@ fn a_host_naming_no_signer_binds_both_verify_only_for_every_other_command() {
         ["config.toml", "signing.pub"]
     );
 }
+
+// Requirement: A table the file leaves out is bound to its given profile
+
+#[test]
+fn a_key_service_alone_signs_through_it_into_the_given_layout_and_makes_no_host_key() {
+    let dir = TempDir::new().unwrap();
+    let file = bindings::path(Some(dir.path().join("config").as_os_str()), None).unwrap();
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, format!("[signing]\nkms = \"{ARN}\"\n")).unwrap();
+    let data = dir.path().join("data");
+    let repo = dir.path().join("repo");
+    let made = std::process::Command::new("git")
+        .args(["init", "-q", "-b", "main"])
+        .arg(&repo)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let binding = bindings::bind(&file, None, Some(data.as_os_str()), &repo, For::Publish).unwrap();
+    assert_eq!(binding.signer, Some(SignerId::new(ARN)));
+    assert_eq!(
+        plan(Some(&Signing::Kms(key()))),
+        [
+            Bound::Kms(Some(key())),
+            Bound::HostKey(HostKey::verifying()),
+        ]
+    );
+    let layout = data.join("tailrace/layout");
+    assert_eq!(
+        binding.store,
+        Source::new(Seam::Store, format!("layout {}", layout.display()))
+    );
+    assert!(
+        layout.join("oci-layout").is_file(),
+        "publish made no layout"
+    );
+    assert_eq!(names(file.parent().unwrap()), ["config.toml"]);
+}
