@@ -5,8 +5,9 @@ landed on `main` and `main` is taken into bolt/tailrace-sync-and-serve,
 and once render-under-a-policy and
 the-store-names-an-artifact-by-ecosystem-name-and-version are on this
 bolt. It is written against them as they stand: render-under-a-policy as
-committed at `7a899c8`, and the serving process as it is on
-bolt/tailrace-the-gate-and-the-channels at `0172321`.
+its revised change says at `34627b0`, whose code is on its branch, and
+the serving process as it is on bolt/tailrace-the-gate-and-the-channels
+at `0172321`. The statement is `agentplot/blueprints` `d91401e`.
 
 What it builds on:
 
@@ -24,17 +25,26 @@ What it builds on:
   repository from the landing's remote with `RepositoryName::from_remote`
   and calls both. `tailrace-core/src/served.rs` holds `SERVING_HOST`
   `127.0.0.1`, `SERVING_PORT` 7420 and `RepositoryName`.
-- **Render under a policy** (`render-under-a-policy` design): pinned on
-  the seam (`Pinned { name, version }`); `render::render(seams, layouts,
-  &RenderAsk) -> Answer<Refreshed>` resolves pins through
-  `artifact/<ecosystem>/<name>@<version>` (`render::locate`), judges each
-  under the consumer's `[layout]` policy at the landed revision, the
-  publisher's layout-policy claim counted through the signers the host's
-  bindings trust, or the givens' policy admitting accepted versions
-  alone (113, C.10), and hands the projection exactly the satisfied
-  artifacts at `<working tree>/.tailrace/layouts/<ecosystem>/`; the record
-  `Layouts` at `<git dir>/tailrace/layouts/<ecosystem>.json`;
-  `render::sync_checkout` behind `tailrace sync`.
+- **Render under a policy** (`render-under-a-policy` design and its
+  code in `crates/tailrace-core/src/render.rs`): pinned on the seam
+  (`Pinned { name, version }`); `render::render(seams, layouts,
+  &RenderAsk { ecosystem, pins, own, trusted, tree, when }) ->
+  Answer<Refreshed>` reads and judges every pin before it writes
+  anything: `locate` resolves `artifact/<ecosystem>/<name>@<version>`
+  to the index and the artifact, `own_policy(policy, landed)` answers
+  the consumer's own policy for layouts at the landed revision,
+  `policy_for` answers the policy that judges a version where the
+  consumer has none, from the publisher's layout-policy claim counted
+  through the signers the host's bindings trust (`[trust]`, 118, C.10),
+  and `judge` holds the version to every claim that policy requires; the
+  private `judged` does all four for one pin. The projection then
+  renders exactly the held artifacts at `place(tree, ecosystem)`,
+  `<working tree>/.tailrace/layouts/<ecosystem>/`, and `Layouts` writes
+  the record, `<git dir>/tailrace/layouts/<ecosystem>.json`, whose
+  `held` entries name each version and its index and artifact digests.
+  `render::layouts` and `render::sync_checkout(seams, record,
+  &CheckoutAsk { branch, revision, tree, when, trusted })` stand behind
+  `tailrace sync`, which takes `trusted` from `binding.trust`.
 - **The projection seam** (`crates/tailrace-seams/src/projection.rs`):
   `serve(&self, &Layout) -> Answer<Serving>`, where `Serving` is an
   address. The file and image profiles answer serve absent, not built;
@@ -64,11 +74,11 @@ missed version, and the layout's lock;
 sync naming and starting the process; npm pinned and its tests in the
 tools layer.
 
-**Non-Goals:** serving any other ecosystem; a packument for a name no
-layout holds a version of, and a manifest's range answered by pinned
-(137), which wait on how a range is resolved against a store that
-resolves a name only by its version (proposal); `.npmrc` written by tailrace (the consumer
-writes its scope line once, S4); the store's `artifact/` pointer.
+**Non-Goals:** serving any other ecosystem; a manifest's range answered
+by pinned (137), which waits on render-under-a-policy carrying a range on
+the seam's pin and resolving it by the store's listing (138, proposal);
+`.npmrc` written by tailrace (the consumer writes its scope line once,
+S4); the store's `artifact/` pointer.
 
 ## Decisions
 
@@ -151,25 +161,31 @@ it from there, so the address is spelled once (114, core.36).
 
 ### D4. A miss renders one version into the layout
 
-`render::miss(seams, &Layouts, &MissAsk { at, ecosystem, pin, branch,
-revision, when }) -> Answer<HeldPin>`, beside `render::render`:
+`render::miss(seams, &Layouts, &MissAsk { branch, revision, ecosystem,
+tree, pin, trusted, when }) -> Answer<HeldPin>`, beside `render::render`
+in `render.rs`:
 
 1. takes the layout's lock (D5);
-2. reads the record; a pin it holds already answers held at once (a
-   second request raced the first);
-3. resolves, reads and judges the one pin exactly as `render` judges a
-   pin, with the consumer's policy read at `revision`, which the process
-   takes as `tailrace sync` with no argument does, `history.base(main)`
-   in that checkout, and the publisher's claim where the consumer
-   declares none;
+2. reads the record; a pin its `held` names already answers held at
+   once (a second request raced the first);
+3. checks the revision landed (`Landed::check`), reads the consumer's
+   own policy with `own_policy`, and reads and judges the one pin with
+   `judged`, exactly as `render` judges a pin; `revision` is what
+   `tailrace sync` with no argument takes, `history.base(main)` in that
+   checkout, and `trusted` the checkout's binding's `trust`;
 4. where held, hands the projection's render the record's held
-   artifacts and this one, records the layout, and answers held; where
-   absent, refused or unreadable, writes nothing and answers that.
+   artifacts, each `Artifact { digest, meta }` rebuilt from its entry's
+   name, version and artifact digest, and this one, writes the record
+   with this version added to `held` and its other entries as they were,
+   and answers held; where absent, refused or unreadable, writes nothing
+   and answers that.
 
-The policy is found as `render` finds it, so whatever render-under-a-
-policy holds a consumer with no policy of its own to, the publisher's
-claim counted through the host's trusted signers or the givens'
-accepted versions (C.10), a miss holds it to the same.
+The policy is found as `render` finds it, by the same functions, so 113's
+order holds for a miss as for a sync: the consuming repository's own
+where its file writes one, else the publisher's layout policy the index
+carries, counted through the host's trusted signers, else the given
+(C.10). Whatever render-under-a-policy builds of that order, a miss
+holds a version to the same.
 
 It reads the store for the one pin alone: the held versions were judged
 when they were rendered, and the record names their digests (48, 50).
@@ -179,8 +195,9 @@ The process maps the answer to `miss`'s `Answer<()>`.
 
 `Layouts` gains `lock(ecosystem) -> Answer<LayoutLock>`, an exclusive
 `std::fs::File::lock` on `<git dir>/tailrace/layouts/<ecosystem>.lock`,
-held by `render::render` and `render::miss` from the record's read to
-its write, and let go on drop. A sync waits on a miss and the reverse.
+held by `render::render` from its first read to the record's write,
+and by `render::miss` from the record's read to its write, and let go
+on drop. A sync waits on a miss and the reverse.
 Why a file lock: the process and a sync are two processes; the lock is
 the host's, as `serve.lock` and `repositories.lock` are.
 
@@ -239,7 +256,10 @@ dist } }`, `dist` holding `tarball` as the path relative to the layout,
 tarball; `package.json` is read from the tarball's `package/package.json`
 with `flate2` and `tar`, never written back (C.11). `latest` is the
 highest held version by `semver` order, a prerelease only where no
-release is held. A name no artifact given names is removed from the
+release is held. A refused version is never given, so no packument
+lists it: a packument carries no words for a version it lacks, so the
+refusal reaches npm in the tarball's response (D9) and the developer in
+what sync prints (99). A name no artifact given names is removed from the
 layout, and a tarball no packument names is removed, so the layout holds
 what it was given (47). Files are written beside and renamed.
 
@@ -253,7 +273,8 @@ The request's `path`, its `%2f` and `%40` unescaped:
 - `<name>` (one part, or `@scope/pkg`): the packument from the layout,
   each `dist.tarball` made `<base>/<relative path>`, `200`
   `application/json`; no packument is `404`. A packument never asks the
-  core: the store cannot list a name's versions (138).
+  core: it names no version, so nothing is missed (50), and a name the
+  manifest declares with no pin is sync's to render (137).
 - `<name>/-/<base>-<version>.tgz`: the tarball, `200`
   `application/octet-stream`; a tarball the layout lacks calls `miss`
   once with `Pinned { name, version }` and, on `Ok`, answers the
@@ -317,9 +338,10 @@ leave behind, keeping the process for a layout that is gone.
   `PATH` holding no npm for the unreachable one; with it the pack ones
   (as `projections.rs` splits the file and image groups);
 - `crates/tailrace/tests/npm_served.rs` behind `tools`: a consumer
-  checkout with a host key signer, a layout store holding a published
-  `@family/widget` with its claims and `artifact/` name, `[layout]`
-  requiring its provenance, `.npmrc` naming the served address for
+  checkout whose policy file names the publisher's host key signer for
+  provenance, since the givens name no signer (116, C.10), a layout store
+  holding a published `@family/widget` with its claims and `artifact/`
+  name, `[layout]` requiring its provenance, `.npmrc` naming the served address for
   `@family`, `serve_on` at a test address over a temporary host;
   `tailrace sync` then `npm install` under a home and `npm_config_*` of
   its own, a refused and an absent version, and two worktrees sharing one
@@ -345,8 +367,11 @@ leave behind, keeping the process for a layout that is gone.
   installs agree.
 - [A family package no lockfile pins] → `npm install @family/new` and
   `npm install @family/new@<version>` both answer `404`, since npm asks
-  the packument first and the layout holds none for the name, until a
-  range can be resolved against the store (proposal).
+  the packument first and the layout holds none for the name, until
+  render resolves a manifest's range by the store's listing (137, 138;
+  proposal). The `404`'s words say the layout holds no version of the
+  name, so the developer sees that it is the layout's and not the
+  public registry's.
 - [npm retries a `502`] → npm's fetch retries 5xx with backoff before it
   fails; the words still reach the user, later.
 - [A miss judged under a newer landed policy than the layout's] → the
