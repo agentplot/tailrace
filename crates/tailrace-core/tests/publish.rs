@@ -7,14 +7,17 @@ mod world;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use tailrace_core::{answer_json, publish, Ask, Kept, Provenance, Published, BOUND};
+use tailrace_core::{
+    answer_json, layout_policy_body, publish, Ask, Kept, Provenance, Published, BOUND,
+};
 use tailrace_fakes::{
-    BuildOp, FakeProjection, FakeStore, Fault, LandingOp, SignerOp, StoreOp, Times,
+    BuildOp, FakeProjection, FakeStore, Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times,
 };
 use tailrace_seams::{
-    Answer, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest, EcosystemName,
-    Envelope, EnvironmentName, Held, Layout, Manifest, Name, Not, Outcome, Output, Packed, Pinned,
-    Projection, Put, Rendered, Seam, Serving, SignerId, Source, Store, Version, Why,
+    Answer, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest,
+    EcosystemName, Envelope, EnvironmentName, Held, Layout, Manifest, Name, NamedSigner, Not,
+    Outcome, Output, Packed, Pinned, Projection, Put, Rendered, Required, RequiredClaim, Seam,
+    Serving, SignerId, Source, Store, Version, Why,
 };
 use world::{build_of, build_ops, by_host, eco, output, version_of, Watched, World, HOST, LANDING};
 
@@ -905,4 +908,148 @@ fn a_publish_moves_no_channel_and_reaches_no_target() {
         .collect();
     assert_eq!(named.len(), 1);
     assert_eq!(named[0].given["name"], "lib-v0.2.0");
+}
+
+// Requirement: The index carries the publisher's layout policy
+
+/// One claim of `kind` by `signer`, as a policy for layouts names it.
+fn required(kind: ClaimKind, signer: &str) -> RequiredClaim {
+    RequiredClaim {
+        kind,
+        check: None,
+        signers: vec![NamedSigner {
+            id: SignerId::new(signer),
+            verified_by: format!("{signer}'s key"),
+            kinds: vec![kind],
+            checks: vec![],
+        }],
+    }
+}
+
+/// The layout-policy claims attached to the index `published` names.
+fn layout_policies(world: &World, published: &Published) -> Vec<(Envelope, Claim)> {
+    let (_, index) = version_of(published);
+    world
+        .fakes
+        .store
+        .claims_of(index)
+        .unwrap()
+        .into_iter()
+        .filter_map(|e| {
+            let claim = Claim::from_envelope(&e)?;
+            (claim.kind == ClaimKind::LayoutPolicy).then_some((e, claim))
+        })
+        .collect()
+}
+
+/// `world`'s policy for layouts requiring `claims`.
+fn layout(world: &World, claims: Vec<RequiredClaim>) {
+    world
+        .fakes
+        .policy
+        .require(Audience::Layout, Required::Layout { claims });
+}
+
+#[test]
+fn a_publish_under_a_layout_line_attaches_its_policy_to_the_index_before_the_name() {
+    let world = World::new();
+    let claims = vec![required(ClaimKind::Provenance, HOST)];
+    layout(&world, claims.clone());
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let [(envelope, claim)] = <[_; 1]>::try_from(layout_policies(&world, &published)).unwrap();
+    let (_, index) = version_of(&published);
+    assert_eq!(claim.subject, *index);
+    assert_eq!(claim.revision, world.head);
+    assert_eq!(claim.build, None);
+    assert_eq!(claim.body, layout_policy_body(&claims));
+    assert_eq!(envelope.sole().unwrap().signer, SignerId::new(HOST));
+
+    let asked: Vec<_> = world
+        .fakes
+        .policy
+        .calls()
+        .into_iter()
+        .filter(|c| c.given["audience"] == "layout")
+        .collect();
+    assert_eq!(asked.len(), 1);
+    assert_eq!(asked[0].given["revision"], world.head.as_str());
+
+    let order: Vec<(StoreOp, bool)> = world
+        .fakes
+        .store
+        .calls()
+        .iter()
+        .filter(|c| !matches!(c.op, StoreOp::Resolve | StoreOp::ClaimsOf))
+        .map(|c| (c.op, c.given["manifest"].get("index").is_some()))
+        .collect();
+    assert_eq!(
+        order[order.len() - 3..],
+        [
+            (StoreOp::PutArtifact, true),
+            (StoreOp::Attach, false),
+            (StoreOp::Name, false),
+        ],
+        "the layout policy was not attached between the index and the name"
+    );
+}
+
+#[test]
+fn a_publish_with_no_layout_line_attaches_the_given_acceptance_by_its_gate() {
+    let world = World::new();
+    let given = vec![required(ClaimKind::Acceptance, "gate")];
+    layout(&world, given.clone());
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let [(_, claim)] = <[_; 1]>::try_from(layout_policies(&world, &published)).unwrap();
+    assert_eq!(claim.body, layout_policy_body(&given));
+}
+
+#[test]
+fn a_publish_with_no_policy_file_attaches_no_layout_policy() {
+    let world = World::new();
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert_eq!(layout_policies(&world, &published), []);
+    let (_, index) = version_of(&published);
+    assert_eq!(world.fakes.store.claims_of(index).unwrap(), []);
+}
+
+#[test]
+fn an_index_put_again_carrying_the_policy_has_nothing_more_signed() {
+    let world = World::new();
+    layout(&world, vec![required(ClaimKind::Provenance, HOST)]);
+    world.fakes.store.fault(
+        StoreOp::Name,
+        Fault::Unreadable("connection refused".into()),
+        Times::Once,
+    );
+    let stopped = world.publish_one(&world.ask_for("lib"));
+    assert!(matches!(stopped, Err(Not::Unreadable(_))), "{stopped:?}");
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert_eq!(layout_policies(&world, &published).len(), 1);
+    let again = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert_eq!(again, published);
+    assert_eq!(layout_policies(&world, &again).len(), 1);
+    let signed: Vec<_> = world
+        .fakes
+        .signer
+        .calls()
+        .into_iter()
+        .filter(|c| c.op == SignerOp::Sign && c.given["claim"]["kind"] == "layout_policy")
+        .collect();
+    assert_eq!(signed.len(), 1, "the layout policy was signed again");
+}
+
+#[test]
+fn a_policy_for_layouts_that_cannot_be_read_stops_the_publish_before_the_name() {
+    let world = World::new();
+    world.fakes.policy.fault(
+        PolicyOp::PolicyFor,
+        Fault::Unreadable("the policy file does not parse".into()),
+        Times::UntilHealed,
+    );
+    let answer = world.publish_one(&world.ask_for("lib"));
+    assert!(
+        matches!(&answer, Err(Not::Unreadable(u)) if u.said.as_deref() == Some("the policy file does not parse")),
+        "{answer:?}"
+    );
+    assert!(world.fakes.store.resolve(&Name::new("lib-v0.2.0")).is_err());
 }
