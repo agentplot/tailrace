@@ -71,7 +71,7 @@ claim it names as predecessor, a stale predecessor refused naming the
 head, a fork reported and never chosen; to 125: two components'
 channels of one name kept as two chains; and to 60 and 61 as C.13 and
 C.14 keep them: a chain the keeper cannot reach answered as last read,
-saying when, and never appended to.
+saying when, an empty chain as any other, and never appended to.
 
 #### Scenario: A chain appended in order
 
@@ -102,6 +102,11 @@ saying when, and never appended to.
 
 - **WHEN** a chain is appended and read, the keeper is made unreachable, and the chain is read again
 - **THEN** it answers the claims as read, a time no earlier than the first read, and the rig's words, and an append is unreadable with them
+
+#### Scenario: An empty chain read as last read
+
+- **WHEN** the chain of a channel never appended to is read, the keeper is made unreachable, and the chain is read again
+- **THEN** it answers no claims, a time no earlier than the first read, and the rig's words, and not that none is held
 
 ## ADDED Requirements
 

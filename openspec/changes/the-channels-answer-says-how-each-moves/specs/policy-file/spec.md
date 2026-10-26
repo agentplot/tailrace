@@ -196,16 +196,25 @@ SHALL be the signers its `require` names that may claim promotion.
 
 An environment SHALL be declared as `[environments.<name>]` where no
 component is declared and `[environments.<component>.<name>]` where
-components are, naming its `channel`, `policy` (`auto` or `manual`,
-`auto` where unwritten) and `after`, a list of environment names of the
-same component (C.10). Any other `policy`, or a `channel` the file does
-not declare, give or make, SHALL be unreadable naming the table. Its
-other keys SHALL be left to their readers.
+components are. Its keys SHALL be C.10's words and no others: its
+`channel`, `policy` (`auto` or `manual`, `auto` where unwritten),
+`after`, a list of environment names of the same component, and
+`target`, which the profile SHALL leave to the target's reader, reading
+nothing of its value (C.10). Any other `policy`, or a `channel` the
+file does not declare, give or make, SHALL be unreadable naming the
+table. Any other key SHALL be unreadable naming the table and the key,
+since a target's own settings sit in the target's table and nowhere
+else (C.10).
+
+#### Scenario: An environment naming its target
+
+- **WHEN** `[environments.site]` names `channel = "stable"` and a `target`
+- **THEN** the channels answer is read, and `site` makes no channel
 
 #### Scenario: An environment with a target's own key
 
 - **WHEN** `[environments.site]` names `channel = "stable"` and `bucket = "example-site"`
-- **THEN** the channels answer is read, `site` makes no channel, and `bucket` is not read
+- **THEN** the channels are unreadable naming `[environments.site]` and `bucket`, and saying a target's settings sit in the target's table
 
 #### Scenario: An unknown policy word
 

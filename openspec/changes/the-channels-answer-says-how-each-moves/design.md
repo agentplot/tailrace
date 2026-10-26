@@ -112,6 +112,16 @@ policy, not the core, says whose promotion of the channel counts (32,
 - for a channel declared by hand: the signers its `require` names that
   may claim `promotion`.
 
+The gate and `ledger::promote` read the gate's signers and a channel's
+promoters from these answers and decide nothing of them (core.7). Where
+the file names no signer that may claim acceptance, C.10 (061bfa8) has
+the policy answer the host's own signer as the gate, for acceptance and
+for the given channels' promotion; that default is the policy file
+profile's, added by `a-host-with-no-bindings-file-is-bound-to-the-defaults`
+after this unit, and needs nothing of the gate or the ledger then. Here
+such a file names no acceptance signer, as on main, and a given
+channel's `promoted_by` is empty.
+
 `claims` for a given or made channel is an acceptance by the gate's
 signers, then the `require` of the table in force, in order.
 
@@ -189,8 +199,12 @@ each step unreadable naming the table on the first break:
    otherwise by a promotion alone; both keys together is unreadable
    (37). A table is given where the fragment holds its name.
 4. The environments: `[environments.<name>]` or
-   `[environments.<component>.<name>]`, reading `channel`, `policy` and
-   `after` and leaving every other key to its reader. `manual` makes a
+   `[environments.<component>.<name>]`, whose keys are C.10's words and
+   no others: `channel`, `policy` (`auto` or `manual`, `auto` unless
+   written), `after` and `target`. The profile reads the first three and
+   leaves `target` to the target's reader, reading nothing of its value;
+   any other key is unreadable naming the table and the key, since a
+   target's own settings sit in the target's table (C.10). `manual` makes a
    channel named for the environment, bound to the channel it names;
    `after` makes one bound to the channel the named environments follow
    (their own where they have one, else the one they name), all named
@@ -335,6 +349,41 @@ TOML form. Rejected for now: B.5 names no such operation, and it would
 carry the file profile's form across the seam; a held channel switched
 off is therefore not shown. Named for the design agent.
 
+### D12. An empty channel as last read says when
+
+60, as amended at b64d367: where the ledger does not answer, a chain is
+answered from the host's copy, an empty channel as any other answer,
+with the time the copy was read. Today every keeper answers an empty
+chain absent, from the source or the copy alike, and
+`ledger::channel` answers `Channel::Empty` with nothing of how it was
+read, so the time is lost.
+
+- `Keeper::chain` answers absent only where the source itself holds
+  none (121). Where the source does not answer and the host last read
+  the channel holding none, it answers `Chain { claims: [], read:
+  Read::Kept { at, said } }`, the time of that read and the source's
+  words. A channel this host never read, its source not answering,
+  stays unreadable with the source's words: there is no copy to answer
+  from.
+- The profiles keep an empty read as they keep any other: the store
+  profile's `keep` keeps an empty chain too; the git ref profile keeps,
+  beside its fetched refs in the repository's git directory, the time
+  it last read each channel the remote held none of, which is part of
+  the copy the fetch writes (60); the fake keeper keeps an empty answer
+  in `answered` as it keeps one with claims.
+- `ledger::channel` answers `Channel::Empty { read: Read }`:
+  `Read::Source` where the keeper answered absent, the chain's `read`
+  where it answered no claims. It serializes as
+  `{"state": "empty", "read": ...}`, as `At` carries its `read`.
+- `tailrace status` prints an empty channel read from the copy as
+  `empty, as last read <time>`, the source's words on a line of their
+  own, as it prints a chain at a head; the page's row (`HeadAt`) is
+  unchanged, since it carries no read for a head either.
+
+Alternative: answer an empty chain `Chain { claims: [] }` from the
+source too, and retire the absence. Rejected: 121 answers "that none is
+held", and every caller of `chain` reads that as absent today.
+
 ## Risks / Trade-offs
 
 - [Every repository now has `beta`, so every accepted publish asks the
@@ -348,10 +397,17 @@ off is therefore not shown. Named for the design agent.
 - [`gate.rs` is also edited by `the-publishs-host-tells-the-gate`] →
   this unit changes only how channels are found and moved; the told-by
   path is untouched.
-- [The environment table's form, the `on` key and the empty table that
-  switches a held channel on are this unit's reading of C.10, not a
-  ruling] → recorded in ADR 0019 for the user to accept with the
-  change, and named for the design agent.
+- [The `on` key and the empty table that switches a held channel on
+  are this unit's reading of C.10, not a ruling] → recorded in ADR 0019
+  for the user to accept with the change, and named for the design
+  agent.
+- [`target`'s value has no form yet: C.10 names the key and no target
+  table exists before phase 2] → the profile accepts the key and reads
+  nothing of it; the target's unit gives it its form.
+- [A repository that put a target's setting, such as `bucket`, in an
+  environment's table now reads unreadable] → nothing of that form is on
+  main; the words name the key and say a target's settings sit in its
+  own table.
 - [`alpha` moves exactly as `beta` does until a ruling says how a
   channel leaves prereleases out] → the fragment's comment says so, and
   it is named for the design agent.
