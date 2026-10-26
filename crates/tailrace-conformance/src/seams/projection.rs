@@ -1,11 +1,14 @@
 //! A projection's group: 84 to 87, and 48 and 50 as far as a projection
 //! keeps them (B.6), for artifacts and, where the projection packs them,
-//! cache entries; and what a checkout's lockfile pins (137), cited as 50
-//! and 58 until the suite's statement list holds 137.
+//! cache entries; what a checkout's lockfile pins (137), cited as 50
+//! and 58 until the suite's statement list holds 137; and what a held
+//! version's manifest requires and which versions satisfy a range, newest
+//! first (140), cited as 23, 50 and 58 until the statement list holds
+//! 140.
 
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Output, Pinned,
-    Projection, Seam, Version,
+    Projection, Range, Requirement, Seam, Version,
 };
 
 use crate::seams::{absent, unreadable};
@@ -41,6 +44,21 @@ pub trait ProjectionRig: Rig {
     /// the pins its lockfile holds, as the lockfile spells them, none
     /// where it holds none.
     fn checkout(&self, lockfile: bool) -> (String, Vec<Pinned>);
+
+    /// Whether the ecosystem has a manifest a held version requires
+    /// other names of the ecosystem in (140).
+    fn has_manifest(&self) -> bool;
+
+    /// An artifact of the ecosystem held where the projection reads it,
+    /// and what its manifest requires, as the manifest spells it, in the
+    /// order it gives it; none where the ecosystem has no manifest.
+    fn held(&self) -> (Artifact, Vec<Requirement>);
+
+    /// A range as the ecosystem spells one, versions listed in neither
+    /// the ecosystem's order nor spelling order, and those of them that
+    /// satisfy the range, newest first by the ecosystem's own ordering;
+    /// none of any where the ecosystem has no manifest.
+    fn ranged(&self) -> (Range, Vec<Version>, Vec<Version>);
 
     /// The projection made unreachable, every operation answering
     /// unreadable, and the words it answers with.
@@ -103,6 +121,24 @@ pub fn scenarios() -> Vec<Scenario<dyn ProjectionRig>> {
             plays: None,
             cites: &[50, 58],
             run: no_lockfile_absent,
+        },
+        Scenario {
+            name: "required as the manifest spells it",
+            plays: None,
+            cites: &[50, 58],
+            run: required_as_the_manifest_spells_it,
+        },
+        Scenario {
+            name: "satisfied by the ecosystem's own ordering",
+            plays: None,
+            cites: &[23],
+            run: satisfied_by_the_ecosystems_own_ordering,
+        },
+        Scenario {
+            name: "no manifest, none",
+            plays: None,
+            cites: &[58],
+            run: no_manifest_none,
         },
     ]
 }
@@ -324,5 +360,78 @@ fn no_lockfile_absent(rig: &dyn ProjectionRig) {
         Seam::Projection,
         "lockfile",
         "pinned of a checkout with no lockfile",
+    );
+}
+
+fn required_as_the_manifest_spells_it(rig: &dyn ProjectionRig) {
+    if !rig.has_manifest() {
+        not_applicable("the ecosystem has no manifest");
+    }
+    let (held, requirements) = rig.held();
+    assert!(
+        !requirements.is_empty(),
+        "the rig's manifest requires nothing"
+    );
+    let required = ok(rig.projection().requires(&held), "requires");
+    assert_eq!(
+        required, requirements,
+        "requires answered other names or ranges than the manifest requires"
+    );
+}
+
+fn satisfied_by_the_ecosystems_own_ordering(rig: &dyn ProjectionRig) {
+    if !rig.has_manifest() {
+        not_applicable("the ecosystem has no manifest");
+    }
+    let (range, versions, satisfying) = rig.ranged();
+    assert!(
+        satisfying.len() > 1,
+        "the rig's range is satisfied by fewer than two of its versions, so no order is read"
+    );
+    let as_listed: Vec<Version> = versions
+        .iter()
+        .filter(|v| satisfying.contains(v))
+        .cloned()
+        .collect();
+    let mut by_spelling = satisfying.clone();
+    by_spelling.sort();
+    let mut by_spelling_down = by_spelling.clone();
+    by_spelling_down.reverse();
+    for (order, named) in [
+        (&as_listed, "the order listed"),
+        (&by_spelling, "spelling order"),
+        (&by_spelling_down, "spelling order, newest last"),
+    ] {
+        assert_ne!(
+            order, &satisfying,
+            "the rig's answer is in {named}, so the scenario cannot tell the ecosystem's ordering from it"
+        );
+    }
+    let answered = ok(rig.projection().satisfying(&range, &versions), "satisfying");
+    assert_eq!(
+        answered, satisfying,
+        "satisfying answered other versions, or another order, than the ecosystem's newest first"
+    );
+}
+
+fn no_manifest_none(rig: &dyn ProjectionRig) {
+    if rig.has_manifest() {
+        not_applicable("the ecosystem has a manifest");
+    }
+    let (held, _) = rig.held();
+    let projection = rig.projection();
+    let required = ok(projection.requires(&held), "requires");
+    assert_eq!(
+        required,
+        [],
+        "requires answered names from an ecosystem with no manifest"
+    );
+    let (range, mut versions, _) = rig.ranged();
+    versions.push(held.meta.version().clone());
+    let satisfying = ok(projection.satisfying(&range, &versions), "satisfying");
+    assert_eq!(
+        satisfying,
+        [],
+        "satisfying answered versions from an ecosystem with no manifest"
     );
 }

@@ -36,20 +36,20 @@ tasks it names, all of which `check-fast` runs.
 
 ## 2. The conformance suite
 
-- [ ] 2.1 In `crates/tailrace-conformance/src/seams/projection.rs`, add `has_manifest`, `held` and `ranged` to `ProjectionRig`. Below the marker, add these scenarios (conformance-suite spec; design D6):
+- [x] 2.1 In `crates/tailrace-conformance/src/seams/projection.rs`, add `has_manifest`, `held` and `ranged` to `ProjectionRig`. Below the marker, add these scenarios (conformance-suite spec; design D6):
   - "required as the manifest spells it", citing 50 and 58;
   - "satisfied by the ecosystem's own ordering", citing 23;
   - "no manifest, none", citing 58.
 
   The two manifest scenarios are not applicable with the reason "the ecosystem has no manifest", and the none scenario with the reason "the ecosystem has a manifest". The module doc gets a sentence saying they cite in place of 140 until the statement list holds it. Verify with `moon run conformance:test`.
-- [ ] 2.2 Implement the rig methods in `FakeProjectionRig` in `crates/tailrace-conformance/src/fakes.rs`:
+- [x] 2.2 Implement the rig methods in `FakeProjectionRig` in `crates/tailrace-conformance/src/fakes.rs`:
   - the held artifact's manifest is set to a scoped name with a caret range and a plain name with a prerelease range;
   - `ranged` is `^1.2` over `1.9.0, 2.0.0, 1.10.0, 1.2.0, 1.1.9`, expecting `1.10.0, 1.9.0, 1.2.0`;
   - `unreachable` adds both new ops to the faults it sets.
 
   In `crates/tailrace-conformance/tests/fakes.rs`, both fake runs expect "no manifest, none" as not applicable. Verify with `moon run conformance:test`.
-- [ ] 2.3 Implement the rig methods in the file and image rigs (`crates/tailrace/tests/projections.rs`) and the moon cache rig (`crates/tailrace/tests/moon_cache_projection.rs`): no manifest, an artifact of the rig's ecosystem as `held` with no requirements, and an empty `ranged`. Add the three new scenario names to `PACK` and `CACHE`. Each test expects the two manifest scenarios as not applicable beside the lockfile one, and change each module's doc comment to say so. Verify with `moon run cli:test`.
-- [ ] 2.4 Confirm the register is unchanged and the coverage check passes, with no new pending clause and no citation of a clause outside the list. Verify with `moon run conformance:coverage`.
+- [x] 2.3 Implement the rig methods in the file and image rigs (`crates/tailrace/tests/projections.rs`) and the moon cache rig (`crates/tailrace/tests/moon_cache_projection.rs`): no manifest, an artifact of the rig's ecosystem as `held` with no requirements, and an empty `ranged`. Add the three new scenario names to `PACK` and `CACHE`. Each test expects the two manifest scenarios as not applicable beside the lockfile one, and change each module's doc comment to say so. Verify with `moon run cli:test`.
+- [x] 2.4 Confirm the register is unchanged and the coverage check passes, with no new pending clause and no citation of a clause outside the list. Verify with `moon run conformance:coverage`.
 
 ## 3. The site
 

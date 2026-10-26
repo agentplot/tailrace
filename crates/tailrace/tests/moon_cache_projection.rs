@@ -3,8 +3,10 @@
 //! checkout and its layout store in a temporary directory (design D9).
 //!
 //! Only the group's two scenarios of a projection that packs cache
-//! entries run, and the pinned scenarios, whose lockfile one is not
-//! applicable, since moon's cache has no lockfile. The group's other
+//! entries run, the pinned scenarios, whose lockfile one is not
+//! applicable, since moon's cache has no lockfile, and the manifest
+//! scenarios, whose two of a manifest are not applicable beside it, since
+//! moon's cache has no manifest either. The group's other
 //! scenarios each pack or render at a
 //! version, which the moon cache answers absent naming artifacts, since
 //! it packs no artifact (53), so they are not run over it: a departure
@@ -19,16 +21,22 @@ use tailrace::profiles::projection::moon_cache::MoonCache;
 use tailrace::profiles::store::layout::Layout;
 use tailrace_conformance::seams::projection::{self, ProjectionRig};
 use tailrace_conformance::{run, Rig, Scenario};
-use tailrace_seams::{Artifact, Output, OutputName, Pinned, Projection, Store};
+use tailrace_seams::{
+    Artifact, ArtifactMeta, Digest, Ecosystem, EcosystemName, Output, OutputName, Pinned,
+    Projection, Range, Requirement, Store, Version,
+};
 use tempfile::TempDir;
 
-/// The scenarios of a projection that packs cache entries, and of
-/// pinned.
-const CACHE: [&str; 4] = [
+/// The scenarios of a projection that packs cache entries, of pinned,
+/// and of requires and satisfying.
+const CACHE: [&str; 7] = [
     "a cache entry packed with no version",
     "a layout of the build identities given",
     "pinned as the lockfile spells it",
     "no lockfile, absent",
+    "required as the manifest spells it",
+    "satisfied by the ecosystem's own ordering",
+    "no manifest, none",
 ];
 
 /// The task hashes the group packs at.
@@ -109,6 +117,30 @@ impl ProjectionRig for MoonCacheRig {
         (self.checkout.display().to_string(), Vec::new())
     }
 
+    fn has_manifest(&self) -> bool {
+        false
+    }
+
+    /// An artifact named in the moon cache's ecosystem, which requires
+    /// nothing, since moon's cache has no manifest.
+    fn held(&self) -> (Artifact, Vec<Requirement>) {
+        let held = Artifact {
+            digest: Digest::of(b"moon's archive of b7e1"),
+            meta: ArtifactMeta::new(
+                Ecosystem::new(tailrace::profiles::projection::moon_cache::ECOSYSTEM),
+                EcosystemName::new("site"),
+                Version::new("1.0.0"),
+            )
+            .unwrap(),
+        };
+        (held, Vec::new())
+    }
+
+    /// None: moon's cache has no manifest to spell a range in.
+    fn ranged(&self) -> (Range, Vec<Version>, Vec<Version>) {
+        (Range::new(""), Vec::new(), Vec::new())
+    }
+
     /// The outputs directory replaced by a file, and the operating
     /// system's words for reading an archive through it.
     fn unreachable(&self) -> String {
@@ -138,10 +170,20 @@ fn the_cache_entry_scenarios_over_the_moon_cache() {
         .collect();
     assert_eq!(
         inapplicable,
-        [(
-            "pinned as the lockfile spells it",
-            "the ecosystem has no lockfile"
-        )],
+        [
+            (
+                "pinned as the lockfile spells it",
+                "the ecosystem has no lockfile"
+            ),
+            (
+                "required as the manifest spells it",
+                "the ecosystem has no manifest"
+            ),
+            (
+                "satisfied by the ecosystem's own ordering",
+                "the ecosystem has no manifest"
+            )
+        ],
         "{report}"
     );
 }
