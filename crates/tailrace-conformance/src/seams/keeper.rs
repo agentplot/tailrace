@@ -1,10 +1,13 @@
 //! The keeper's group: 120 to 122, and 34, 35 and 105 as a keeper keeps
-//! them (B.8); and 60 and 61 as C.13 and C.14 keep them, a chain the
-//! keeper cannot reach answered as last read.
+//! them (B.8); 60 and 61 as C.13 and C.14 keep them, a chain the keeper
+//! cannot reach answered as last read; and 125, two components' channels
+//! of one name kept as two chains.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tailrace_seams::{Chain, ChannelId, ChannelName, Envelope, Keeper, Not, Read, Seam, Why};
+use tailrace_seams::{
+    Chain, ChannelId, ChannelName, ComponentName, Envelope, Keeper, Not, Read, Seam, Why,
+};
 
 use crate::seams::{absent, unreadable};
 use crate::{ok, Rig, Scenario};
@@ -67,6 +70,12 @@ pub fn scenarios() -> Vec<Scenario<dyn KeeperRig>> {
             plays: None,
             cites: &[60, 61, 121],
             run: a_chain_read_as_last_read,
+        },
+        Scenario {
+            name: "two components' channels of one name",
+            plays: None,
+            cites: &[125, 120, 121],
+            run: two_components_channels_of_one_name,
         },
     ]
 }
@@ -225,5 +234,38 @@ fn a_chain_read_as_last_read(rig: &dyn KeeperRig) {
         Seam::Keeper,
         &words,
         "an append to a chain read as last read",
+    );
+}
+
+fn two_components_channels_of_one_name(rig: &dyn KeeperRig) {
+    let beta = |component: &str| {
+        ChannelId::new(
+            Some(ComponentName::new(component)),
+            ChannelName::new("beta"),
+        )
+    };
+    let (lib, web) = (beta("lib"), beta("web"));
+    let keeper = rig.keeper();
+    let ours = rig.promotion(&lib, 1);
+    let theirs = rig.promotion(&web, 1);
+    assert_eq!(
+        ok(keeper.append(&lib, &ours, None), "beta of lib's append"),
+        ours.digest(),
+        "beta of lib's first append answered another digest"
+    );
+    assert_eq!(
+        ok(keeper.append(&web, &theirs, None), "beta of web's append"),
+        theirs.digest(),
+        "beta of web's first append was not held beside lib's"
+    );
+    assert_eq!(
+        ok(keeper.chain(&lib), "beta of lib's chain").claims,
+        [ours],
+        "beta of lib's chain holds other claims than its own"
+    );
+    assert_eq!(
+        ok(keeper.chain(&web), "beta of web's chain").claims,
+        [theirs],
+        "beta of web's chain holds other claims than its own"
     );
 }
