@@ -117,15 +117,27 @@ fn beta_requires_a_gate_elsewhere(world: &FakeWorld) {
     );
 }
 
-/// `beta` requires no claim and is promoted by the host, so a policy
-/// naming the host for provenance alone names no gate (118).
-fn beta_names_no_gate(world: &FakeWorld) {
+/// The policy as the policy file profile answers a file that names the
+/// host for provenance and no signer that may claim acceptance: the host,
+/// the given gate, with provenance and acceptance in acceptance's
+/// required provenance, and the given `beta` requiring its acceptance
+/// and promoted by it (118, 108, C.10).
+fn the_host_the_given_gate(world: &FakeWorld) {
+    let host = named(HOST, &[ClaimKind::Provenance, ClaimKind::Acceptance]);
+    world.fakes.policy.require(
+        Audience::Acceptance,
+        acceptance(&[ClaimKind::Provenance, ClaimKind::Acceptance]),
+    );
     world.fakes.policy.require(
         Audience::Channel(beta()),
         Required::Channel {
-            claims: vec![],
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![host.clone()],
+            }],
             bound_to: None,
-            promoted_by: vec![named(HOST, &[ClaimKind::Promotion])],
+            promoted_by: vec![host],
         },
     );
 }
@@ -589,7 +601,7 @@ fn a_file_with_no_gate_table_tells_the_gate_as_publish_does() {
 fn a_host_with_no_file_under_a_policy_naming_no_gate_accepts_as_one_host_and_moves_beta() {
     let world = FakeWorld::new();
     let revision = following(&world, acceptance(&[ClaimKind::Provenance]));
-    beta_names_no_gate(&world);
+    the_host_the_given_gate(&world);
     let teller = teller_of_no_file(&world);
     assert_eq!(teller, Teller::Publish);
     let (code, printed) = publish_through(&world, binding(&world, teller), &revision, &["--json"]);
