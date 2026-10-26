@@ -160,3 +160,82 @@ fn a_key_service_host_is_bound_for_publish_signing_as_the_arn() {
         }
     }
 }
+
+// Requirement: The given host key signs as the host's name
+
+/// The words of an unreadable answer from the host key profile, once it
+/// names `what`.
+fn unreadable_naming(answer: Answer<SignerId>, what: &str) -> String {
+    match answer {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, HostKey::source());
+            assert_eq!(u.what, what);
+            u.said.expect("the words it was read with")
+        }
+        other => panic!("answered {other:?}, not unreadable naming {what}"),
+    }
+}
+
+#[test]
+fn a_host_signs_as_its_first_label_in_lower_case() {
+    assert_eq!(host_signer("Laptop.local"), Ok(SignerId::new("laptop")));
+    assert_eq!(host_signer("desk"), Ok(SignerId::new("desk")));
+    assert_eq!(
+        host_signer("Build-7.ci.example.com"),
+        Ok(SignerId::new("build-7"))
+    );
+    for empty in ["", ".local"] {
+        let said = unreadable_naming(host_signer(empty), "the host's name");
+        assert!(said.contains("has no first label"), "{said}");
+    }
+}
+
+#[test]
+fn the_public_halfs_name_wins_over_the_hosts() {
+    let dir = TempDir::new().unwrap();
+    let public = dir.path().join("signing.pub");
+    let key =
+        ssh_key::PrivateKey::random(&mut ssh_key::rand_core::OsRng, ssh_key::Algorithm::Ed25519)
+            .unwrap();
+    let line = key.public_key().to_openssh().unwrap();
+    fs::write(&public, format!("{line} laptop\n")).unwrap();
+    assert_eq!(given_signer(&public), Ok(SignerId::new("laptop")));
+    fs::remove_file(&public).unwrap();
+    // With no public half, the host's own name as it is now.
+    let host = given_signer(&public).unwrap();
+    assert!(!host.as_str().is_empty());
+    assert!(!host.as_str().contains('.'), "{host}");
+    assert_eq!(host.as_str(), host.as_str().to_lowercase());
+}
+
+#[test]
+fn a_public_half_with_no_key_line_or_no_signer_is_unreadable_naming_it() {
+    let dir = TempDir::new().unwrap();
+    let public = dir.path().join("signing.pub");
+    let what = format!("the public key file {}", public.display());
+    fs::write(&public, "\n").unwrap();
+    assert_eq!(
+        unreadable_naming(given_signer(&public), &what),
+        format!("{} holds no key line", public.display())
+    );
+    fs::write(&public, "no key here\n").unwrap();
+    let words = ssh_key::PublicKey::from_openssh("no key here")
+        .unwrap_err()
+        .to_string();
+    assert_eq!(unreadable_naming(given_signer(&public), &what), words);
+    let key =
+        ssh_key::PrivateKey::random(&mut ssh_key::rand_core::OsRng, ssh_key::Algorithm::Ed25519)
+            .unwrap();
+    fs::write(
+        &public,
+        format!("{}\n", key.public_key().to_openssh().unwrap()),
+    )
+    .unwrap();
+    assert_eq!(
+        unreadable_naming(given_signer(&public), &what),
+        format!(
+            "{}'s key line names no signer after its key",
+            public.display()
+        )
+    );
+}

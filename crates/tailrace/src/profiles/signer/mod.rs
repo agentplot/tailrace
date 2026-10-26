@@ -6,9 +6,12 @@ pub mod kms;
 #[cfg(test)]
 mod tests;
 
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
-use tailrace_seams::{Answer, Signer, SignerId};
+use ssh_key::PublicKey;
+use tailrace_seams::{Answer, Not, Signer, SignerId};
 
 use crate::bindings::{path_of, unreadable};
 use host_key::HostKey;
@@ -33,6 +36,89 @@ impl Signing {
             Signing::Kms(key) => SignerId::new(key.as_str()),
         }
     }
+}
+
+/// The given host key's signer, whose public half is at `public` (118,
+/// C.8; design D4): the name that file's one line gives, its comment,
+/// where the file is there, so the name is fixed once the key is made;
+/// the host's own name otherwise, as [`host_signer`] cuts it.
+/// Unreadable naming the file where it holds no OpenSSH public key line
+/// naming a signer, with the parser's words, or naming the host's name
+/// where it cannot be read.
+pub fn given_signer(public: &Path) -> Answer<SignerId> {
+    let shown = || format!("the public key file {}", public.display());
+    let text = match fs::read_to_string(public) {
+        Ok(text) => text,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return host_signer(&host_name()?),
+        Err(e) => {
+            return Err(Not::unreadable(
+                &HostKey::source(),
+                shown(),
+                Some(e.to_string()),
+            ))
+        }
+    };
+    let Some(line) = text.lines().map(str::trim).find(|line| !line.is_empty()) else {
+        return Err(Not::unreadable(
+            &HostKey::source(),
+            shown(),
+            Some(format!("{} holds no key line", public.display())),
+        ));
+    };
+    let key = PublicKey::from_openssh(line)
+        .map_err(|e| Not::unreadable(&HostKey::source(), shown(), Some(e.to_string())))?;
+    match key.comment().trim() {
+        "" => Err(Not::unreadable(
+            &HostKey::source(),
+            shown(),
+            Some(format!(
+                "{}'s key line names no signer after its key",
+                public.display()
+            )),
+        )),
+        signer => Ok(SignerId::new(signer)),
+    }
+}
+
+/// The signer a host named `name` signs as: its first label, cut at its
+/// first `.`, in lower case, so `Laptop.local` is `laptop`; unreadable
+/// naming the host's name where that leaves nothing.
+pub fn host_signer(name: &str) -> Answer<SignerId> {
+    let label = name.split('.').next().unwrap_or_default().to_lowercase();
+    if label.is_empty() {
+        return Err(Not::unreadable(
+            &HostKey::source(),
+            "the host's name",
+            Some(format!(
+                "the host's name {name:?} has no first label to sign as"
+            )),
+        ));
+    }
+    Ok(SignerId::new(label))
+}
+
+/// The host's name as the operating system answers it; unreadable naming
+/// it, in the operating system's words, where it cannot be read.
+fn host_name() -> Answer<String> {
+    let mut name = [0u8; 256];
+    // SAFETY: the pointer and the length are the buffer's own, and
+    // gethostname writes no more than the length it is given.
+    let made = unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len()) };
+    if made != 0 {
+        return Err(Not::unreadable(
+            &HostKey::source(),
+            "the host's name",
+            Some(io::Error::last_os_error().to_string()),
+        ));
+    }
+    let end = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+    String::from_utf8(name[..end].to_vec()).map_err(|e| {
+        Not::unreadable(
+            &HostKey::source(),
+            "the host's name",
+            Some(format!("the host's name is not UTF-8: {e}")),
+        )
+    })
 }
 
 /// One signer profile to bind, and the key it signs with, `None` or a
