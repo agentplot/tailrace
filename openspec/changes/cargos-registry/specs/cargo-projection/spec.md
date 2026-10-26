@@ -2,15 +2,12 @@
 
 ### Requirement: A crate packed by Cargo's own packager
 
-The Cargo projection SHALL pack an output given a version by finding the
-one `Cargo.toml` declaring a `[package]` among the output's files,
-setting the version where that package declares it (its own
-`package.version`, or the workspace's `workspace.package.version` where
-it inherits it), running `cargo package --no-verify --allow-dirty` into
-a scratch target directory, and answering the `.crate` file's bytes with
-metadata naming the ecosystem `cargo`, the package's name and the
-version (84, C.11). It SHALL answer `same_again` true (87) and SHALL
-never open the archive to edit it.
+The Cargo projection SHALL pack an output given a version by setting the
+version in the manifest that declares it for the output's package,
+running `cargo package --no-verify --allow-dirty`, and answering the
+`.crate` file's bytes with metadata naming the ecosystem `cargo`, the
+package's name and the version (84, C.11). It SHALL answer `same_again`
+true (87) and SHALL never open the archive to edit it.
 
 #### Scenario: Packed the same again
 
@@ -52,15 +49,11 @@ nothing (84, 85).
 
 The Cargo projection SHALL render the artifacts given as a Cargo local
 registry at the place given: each crate's bytes read through the store
-seam it is handed, from the artifact's manifest's one layer, checked
-against that layer's digest, and written as `<name>-<version>.crate`;
-and an index file per crate name at Cargo's index path, holding one line
-per version, ordered by Cargo's version rules (23), written from the
-crate's own normalized manifest with `cksum` the crate's SHA-256 (85).
-The layout SHALL hold exactly the versions given, removing crate and
-index files of versions not given, and rendering the same artifacts
-again SHALL give the same layout (48). It SHALL answer the versions it
-holds.
+seam it is handed, and an index line per version written from the
+crate's own normalized manifest, ordered by Cargo's version rules (23,
+85). The layout SHALL hold exactly the versions given, and rendering
+the same artifacts again SHALL give the same layout (48). It SHALL
+answer the versions it holds.
 
 #### Scenario: A layout of the versions given
 
