@@ -1,6 +1,7 @@
 //! The core's publish and verify over moon and a real landing, the store,
-//! the signer, the policy and the projection the fakes (design D9): the
-//! build identity moon reports is the key sluice's verdict carries (13);
+//! the signer, the policy and the projection the fakes (design D9), a
+//! sluice landing pushed before it is published (135): the build identity
+//! moon reports is the key sluice's verdict carries (13);
 //! an output whose task the gate never checked is refused naming it and
 //! every identity the verdicts carry, and nothing is offered (15); and S13
 //! over a plain branch and moon, as far as verify's answer. Needs moon
@@ -17,7 +18,7 @@ use tailrace::profiles::build::moon::Moon;
 use tailrace::profiles::landing::branch::PlainBranch;
 use tailrace::profiles::landing::sluice::{as_written, Sluice};
 use tailrace_core::{
-    publish, verify, Ask, History, Kept, Provenance, Published, Verified, VerifyAsk,
+    publish, push, verify, Ask, History, Kept, Provenance, Published, PushAsk, Verified, VerifyAsk,
 };
 use tailrace_fakes::{Fakes, StoreOp};
 use tailrace_seams::{
@@ -78,6 +79,20 @@ impl World {
 
     fn history(&self) -> History {
         History::open(&self.scratch.repo.path).expect("the repository opens")
+    }
+
+    /// The cache entries of `revision`'s passing verdicts pushed from the
+    /// repository, as a landing host's driver pushes before it publishes
+    /// (135).
+    fn push(&self, landing: Box<dyn Landing>, revision: &Revision) {
+        let ask = PushAsk {
+            branch: Branch::new(MAIN),
+            revision: revision.clone(),
+        };
+        let pushed = push(&self.seams(landing), &ask).expect("the push answered");
+        for (build, entry) in &pushed.entries {
+            assert!(entry.is_ok(), "the push of {build} answered {entry:?}");
+        }
     }
 
     /// The one component published from `revision` on `main`.
@@ -198,6 +213,7 @@ fn the_landings_key_is_the_builds_identity() {
         "moon's hash is not sluice's key"
     );
 
+    world.push(world.sluice(), &landed);
     let published = world
         .publish(world.sluice(), &landed)
         .expect("the landed revision was offered");
@@ -237,6 +253,8 @@ fn an_output_no_verdict_names_is_refused() {
         .report(&landed, &OutputName::new("site"))
         .unwrap()
         .build;
+    world.push(world.sluice(), &landed);
+    let pushed = world.puts().len();
 
     match world.publish(world.sluice(), &landed) {
         Err(Not::Refused(r)) => assert_eq!(
@@ -249,7 +267,7 @@ fn an_output_no_verdict_names_is_refused() {
         ),
         other => panic!("an output no verdict names answered {other:?}"),
     }
-    assert_eq!(world.puts(), [], "something was offered");
+    assert_eq!(world.puts()[pushed..], [], "something was offered");
 }
 
 /// S13: a revision on a branch no landing gate runs, built by moon,
