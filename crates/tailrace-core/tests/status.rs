@@ -7,7 +7,7 @@ mod world;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tailrace_core::{status, Entry, Filter, History, Kept, Published, StatusAsk, Written};
+use tailrace_core::{status, Entry, Filter, History, Kept, Noted, Published, StatusAsk, Written};
 use tailrace_seams::{Branch, ComponentName, Digest, Not, Outcome, Revision, Source, Version};
 use world::{World, HOST};
 
@@ -42,6 +42,7 @@ fn entry(component: &str, version: &str, revision: &str) -> Entry {
         branch: Branch::new("main"),
         index: Digest::of(version.as_bytes()),
         store: world::store(),
+        notes: None,
     }
 }
 
@@ -71,12 +72,25 @@ fn an_entry_after_a_publish_names_the_version_and_nothing_the_store_holds() {
             branch: Branch::new("main"),
             index: index.clone(),
             store: world::store(),
+            notes: Some(Noted {
+                last: Some("lib-v0.1.0".into()),
+                commits: vec![world.head.clone()],
+            }),
         }]
     );
     let held = files(kept.dir());
     assert_eq!(held.len(), 1);
     assert_eq!(held[0].0, kept.dir().join("lib").join("lib-v0.2.0.json"));
     let text = String::from_utf8(held[0].1.clone()).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        json["notes"],
+        serde_json::json!({ "last": "lib-v0.1.0", "commits": [world.head.as_str()] })
+    );
+    assert!(
+        !text.contains("lib grows") && !text.contains("##"),
+        "{text}"
+    );
     let store = world.fakes.store.contents();
     for (digest, _) in store.held.iter().filter(|(d, _)| **d != index) {
         assert!(!text.contains(digest.as_str()), "{text}");
@@ -138,6 +152,40 @@ fn a_second_publish_leaves_the_entry_untouched() {
     let before = files(world.kept().dir());
     std::thread::sleep(std::time::Duration::from_millis(20));
     published(&world);
+    assert_eq!(files(world.kept().dir()), before);
+}
+
+#[test]
+fn an_entry_written_before_notes_reads_back_naming_none_and_is_answered_held() {
+    let world = World::new();
+    world::published_before_notes(&world);
+    let path = world.kept().dir().join("lib").join("lib-v0.2.0.json");
+    let text = fs::read_to_string(&path).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        json.as_object().unwrap().keys().collect::<Vec<_>>(),
+        [
+            "branch",
+            "component",
+            "index",
+            "revision",
+            "store",
+            "tag",
+            "version"
+        ],
+        "{text}"
+    );
+    let entry: Entry = serde_json::from_str(&text).unwrap();
+    assert_eq!(entry.notes, None);
+
+    let before = files(world.kept().dir());
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    assert_eq!(world.kept().write(&entry), Ok(Written::Held));
+    let again = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert!(
+        matches!(&again, Published::Version { notes: None, .. }),
+        "{again:?}"
+    );
     assert_eq!(files(world.kept().dir()), before);
 }
 

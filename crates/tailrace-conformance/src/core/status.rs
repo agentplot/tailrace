@@ -68,6 +68,7 @@ fn status_after_a_publish(world: &FakeWorld) {
             branch: Branch::new(crate::fixture::MAIN),
             index: index.clone(),
             store: store.clone(),
+            notes: None,
         }],
         "status answered another version, revision or index than the publish's"
     );

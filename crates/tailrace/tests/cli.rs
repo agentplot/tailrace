@@ -730,6 +730,7 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
             branch: Branch::new("main"),
             index: index.clone(),
             store: store(),
+            notes: None,
         })
         .unwrap();
 

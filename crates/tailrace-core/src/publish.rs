@@ -21,7 +21,7 @@ use tailrace_seams::{
 use crate::notes::{self, Rendered};
 use crate::{
     claim, derive, layout_policy_body, policy_at, touched, Carried, Declared, Derived, Entry,
-    History, Kept, Landed, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
+    History, Kept, Landed, Noted, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
 };
 
 /// What a publish is asked: the revision, the branch that landed it, the
@@ -682,7 +682,8 @@ impl<'a> Run<'a> {
 
     /// 12: the host's record of the version, its last write, then the
     /// answer, each naming the store as the host's bindings name it (61,
-    /// 118, design D9).
+    /// 118, design D9); the record names the notes' commits exactly when
+    /// the index names notes (134; design D6).
     fn record(
         &self,
         versioned: &Versioned,
@@ -701,6 +702,7 @@ impl<'a> Run<'a> {
             branch: self.ask.branch.clone(),
             index: index.clone(),
             store: store.clone(),
+            notes: notes.as_ref().map(|_| Noted::of(versioned)),
         })?;
         Ok(Published::Version {
             component: component.name.clone(),

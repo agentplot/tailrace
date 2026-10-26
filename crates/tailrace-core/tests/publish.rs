@@ -19,7 +19,10 @@ use tailrace_seams::{
     Not, Outcome, Output, Packed, Pinned, Projection, Put, Rendered, Required, RequiredClaim, Seam,
     Serving, SignerId, Source, Store, Version, Why,
 };
-use world::{build_of, build_ops, by_host, eco, output, version_of, Watched, World, HOST, LANDING};
+use world::{
+    build_of, build_ops, by_host, eco, output, published_before_notes, version_of, Watched, World,
+    HOST, LANDING,
+};
 
 fn refused(answer: Answer<Published>) -> tailrace_seams::Refusal {
     match answer {
@@ -1391,64 +1394,15 @@ fn notes_that_render_differently_are_refused_naming_both_digests() {
     assert_eq!(store.resolve(&name).unwrap(), moved);
 }
 
-/// A store that puts as its fake does, but an index with no artifact of
-/// the notes' ecosystem, as a publisher before notes put it.
-struct BeforeNotes(FakeStore);
-
-impl Store for BeforeNotes {
-    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
-        self.0.put_bytes(bytes)
-    }
-    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
-        let Manifest::Index(meta) = manifest else {
-            return self.0.put_artifact(manifest);
-        };
-        let outputs = meta
-            .artifacts()
-            .iter()
-            .filter(|a| a.meta.ecosystem() != &eco(NOTES))
-            .cloned()
-            .collect();
-        let index = IndexMeta::new(meta.component().clone(), meta.version().clone(), outputs);
-        self.0.put_artifact(&Manifest::Index(index.unwrap()))
-    }
-    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
-        self.0.attach(subject, attestation)
-    }
-    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
-        self.0.claims_of(digest)
-    }
-    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
-        self.0.name(name, to, expected)
-    }
-    fn resolve(&self, name: &Name) -> Answer<Digest> {
-        self.0.resolve(name)
-    }
-    fn read(&self, digest: &Digest) -> Answer<Held> {
-        self.0.read(digest)
-    }
-}
-
-/// `world`'s `lib` published by a publisher before notes: its index names
-/// the two outputs' artifacts and no notes.
-fn published_before_notes(world: &World) -> Published {
-    let history = world.history();
-    let mut seams = world.fakes.seams();
-    seams.store = Box::new(BeforeNotes(world.fakes.store.clone()));
-    let publish = publish(&seams, &history, &Kept::at(&history), &world.ask_for("lib")).unwrap();
-    let first = publish.components.into_iter().next().unwrap().1.unwrap();
-    let ecosystems: Vec<String> = indexes(world)
-        .iter()
-        .flat_map(|i| i.artifacts().iter().map(|a| a.meta.ecosystem().to_string()))
-        .collect();
-    assert_eq!(ecosystems, ["eco-a", "eco-b"]);
-    first
-}
-
 #[test]
 fn a_version_published_before_notes_is_published_again_with_none_added() {
     let world = World::new();
     let first = published_before_notes(&world);
+    let ecosystems: Vec<String> = indexes(&world)
+        .iter()
+        .flat_map(|i| i.artifacts().iter().map(|a| a.meta.ecosystem().to_string()))
+        .collect();
+    assert_eq!(ecosystems, ["eco-a", "eco-b"]);
     let store = world.fakes.store.contents();
     let record = std::fs::read_dir(world.kept().dir().join("lib"))
         .unwrap()

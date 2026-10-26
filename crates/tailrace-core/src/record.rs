@@ -113,6 +113,7 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
                 branch: ask.branch.clone(),
                 index,
                 store: ask.store.clone(),
+                notes: None,
             });
         }
     }
