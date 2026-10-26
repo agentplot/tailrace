@@ -842,6 +842,143 @@ fn a_profile_no_family_reads_is_unreadable_and_makes_nothing() {
     assert!(!layout.exists(), "a file that cannot bind made the layout");
 }
 
+/// A file binding the layout at `layout`, a branch with no remote, the
+/// signer `laptop` and `gate` as its `[gate]` where it is not empty; and
+/// the binding it makes for `command`.
+fn bound_telling(host: &Host, layout: &Path, gate: &str, command: For) -> Answer<Binding> {
+    let gate = if gate.is_empty() {
+        String::new()
+    } else {
+        format!("\n[gate]\n{gate}\n")
+    };
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n{gate}",
+        layout.display()
+    ));
+    bind(&host.file(), Some(&host.home()), host.dir.path(), command)
+}
+
+/// Where in the file an unreadable binding names, and its words.
+fn unreadable_at(host: &Host, answer: Answer<Binding>) -> (String, String) {
+    match answer {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::host(host.file()));
+            let at = u
+                .what
+                .strip_prefix(&format!("{}, ", host.file().display()))
+                .unwrap_or_else(|| panic!("{} names no place in the file", u.what))
+                .to_string();
+            (at, u.said.expect("the words it was read with"))
+        }
+        Err(other) => panic!("answered {other:?}, not unreadable"),
+        Ok(_) => panic!("bound, not unreadable"),
+    }
+}
+
+#[test]
+fn the_hosts_publish_tells_its_own_gate() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let binding = bound_telling(&host, &layout, "publish = {}", For::Publish).unwrap();
+    assert_eq!(binding.gate, Teller::Publish);
+}
+
+#[test]
+fn a_job_tells_a_separated_gate_in_its_words_as_written() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let words = "the release job a push to main wakes";
+    for command in [For::Publish, For::Verify] {
+        let binding =
+            bound_telling(&host, &layout, &format!("job = \"{words}\""), command).unwrap();
+        assert_eq!(binding.gate, Teller::Job(words.to_string()));
+    }
+}
+
+#[test]
+fn two_tellers_are_unreadable_naming_both_and_make_no_layout() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    for command in [For::Publish, For::Verify] {
+        let answer = bound_telling(&host, &layout, "publish = {}\njob = \"a job\"", command);
+        let (at, said) = unreadable_at(&host, answer);
+        assert_eq!(at, "[gate]");
+        assert_eq!(
+            said,
+            "[gate] names job and publish, and a seam is bound to one profile"
+        );
+        assert!(!layout.exists(), "{command:?} made {}", layout.display());
+    }
+}
+
+#[test]
+fn a_teller_the_file_does_not_know_is_unreadable_naming_the_keys_it_reads() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let answer = bound_telling(&host, &layout, "webhook = \"a hook\"", For::Publish);
+    let (at, said) = unreadable_at(&host, answer);
+    assert_eq!(at, "[gate]");
+    assert_eq!(
+        said,
+        "[gate] names webhook, which no gate profile is bound by; it reads publish or job"
+    );
+    assert!(!layout.exists());
+}
+
+#[test]
+fn a_publish_teller_with_options_or_a_job_with_no_words_is_unreadable_naming_its_key() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    for (gate, at, said) in [
+        (
+            "publish = { now = true }",
+            "[gate] publish",
+            "[gate] publish takes no options: publish = {}",
+        ),
+        (
+            "publish = true",
+            "[gate] publish",
+            "[gate] publish takes no options: publish = {}",
+        ),
+        (
+            "job = \"\"",
+            "[gate] job",
+            "[gate] job holds no words naming the job",
+        ),
+        (
+            "job = \"  \"",
+            "[gate] job",
+            "[gate] job holds no words naming the job",
+        ),
+        (
+            "job = 7",
+            "[gate] job",
+            "[gate] job is not the job's words in a string",
+        ),
+    ] {
+        let answer = bound_telling(&host, &layout, gate, For::Publish);
+        assert_eq!(
+            unreadable_at(&host, answer),
+            (at.to_string(), said.to_string()),
+            "{gate}"
+        );
+        assert!(!layout.exists(), "{gate} made {}", layout.display());
+    }
+}
+
+#[test]
+fn a_file_naming_no_gate_binds_as_before_and_the_hosts_publish_tells_its_gate() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let binding = bound_telling(&host, &layout, "", For::Publish).unwrap();
+    assert_eq!(binding.signer, Some(SignerId::new("laptop")));
+    assert!(profiles::store::layout::Layout::open(&layout).is_ok());
+    assert_eq!(binding.gate, Teller::Publish);
+    let named = bound_telling(&host, &layout, "publish = {}", For::Publish).unwrap();
+    assert_eq!(binding.gate, named.gate);
+}
+
 // Requirement: Status needs only what it asks
 
 /// Every file under `dir` with its contents, to tell nothing was made.
@@ -922,6 +1059,45 @@ fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making
         Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "store")),
         other => panic!("a store ledger answered {other:?}"),
     }
+}
+
+#[test]
+fn the_policy_command_binds_no_store_and_no_signer_whatever_the_file_names() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"/keys/laptop\"\n",
+        layout.display()
+    ));
+    let no_store = || {
+        Err(Not::absent(
+            &Source::new(Seam::Store, "unbound"),
+            "binding of the store, which tailrace policy binds none",
+        ))
+    };
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Policy)
+        .unwrap_or_else(|not| panic!("policy bound nothing: {not}"));
+    assert_eq!(
+        binding.seams.store.resolve(&Name::new("v0.1.0")),
+        no_store()
+    );
+    assert_eq!(binding.store, Source::new(Seam::Store, "unbound"));
+    assert_eq!(binding.signer, None);
+    assert!(binding.seams.projections.is_empty() && binding.seams.targets.is_empty());
+    assert!(!layout.exists(), "policy made {}", layout.display());
+
+    fs::remove_file(host.file()).unwrap();
+    let before = files(host.dir.path());
+    let binding = bind(&host.file(), Some(&host.home()), &repo, For::Policy)
+        .unwrap_or_else(|not| panic!("policy on a host with no file bound nothing: {not}"));
+    assert_eq!(
+        binding.seams.store.resolve(&Name::new("v0.1.0")),
+        no_store()
+    );
+    assert_eq!(binding.signer, None);
+    assert_eq!(files(host.dir.path()), before, "binding policy made a file");
 }
 
 #[test]
@@ -1086,141 +1262,4 @@ fn the_landings_remote_is_the_files_or_origin_with_no_file_or_none() {
         landing_remote(&bare.file(), Some(&bare.home()), &repo),
         Ok(None)
     );
-}
-
-/// A file binding the layout at `layout`, a branch with no remote, the
-/// signer `laptop` and `gate` as its `[gate]` where it is not empty; and
-/// the binding it makes for `command`.
-fn bound_telling(host: &Host, layout: &Path, gate: &str, command: For) -> Answer<Binding> {
-    let gate = if gate.is_empty() {
-        String::new()
-    } else {
-        format!("\n[gate]\n{gate}\n")
-    };
-    host.write(&format!(
-        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
-         [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n{gate}",
-        layout.display()
-    ));
-    bind(&host.file(), Some(&host.home()), host.dir.path(), command)
-}
-
-/// Where in the file an unreadable binding names, and its words.
-fn unreadable_at(host: &Host, answer: Answer<Binding>) -> (String, String) {
-    match answer {
-        Err(Not::Unreadable(u)) => {
-            assert_eq!(u.source, Source::host(host.file()));
-            let at = u
-                .what
-                .strip_prefix(&format!("{}, ", host.file().display()))
-                .unwrap_or_else(|| panic!("{} names no place in the file", u.what))
-                .to_string();
-            (at, u.said.expect("the words it was read with"))
-        }
-        Err(other) => panic!("answered {other:?}, not unreadable"),
-        Ok(_) => panic!("bound, not unreadable"),
-    }
-}
-
-#[test]
-fn the_hosts_publish_tells_its_own_gate() {
-    let host = Host::new();
-    let layout = host.dir.path().join("layout");
-    let binding = bound_telling(&host, &layout, "publish = {}", For::Publish).unwrap();
-    assert_eq!(binding.gate, Teller::Publish);
-}
-
-#[test]
-fn a_job_tells_a_separated_gate_in_its_words_as_written() {
-    let host = Host::new();
-    let layout = host.dir.path().join("layout");
-    let words = "the release job a push to main wakes";
-    for command in [For::Publish, For::Verify] {
-        let binding =
-            bound_telling(&host, &layout, &format!("job = \"{words}\""), command).unwrap();
-        assert_eq!(binding.gate, Teller::Job(words.to_string()));
-    }
-}
-
-#[test]
-fn two_tellers_are_unreadable_naming_both_and_make_no_layout() {
-    let host = Host::new();
-    let layout = host.dir.path().join("layout");
-    for command in [For::Publish, For::Verify] {
-        let answer = bound_telling(&host, &layout, "publish = {}\njob = \"a job\"", command);
-        let (at, said) = unreadable_at(&host, answer);
-        assert_eq!(at, "[gate]");
-        assert_eq!(
-            said,
-            "[gate] names job and publish, and a seam is bound to one profile"
-        );
-        assert!(!layout.exists(), "{command:?} made {}", layout.display());
-    }
-}
-
-#[test]
-fn a_teller_the_file_does_not_know_is_unreadable_naming_the_keys_it_reads() {
-    let host = Host::new();
-    let layout = host.dir.path().join("layout");
-    let answer = bound_telling(&host, &layout, "webhook = \"a hook\"", For::Publish);
-    let (at, said) = unreadable_at(&host, answer);
-    assert_eq!(at, "[gate]");
-    assert_eq!(
-        said,
-        "[gate] names webhook, which no gate profile is bound by; it reads publish or job"
-    );
-    assert!(!layout.exists());
-}
-
-#[test]
-fn a_publish_teller_with_options_or_a_job_with_no_words_is_unreadable_naming_its_key() {
-    let host = Host::new();
-    let layout = host.dir.path().join("layout");
-    for (gate, at, said) in [
-        (
-            "publish = { now = true }",
-            "[gate] publish",
-            "[gate] publish takes no options: publish = {}",
-        ),
-        (
-            "publish = true",
-            "[gate] publish",
-            "[gate] publish takes no options: publish = {}",
-        ),
-        (
-            "job = \"\"",
-            "[gate] job",
-            "[gate] job holds no words naming the job",
-        ),
-        (
-            "job = \"  \"",
-            "[gate] job",
-            "[gate] job holds no words naming the job",
-        ),
-        (
-            "job = 7",
-            "[gate] job",
-            "[gate] job is not the job's words in a string",
-        ),
-    ] {
-        let answer = bound_telling(&host, &layout, gate, For::Publish);
-        assert_eq!(
-            unreadable_at(&host, answer),
-            (at.to_string(), said.to_string()),
-            "{gate}"
-        );
-        assert!(!layout.exists(), "{gate} made {}", layout.display());
-    }
-}
-
-#[test]
-fn a_file_naming_no_gate_binds_as_before_and_the_hosts_publish_tells_its_gate() {
-    let host = Host::new();
-    let layout = host.dir.path().join("layout");
-    let binding = bound_telling(&host, &layout, "", For::Publish).unwrap();
-    assert_eq!(binding.signer, Some(SignerId::new("laptop")));
-    assert!(profiles::store::layout::Layout::open(&layout).is_ok());
-    assert_eq!(binding.gate, Teller::Publish);
-    let named = bound_telling(&host, &layout, "publish = {}", For::Publish).unwrap();
-    assert_eq!(binding.gate, named.gate);
 }
