@@ -473,7 +473,7 @@ fn every_channel_is_at_its_version_or_empty_with_the_chain_that_put_it_there() {
         ComponentName::new("lib")
     );
     assert_eq!(channels[0].declared.moves, Moves::Promotion);
-    assert_eq!(channels[0].at, Ok(Channel::Empty));
+    assert_eq!(channels[0].at, Ok(Channel::Empty { read: Read::Source }));
     assert_eq!(channels[1].declared.bound_to(), Some(beta()));
     assert_eq!(
         channels[1].at,

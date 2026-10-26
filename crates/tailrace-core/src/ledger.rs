@@ -96,11 +96,14 @@ pub struct Mirrored {
 
 /// 31, 101: a channel as its chain holds it: empty, which is an answer
 /// and not an error, or at its head's version, with every promotion in
-/// order by its envelope's digest and how the chain was read (60).
+/// order by its envelope's digest; either with how the chain was read,
+/// an empty one from the source or as last read, saying when (60).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Channel {
-    Empty,
+    Empty {
+        read: Read,
+    },
     At {
         head: Promotion,
         chain: Vec<(Digest, Promotion)>,
@@ -497,12 +500,14 @@ pub fn mirror(store: &dyn Store, ledger: &dyn Keeper, channel: &ChannelId) -> An
 /// 31, 60, 101: `channel` as its chain holds it, asked of the ledger
 /// alone: nothing of the store is read, and nothing is written (rule
 /// core.32). A chain the ledger answers as last read is answered so,
-/// saying when and with its words; a claim of it holding no promotion of
-/// tailrace's form is unreadable naming its digest.
+/// saying when and with its words, an empty one among them, and one the
+/// ledger answers absent is empty as the source holds it; a claim of it
+/// holding no promotion of tailrace's form is unreadable naming its
+/// digest.
 pub fn channel(ledger: &dyn Keeper, channel: &ChannelId) -> Answer<Channel> {
     let chain = match ledger.chain(channel) {
         Ok(chain) => chain,
-        Err(Not::Absent(_)) => return Ok(Channel::Empty),
+        Err(Not::Absent(_)) => return Ok(Channel::Empty { read: Read::Source }),
         Err(not) => return Err(not),
     };
     let mut read = Vec::new();
@@ -510,7 +515,7 @@ pub fn channel(ledger: &dyn Keeper, channel: &ChannelId) -> Answer<Channel> {
         read.push((envelope.digest(), promotion_of(channel, envelope)?));
     }
     Ok(match read.last() {
-        None => Channel::Empty,
+        None => Channel::Empty { read: chain.read },
         Some((_, head)) => Channel::At {
             head: head.clone(),
             chain: read,

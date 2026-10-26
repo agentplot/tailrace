@@ -1127,13 +1127,44 @@ fn mirror_moves_the_channels_name_back_from_another_writers_index() {
         .any(|c| c.op == KeeperOp::Append));
 }
 
+// Requirement: An empty channel as last read says when
+
+#[test]
+fn an_empty_channel_read_as_last_read_says_when_and_with_the_ledgers_words() {
+    let keeper = FakeKeeper::new();
+    assert_eq!(
+        channel(&keeper, &stable()),
+        Ok(Channel::Empty { read: Read::Source })
+    );
+    keeper.unreachable("fatal: unable to access");
+    let answer = channel(&keeper, &stable());
+    let Ok(Channel::Empty {
+        read: Read::Kept { at, said },
+    }) = &answer
+    else {
+        panic!("an empty channel as last read answered {answer:?}")
+    };
+    assert_eq!(said, "fatal: unable to access");
+    assert_eq!(
+        serde_json::to_value(answer.as_ref().unwrap()).unwrap(),
+        json!({ "state": "empty", "read": { "kept": { "at": at, "said": said } } })
+    );
+    assert_eq!(
+        serde_json::to_value(Channel::Empty { read: Read::Source }).unwrap(),
+        json!({ "state": "empty", "read": "source" })
+    );
+}
+
 // Requirement: A channel is read from the ledger alone
 
 #[test]
 fn a_channel_never_promoted_is_empty_and_the_store_is_asked_nothing() {
     let store = FakeStore::new();
     let keeper = FakeKeeper::new();
-    assert_eq!(channel(&keeper, &stable()), Ok(Channel::Empty));
+    assert_eq!(
+        channel(&keeper, &stable()),
+        Ok(Channel::Empty { read: Read::Source })
+    );
     assert_eq!(store.calls().len(), 0);
 }
 

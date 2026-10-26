@@ -162,7 +162,7 @@ impl World {
                 tailrace_core::Channel::At { head, chain, .. } => {
                     (Some(head.to.clone()), chain.last().map(|(d, _)| d.clone()))
                 }
-                tailrace_core::Channel::Empty => (None, None),
+                tailrace_core::Channel::Empty { .. } => (None, None),
             };
             let promotion = Promotion {
                 channel: channel.name.clone(),

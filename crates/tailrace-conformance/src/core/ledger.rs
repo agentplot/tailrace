@@ -12,7 +12,7 @@ use tailrace_core::{
 use tailrace_fakes::{FakeKeeper, FakeStore, Fault, KeeperOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
     channel_name, Answer, Chain, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, IndexMeta, Keeper, Manifest, Moved, Name, Not, Promotion, Signature, Signer,
+    Envelope, IndexMeta, Keeper, Manifest, Moved, Name, Not, Promotion, Read, Signature, Signer,
     SignerId, Store, Version, Why, IN_TOTO,
 };
 
@@ -680,7 +680,7 @@ fn the_store_rewritten_from_the_ledger(world: &FakeWorld) {
 fn a_channel_read_from_the_ledger_alone(world: &FakeWorld) {
     assert_eq!(
         ok(channel(&world.fakes.keeper, &stable()), "an empty channel"),
-        Channel::Empty
+        Channel::Empty { read: Read::Source }
     );
     let (first, second) = two_versions(world);
     let (one, _) = moved(

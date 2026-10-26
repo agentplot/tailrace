@@ -705,7 +705,7 @@ impl FakeWorld {
                 .expect("the version is named in the store");
         let read = tailrace_core::channel(&self.fakes.keeper, &channel).expect("the chain is read");
         let (from, predecessor, made) = match read {
-            tailrace_core::Channel::Empty => (None, None, 0),
+            tailrace_core::Channel::Empty { .. } => (None, None, 0),
             tailrace_core::Channel::At { head, chain, .. } => (
                 Some(head.to),
                 chain.last().map(|(d, _)| d.clone()),

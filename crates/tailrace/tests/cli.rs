@@ -701,6 +701,44 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
 }
 
 #[test]
+fn status_prints_an_empty_channel_read_from_the_copy_as_last_read_with_its_words() {
+    let host = Host::new();
+    declared(&host.fakes, "preview");
+    let before = now();
+    assert_eq!(host.run(&["status"]).0, 0);
+    let after = now();
+    host.fakes.keeper.unreachable("fatal: unable to access");
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let preview = lines
+        .iter()
+        .position(|l| l.starts_with("  preview "))
+        .unwrap_or_else(|| panic!("no preview line: {printed}"));
+    let (said, when) = lines[preview]
+        .split_once("empty, as last read ")
+        .unwrap_or_else(|| panic!("preview is not empty as last read: {printed}"));
+    assert!(said.trim() == "preview", "{printed}");
+    assert!(when.starts_with("20") && when.ends_with('Z'), "{printed}");
+    assert_eq!(
+        lines[preview + 1].trim(),
+        "fatal: unable to access",
+        "{printed}"
+    );
+
+    let (code, printed) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let at = &printed["value"]["channels"]["value"]["channels"][0]["at"]["value"];
+    assert_eq!(at["state"], "empty", "{printed}");
+    let kept = &at["read"]["kept"];
+    assert_eq!(kept["said"], "fatal: unable to access", "{printed}");
+    let read_at = kept["at"].as_u64().expect("the copy's time");
+    assert!((before..=after).contains(&read_at), "{printed}");
+}
+
+#[test]
 fn a_broken_bindings_file_is_the_channels_answer_and_the_record_still_answers() {
     let host = Host::new();
     let history = History::open(&host.repo).unwrap();

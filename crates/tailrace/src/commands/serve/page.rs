@@ -228,7 +228,7 @@ fn channel_html(body: &mut String, channel: &ChannelStatus) {
         Moves::EachPublish { .. } | Moves::Promotion => String::new(),
     };
     let at = match &channel.at {
-        Ok(Channel::Empty) => "empty".to_string(),
+        Ok(Channel::Empty { .. }) => "empty".to_string(),
         Ok(Channel::At { head, chain, read }) => {
             let mut at = format!(
                 "{} <code>{}</code>",
