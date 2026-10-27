@@ -92,7 +92,39 @@
                 ],
                 "read": "source"
               }
-            }
+            },
+            "notes": [
+              {
+                "version": "0.1.0",
+                "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "notes": {
+                  "answer": "unreadable",
+                  "unreadable": {
+                    "source": {
+                      "seam": "history",
+                      "profile": "git, local"
+                    },
+                    "what": "the notes of repository 0.1.0",
+                    "said": "the history holds no tag v0.1.0 reached from 1111111111111111111111111111111111111111"
+                  }
+                }
+              },
+              {
+                "version": "0.2.0",
+                "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "notes": {
+                  "answer": "unreadable",
+                  "unreadable": {
+                    "source": {
+                      "seam": "history",
+                      "profile": "git, local"
+                    },
+                    "what": "the notes of repository 0.2.0",
+                    "said": "the history holds no tag v0.2.0 reached from 1111111111111111111111111111111111111111"
+                  }
+                }
+              }
+            ]
           },
           {
             "channel": {
@@ -109,7 +141,8 @@
                 "state": "empty",
                 "read": "source"
               }
-            }
+            },
+            "notes": []
           }
         ]
       }

@@ -5,6 +5,12 @@ landing: as last fetched 2026-10-26T07:34:00Z
 beta (app) 1.2.0 sha256:aaaaaaaaaaaa, prereleases too
   ← 1.2.0 from 1.1.0, asked by gate at 2026-10-26T07:33:21Z, claim sha256:666666666666
   ← 1.1.0, the first, asked by gate at 2026-10-26T07:33:20Z, claim sha256:555555555555
+  notes of 1.2.0 sha256:aaaaaaaaaaaa:
+    ## 1.2.0
+    
+    - feat: the pane
+    - fix: the [1mkeys[0m
+  notes of 1.1.0 sha256:999999999999: refused — the landing (branch, origin) refused: not landed: branch main, revision 2222222222222222222222222222222222222222
 stable (app) refused — the keeper (git ref, origin) refused: fork: predecessor sha256:bbbbbbbbbbbb, claims sha256:cccccccccccc, sha256:dddddddddddd
   error: two claims name one predecessor
    see the ledger's [31mlog[0m

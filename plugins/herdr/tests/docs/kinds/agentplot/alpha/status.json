@@ -97,7 +97,37 @@
                 ],
                 "read": "source"
               }
-            }
+            },
+            "notes": [
+              {
+                "version": "1.1.0",
+                "index": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                "notes": {
+                  "answer": "refused",
+                  "refused": {
+                    "source": {
+                      "seam": "landing",
+                      "profile": "branch, origin"
+                    },
+                    "why": {
+                      "not_landed": {
+                        "branch": "main",
+                        "revision": "2222222222222222222222222222222222222222"
+                      }
+                    },
+                    "said": null
+                  }
+                }
+              },
+              {
+                "version": "1.2.0",
+                "index": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "notes": {
+                  "answer": "ok",
+                  "value": "## 1.2.0\n\n- feat: the pane\n- fix: the \u001b[1mkeys\u001b[0m\n"
+                }
+              }
+            ]
           },
           {
             "channel": {
@@ -125,7 +155,8 @@
                 },
                 "said": "error: two claims name one predecessor\n\tsee the ledger's \u001b[31mlog\u001b[0m\n"
               }
-            }
+            },
+            "notes": []
           },
           {
             "channel": {
@@ -147,7 +178,8 @@
                   }
                 }
               }
-            }
+            },
+            "notes": []
           },
           {
             "channel": {
@@ -167,7 +199,8 @@
                 },
                 "what": "chain of app/nightly"
               }
-            }
+            },
+            "notes": []
           },
           {
             "channel": {
@@ -187,7 +220,8 @@
                 "what": "chain of app/canary",
                 "said": "fatal: unable to access 'origin': Could not resolve host"
               }
-            }
+            },
+            "notes": []
           }
         ]
       }

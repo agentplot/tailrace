@@ -133,13 +133,24 @@ def promoted_line:
   .[0] as $claim | .[1]
   | {text: "  ← \(.to.version | clean)\(if .from == null then ", the first" else " from \(.from.version | clean)" end), asked by \(.asked_by | clean) at \(.at | utc), claim \($claim | short)"};
 
-# 31, 101: one channel as the policy declares it and its chain puts it:
-# its version and index, or empty, or its own answer; then its chain
-# newest first.
+# 134: the notes of every version a channel's chain moved it to, newest
+# first as its chain is shown, each by its version and index: as
+# rendered, or why they cannot be.
+def logged_lines:
+  [(. // []) | reverse | .[]
+   | "  notes of \(.version | clean) \(.index | short)" as $lead
+   | (.notes | if .answer == "ok" then [{text: "\($lead):"}] + [.value | strings | rtrimstr("\n") | split("\n") | .[] | {text: "    \(clean)"}]
+      else not_lines("\($lead): "; "  ") end)
+   | .[]];
+
+# 31, 101, 134: one channel as the policy declares it and its chain puts
+# it: its version and index, or empty, or its own answer; then its chain
+# newest first, and its versions' notes.
 def channel_lines:
   "\(.channel.name | clean)\(if .channel.component == null then "" else " (\(.channel.component | clean))" end)" as $name
   | (.moves | moves_words) as $moves
-  | .at
+  | (.notes | logged_lines) as $logged
+  | (.at
   | if .answer != "ok" then not_lines("\($name) "; "")
     elif .value.state == "empty" then [{text: "\($name) empty\($moves)\(.value.read | read_words)"}] + (.value.read | read_lines)
     elif .value.state == "at" then
@@ -147,7 +158,8 @@ def channel_lines:
       | [{text: "\($name) \($at.head.to.version | clean) \($at.head.to.index | short)\($moves)\($at.read | read_words)"}]
         + ($at.read | read_lines)
         + [($at.chain // []) | reverse | .[] | promoted_line]
-    else [{text: "\($name) \(.value | tojson | clean)"}] end;
+    else [{text: "\($name) \(.value | tojson | clean)"}] end)
+  + $logged;
 
 # 61, 134: one version this host published, and its notes or why they
 # cannot be rendered.
