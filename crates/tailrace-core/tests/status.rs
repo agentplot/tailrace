@@ -832,6 +832,9 @@ fn a_landing_read_as_last_fetched_shows_every_channel_and_says_when() {
     declare(&world, &beta(), None);
     declare(&world, &stable(), None);
     promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
+    // 0.1.0's tag is at the start: landed, its notes are rendered from
+    // the landing's copy as from the landing.
+    world.fakes.landing.land(&world.main, &world.start);
     let before = now();
     let first = asked(&world, &ask(&world));
     let after = now();
@@ -851,6 +854,11 @@ fn a_landing_read_as_last_fetched_shows_every_channel_and_says_when() {
     assert_eq!(channels.revision, world.head);
     assert_eq!(channels_of(&again), channels_of(&first));
     assert!(channels_of(&again).iter().all(|c| c.at.is_ok()));
+    assert!(
+        channels_of(&again)[1].notes[0].notes.is_ok(),
+        "{:?}",
+        channels_of(&again)[1].notes
+    );
     assert_eq!(again.published, first.published);
 
     let json = serde_json::to_value(&again).unwrap();
