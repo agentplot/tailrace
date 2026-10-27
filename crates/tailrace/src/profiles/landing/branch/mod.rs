@@ -229,14 +229,14 @@ impl Landing for PlainBranch {
         // A branch the remote does not list leaves the copy, so the copy
         // never holds a branch the remote no longer did (design D3).
         let Some(head) = listed.get(&name) else {
-            self.copy().remake(&[&name], &BTreeMap::new())?;
+            self.copy().remake(&name, &BTreeMap::new())?;
             return Ok(source(false));
         };
         if let Err(failed) = self.fetch(remote, &name) {
             return self.landed_as_fetched(branch, revision, failed);
         }
         self.copy()
-            .remake(&[&name], &BTreeMap::from([(name.clone(), head.clone())]))?;
+            .remake(&name, &BTreeMap::from([(name.clone(), head.clone())]))?;
         Ok(source(self.holds(head, revision)?))
     }
 
