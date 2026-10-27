@@ -1,13 +1,16 @@
 //! The fake projection (B.6): its ecosystem, the name each output takes,
 //! whether it packs cache entries, the build identities it holds no
-//! archive for, the pins of each checkout's lockfile, and what the
-//! manifest of each artifact, by digest, requires. A pack is the
+//! archive for, the pins of each checkout's lockfile and the ranges its
+//! manifest declares, what the manifest of each artifact, by digest,
+//! requires, and the versions a test says satisfy a range. A pack is the
 //! canonical JSON of what it was given, read from no disk; a render
 //! writes nothing and keeps the place and the artifacts it was given;
-//! pinned reads no checkout and requires no bytes. satisfying keeps the
-//! versions a range matches and orders them newest first by Semantic
-//! Versioning, so a test can list versions out of order and get the
-//! newest that fits (140, 23; design D7).
+//! pinned reads no checkout and requires no bytes. satisfying answers,
+//! for a range a test set, those of the versions asked that the test
+//! named, in the order it named them, newest first; for any other range
+//! it keeps the versions the range matches and orders them newest first
+//! by Semantic Versioning, so a test can list versions out of order and
+//! get the newest that fits (140, 23; design D7).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -34,8 +37,9 @@ pub enum ProjectionOp {
 /// The projection's ecosystem, the names outputs take in it, whether its
 /// packing is the same twice, whether it packs cache entries, the build
 /// identities it holds no archive for, the pins of each checkout holding
-/// a lockfile, what each artifact's manifest requires, by its digest, and
-/// each render of artifacts.
+/// a lockfile and the ranges of each checkout's manifest, what each
+/// artifact's manifest requires, by its digest, the versions satisfying
+/// each range a test set, newest first, and each render of artifacts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectionState {
     ecosystem: Ecosystem,
@@ -45,7 +49,9 @@ pub struct ProjectionState {
     no_archive: BTreeSet<BuildId>,
     packs: u64,
     lockfiles: BTreeMap<String, Vec<Pinned>>,
+    ranges: BTreeMap<String, Vec<Requirement>>,
     manifests: BTreeMap<Digest, Vec<Requirement>>,
+    satisfied: BTreeMap<Range, Vec<Version>>,
     renders: Vec<(String, Vec<Artifact>)>,
 }
 
@@ -67,7 +73,9 @@ impl FakeProjection {
                 no_archive: BTreeSet::new(),
                 packs: 0,
                 lockfiles: BTreeMap::new(),
+                ranges: BTreeMap::new(),
                 manifests: BTreeMap::new(),
+                satisfied: BTreeMap::new(),
                 renders: Vec::new(),
             },
         )
@@ -109,6 +117,25 @@ impl FakeProjection {
         self.state()
             .lockfiles
             .insert(checkout.to_string(), pins.to_vec());
+    }
+
+    /// 137: the manifest of the checkout at `checkout` declares
+    /// `ranges` for names no lockfile pins yet, answered after its pins in
+    /// the order given; a checkout with ranges and no lockfile answers
+    /// its ranges alone.
+    pub fn ranges(&self, checkout: &str, ranges: &[Requirement]) {
+        self.state()
+            .ranges
+            .insert(checkout.to_string(), ranges.to_vec());
+    }
+
+    /// 140, 23: `newest_first` are the versions that satisfy `range`, in
+    /// the ecosystem's order newest first, whatever their spelling; a
+    /// version asked and not among them satisfies it not.
+    pub fn satisfied(&self, range: &Range, newest_first: &[Version]) {
+        self.state()
+            .satisfied
+            .insert(range.clone(), newest_first.to_vec());
     }
 
     /// 140: the manifest of the artifact at `digest` requires
@@ -228,10 +255,14 @@ impl Projection for FakeProjection {
             given,
             format!("the lockfile of {checkout}"),
             |s, source| {
-                s.lockfiles
-                    .get(checkout)
-                    .map(|pins| pins.iter().cloned().map(Pin::Version).collect())
-                    .ok_or_else(|| no_lockfile(source))
+                let pins = s.lockfiles.get(checkout);
+                let ranges = s.ranges.get(checkout);
+                if pins.is_none() && ranges.is_none() {
+                    return Err(no_lockfile(source));
+                }
+                let pins = pins.into_iter().flatten().cloned().map(Pin::Version);
+                let ranges = ranges.into_iter().flatten().cloned().map(Pin::Range);
+                Ok(pins.chain(ranges).collect())
             },
         )
     }
@@ -262,7 +293,14 @@ impl Projection for FakeProjection {
             ProjectionOp::Satisfying,
             given,
             format!("the versions satisfying {range}"),
-            |_, source| {
+            |s, source| {
+                if let Some(newest_first) = s.satisfied.get(range) {
+                    return Ok(newest_first
+                        .iter()
+                        .filter(|v| versions.contains(v))
+                        .cloned()
+                        .collect());
+                }
                 let req = semver::VersionReq::parse(range.as_str())
                     .map_err(|e| Not::refused(source, Why::Said, Some(e.to_string())))?;
                 let mut kept: Vec<(semver::Version, &Version)> = versions
@@ -489,6 +527,27 @@ mod tests {
         assert_eq!(projection.pinned("/work/empty").unwrap(), []);
     }
 
+    #[test]
+    fn ranges_set_for_a_checkout_are_answered_after_its_pins_with_or_without_a_lockfile() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let ranges = [requirement("fam-a", "1"), requirement("fam-c", "0.3")];
+        projection.lockfile("/work/checkout", &[pin("pkg", "1.1.0")]);
+        projection.ranges("/work/checkout", &ranges);
+        assert_eq!(
+            projection.pinned("/work/checkout").unwrap(),
+            [
+                Pin::Version(pin("pkg", "1.1.0")),
+                Pin::Range(ranges[0].clone()),
+                Pin::Range(ranges[1].clone()),
+            ]
+        );
+        projection.ranges("/work/no-lockfile", &ranges[..1]);
+        assert_eq!(
+            projection.pinned("/work/no-lockfile").unwrap(),
+            [Pin::Range(ranges[0].clone())]
+        );
+    }
+
     fn requirement(name: &str, range: &str) -> Requirement {
         Requirement {
             name: EcosystemName::new(name),
@@ -544,6 +603,36 @@ mod tests {
             projection.satisfying(&Range::new("^3"), &given).unwrap(),
             []
         );
+    }
+
+    #[test]
+    fn versions_a_test_says_satisfy_a_range_are_answered_in_its_order() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let range = Range::new("a range of the test's own");
+        projection.satisfied(&range, &versions(&["b", "a", "c"]));
+        assert_eq!(
+            projection
+                .satisfying(&range, &versions(&["a", "c", "d", "b"]))
+                .unwrap(),
+            versions(&["b", "a", "c"])
+        );
+        assert_eq!(
+            projection
+                .satisfying(&range, &versions(&["c", "d"]))
+                .unwrap(),
+            versions(&["c"])
+        );
+        assert_eq!(
+            projection
+                .satisfying(&Range::new("^1"), &versions(&["1.0.0", "1.2.0"]))
+                .unwrap(),
+            versions(&["1.2.0", "1.0.0"]),
+            "a range no test set is read as Semantic Versioning"
+        );
+        let calls = projection.calls();
+        assert_eq!(calls.len(), 3);
+        assert_eq!(calls[0].given["range"], "a range of the test's own");
+        assert_eq!(calls[0].given["versions"], json!(["a", "c", "d", "b"]));
     }
 
     #[test]
