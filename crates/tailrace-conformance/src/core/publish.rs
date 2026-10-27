@@ -13,7 +13,7 @@ use tailrace_fakes::{FakeBuild, FakeStore, PROFILE};
 use tailrace_seams::{
     Answer, Artifact, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
     Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Miss, Name, Not, Outcome,
-    Output, OutputName, Packed, Pinned, Projection, Put, Range, Rendered, Request, Required,
+    Output, OutputName, Packed, Pin, Projection, Put, Range, Rendered, Request, Required,
     Requirement, Response, Revision, Seam, Source, Store, Verdict, Version, Why,
 };
 
@@ -968,7 +968,7 @@ impl Projection for Filling {
         self.inner.serve(layout, request, miss)
     }
 
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.inner.pinned(checkout)
     }
 

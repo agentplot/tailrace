@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use tailrace_fakes::{FakeStore, StoreOp};
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Ecosystem, EcosystemName, Holds,
-    Manifest, Not, Output, OutputName, Seam, Store, Version, Why,
+    Manifest, Not, Output, OutputName, Pinned, Seam, Store, Version, Why,
 };
 use tempfile::TempDir;
 

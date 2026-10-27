@@ -1,7 +1,8 @@
 //! B.6 A projection: an artifact, or a cache entry, in one ecosystem's
 //! own form, as that ecosystem's clients read it, one request of those
 //! clients answered from a served layout, the versions a checkout's
-//! lockfile pins in it (84 to 87, 115, 137), and what a held version's
+//! lockfile pins in it and the ranges its manifest declares for names no
+//! lockfile pins yet (84 to 87, 115, 137), and what a held version's
 //! manifest requires and which versions satisfy a range, by the
 //! ecosystem's own rules (140).
 
@@ -133,6 +134,17 @@ pub struct Requirement {
     pub range: Range,
 }
 
+/// 137: what pinned answers for a checkout: a version its lockfile pins,
+/// or a range its manifest declares for a name no lockfile pins yet, of
+/// the type a held version's manifest requires one in (140), so the core
+/// treats both alike and reads neither range itself (rule core.1).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Pin {
+    Version(Pinned),
+    Range(Requirement),
+}
+
 /// 84, 85: what a projection that packs no cache entries answers for
 /// one: absent, never refused or unreadable (58).
 pub fn no_cache_entries(source: &Source) -> Not {
@@ -176,14 +188,13 @@ pub trait Projection {
     fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response>;
 
     /// 137: the versions the lockfile of the ecosystem in the checkout at
-    /// `checkout` pins, as the lockfile spells them; [`no_lockfile`] where
-    /// the checkout holds none. A name the checkout's manifest declares
-    /// and its lockfile does not pin is no pin, so its layout holds none
-    /// of it: a manifest's range, resolved by the store's listing of a
-    /// name's versions, waits on the unit that lists them. It reads the
-    /// checkout alone: the store, the policy and a version's claims are
-    /// the core's (rule core.2).
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>>;
+    /// `checkout` pins, as the lockfile spells them, and for each name
+    /// the checkout's manifest declares and no lockfile pins yet, the
+    /// range the manifest writes, as it spells it; [`no_lockfile`] where
+    /// the checkout holds neither a lockfile nor a manifest declaring a
+    /// range. It reads the checkout alone: the store, the policy and a
+    /// version's claims are the core's (rule core.2).
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>>;
 
     /// 140: every name the manifest of `held`, an artifact a layout
     /// holds, requires that the layout serves, with the range it requires
@@ -313,6 +324,29 @@ mod tests {
         assert_eq!(json["name"], "@scope/pkg", "{json}");
         assert_eq!(json["range"], ">=1.2.0-rc.1 <2", "{json}");
         round_trip(vec![requirement.clone(), requirement]);
+    }
+
+    #[test]
+    fn a_pin_and_a_range_round_trip_each_as_written() {
+        let pin = Pin::Version(Pinned {
+            name: EcosystemName::new("fam-b"),
+            version: Version::new("1.1.0"),
+        });
+        let range = Pin::Range(Requirement {
+            name: EcosystemName::new("fam-a"),
+            range: Range::new("1"),
+        });
+        round_trip(pin.clone());
+        round_trip(range.clone());
+        assert_eq!(
+            serde_json::to_value(&pin).unwrap(),
+            serde_json::json!({ "version": { "name": "fam-b", "version": "1.1.0" } })
+        );
+        assert_eq!(
+            serde_json::to_value(&range).unwrap(),
+            serde_json::json!({ "range": { "name": "fam-a", "range": "1" } })
+        );
+        round_trip(vec![pin, range]);
     }
 
     #[test]

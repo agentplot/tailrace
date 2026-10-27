@@ -17,8 +17,8 @@
 
 use tailrace_seams::{
     no_cache_entries, no_lockfile, no_serving, Answer, Artifact, BuildId, Contents, Layout, Miss,
-    Output, Packed, Pinned, Projection, Range, Rendered, Request, Requirement, Response, Seam,
-    Source, Version,
+    Output, Packed, Pin, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source,
+    Version,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -76,7 +76,7 @@ impl Projection for FileProjection {
 
     /// 137: absent naming the lockfile for every checkout, since a file
     /// has no lockfile.
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
         Err(no_lockfile(&FileProjection::source()))
     }
 
@@ -99,7 +99,7 @@ mod tests {
 
     use tailrace_seams::{
         Artifact, ArtifactMeta, CacheEntry, Digest, Ecosystem, EcosystemName, Not, OutputName,
-        Seam, Why,
+        Pinned, Seam, Why,
     };
     use tempfile::TempDir;
 

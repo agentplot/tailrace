@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
     no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Miss, Not, Output,
-    Packed, Pinned, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source,
-    Store, Version,
+    Packed, Pin, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source, Store,
+    Version,
 };
 
 use super::not_built;
@@ -105,9 +105,12 @@ impl Projection for NpmProjection {
     /// 137: every package the checkout's `npm-shrinkwrap.json`, else
     /// its `package-lock.json`, pins, as it spells them (design D7);
     /// absent naming the lockfile where it holds neither.
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         match lockfile::find(Path::new(checkout)) {
-            Some(path) => lockfile::pins(&path),
+            Some(path) => Ok(lockfile::pins(&path)?
+                .into_iter()
+                .map(Pin::Version)
+                .collect()),
             None => Err(no_lockfile(&NpmProjection::source())),
         }
     }

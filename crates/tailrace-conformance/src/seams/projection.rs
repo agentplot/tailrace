@@ -5,7 +5,7 @@
 //! first (140).
 
 use tailrace_seams::{
-    Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Output, Pinned,
+    Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Output, Pin, Pinned,
     Projection, Range, Request, Requirement, Seam, Version,
 };
 
@@ -353,6 +353,7 @@ fn pinned_as_the_lockfile_spells_it(rig: &dyn ProjectionRig) {
     let (at, pins) = rig.checkout(true);
     assert!(!pins.is_empty(), "the rig's lockfile pins nothing");
     let pinned = ok(rig.projection().pinned(&at), "pinned");
+    let pins: Vec<Pin> = pins.into_iter().map(Pin::Version).collect();
     assert_eq!(
         pinned, pins,
         "pinned answered other names or versions than the lockfile pins"

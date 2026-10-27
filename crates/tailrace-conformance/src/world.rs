@@ -23,8 +23,9 @@ use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, ChannelId, ChannelName, Check,
     Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Envelope,
     Environment, EnvironmentName, IndexMeta, Layout, Manifest, Miss, Name, NamedSigner, Outcome,
-    Output, OutputName, Packed, Pinned, Projection, Range, Rendered, Report, Request, Requirement,
-    Response, Revision, Seam, Seams, Signer, SignerId, Source, Store, Verdict, Version,
+    Output, OutputName, Packed, Pin, Pinned, Projection, Range, Rendered, Report, Request,
+    Requirement, Response, Revision, Seam, Seams, Signer, SignerId, Source, Store, Verdict,
+    Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -698,7 +699,7 @@ impl Projection for Watched {
         self.inner.serve(layout, request, miss)
     }
 
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.inner.pinned(checkout)
     }
 

@@ -12,7 +12,7 @@ use tailrace_fakes::{Call, FakeSigner, Fakes, Fault, LandingOp, ProjectionOp, St
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Branch, BuildId, Check, Claim, ClaimKind, Contents, Digest,
     Ecosystem, EcosystemName, Held, Layout, Miss, Name, Not, Outcome, Output, OutputName, Packed,
-    Pinned, Projection, Range, Rendered, Request, Requirement, Response, Revision, Seam, Signer,
+    Pin, Projection, Range, Rendered, Request, Requirement, Response, Revision, Seam, Signer,
     SignerId, Store, Verdict, Version, Why,
 };
 
@@ -134,7 +134,7 @@ impl Projection for Offering {
         unreachable!("a write serves nothing")
     }
 
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
         unreachable!("a write reads no lockfile")
     }
 

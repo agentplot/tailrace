@@ -17,9 +17,9 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName,
     Contents, Digest, EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Landing, Layout,
-    Manifest, Miss, Name, NamedSigner, Not, Outcome, Output, Packed, Pinned, Projection, Put,
-    Range, Rendered, Request, Required, RequiredClaim, Requirement, Response, Seam, SignerId,
-    Source, Store, Version, Why,
+    Manifest, Miss, Name, NamedSigner, Not, Outcome, Output, Packed, Pin, Projection, Put, Range,
+    Rendered, Request, Required, RequiredClaim, Requirement, Response, Seam, SignerId, Source,
+    Store, Version, Why,
 };
 use world::{
     build_of, build_ops, by_host, eco, output, published_before_notes, version_of, Watched, World,
@@ -367,7 +367,7 @@ impl Projection for Filling {
         self.inner.serve(layout, request, miss)
     }
 
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.inner.pinned(checkout)
     }
 
@@ -832,7 +832,7 @@ impl Projection for Metaless {
     fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
         self.0.serve(layout, request, miss)
     }
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.0.pinned(checkout)
     }
     fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {

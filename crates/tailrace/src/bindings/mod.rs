@@ -78,16 +78,18 @@
 //! repository the command runs in the
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
-//! through a second binding of the store, opened and never made (design
-//! D6). What tells the gate is bound for every command; no target is
-//! bound yet. Only a publish and the two pushes make the layout, the
-//! given one with its parents, at the first operation asked of the store
-//! and never in binding it, so a publish refused before it asks the store
-//! anything leaves nothing behind; a push signs nothing, and a push
-//! before a landing binds no landing where the file names none, since it
-//! asks the landing nothing, so a check job needs no table of it (60,
-//! 139, rules core.11, core.32); every other command opens it, and a
-//! promote makes nothing (C.13, C.14).
+//! through a second binding of the store, and Cargo's projection crates
+//! and npm's tarballs through a third and a fourth, each opened and
+//! never made (design D6). What tells the gate is bound for every
+//! command; no target is bound yet. Only a publish and the two pushes
+//! make the layout, the given one with its parents, at the first
+//! operation asked of the store and never in binding it, so a publish
+//! refused before it asks the store anything leaves nothing behind; a
+//! push signs nothing, and a push before a landing binds no landing
+//! where the file names none, since it asks the landing nothing, so a
+//! check job needs no table of it (60, 139, rules core.11, core.32);
+//! every other command opens it, and a promote makes nothing (C.13,
+//! C.14).
 //!
 //! Status asks the landing, the policy and the ledger alone (60; design
 //! D8): it is bound by the same path, with no signer but every profile
@@ -663,12 +665,13 @@ pub fn bind(
     } else {
         let bound = profiles::store::bind(store, make)?;
         let cache = profiles::store::bind(store, make)?;
+        let crates = profiles::store::bind(store, make)?;
         let packages = profiles::store::bind(store, make)?;
         let keeper = ledger(store)?;
         (
             bound,
             keeper,
-            profiles::projection::bound(cache, packages, repository),
+            profiles::projection::bound(cache, crates, packages, repository),
         )
     };
     Ok(Binding {
