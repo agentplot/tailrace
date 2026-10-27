@@ -101,6 +101,9 @@ pub(super) fn repository(host: &str, declared: &str, parts: &[&str]) -> Result<S
 /// [`of`] read back: the text of the name `tag` was written for, each
 /// `_` and two hex digits its byte; none for a tag `of` could not have
 /// written (design D8).
+// The registry's listing of a name's versions reads it, from the commit
+// that builds that listing.
+#[allow(dead_code)]
 pub(super) fn read(tag: &str) -> Option<String> {
     let mut bytes = Vec::new();
     let mut rest = tag.as_bytes();
