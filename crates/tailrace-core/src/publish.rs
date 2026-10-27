@@ -4,18 +4,21 @@
 //! recorded, answered (14 to 22, rules core.10 to core.13; design D1).
 //! Where the repository's file writes a policy for layouts at the landed
 //! revision, the index carries it as the publisher's layout-policy claim,
-//! attached before the version is named (113, 8); the given is never
-//! carried, and a consumer lays it beneath itself (C.10).
+//! attached before anything is named (113, 8); the given is never
+//! carried, and a consumer lays it beneath itself (C.10). Each artifact
+//! is then named by its ecosystem, its name and its version at the
+//! index, and the version last, so a version the store names is always
+//! found by what a lockfile pins (138; design D2).
 //! A publish offers and does nothing more: it never accepts, promotes,
 //! moves a channel or reaches a target (20, rule core.10).
 
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    version_name, Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim, ClaimKind,
-    Component, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Not,
-    Outcome, Output, OutputName, Projection, Report, RepositoryName, Required, Revision, Seam,
-    Seams, SignerId, Source, Verdict, Version, Why,
+    artifact_name, version_name, Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim,
+    ClaimKind, Component, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
+    Manifest, Not, Outcome, Output, OutputName, Projection, Report, RepositoryName, Required,
+    Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
 };
 
 use crate::notes::{self, Rendered};
@@ -435,6 +438,8 @@ impl<'a> Run<'a> {
             Some((index, artifacts)) => {
                 let (artifacts, notes) =
                     self.again(versioned, &outputs, &packed, &rendered, &artifacts)?;
+                self.layout_policy(&index)?;
+                self.name_artifacts(&index, &packed)?;
                 if unnamed {
                     self.seams.store.name(&name, &index, None)?;
                 }
@@ -470,6 +475,7 @@ impl<'a> Run<'a> {
             .put_artifact(&Manifest::Index(meta))?
             .digest;
         self.layout_policy(&index)?;
+        self.name_artifacts(&index, &packed)?;
         self.seams.store.name(&name, &index, None)?;
         let artifacts = artifacts.into_iter().map(|(_, a)| a).collect();
         self.record(
@@ -480,6 +486,42 @@ impl<'a> Run<'a> {
             artifacts,
             Some(answered),
         )
+    }
+
+    /// 138: each packed artifact named `artifact/<ecosystem>/<name>@<version>`
+    /// at `index`. Every name is resolved before any is made: one at this
+    /// index is left as it is, one at another digest refuses the version
+    /// naming the name, the digest it is at and this index, and nothing
+    /// is made; then each absent one is made from nothing, a refusal from
+    /// the store answered as it gave it and never asked again (70, 109,
+    /// rules core.4, core.6; design D2, D3).
+    fn name_artifacts(&self, index: &Digest, packed: &[PackedArtifact]) -> Answer<()> {
+        let store = &self.seams.store;
+        let mut absent = Vec::new();
+        for packed in packed {
+            let meta = &packed.meta;
+            let name = artifact_name(meta.ecosystem(), meta.name(), meta.version());
+            match store.resolve(&name) {
+                Ok(at) if at == *index => {}
+                Ok(other) => {
+                    return Err(Not::refused(
+                        &self.ask.store,
+                        Why::NameAt {
+                            at: Some(other.clone()),
+                        },
+                        Some(format!(
+                            "{name} names {other}, and this publish's index is {index}"
+                        )),
+                    ))
+                }
+                Err(Not::Absent(_)) => absent.push(name),
+                Err(not) => return Err(not),
+            }
+        }
+        for name in absent {
+            store.name(&name, index, None)?;
+        }
+        Ok(())
     }
 
     /// The index a held name names and each artifact it names, with the

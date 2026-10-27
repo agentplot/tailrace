@@ -820,6 +820,156 @@ fn walk(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     files
 }
 
+// Requirement: Each artifact is named by its ecosystem, its name and its version
+
+#[test]
+fn each_artifact_is_named_at_the_index_beside_the_versions_name() {
+    let world = World::new();
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&published);
+    let names = world.fakes.store.contents().names;
+    for name in LIB_NAMES {
+        assert_eq!(names.get(&Name::new(name)), Some(index), "{name}");
+    }
+}
+
+#[test]
+fn a_consumer_finds_the_artifact_by_its_name_and_version_alone() {
+    let world = World::new();
+    layout(&world, vec![required(ClaimKind::Provenance, HOST)], false);
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&published);
+    let pin = Pinned {
+        name: EcosystemName::new("lib-pack"),
+        version: Version::new("0.2.0"),
+    };
+    let found = tailrace_core::locate(&world.fakes.store, &eco("eco-a"), &pin)
+        .unwrap()
+        .unwrap();
+    assert_eq!(&found.index, index);
+    assert_eq!(found.artifact.meta.name(), &pin.name);
+    assert_eq!(found.artifact.meta.version(), &pin.version);
+    assert_eq!(layout_policies(&world, &published).len(), 1);
+}
+
+#[test]
+fn every_publisher_names_the_artifact_alike() {
+    let world = World::new();
+    world.publish_one(&world.ask_for("lib")).unwrap();
+    let elsewhere = world.fakes_alike();
+    let history = world.history();
+    let ask = Ask {
+        store: Source::new(Seam::Store, "registry registry.example/acme/tailrace"),
+        ..world.ask_for("lib")
+    };
+    publish(&elsewhere.seams(), &history, &Kept::at(&history), &ask).unwrap();
+    let artifact_names = |store: &FakeStore| -> Vec<Name> {
+        store
+            .contents()
+            .names
+            .into_keys()
+            .filter(|n| n.as_artifact().is_some())
+            .collect()
+    };
+    let (here, there) = (
+        artifact_names(&world.fakes.store),
+        artifact_names(&elsewhere.store),
+    );
+    assert_eq!(here, there);
+    assert_eq!(here.len(), 2);
+    for name in &here {
+        let text = name.as_str();
+        for foreign in ["lib-v", "lib:", "layout", "registry", "acme"] {
+            assert!(!text.contains(foreign), "{text} names {foreign}");
+        }
+    }
+}
+
+// Requirement: Every artifact name is read before any is made
+
+#[test]
+fn a_name_another_index_holds_refuses_the_version_and_names_nothing() {
+    let world = World::new();
+    let elsewhere = world
+        .fakes
+        .store
+        .put_bytes(b"another index")
+        .unwrap()
+        .digest;
+    let taken = Name::new(LIB_NAMES[1]);
+    world.fakes.store.name(&taken, &elsewhere, None).unwrap();
+    let before = world.fakes.store.calls().len();
+    let r = refused(world.publish_one(&world.ask_for("lib")));
+    assert_eq!(
+        r.why,
+        Why::NameAt {
+            at: Some(elsewhere.clone())
+        }
+    );
+    let [index] = <[_; 1]>::try_from(
+        world.fakes.store.calls()[before..]
+            .iter()
+            .filter(|c| c.given["manifest"].get("index").is_some())
+            .map(|c| {
+                c.answer.as_ref().unwrap()["digest"]
+                    .as_str()
+                    .unwrap()
+                    .to_string()
+            })
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    let said = r.said.unwrap();
+    assert!(
+        said.contains(taken.as_str()) && said.contains(elsewhere.as_str()) && said.contains(&index),
+        "{said}"
+    );
+    assert_eq!(names_made(&world, before), Vec::<String>::new());
+    assert!(world.fakes.store.resolve(&Name::new(LIB_NAMES[2])).is_err());
+}
+
+#[test]
+fn a_name_already_at_this_index_is_left_and_the_rest_are_made_then_the_version() {
+    let world = World::new();
+    let first = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&first);
+    // As a publish stopped after making the first artifact's name left it.
+    for name in &LIB_NAMES[1..] {
+        world.fakes.store.forget(&Name::new(*name));
+    }
+    let before = world.fakes.store.calls().len();
+    let second = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert_eq!(second, first);
+    assert_eq!(names_made(&world, before), &LIB_NAMES[1..]);
+    for call in world.fakes.store.calls()[before..]
+        .iter()
+        .filter(|c| c.op == StoreOp::Name)
+    {
+        assert_eq!(call.given["expected"], serde_json::Value::Null);
+    }
+    let names = world.fakes.store.contents().names;
+    for name in LIB_NAMES {
+        assert_eq!(names.get(&Name::new(name)), Some(index), "{name}");
+    }
+}
+
+#[test]
+fn a_make_the_store_refuses_is_answered_in_its_words_and_never_asked_again() {
+    let world = World::new();
+    let at = Digest::of(b"somewhere");
+    let words = format!("{} is at {at}", LIB_NAMES[0]);
+    world
+        .fakes
+        .store
+        .fault(StoreOp::Name, Fault::Refused(words.clone()), Times::Once);
+    let before = world.fakes.store.calls().len();
+    let r = refused(world.publish_one(&world.ask_for("lib")));
+    assert_eq!(r.said.as_deref(), Some(words.as_str()));
+    assert_eq!(r.source, Source::new(Seam::Store, "fake"));
+    assert_eq!(names_made(&world, before), [LIB_NAMES[0]]);
+    assert!(world.fakes.store.resolve(&Name::new(LIB_NAMES[2])).is_err());
+}
+
 // Requirement: The index is offered last, then the version is named
 
 /// What a store call put: the ecosystem of an artifact's manifest,
@@ -832,8 +982,26 @@ fn manifest_of(call: &tailrace_fakes::Call<StoreOp>) -> Option<String> {
     }
 }
 
+/// The names `world`'s store was asked to move since its call `since`,
+/// in the order asked.
+fn names_made(world: &World, since: usize) -> Vec<String> {
+    world.fakes.store.calls()[since..]
+        .iter()
+        .filter(|c| c.op == StoreOp::Name)
+        .map(|c| c.given["name"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// `lib`'s two artifacts' names at 0.2.0 and its version's, in the order
+/// a publish makes them.
+const LIB_NAMES: [&str; 3] = [
+    "artifact/eco-a/lib-pack@0.2.0",
+    "artifact/eco-b/lib-docs@0.2.0",
+    "lib:lib-v0.2.0",
+];
+
 #[test]
-fn the_artifacts_and_their_attachments_come_before_the_index_and_the_name_after() {
+fn the_artifacts_and_their_attachments_come_before_the_index_and_the_names_after() {
     let world = World::new();
     world.publish_one(&world.ask_for("lib")).unwrap();
     let calls = world.fakes.store.calls();
@@ -857,8 +1025,11 @@ fn the_artifacts_and_their_attachments_come_before_the_index_and_the_name_after(
             (StoreOp::Attach, None),
             put("index"),
             (StoreOp::Name, None),
+            (StoreOp::Name, None),
+            (StoreOp::Name, None),
         ]
     );
+    assert_eq!(names_made(&world, 0), LIB_NAMES);
 }
 
 #[test]
@@ -912,11 +1083,15 @@ fn a_publish_stopped_after_one_artifact_has_published_nothing() {
         "one artifact was put"
     );
     assert!(indexes(&world).is_empty());
-    assert!(world
-        .fakes
-        .store
-        .resolve(&Name::new("lib:lib-v0.2.0"))
-        .is_err());
+    for name in LIB_NAMES {
+        assert!(
+            matches!(
+                world.fakes.store.resolve(&Name::new(name)),
+                Err(Not::Absent(_))
+            ),
+            "{name} names something"
+        );
+    }
     assert!(matches!(
         world.kept().read(&Default::default()),
         Err(Not::Absent(_))
@@ -947,8 +1122,12 @@ fn a_version_held_under_its_bare_tag_is_named_the_new_way_at_the_same_index() {
     let world = World::new();
     let first = world.publish_one(&world.ask_for("lib")).unwrap();
     let (_, index) = version_of(&first);
-    let (named, bare) = (Name::new("lib:lib-v0.2.0"), Name::new("lib-v0.2.0"));
-    world.fakes.store.forget(&named);
+    // As a publish before this change left it: the index under its bare
+    // tag, and no artifact's name.
+    for name in LIB_NAMES {
+        world.fakes.store.forget(&Name::new(name));
+    }
+    let bare = Name::new("lib-v0.2.0");
     world.fakes.store.name(&bare, index, None).unwrap();
     let held = world.fakes.store.contents().held;
     let before = world.fakes.store.calls().len();
@@ -962,12 +1141,16 @@ fn a_version_held_under_its_bare_tag_is_named_the_new_way_at_the_same_index() {
             .any(|c| matches!(c.op, StoreOp::PutBytes | StoreOp::PutArtifact)),
         "something was put: {calls:?}"
     );
-    let made: Vec<_> = calls.iter().filter(|c| c.op == StoreOp::Name).collect();
-    let last = made.last().expect("a name made");
-    assert_eq!(last.given["name"], named.as_str());
-    assert_eq!(last.given["expected"], serde_json::Value::Null);
+    assert_eq!(
+        names_made(&world, before),
+        LIB_NAMES,
+        "the version's name after the artifacts'"
+    );
+    for call in calls.iter().filter(|c| c.op == StoreOp::Name) {
+        assert_eq!(call.given["expected"], serde_json::Value::Null);
+    }
     let names = world.fakes.store.contents().names;
-    assert_eq!(names.get(&named), Some(index));
+    assert_eq!(names.get(&Name::new(LIB_NAMES[2])), Some(index));
     assert_eq!(names.get(&bare), Some(index));
     assert_eq!(world.fakes.store.contents().held, held);
 }
@@ -1097,6 +1280,41 @@ fn the_same_revision_published_again_ends_at_the_same_index_and_writes_nothing()
 }
 
 #[test]
+fn a_version_named_before_its_artifacts_were_gets_its_policy_then_its_names() {
+    let world = World::new();
+    let first = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&first);
+    // As a publish before artifacts were named left it: the index and the
+    // version's name, no artifact's name and no layout policy.
+    for name in &LIB_NAMES[..2] {
+        world.fakes.store.forget(&Name::new(*name));
+    }
+    let claims = vec![required(ClaimKind::Provenance, HOST)];
+    layout(&world, claims.clone(), false);
+    let before = world.fakes.store.calls().len();
+
+    let second = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert_eq!(second, first);
+    let writes: Vec<StoreOp> = world.fakes.store.calls()[before..]
+        .iter()
+        .map(|c| c.op)
+        .filter(|op| !matches!(op, StoreOp::Resolve | StoreOp::Read | StoreOp::ClaimsOf))
+        .collect();
+    assert_eq!(
+        writes,
+        [StoreOp::Attach, StoreOp::Name, StoreOp::Name],
+        "the layout policy, then each artifact's name, and nothing put"
+    );
+    assert_eq!(names_made(&world, before), &LIB_NAMES[..2]);
+    let [(_, claim)] = <[_; 1]>::try_from(layout_policies(&world, &second)).unwrap();
+    assert_eq!(claim.body, layout_policy_body(&claims));
+    let names = world.fakes.store.contents().names;
+    for name in LIB_NAMES {
+        assert_eq!(names.get(&Name::new(name)), Some(index), "{name}");
+    }
+}
+
+#[test]
 fn a_projection_that_packs_differently_is_refused_and_the_name_stays() {
     let mut world = World::new();
     let first = world.publish_one(&world.ask_for("lib")).unwrap();
@@ -1127,6 +1345,7 @@ fn a_projection_that_packs_differently_is_refused_and_the_name_stays() {
             .all(|c| matches!(c.op, StoreOp::Resolve | StoreOp::Read)),
         "{again:?}"
     );
+    assert_eq!(names_made(&world, calls_before), Vec::<String>::new());
     assert_eq!(
         world
             .fakes
@@ -1236,8 +1455,8 @@ fn a_publish_moves_no_channel_and_reaches_no_target() {
         .into_iter()
         .filter(|c| c.op == StoreOp::Name)
         .collect();
-    assert_eq!(named.len(), 1);
-    assert_eq!(named[0].given["name"], "lib:lib-v0.2.0");
+    assert_eq!(named.len(), 3, "the two artifacts' names and the version's");
+    assert_eq!(names_made(&world, 0), LIB_NAMES);
 }
 
 // Requirement: The index carries the publisher's layout policy
@@ -1287,7 +1506,7 @@ fn layout(world: &World, claims: Vec<RequiredClaim>, given: bool) {
 }
 
 #[test]
-fn a_publish_under_a_layout_line_attaches_its_policy_to_the_index_before_the_name() {
+fn a_publish_under_a_layout_line_attaches_its_policy_to_the_index_before_any_name() {
     let world = World::new();
     let claims = vec![required(ClaimKind::Provenance, HOST)];
     layout(&world, claims.clone(), false);
@@ -1319,13 +1538,15 @@ fn a_publish_under_a_layout_line_attaches_its_policy_to_the_index_before_the_nam
         .map(|c| (c.op, c.given["manifest"].get("index").is_some()))
         .collect();
     assert_eq!(
-        order[order.len() - 3..],
+        order[order.len() - 5..],
         [
             (StoreOp::PutArtifact, true),
             (StoreOp::Attach, false),
             (StoreOp::Name, false),
+            (StoreOp::Name, false),
+            (StoreOp::Name, false),
         ],
-        "the layout policy was not attached between the index and the name"
+        "the layout policy was not attached between the index and the first name"
     );
 }
 
