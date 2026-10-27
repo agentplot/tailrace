@@ -887,7 +887,7 @@ fn a_rebuild() -> RequiredClaim {
             kinds: vec![ClaimKind::Rebuild],
             checks: vec![],
         }],
-        asked_of: AskedOf::Every,
+        asked_of: AskedOf::Built,
     }
 }
 
@@ -1977,4 +1977,118 @@ fn another_fragments_held_given_is_answered_with_its_line() {
         })
     );
     none_in_both(&policy, &none);
+}
+
+// Requirement: Each required claim is answered with the artifacts it is asked of
+
+/// The box's signer as `signers()` names it.
+fn the_box() -> NamedSigner {
+    NamedSigner {
+        id: SignerId::new("box"),
+        verified_by: "ssh-ed25519 BBBB".into(),
+        kinds: vec![ClaimKind::Verdict],
+        checks: vec![Check::new("cli:test"), Check::new("core:test")],
+    }
+}
+
+#[test]
+fn acceptance_asks_its_provenance_of_every_artifact_and_its_verdict_of_built_ones() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[acceptance]\nrequire = [\n  {{ kind = \"provenance\", signers = [\"laptop\"] }},\n  \
+         {{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"] }},\n]\n",
+        signers()
+    ));
+    assert_eq!(
+        repo.policy().policy_for(&at, &Audience::Acceptance),
+        Ok(Required::Acceptance {
+            claims: vec![
+                RequiredClaim {
+                    kind: ClaimKind::Provenance,
+                    check: None,
+                    signers: vec![laptop_the_given_gate()],
+                    asked_of: AskedOf::Every,
+                },
+                RequiredClaim {
+                    kind: ClaimKind::Verdict,
+                    check: Some(Check::new("cli:test")),
+                    signers: vec![the_box()],
+                    asked_of: AskedOf::Built,
+                },
+            ],
+        })
+    );
+}
+
+#[test]
+fn a_given_channels_line_asks_its_rebuild_of_built_artifacts_and_the_gates_acceptance_of_every() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}[channels.stable]\nrequire = [{{ kind = \"rebuild\", signers = [\"verifier\"] }}]\n",
+        gate_table(false),
+        verifier_table()
+    ));
+    let required = channel_policy(&repo, &at, &id(None, "stable")).unwrap();
+    let asked: Vec<(ClaimKind, AskedOf)> = required
+        .claims()
+        .iter()
+        .map(|c| (c.kind, c.asked_of))
+        .collect();
+    assert_eq!(
+        asked,
+        [
+            (ClaimKind::Acceptance, AskedOf::Every),
+            (ClaimKind::Rebuild, AskedOf::Built),
+        ]
+    );
+}
+
+#[test]
+fn the_one_hosts_own_given_acceptance_is_asked_of_every_artifact() {
+    let repo = Repo::new();
+    let at = repo.at(&laptop_alone());
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "beta")).map(|r| r.claims().to_vec()),
+        Ok(vec![RequiredClaim {
+            kind: ClaimKind::Acceptance,
+            check: None,
+            signers: vec![laptop_the_given_gate()],
+            asked_of: AskedOf::Every,
+        }])
+    );
+}
+
+#[test]
+fn a_layouts_verdict_is_asked_of_every_artifact() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[layout]\nrequire = [{{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"] }}]\n",
+        signers()
+    ));
+    let required = repo.policy().policy_for(&at, &Audience::Layout).unwrap();
+    assert_eq!(
+        required.claims(),
+        [RequiredClaim {
+            kind: ClaimKind::Verdict,
+            check: Some(Check::new("cli:test")),
+            signers: vec![the_box()],
+            asked_of: AskedOf::Every,
+        }]
+    );
+}
+
+#[test]
+fn a_key_naming_the_artifacts_a_claim_is_asked_of_is_unreadable() {
+    let repo = Repo::new();
+    let text = format!(
+        "{}[acceptance]\nrequire = [\n  \
+         {{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"], asked_of = \"built\" }},\n]\n",
+        signers()
+    );
+    let at = repo.at(&text);
+    let said = unreadable(repo.policy().policy_for(&at, &Audience::Acceptance), &at);
+    assert_eq!(
+        said,
+        "[acceptance]: unknown field `asked_of`, expected one of `kind`, `check`, `signers`"
+    );
 }

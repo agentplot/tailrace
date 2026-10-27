@@ -15,7 +15,7 @@ notes' missing verdict. Every cargo and moon command runs inside
 ## 2. The policy file reads it from the kind
 
 - [x] 2.1 In `crates/tailrace/src/profiles/policy/file/mod.rs`, answer each `[acceptance]` entry, each channel's `require` entry and the given channels' gate acceptance with `asked_of` from the kind: `Every` for provenance, acceptance and promotion, `Built` for verdict, test, review, rebuild and carried. Answer every `[layout]` entry `Every`. The file gains no key and `Entry` keeps `deny_unknown_fields` (policy-file spec; design D2). Say so in the module's doc comment. Verify with `moon run cli:test`.
-- [ ] 2.2 In `crates/tailrace/src/profiles/policy/file/tests.rs`, add a test for each policy-file scenario:
+- [x] 2.2 In `crates/tailrace/src/profiles/policy/file/tests.rs`, add a test for each policy-file scenario:
   - acceptance's two claims of two kinds;
   - a given channel's line;
   - the one host's own given acceptance;

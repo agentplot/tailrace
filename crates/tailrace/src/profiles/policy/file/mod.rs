@@ -75,7 +75,7 @@
 //! artifact alone, since a rendered artifact has no build. `[layout]`'s
 //! claims are asked of every artifact. C.10 writes no form for it, so the
 //! file gains no key: an entry naming any key besides `kind`, `check` and
-//! `signers` is unreadable.
+//! `signers` is unreadable naming its table.
 //!
 //! The given channels are a fragment in this same form, `givens.toml`
 //! beside this module, laid beneath the repository's file as one table in
@@ -227,14 +227,16 @@ struct Givens {
 
 /// What this profile reads of the file: the signers, each name with
 /// where it is written so they keep the file's order, each audience's
-/// table, the channels' and the environments' tables as written, read
-/// once the components are known, and the components' names.
+/// table as written, read when its audience is asked, so a key it does
+/// not hold is unreadable naming the table, the channels' and the
+/// environments' tables as written, read once the components are known,
+/// and the components' names.
 #[derive(Deserialize)]
 struct File {
     #[serde(default)]
     signers: BTreeMap<Spanned<String>, toml::Table>,
-    acceptance: Option<AudienceTable>,
-    layout: Option<AudienceTable>,
+    acceptance: Option<toml::Table>,
+    layout: Option<toml::Table>,
     #[serde(default)]
     channels: toml::Table,
     #[serde(default)]
@@ -1376,6 +1378,13 @@ impl Policy for PolicyFile {
             Audience::Layout => (file.layout.as_ref(), "[layout]"),
             Audience::Channel(_) => unreachable!("a channel is answered above"),
         };
+        let table: Option<AudienceTable> = table
+            .map(|table| {
+                toml::Value::Table(table.clone())
+                    .try_into()
+                    .map_err(|e: toml::de::Error| unreadable(format!("{name}: {}", e.message())))
+            })
+            .transpose()?;
         let claims = match table {
             Some(table) if table.bound_to.is_some() => {
                 return Err(unreadable(format!(

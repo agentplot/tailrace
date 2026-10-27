@@ -2,7 +2,7 @@
 //! them (B.5).
 
 use tailrace_seams::{
-    Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
+    AskedOf, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
     HeldChannel, Moves, NamedSigner, Policy, Required, RequiredClaim, Revision, Seam, SignerId,
 };
 
@@ -119,20 +119,21 @@ fn named(id: &str, kinds: &[ClaimKind], checks: &[&str]) -> NamedSigner {
     }
 }
 
-/// A provenance from the host, and a verdict of `test` from the landing.
+/// A provenance from the host of every artifact, and a verdict of `test`
+/// from the landing of built artifacts alone (134).
 fn claims() -> Vec<RequiredClaim> {
     vec![
         RequiredClaim {
             kind: ClaimKind::Provenance,
             check: None,
             signers: vec![named("host", &[ClaimKind::Provenance], &[])],
-            asked_of: tailrace_seams::AskedOf::Every,
+            asked_of: AskedOf::Every,
         },
         RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("test")),
             signers: vec![named("landing", &[ClaimKind::Verdict], &["test"])],
-            asked_of: tailrace_seams::AskedOf::Every,
+            asked_of: AskedOf::Built,
         },
     ]
 }
