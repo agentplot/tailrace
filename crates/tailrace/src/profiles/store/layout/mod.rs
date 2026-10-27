@@ -466,6 +466,71 @@ pub(super) mod tests {
         assert_eq!(layout.read(&put.digest), Ok(Held::Manifest(index)));
     }
 
+    /// An index of one artifact, `site`, put into `layout`.
+    fn site_index(layout: &Layout) -> IndexMeta {
+        let layer = layout.put_bytes(b"site").unwrap().digest;
+        let manifest = Manifest::Artifact {
+            meta: meta("site"),
+            layers: vec![layer],
+        };
+        let artifact = Artifact {
+            digest: layout.put_artifact(&manifest).unwrap().digest,
+            meta: meta("site"),
+        };
+        IndexMeta::new(
+            ComponentName::new("acme"),
+            Version::new("1.3.0"),
+            vec![artifact],
+        )
+        .unwrap()
+    }
+
+    /// The annotations of the image index `digest` holds.
+    fn annotations_of(layout: &Layout, digest: &Digest) -> serde_json::Value {
+        let bytes = layout.read_blob(digest).unwrap();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["annotations"].clone()
+    }
+
+    #[test]
+    fn an_index_reads_back_naming_its_revision_and_repository() {
+        let (_dir, layout) = fresh();
+        let index = Manifest::Index(site_index(&layout).published_from(
+            tailrace_seams::Revision::new("4f2a9c1"),
+            Some(tailrace_seams::RepositoryName {
+                owner: "acme".into(),
+                name: "site".into(),
+            }),
+        ));
+        let put = layout.put_artifact(&index).unwrap();
+        assert_eq!(layout.read(&put.digest), Ok(Held::Manifest(index)));
+        let annotations = annotations_of(&layout, &put.digest);
+        assert_eq!(annotations["org.opencontainers.image.revision"], "4f2a9c1");
+        assert_eq!(
+            annotations["io.github.agentplot.tailrace.repository"],
+            "acme/site"
+        );
+    }
+
+    #[test]
+    fn an_index_naming_neither_keeps_the_digest_it_had_before_indexes_named_them() {
+        let (_dir, layout) = fresh();
+        let index = Manifest::Index(site_index(&layout));
+        let put = layout.put_artifact(&index).unwrap();
+        assert_eq!(
+            put.digest.as_str(),
+            "sha256:2606d28b2ffb25dd56a6c847b158460514360f4babf6cd5e77ab7e2884352354"
+        );
+        let annotations = annotations_of(&layout, &put.digest);
+        assert_eq!(
+            annotations.as_object().unwrap().keys().collect::<Vec<_>>(),
+            [
+                "io.github.agentplot.tailrace.component",
+                "org.opencontainers.image.version"
+            ]
+        );
+        assert_eq!(layout.read(&put.digest), Ok(Held::Manifest(index)));
+    }
+
     #[test]
     fn a_manifest_naming_a_digest_not_held_is_absent_and_writes_nothing() {
         let (_dir, layout) = fresh();
