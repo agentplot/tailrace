@@ -28,7 +28,7 @@ notes' missing verdict. Every cargo and moon command runs inside
 
 - [x] 3.1 In `crates/tailrace-core/src/gate.rs`, add `Made { Built, Rendered }`. Tell each artifact's making once in `accept`'s step 5, under the acceptance policy at the head, from the artifact's own provenance claims that count through the policy's provenance signers and name the version's revision (acceptance spec, the gate tells a rendered artifact; design D3). Keep it beside the artifact in `Judging.artifacts`. Do it before the already-accepted check, so that path has it too. Verify with `moon run core:test`.
 - [x] 3.2 Make `Judging::count` take, for each artifact, only the required claims whose `asked_of` asks its making, in the policy's order. `promote` then judges each following channel by the same making (design D4). Leave `Judged`, `Moved` and the acceptance body's shape as they are. Update the module's doc comment to cite 134. Verify with `moon run core:test`.
-- [ ] 3.3 In `crates/tailrace-core/tests/gate.rs`, add tests for every new and modified acceptance scenario:
+- [x] 3.3 In `crates/tailrace-core/tests/gate.rs`, add tests for every new and modified acceptance scenario:
   - a claim asked of built artifacts alone;
   - the notes judged as rendered;
   - a build-less provenance from a signer the policy does not name;
