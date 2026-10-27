@@ -12,6 +12,5 @@ Deleted when empty.
 
 ## Decisions waiting
 
-- **Record 0019 (proposed).** `alpha/*` and `lts/*` as families; and its rule that a channel declared by hand is promoted by the signers its `require` names that may claim a promotion, which clause 32 (a promotion is made only by the gate) does not grant. Settled with the record's card; core.44's details name it.
 - **Record 0016, its `[ledger]` binding.** Superseded by record 0021 and clause 118; the amendment marking it so is proposed on the user's card.
 - **Clause 54 and a registry's lifecycle rule.** A rule expiring untagged manifests may take an accepted version's attestations, which are untagged referrers; ADR 0015 left it unread.

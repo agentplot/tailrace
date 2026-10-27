@@ -1,7 +1,7 @@
 ---
 number: 19
 title: A channel is its component and name, and the policy says how it moves
-status: proposed
+status: accepted
 date: 2026-10-25
 decision-makers:
 - Chuck Swanberg
@@ -9,7 +9,7 @@ decision-makers:
 
 # A channel is its component and name, and the policy says how it moves
 
-Status: proposed to the user on 2026-10-27, as `briefs.15` has it; accepted only on their yes. Revised on the user's question on its first card and on their note on its second, both quoted below.
+Status: accepted by the user on 2026-10-27, on their third card, after revisions on their question and their note, both quoted below.
 
 The user's question, on the record's card (2026-10-27): "I don't know if we need it here but is it possible to require additional checks for channel gates? In addition to maybe having a person approve, we have to run a full end-to-end integration test or something"
 
