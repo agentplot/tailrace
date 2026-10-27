@@ -29,9 +29,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_lockfile, Answer, Artifact, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not,
-    Output, Packed, Pinned, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Store,
-    Version, Why,
+    no_lockfile, Answer, Artifact, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout,
+    Miss, Not, Output, Packed, Pinned, Projection, Range, Rendered, Request, Requirement, Response,
+    Seam, Source, Store, Version, Why,
 };
 
 /// The ecosystem this projection packs in, as the bindings bind it.
@@ -202,7 +202,7 @@ impl Projection for MoonCache {
         })
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
         Err(Not::absent(
             &MoonCache::source(),
             "serve of the moon-cache projection, whose outputs directory moon reads itself",

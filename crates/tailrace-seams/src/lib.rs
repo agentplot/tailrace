@@ -9,7 +9,7 @@
 //! | the landing | [`Landing`] | B.3, 77, 78 |
 //! | the signer | [`Signer`] | B.4, 79 to 81 |
 //! | the policy | [`Policy`] | B.5, 82, 83, 131 |
-//! | a projection | [`Projection`] | B.6, 84 to 87, 137, 140 |
+//! | a projection | [`Projection`] | B.6, 84 to 87, 115, 137, 140 |
 //! | a target | [`Target`] | B.7, 88 to 91 |
 //! | the ledger | [`Keeper`] | B.8, 120 to 122 |
 //!
@@ -173,7 +173,7 @@ mod tests {
         fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
             nothing(Seam::Projection, "render")
         }
-        fn serve(&self, _: &Layout) -> Answer<Serving> {
+        fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
             nothing(Seam::Projection, "serve")
         }
         fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
@@ -294,7 +294,15 @@ mod tests {
                 }]),
                 "at",
             )),
-            asked(projection.serve(&Layout { at: "at".into() })),
+            asked(projection.serve(
+                &Layout { at: "at".into() },
+                &Request {
+                    method: "GET".into(),
+                    path: String::new(),
+                    base: "http://127.0.0.1:7420/o/r/eco".into(),
+                },
+                &|_| nothing(Seam::Projection, "miss"),
+            )),
             asked(projection.pinned("checkout")),
             asked(projection.requires(&Artifact {
                 digest: d.clone(),

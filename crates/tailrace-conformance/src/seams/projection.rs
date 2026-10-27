@@ -8,7 +8,7 @@
 
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Output, Pinned,
-    Projection, Range, Requirement, Seam, Version,
+    Projection, Range, Request, Requirement, Seam, Version,
 };
 
 use crate::seams::{absent, unreadable};
@@ -231,10 +231,18 @@ fn served_where_the_clients_read_no_files(rig: &dyn ProjectionRig) {
         projection.render(Contents::Artifacts(&rig.artifacts(1)), AT),
         "render",
     );
-    let serving = ok(projection.serve(&rendered.layout), "serve");
+    let request = Request {
+        method: "GET".into(),
+        path: String::new(),
+        base: "http://127.0.0.1:7420/o/r/conformance".into(),
+    };
+    let serving = ok(
+        projection.serve(&rendered.layout, &request, &|_| Ok(())),
+        "serve",
+    );
     assert!(
-        !serving.address.is_empty(),
-        "a served layout answered no address: {serving:?}"
+        !serving.body.is_empty(),
+        "a served layout answered nothing: {serving:?}"
     );
 }
 
