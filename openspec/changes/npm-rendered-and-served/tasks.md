@@ -8,7 +8,7 @@ named, which `check-fast` or `check-tools` runs.
 
 ## 1. The seam: serve answers one request
 
-- [ ] 1.1 In `crates/tailrace-seams/src/projection.rs`, replace `Serving` with `Request { method, path, base }`, `Response { status, content_type, body: Vec<u8> }` (the body base64 in JSON) and `Miss`, and change `serve` to `serve(&self, &Layout, &Request, Miss<'_>) -> Answer<Response>` with its doc comment (design D1); export them from `lib.rs`; round-trip tests for both types; verify with `moon run seams:test`
+- [x] 1.1 In `crates/tailrace-seams/src/projection.rs`, replace `Serving` with `Request { method, path, base }`, `Response { status, content_type, body: Vec<u8> }` (the body base64 in JSON) and `Miss`, and change `serve` to `serve(&self, &Layout, &Request, Miss<'_>) -> Answer<Response>` with its doc comment (design D1); export them from `lib.rs`; round-trip tests for both types; verify with `moon run seams:test`
 - [ ] 1.2 Answer serve absent naming `serving` in the file, image and moon cache profiles, each with a unit test that the miss was not called (seam-contracts spec); verify with `moon run cli:test`
 - [ ] 1.3 Give the fake projection the serve of the seam-fakes spec: a path `<name>@<version>` answered from what it rendered at the layout, a lacked version asked of the miss once, the miss's answer mapped to `200`, `404`, `403` or `502` with its words, every request and miss recorded, and a script to serve none; verify with `moon run fakes:test`
 

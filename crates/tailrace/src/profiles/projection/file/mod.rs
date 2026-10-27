@@ -15,8 +15,9 @@
 //! list, and read nothing (140).
 
 use tailrace_seams::{
-    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Output, Packed,
-    Pinned, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Version,
+    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Miss, Output,
+    Packed, Pinned, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source,
+    Version,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -66,7 +67,7 @@ impl Projection for FileProjection {
         }
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
         Err(not_built("serve", ECOSYSTEM, &FileProjection::source()))
     }
 
@@ -226,7 +227,15 @@ mod tests {
             at: at.display().to_string(),
         };
         assert_eq!(
-            FileProjection.serve(&layout),
+            FileProjection.serve(
+                &layout,
+                &Request {
+                    method: "GET".into(),
+                    path: String::new(),
+                    base: "http://127.0.0.1:7420/o/r/file".into(),
+                },
+                &|_| panic!("the file projection asked the core for a version"),
+            ),
             Err(Not::absent(
                 &FileProjection::source(),
                 "serve of the file projection"
