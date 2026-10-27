@@ -1,13 +1,15 @@
 ---
 number: 17
 title: The key service signer takes a P-256 key by its ARN and reads its standing from its state
-status: proposed
+status: accepted
 date: 2026-10-25
 decision-makers:
 - Chuck Swanberg
 ---
 
 # The key service signer takes a P-256 key by its ARN and reads its standing from its state
+
+Status: accepted by the user on 2026-10-27, on their card.
 
 Deciders: proposed by the-signer-in-a-key-service unit of phase 1's bolt 4, which binds the signer seam to a key in AWS KMS used through the host's own role (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4), after the operator ruled that the offering signer on a build fleet is a key in a key service (rulings, 2026-10-24), for the user to accept with the change.
 Sources: statement clauses 11, 58, 59, 64, 79, 80, 81, 117, B.4, C.7; ADRs 0005, 0013; rules core.1, core.7, core.8, core.19, core.21, core.38; AWS KMS's API reference for Sign, GetPublicKey and DescribeKey, and its table of key states, read 2026-10-25; the change's design, D1 to D4 and D7.
