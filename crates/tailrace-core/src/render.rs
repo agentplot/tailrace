@@ -49,9 +49,12 @@
 //! layout as it was, answered from the host's record of what it holds
 //! (51; design D5, D6). The record is one file per layout under the
 //! checkout's own git directory, rewritten whole by each render (61 to
-//! 63, rule core.20; design D7).
+//! 63, rule core.20; design D7). One render of a layout runs at a time:
+//! each holds the layout's lock beside its record from its first read to
+//! the record's write, so the record always names what the layout holds
+//! (48, 62).
 
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -666,6 +669,13 @@ pub struct LayoutRecord {
     pub refused: Vec<RefusedEntry>,
 }
 
+/// 48, 62: a layout held by one render, an exclusive lock on the host's
+/// file beside its record, let go when this is dropped.
+#[derive(Debug)]
+pub struct LayoutLock {
+    _held: fs::File,
+}
+
 /// 61 to 63: what the host keeps of a checkout's layouts, one file per
 /// layout, readable with a file reader and no tailrace process, holding
 /// no credential (64), and rebuilt by the next sync (rule core.20).
@@ -724,6 +734,25 @@ impl Layouts {
             let _ = fs::remove_file(&beside);
             self.cannot(&path, e)
         })
+    }
+
+    /// 48, 62: the layout of `ecosystem` held by one render at a time:
+    /// `<ecosystem>.lock` beside its record, made where it is not there,
+    /// locked exclusively, waiting while another process or thread holds
+    /// it; unreadable naming the file with the system's words where it
+    /// cannot be made or locked. A sync and a render on a miss each hold
+    /// it from their first read to the record's write.
+    pub fn lock(&self, ecosystem: &Ecosystem) -> Answer<LayoutLock> {
+        fs::create_dir_all(&self.dir).map_err(|e| self.cannot(&self.dir, e))?;
+        let path = self.dir.join(format!("{ecosystem}.lock"));
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .map_err(|e| self.cannot(&path, e))?;
+        file.lock().map_err(|e| self.cannot(&path, e))?;
+        Ok(LayoutLock { _held: file })
     }
 
     /// The record of the layout of `ecosystem`: absent naming its file
@@ -832,7 +861,8 @@ fn ignored(tree: &Path) -> Answer<()> {
 }
 
 /// 47 to 50, 85, 113: the layout `ask` names, rendered from the pins its
-/// policy admits and no other (design D5, D6). Every pin is resolved,
+/// policy admits and no other (design D5, D6), under the layout's lock
+/// from the first pin's read to the record's write. Every pin is resolved,
 /// its claims read and judged before anything is written; a pin is
 /// asked of the store by its own name alone (50, S4). A read its source
 /// answers unreadable or refused is the answer, and nothing is written.
@@ -847,6 +877,7 @@ pub fn render(seams: &Seams, layouts: &Layouts, ask: &RenderAsk) -> Answer<Refre
             format!("projection for {}", ask.ecosystem),
         )
     })?;
+    let _held = layouts.lock(&ask.ecosystem)?;
 
     // 1: every pin read and judged, writing nothing.
     let mut pins: Vec<PinAnswer> = Vec::new();

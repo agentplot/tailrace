@@ -5,6 +5,10 @@ mod common;
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::Duration;
 
 use serde_json::json;
 use tailrace_core::render::Kept;
@@ -1447,11 +1451,16 @@ fn a_layouts_record_is_json_naming_every_version_held_and_refused() {
             }],
         })
     );
-    let entries: Vec<_> = fs::read_dir(checkout.layouts.dir())
+    let mut entries: Vec<_> = fs::read_dir(checkout.layouts.dir())
         .unwrap()
         .map(|e| e.unwrap().file_name().into_string().unwrap())
         .collect();
-    assert_eq!(entries, ["eco.json"], "the record left a file beside it");
+    entries.sort();
+    assert_eq!(
+        entries,
+        ["eco.json", "eco.lock"],
+        "the record left a file beside it and its lock"
+    );
 }
 
 #[test]
@@ -1723,4 +1732,36 @@ fn a_revision_not_landed_is_refused_before_a_lockfile_is_read() {
             .all(|c| c.op != ProjectionOp::Pinned),
         "a lockfile was read"
     );
+}
+
+#[test]
+fn a_second_lock_of_one_layout_waits_until_the_first_is_dropped() {
+    let dir = TempDir::new().unwrap();
+    let layouts = Layouts::open(dir.path().join("git/tailrace/layouts"));
+    let first = layouts.lock(&eco()).unwrap();
+    assert!(layouts.dir().join("eco.lock").is_file());
+    let dropped = Arc::new(AtomicBool::new(false));
+    let (taken, waited) = mpsc::channel();
+    let second = {
+        let (layouts, dropped) = (layouts.clone(), Arc::clone(&dropped));
+        thread::spawn(move || {
+            let held = layouts.lock(&eco()).unwrap();
+            taken.send(dropped.load(Ordering::SeqCst)).unwrap();
+            drop(held);
+        })
+    };
+    assert!(
+        waited.recv_timeout(Duration::from_millis(300)).is_err(),
+        "a second lock was taken while the first was held"
+    );
+    let other = layouts.lock(&Ecosystem::new("other")).unwrap();
+    dropped.store(true, Ordering::SeqCst);
+    drop(first);
+    assert_eq!(
+        waited.recv_timeout(Duration::from_secs(10)),
+        Ok(true),
+        "the second lock was not taken once the first was dropped"
+    );
+    second.join().unwrap();
+    drop(other);
 }
