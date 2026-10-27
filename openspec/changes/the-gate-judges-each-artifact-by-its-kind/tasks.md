@@ -67,4 +67,4 @@ notes' missing verdict. Every cargo and moon command runs inside
 
 ## 7. The whole gate
 
-- [ ] 7.1 Run the check-fast tasks of every touched project: `moon run seams:test fakes:test core:test conformance:test conformance:coverage cli:test site:build root:format root:lint root:adrs`, plus `cli:tools` for the tools layer. The whole layers run in sluice at merge. Once committed, get a passing `sluice exec main`.
+- [x] 7.1 Run the check-fast tasks of every touched project: `moon run seams:test fakes:test core:test conformance:test conformance:coverage cli:test site:build root:format root:lint root:adrs`, plus `cli:tools` for the tools layer. The whole layers run in sluice at merge. Once committed, get a passing `sluice exec main`.
