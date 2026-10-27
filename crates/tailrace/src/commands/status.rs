@@ -148,7 +148,7 @@ pub fn page(
 /// `tailrace serve` started from this binary, detached from the asker's
 /// terminal and its signals, its working directory the state directory,
 /// never a checkout, and not waited for (114).
-fn detached(host: &Host) -> impl FnOnce() -> Answer<()> + '_ {
+pub(crate) fn detached(host: &Host) -> impl FnOnce() -> Answer<()> + '_ {
     move || {
         let unstarted = |said: String| {
             Not::unreadable(
