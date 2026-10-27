@@ -100,7 +100,14 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
         for tag in tags {
             let at = match Landed::check(seams.landing.as_ref(), &ask.branch, &tag.revision) {
                 Ok(at) => at,
-                Err(Not::Refused(r)) if matches!(r.why, Why::NotLanded { .. }) => continue,
+                Err(Not::Refused(r))
+                    if matches!(
+                        r.why,
+                        Why::NotLanded { .. } | Why::NotLandedAsFetched { .. }
+                    ) =>
+                {
+                    continue
+                }
                 Err(Not::Absent(_)) => continue,
                 Err(not) => return Err(not),
             };

@@ -11,6 +11,8 @@ decision-makers:
 
 Status: accepted by the user on 2026-10-25, on their card ("Approved").
 
+Amended by ADR 0021: a missing file, a table the file leaves out and a host naming no `[signing]` bind the given profiles rather than answering absent.
+
 Deciders: proposed by the-laptop unit of phase 1's bolt 2, which lets a person on a laptop publish with the installed binary and a second machine verify what it published (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 2), for the user to accept with the change.
 Sources: statement clauses 58, 59, 62, 64, 65, 79, 80, 82, 83, 92, 116, 118, C.2, C.3, C.5, C.6, C.8, C.10; ADRs 0005, 0008; rules core.1, core.3, core.19, core.21, core.22; sluice's `crates/sluice/src/instance.rs` and `crates/sluice-core/src/policy.rs`; the change's design, D1 to D3.
 

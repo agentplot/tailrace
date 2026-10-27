@@ -84,15 +84,42 @@ the evidence.
 
 ## Channels moved only by proof
 
-A channel such as `beta` or `stable` is a mutable pointer, an OCI tag, to
-a version. A landing on `main` makes a version and attaches it to `beta`;
-`tailrace promote <version> --to stable` moves `stable` to it. Every
-promotion is a signed record that names the one before it: the version
-and its digest, the channel, who or what promoted it, when, and the
-policy evidence. The chain is the ledger, ordered and tamper-evident
-wherever it is held, in a git ref the gate pushes by default, and the same records sit in the registry beside the versions
-they moved. The ledger is the audit trail, and a rollback is a promotion
-to an older version. The direction for `stable` is an independent rebuild by a builder
+A channel such as `beta` or `stable` is a mutable pointer, a name in the
+store, `channel/stable`, to a version. Every component has both with no
+line written, and where the repository declares components a channel
+is its component and its name, `channel/lib/stable` in the store and
+`refs/tailrace/ledger/lib/stable` in the git ref ledger, so two
+components' channels never share a chain (125, C.13, C.14). A landing
+on `main` makes a version, and the gate, once it accepts it, moves
+`beta`; `tailrace promote <version> --to stable` moves `stable` to a
+version `beta` has held, once the version's index carries the gate's
+acceptance and every claim `stable`'s policy requires, and the host's
+signer is one of the channel's promoters, the gate's for `stable`. Every promotion is a
+signed record that names the one before it: the version and its digest,
+the channel, who promoted it, when, and the policy evidence. The chain
+is the ledger, ordered and tamper-evident wherever it is held, in a git
+ref the gate pushes by default, and the same records sit in the
+registry beside the versions they moved; the ledger holds a move before
+the store does, and the store is rewritten from the ledger. The ledger
+is the audit trail. `--from <version>` names where the asker expects the
+channel, and a channel that has moved since is refused naming where it
+is. A wrong move is undone by `tailrace promote --back --to stable`,
+one more promotion, to the version the channel moved from: the version
+left stays accepted and readable by its digest.
+
+**Where each channel is, and why.** On any machine, `tailrace status`
+shows each channel the policy declares at its version or empty, and
+under it the chain of promotions that put it there, newest first: the
+version each moved from, who asked, and when. It reads the channels
+from the ledger, never from a name in the store, so a clone on a
+machine that never published, with no bindings file, answers what the
+machine that promoted answers; where the ledger's remote cannot be
+reached, a chain is shown as this host last fetched it, saying when,
+with the remote's words. What this host published is shown beside it,
+from its own record, and is simply absent on a machine that never
+published.
+
+The direction for `stable` is an independent rebuild by a builder
 the first one does not control, with the shared cache off, whose matching
 digest is one more attestation, and two signatures before `stable` moves.
 
@@ -146,7 +173,8 @@ place; tailrace holds no credential that reaches a target.
 by digest, and when it last converged. `tailrace status` answers, for
 every environment, what it should run, what it runs, and that the two
 differ where they do; an environment whose state cannot be read is
-reported unread with the reason, never as converged. A rollback is a
+reported unread with the reason, never as converged. Until a target is
+read, status answers the environments unread, saying no target is read. A rollback is a
 promotion back to the earlier version, recorded like any other, and the
 same convergence in reverse.
 

@@ -246,7 +246,7 @@ fn pin<'a>(layout: &'a Refreshed, version: &str) -> &'a PinAnswer {
 fn wanting(pin: &PinAnswer) -> (RequiredClaim, Vec<SignerId>) {
     match &pin.answer {
         Err(Not::Refused(r)) => match &r.why {
-            Why::Wanting {
+            Why::VersionWanting {
                 wanting, checked, ..
             } => (wanting.clone(), checked.clone()),
             other => panic!("{:?} was refused for {other:?}", pin.pin),
@@ -552,7 +552,7 @@ fn a_version_refused_naming_its_claim(world: &FakeWorld) {
     match &pin(refreshed(&synced), "1.0.0").answer {
         Err(Not::Refused(r)) => assert_eq!(
             r.why,
-            Why::Wanting {
+            Why::VersionWanting {
                 version: artifact.meta.clone(),
                 index,
                 wanting: acceptance(),
