@@ -400,3 +400,54 @@ fn a_prefix_that_only_begins_like_a_space_is_read() {
     let declared = read(&repo).unwrap();
     assert_eq!(declared.components[1].prefix, "artifact-v");
 }
+
+// Requirement: A component's name names one repository
+
+#[test]
+fn a_component_named_for_a_reserved_space_is_refused_naming_it_and_the_space() {
+    let r = refused_reading(&TWO.replace("\"web\"", "\"cache\""));
+    assert_eq!(r.why, reserved("cache", "name \"cache\"", "cache/"));
+    let r = refused_reading(&TWO.replace("\"lib\"", "\"artifact\""));
+    assert_eq!(
+        r.why,
+        reserved("artifact", "name \"artifact\"", "artifact/")
+    );
+}
+
+#[test]
+fn a_component_named_as_the_undeclared_one_is_refused_naming_it() {
+    let r = refused_reading(&TWO.replace("\"web\"", "\"repository\""));
+    let Why::Reserved { component, .. } = &r.why else {
+        panic!("refused for {:?}", r.why)
+    };
+    assert_eq!(component.as_str(), "repository");
+    assert!(r.why.to_string().contains("component repository"));
+}
+
+#[test]
+fn a_component_whose_name_holds_a_slash_or_a_colon_is_refused_naming_it() {
+    for name in ["web/app", "web:app"] {
+        let r = refused_reading(&TWO.replace("\"web\"", &format!("\"{name}\"")));
+        let Why::Reserved {
+            component, what, ..
+        } = &r.why
+        else {
+            panic!("{name} refused for {:?}", r.why)
+        };
+        assert_eq!(component.as_str(), name);
+        assert_eq!(what, &format!("name \"{name}\""));
+    }
+}
+
+#[test]
+fn two_components_whose_names_differ_only_by_case_are_refused_naming_both() {
+    let r = refused_reading(&TWO.replace("\"web\"", "\"Lib\""));
+    assert_eq!(
+        r.why,
+        Why::DeclaredTwice {
+            first: ComponentName::new("lib"),
+            second: ComponentName::new("Lib"),
+            what: "name once lowercased, \"lib\" and \"Lib\"".into(),
+        }
+    );
+}

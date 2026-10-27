@@ -79,7 +79,11 @@ impl Default for Rule {
 /// component and the output (design D9). A component's prefix, or the
 /// rule's where none is declared, beginning with a space of
 /// [`RESERVED`] is refused naming the component, the prefix and the
-/// space (138).
+/// space (138). A component named `artifact`, `cache` or `repository`, or
+/// whose name holds a `/` or a `:`, is refused naming it and what it
+/// would enter, and two whose names are one once lowercased are refused
+/// naming both, so every declared component has a repository of its own
+/// on every store (125, C.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declared {
     pub rule: Rule,
@@ -140,10 +144,10 @@ impl Declared {
     /// 123: the components and the rule the policy file declares at the
     /// landed revision; unreadable naming the file and the revision, with
     /// the parser's words, when it is not well formed (58, 59); refused
-    /// [`Why::DeclaredTwice`] when two components share a name or a
-    /// prefix, [`Why::Reserved`] when a prefix enters a space of
-    /// [`RESERVED`], and [`Why::Said`] when an output is packed as
-    /// `notes`.
+    /// [`Why::DeclaredTwice`] when two components share a name, once
+    /// lowercased, or a prefix, [`Why::Reserved`] when a prefix enters a
+    /// space of [`RESERVED`] or a name would name no repository of its
+    /// own, and [`Why::Said`] when an output is packed as `notes`.
     pub fn read(history: &History, landed: &Landed) -> Answer<Declared> {
         let what = format!("{POLICY_FILE} at {}", landed.revision());
         let unreadable = |said: String| Not::unreadable(&Source::history(LOCAL), &what, Some(said));
@@ -224,6 +228,38 @@ impl Declared {
             None => Ok(()),
         };
 
+        // C.1, 125: a declared component's name is one path segment of
+        // its own, apart from the store's spaces and the undeclared
+        // component's, so every store can place what it names (design
+        // D14).
+        let own_repository = |name: &ComponentName| {
+            let text = name.as_str();
+            let space = if text.contains('/') {
+                "a repository path of more than one part".to_string()
+            } else if text.contains(':') {
+                "a version's store name, `<component>:<tag>`".to_string()
+            } else if text == REPOSITORY {
+                "the undeclared component's repository".to_string()
+            } else {
+                match RESERVED[..2]
+                    .iter()
+                    .find(|space| space.strip_suffix('/') == Some(text))
+                {
+                    Some(space) => space.to_string(),
+                    None => return Ok(()),
+                }
+            };
+            Err(Not::refused(
+                &Source::history(LOCAL),
+                Why::Reserved {
+                    component: name.clone(),
+                    what: format!("name \"{name}\""),
+                    space,
+                },
+                None,
+            ))
+        };
+
         if file.component.is_empty() {
             let name = ComponentName::new(REPOSITORY);
             in_space(&name, &rule.prefix)?;
@@ -246,6 +282,7 @@ impl Declared {
         let mut projections = BTreeMap::new();
         for raw in file.component {
             in_space(&raw.name, &raw.prefix)?;
+            own_repository(&raw.name)?;
             let packed_by = ecosystems(raw.projections);
             undeclared(&raw.name, &raw.outputs, &packed_by)?;
             reserved(&raw.name, &packed_by)?;
@@ -264,6 +301,11 @@ impl Declared {
                     format!("name \"{}\"", raw.name)
                 } else if other.prefix == raw.prefix {
                     format!("prefix \"{}\"", raw.prefix)
+                } else if other.name.as_str().to_lowercase() == raw.name.as_str().to_lowercase() {
+                    format!(
+                        "name once lowercased, \"{}\" and \"{}\"",
+                        other.name, raw.name
+                    )
                 } else {
                     continue;
                 };
