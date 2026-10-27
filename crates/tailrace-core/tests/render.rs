@@ -6,16 +6,17 @@ mod common;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Barrier};
 use std::thread;
 use std::time::Duration;
 
 use serde_json::json;
 use tailrace_core::render::Kept;
 use tailrace_core::{
-    artifact_name, judge, layout_policy_body, locate, own_policy, place, policy_for, readers,
+    artifact_name, judge, layout_policy_body, locate, miss, own_policy, place, policy_for, readers,
     refresh, render, sync_checkout, Carried, CheckoutAsk, HeldEntry, HeldPin, Landed, Layouts,
-    Located, Own, PinAnswer, PolicyOf, Provenance, Refresh, RenderAsk, Under, ARTIFACT, CACHE,
+    Located, MissAsk, Own, PinAnswer, PolicyOf, Provenance, Refresh, RenderAsk, Under, ARTIFACT,
+    CACHE,
 };
 use tailrace_fakes::{FakeProjection, Fakes, Fault, PolicyOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
@@ -1764,4 +1765,323 @@ fn a_second_lock_of_one_layout_waits_until_the_first_is_dropped() {
     );
     second.join().unwrap();
     drop(other);
+}
+
+impl Checkout {
+    /// What a miss in this checkout asks for `pin`, at `when`, on a host
+    /// trusting `trusted`.
+    fn miss_ask(&self, pin: Pinned, when: u64, trusted: Vec<NamedSigner>) -> MissAsk {
+        MissAsk {
+            branch: Branch::new("main"),
+            revision: Revision::new(LANDED),
+            ecosystem: eco(),
+            tree: self.tree.clone(),
+            pin,
+            trusted,
+            when,
+        }
+    }
+
+    /// `version` of `pkg` published to the store, accepted by the gate
+    /// where `accepted`.
+    fn publish(&self, version: &str, accepted: bool) -> Located {
+        let located = published(&self.fakes.store, "pkg", version);
+        if accepted {
+            let gates = signed(&located.index, ClaimKind::Acceptance, json!(null), GATE);
+            self.fakes.store.attach(&located.index, &gates).unwrap();
+        }
+        located
+    }
+
+    /// The layout rendered holding `pkg 1.2.0` under the consumer's own
+    /// policy requiring acceptance, its record's bytes, and how many
+    /// store operations had been asked.
+    fn holding_one(&self) -> (Vec<u8>, usize) {
+        self.publish("1.2.0", true);
+        self.landed(vec![acceptance()], None);
+        render(
+            &self.fakes.seams(),
+            &self.layouts,
+            &self.ask(&[pin("pkg", "1.2.0")], vec![acceptance()], 1),
+        )
+        .unwrap();
+        let record = fs::read(self.layouts.path(&eco())).unwrap();
+        (record, self.fakes.store.calls().len())
+    }
+
+    /// The layout and its record as `holding_one` left them.
+    fn unchanged(&self, record: &[u8]) {
+        assert_eq!(
+            fs::read(self.layouts.path(&eco())).unwrap(),
+            record,
+            "the record was written"
+        );
+        assert_eq!(
+            self.renders(),
+            [vec!["pkg 1.2.0".to_string()]],
+            "the layout was rendered"
+        );
+    }
+}
+
+#[test]
+fn a_miss_the_policy_admits_is_rendered_beside_what_the_layout_holds_reading_it_alone() {
+    let checkout = Checkout::new();
+    let (_, since) = checkout.holding_one();
+    let held = miss(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.miss_ask(pin("pkg", "1.1.0"), 2, vec![]),
+    )
+    .unwrap();
+    assert_eq!(
+        held,
+        HeldPin {
+            index: checkout.pkg.index.clone(),
+            artifact: checkout.pkg.artifact.digest.clone(),
+            expired: vec![],
+        }
+    );
+    assert_eq!(
+        checkout.renders(),
+        [
+            vec!["pkg 1.2.0".to_string()],
+            vec!["pkg 1.2.0".to_string(), "pkg 1.1.0".to_string()]
+        ]
+    );
+    let record = checkout.layouts.read(&eco()).unwrap();
+    let versions: Vec<&str> = record.held.iter().map(|h| h.version.as_str()).collect();
+    assert_eq!(versions, ["1.2.0", "1.1.0"]);
+    assert_eq!(
+        record.held[1].policy,
+        own().unwrap(),
+        "judged under another"
+    );
+    assert_eq!(record.rendered_at, 2);
+
+    let asked = checkout.fakes.store.calls().split_off(since);
+    assert!(!asked.is_empty(), "the store was asked nothing");
+    let ours = [
+        "artifact/eco/pkg@1.1.0".to_string(),
+        checkout.pkg.index.to_string(),
+        checkout.pkg.artifact.digest.to_string(),
+    ];
+    for call in asked {
+        let given = call.given.to_string();
+        assert!(
+            ours.iter().any(|o| given.contains(o)),
+            "the store was asked about another version: {:?} {given}",
+            call.op
+        );
+    }
+}
+
+#[test]
+fn a_version_the_record_holds_is_answered_held_and_nothing_is_read() {
+    let checkout = Checkout::new();
+    let (record, since) = checkout.holding_one();
+    let landing = checkout.fakes.landing.calls().len();
+    let held = miss(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.miss_ask(pin("pkg", "1.2.0"), 2, vec![]),
+    )
+    .unwrap();
+    assert_eq!(
+        held.index,
+        checkout.layouts.read(&eco()).unwrap().held[0].index
+    );
+    assert_eq!(
+        checkout.fakes.store.calls().len(),
+        since,
+        "the store was asked"
+    );
+    assert_eq!(
+        checkout.fakes.landing.calls().len(),
+        landing,
+        "the landing was asked"
+    );
+    checkout.unchanged(&record);
+}
+
+#[test]
+fn a_miss_the_policy_refuses_names_the_claim_and_changes_nothing() {
+    let checkout = Checkout::new();
+    let (record, _) = checkout.holding_one();
+    checkout.publish("1.3.0", false);
+    match miss(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.miss_ask(pin("pkg", "1.3.0"), 2, vec![]),
+    ) {
+        Err(Not::Refused(r)) => match r.why {
+            Why::VersionWanting {
+                version, wanting, ..
+            } => {
+                assert_eq!(version, meta(ECO, "pkg", "1.3.0"));
+                assert_eq!(wanting, acceptance());
+            }
+            why => panic!("refused for {why:?}"),
+        },
+        other => panic!("a version wanting acceptance answered {other:?}"),
+    }
+    checkout.unchanged(&record);
+}
+
+#[test]
+fn a_miss_the_store_does_not_name_is_absent_naming_it_and_changes_nothing() {
+    let checkout = Checkout::new();
+    let (record, _) = checkout.holding_one();
+    match miss(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.miss_ask(pin("pkg", "9.9.9"), 2, vec![]),
+    ) {
+        Err(Not::Absent(a)) => assert_eq!(a.what, "name artifact/eco/pkg@9.9.9"),
+        other => panic!("a version the store does not name answered {other:?}"),
+    }
+    checkout.unchanged(&record);
+}
+
+#[test]
+fn a_miss_while_the_store_is_unreachable_is_unreadable_in_its_words() {
+    let checkout = Checkout::new();
+    let (record, _) = checkout.holding_one();
+    checkout.fakes.store.fault(
+        StoreOp::Resolve,
+        Fault::Unreadable("connection refused".into()),
+        Times::UntilHealed,
+    );
+    match miss(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.miss_ask(pin("pkg", "1.1.0"), 2, vec![]),
+    ) {
+        Err(Not::Unreadable(u)) => assert_eq!(u.said.as_deref(), Some("connection refused")),
+        other => panic!("an unreachable store answered {other:?}"),
+    }
+    checkout.unchanged(&record);
+}
+
+#[test]
+fn a_miss_is_judged_under_the_publishers_policy_through_a_trusted_signer() {
+    let checkout = Checkout::new();
+    let revision = Revision::new(LANDED);
+    checkout.fakes.landing.land(&Branch::new("main"), &revision);
+    checkout.fakes.policy.require_at(
+        &revision,
+        Audience::Layout,
+        Required::Layout {
+            claims: vec![acceptance()],
+            given: true,
+            signers: vec![],
+        },
+    );
+    let located = checkout.publish("1.3.0", true);
+    let policy = publishers(&located.index, &[acceptance(), provenance()], GATE);
+    checkout
+        .fakes
+        .store
+        .attach(&located.index, &policy)
+        .unwrap();
+    let trusted = trusts(&[GATE, HOST]);
+    let ask = checkout.miss_ask(pin("pkg", "1.3.0"), 1, trusted.clone());
+
+    match miss(&checkout.fakes.seams(), &checkout.layouts, &ask) {
+        Err(Not::Refused(r)) => match r.why {
+            Why::VersionWanting { wanting, .. } => {
+                assert_eq!(wanting, as_trusted(provenance(), &[HOST]));
+            }
+            why => panic!("refused for {why:?}"),
+        },
+        other => panic!("a version wanting the publisher's provenance answered {other:?}"),
+    }
+    assert!(
+        !checkout.layouts.path(&eco()).exists(),
+        "a record was written"
+    );
+
+    let made = signed(
+        &located.artifact.digest,
+        ClaimKind::Provenance,
+        json!(null),
+        HOST,
+    );
+    checkout
+        .fakes
+        .store
+        .attach(&located.artifact.digest, &made)
+        .unwrap();
+    miss(&checkout.fakes.seams(), &checkout.layouts, &ask).unwrap();
+    let record = checkout.layouts.read(&eco()).unwrap();
+    assert_eq!(record.held.len(), 1);
+    assert_eq!(
+        record.held[0].policy,
+        PolicyOf::Publisher {
+            revision: Revision::new("p1b11s4")
+        }
+    );
+    assert_eq!(record.policy, Under::Publisher);
+    assert_eq!(checkout.renders(), [vec!["pkg 1.3.0".to_string()]]);
+}
+
+#[test]
+fn two_misses_at_once_on_two_threads_leave_both_held() {
+    let dir = TempDir::new().unwrap();
+    let tree = dir.path().join("checkout");
+    fs::create_dir_all(&tree).unwrap();
+    let layouts = Layouts::open(dir.path().join("git/tailrace/layouts"));
+    let together = Arc::new(Barrier::new(2));
+    let threads: Vec<_> = ["1.2.0", "1.3.0"]
+        .into_iter()
+        .map(|version| {
+            let (tree, layouts, together) = (tree.clone(), layouts.clone(), Arc::clone(&together));
+            thread::spawn(move || {
+                // Each thread's fakes hold the same versions at the same
+                // digests; the layout and its record are the one on disk.
+                let fakes = Fakes::new();
+                let revision = Revision::new(LANDED);
+                fakes.landing.land(&Branch::new("main"), &revision);
+                fakes.policy.require_at(
+                    &revision,
+                    Audience::Layout,
+                    Required::Layout {
+                        claims: vec![acceptance()],
+                        given: false,
+                        signers: vec![],
+                    },
+                );
+                for v in ["1.2.0", "1.3.0"] {
+                    let located = published(&fakes.store, "pkg", v);
+                    let gates = signed(&located.index, ClaimKind::Acceptance, json!(null), GATE);
+                    fakes.store.attach(&located.index, &gates).unwrap();
+                }
+                let mut fakes = fakes;
+                fakes.projection(&eco());
+                let ask = MissAsk {
+                    branch: Branch::new("main"),
+                    revision,
+                    ecosystem: eco(),
+                    tree,
+                    pin: pin("pkg", version),
+                    trusted: vec![],
+                    when: 1,
+                };
+                together.wait();
+                miss(&fakes.seams(), &layouts, &ask).map(|_| ())
+            })
+        })
+        .collect();
+    for thread in threads {
+        assert_eq!(thread.join().unwrap(), Ok(()));
+    }
+    let mut held: Vec<String> = layouts
+        .read(&eco())
+        .unwrap()
+        .held
+        .into_iter()
+        .map(|h| h.version.to_string())
+        .collect();
+    held.sort();
+    assert_eq!(held, ["1.2.0", "1.3.0"]);
 }
