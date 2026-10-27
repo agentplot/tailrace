@@ -11,10 +11,10 @@ use tailrace_core::{
 };
 use tailrace_fakes::{PolicyOp, ProjectionOp};
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, BuildId, CacheEntry, ClaimKind, ComponentName, Contents,
-    Digest, Ecosystem, Held, Layout, Name, NamedSigner, Not, Outcome, Output, OutputName, Packed,
-    Pinned, Projection, Range, Refusal, Rendered, Required, RequiredClaim, Requirement, Revision,
-    Serving, SignerId, Store, Verdict, Version, Why,
+    Answer, Artifact, AskedOf, Audience, Branch, BuildId, CacheEntry, ClaimKind, ComponentName,
+    Contents, Digest, Ecosystem, Held, Layout, Name, NamedSigner, Not, Outcome, Output, OutputName,
+    Packed, Pinned, Projection, Range, Refusal, Rendered, Required, RequiredClaim, Requirement,
+    Revision, Serving, SignerId, Store, Verdict, Version, Why,
 };
 
 use crate::core::publish::{one, passing, version_of};
@@ -286,6 +286,7 @@ fn acceptance() -> Required {
                 kinds: vec![ClaimKind::Provenance],
                 checks: vec![],
             }],
+            asked_of: AskedOf::Every,
         }],
     }
 }

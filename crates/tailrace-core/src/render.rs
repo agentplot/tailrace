@@ -58,9 +58,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents, Digest,
-    Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned, Policy,
-    Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
+    Answer, Artifact, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents,
+    Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned,
+    Policy, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
@@ -319,6 +319,7 @@ fn given(own: Option<&Own>, trusted: &[NamedSigner]) -> (PolicyOf, Vec<RequiredC
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: Vec::new(),
+                asked_of: AskedOf::Every,
             }],
         ),
     };
@@ -429,7 +430,7 @@ fn satisfies(told: &Told, wanted: &RequiredClaim) -> bool {
 /// satisfied by an attestation, or a verdict carried in a provenance
 /// among them, that verify's telling says a signer the claim names made
 /// and may make. The first that none satisfies is refused
-/// [`Why::Wanting`], naming it and the signers checked (99). A claim by an
+/// [`Why::VersionWanting`], naming it and the signers checked (99). A claim by an
 /// expired signer counts, and the answer names the expired signers whose
 /// claims counted (81, 117). A signer that cannot say is the outer
 /// answer.
@@ -497,7 +498,7 @@ pub fn judge(
             None => {
                 return Ok(Err(Not::refused(
                     &Source::new(Seam::Policy, BOUND),
-                    Why::Wanting {
+                    Why::VersionWanting {
                         version: located.artifact.meta.clone(),
                         index: located.index.clone(),
                         wanting: wanted.clone(),
@@ -895,7 +896,7 @@ fn refused_entry(pin: &PinAnswer) -> Option<RefusedEntry> {
     let Err(Not::Refused(refusal)) = &pin.answer else {
         return None;
     };
-    let Why::Wanting { index, wanting, .. } = &refusal.why else {
+    let Why::VersionWanting { index, wanting, .. } = &refusal.why else {
         return None;
     };
     Some(RefusedEntry {
