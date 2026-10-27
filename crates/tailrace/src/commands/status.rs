@@ -23,13 +23,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Args;
 use tailrace_core::{
     overview, overview_unbound, Channel, ChannelStatus, Channels, EnvironmentCounts, History, Kept,
-    Overview, OverviewAsk, RepositoryName, Status,
+    Overview, OverviewAsk, Status,
 };
 use tailrace_seams::{
     Answer, Branch, ComponentName, Digest, Moves, Not, Promotion, Read, Seam, Source,
 };
 
-use crate::bindings;
 use crate::commands::serve::{self, host, host::Host};
 use crate::{render, Binding};
 
@@ -126,38 +125,18 @@ pub(crate) fn overview_in(
 
 /// 114, 132: the address of the page of the repository whose checkout is
 /// at `checkout`, on the host's serving process at `address`: the
-/// repository named by its landing's remote's owner and name and named
+/// repository its landing's remote names ([`host::repository_of`]) named
 /// to `host`, then the process found at `address`, or `start` run where
-/// none answers. Absent where the landing has no remote or the remote no
-/// address, and unreadable naming the remote and its address where it
-/// ends in no owner and name, writing nothing.
+/// none answers. Where the remote names no repository, that answer,
+/// writing nothing.
 pub fn page(
     checkout: &Path,
     host: &Host,
     address: SocketAddr,
     start: impl FnOnce() -> Answer<()>,
 ) -> Answer<String> {
-    let remote = bindings::landing_remote(&host.config, host.home.as_deref(), checkout)?
-        .ok_or_else(|| {
-            Not::absent(
-                &Source::history(checkout.display()),
-                "remote of the landing, which neither [landing] nor the repository names",
-            )
-        })?;
+    let repository = host::repository_of(host, checkout)?;
     let history = History::open(checkout)?;
-    let url = history.remote_url(&remote)?.ok_or_else(|| {
-        Not::absent(
-            &Source::history(&remote),
-            format!("address of the remote {remote}"),
-        )
-    })?;
-    let repository = RepositoryName::from_remote(&url).ok_or_else(|| {
-        Not::unreadable(
-            &Source::history(&remote),
-            format!("an owner and a name in the address of the remote {remote}, {url}"),
-            None,
-        )
-    })?;
     let root = history.workdir().unwrap_or_else(|| history.common_dir());
     host::name(host, &repository, &root)?;
     host::find_or_start(address, start)?;
