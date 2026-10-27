@@ -26,7 +26,7 @@ use tailrace_core::{
     sync_checkout, CheckoutAsk, CheckoutSynced, History, Layouts, PinAnswer, PolicyOf, Refresh,
     Under, LOCAL,
 };
-use tailrace_seams::{Answer, Branch, Ecosystem, Not, Source};
+use tailrace_seams::{Answer, Branch, Ecosystem, Not, Seam, Source};
 
 use crate::{render, Binding};
 
@@ -83,6 +83,10 @@ fn ask(args: &SyncArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Checkout
         tree,
         when: now(),
         trusted: binding.trust.clone(),
+        repository: Err(Not::absent(
+            &Source::new(Seam::Host, "sync"),
+            "repository of the checkout, which sync does not name yet",
+        )),
     };
     sync_checkout(&binding.seams, &Layouts::at(&history), &ask)
 }

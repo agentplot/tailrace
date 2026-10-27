@@ -13,13 +13,13 @@ use tailrace::{run, Binding, Cli};
 use tailrace_core::{
     accept, answer_json, artifact_name, in_force, promote, publish, push, sync_checkout, write,
     AcceptAsk, Ask, CheckoutAsk, Entry, History, InForceAsk, Judged, Kept, Layouts, Moved,
-    PromoteAsk, PushAsk, To, ToldBy,
+    PromoteAsk, PushAsk, RepositoryName, To, ToldBy,
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
     Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
-    Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
+    Manifest, NamedSigner, Not, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
     RequiredClaim, Revision, Seam, Signer, SignerId, Source, Store, Verdict, Version,
 };
 use tempfile::TempDir;
@@ -387,6 +387,10 @@ fn sync_with_one_entry_gone_prints_one_rendered_and_one_absent_and_exits_0() {
             tree: history.workdir().unwrap(),
             when: 0,
             trusted: vec![],
+            repository: Ok(RepositoryName {
+                owner: "agentplot".into(),
+                name: "tailrace".into(),
+            }),
         },
     );
     assert_eq!(printed, answer_json(&core));
@@ -546,6 +550,10 @@ fn sync_with_a_version_refused_prints_the_cores_answer_and_exits_1() {
             tree: history.workdir().unwrap(),
             when,
             trusted: vec![],
+            repository: Err(Not::absent(
+                &Source::new(Seam::Host, "sync"),
+                "repository of the checkout, which sync does not name yet",
+            )),
         },
     );
     assert_eq!(printed, answer_json(&core));
