@@ -66,6 +66,17 @@
 //! `require` keeps its order, which fixes the first claim found wanting
 //! (58).
 //!
+//! Each claim `[acceptance]` or a channel requires, the given channels'
+//! acceptance among them, is answered with the artifacts it is asked of,
+//! read from its kind alone (134): a provenance, an acceptance and a
+//! promotion of every artifact, the publisher's word and the claims about
+//! the version as a whole, which a claim on the index satisfies (7); a
+//! verdict, a test, a review, a rebuild and a carried claim of a built
+//! artifact alone, since a rendered artifact has no build. `[layout]`'s
+//! claims are asked of every artifact. C.10 writes no form for it, so the
+//! file gains no key: an entry naming any key besides `kind`, `check` and
+//! `signers` is unreadable.
+//!
 //! The given channels are a fragment in this same form, `givens.toml`
 //! beside this module, laid beneath the repository's file as one table in
 //! force (C.10): `[channels.<name>]` of the fragment lies beneath the
@@ -1084,13 +1095,15 @@ fn after(
     Ok(first)
 }
 
-/// The claims `entries` require, each signer as `[signers]` names it,
-/// for `table`; the words that make the file unreadable where one names
-/// a signer it does not hold.
+/// The claims `entries` require, each signer as `[signers]` names it and
+/// each asked of the artifacts `asked` answers for its kind, for `table`;
+/// the words that make the file unreadable where one names a signer it
+/// does not hold.
 fn claims_of(
     table: &str,
     entries: &[Entry],
     signers: &BTreeMap<String, NamedSigner>,
+    asked: fn(ClaimKind) -> AskedOf,
 ) -> Result<Vec<RequiredClaim>, String> {
     let mut claims = Vec::new();
     for entry in entries {
@@ -1107,10 +1120,36 @@ fn claims_of(
             kind: entry.kind,
             check: entry.check.clone(),
             signers: named,
-            asked_of: AskedOf::Every,
+            asked_of: asked(entry.kind),
         });
     }
     Ok(claims)
+}
+
+/// 134, C.10: the artifacts a claim of `kind` that acceptance or a
+/// channel requires is asked of, read from its kind alone until the file
+/// writes a form for it: the publisher's provenance, and the claims about
+/// the version as a whole, which a claim on the index satisfies (7), of
+/// every artifact; a build's claims, and a claim carried from one, of a
+/// built artifact alone, since a rendered artifact has no build.
+fn asked_of(kind: ClaimKind) -> AskedOf {
+    match kind {
+        ClaimKind::Provenance
+        | ClaimKind::Acceptance
+        | ClaimKind::Promotion
+        | ClaimKind::LayoutPolicy => AskedOf::Every,
+        ClaimKind::Verdict
+        | ClaimKind::Test
+        | ClaimKind::Review
+        | ClaimKind::Rebuild
+        | ClaimKind::Carried => AskedOf::Built,
+    }
+}
+
+/// A layout's claims, each asked of every artifact: a layout holds one
+/// ecosystem's artifact and judges no artifact by how it was made.
+fn of_every(_: ClaimKind) -> AskedOf {
+    AskedOf::Every
 }
 
 /// `signers` by name.
@@ -1178,7 +1217,7 @@ fn channel_policy(
     resolved: &Resolved,
     signers: &BTreeMap<String, NamedSigner>,
 ) -> Result<Required, String> {
-    let claims = claims_of(&resolved.table, &resolved.require, signers)?;
+    let claims = claims_of(&resolved.table, &resolved.require, signers, asked_of)?;
     let (claims, promoted_by) = match resolved.origin {
         Origin::Given | Origin::Made => {
             let gate = may_claim(signers.values(), ClaimKind::Acceptance);
@@ -1345,10 +1384,13 @@ impl Policy for PolicyFile {
             }
             // A layout's claims name its signers as written: the given
             // gate is for publishing, not reading (118, C.10).
-            Some(table) if *audience == Audience::Layout => {
-                Some(claims_of(name, &table.require, &by_name(&written)).map_err(unreadable)?)
+            Some(table) if *audience == Audience::Layout => Some(
+                claims_of(name, &table.require, &by_name(&written), of_every)
+                    .map_err(unreadable)?,
+            ),
+            Some(table) => {
+                Some(claims_of(name, &table.require, &signers, asked_of).map_err(unreadable)?)
             }
-            Some(table) => Some(claims_of(name, &table.require, &signers).map_err(unreadable)?),
             None => None,
         };
         if gateless && *audience == Audience::Acceptance {
