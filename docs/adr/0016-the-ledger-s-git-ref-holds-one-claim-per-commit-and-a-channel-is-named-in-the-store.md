@@ -1,7 +1,7 @@
 ---
 number: 16
 title: The ledger's git ref holds one claim per commit, and a channel is named in the store
-status: accepted
+status: proposed
 date: 2026-10-25
 decision-makers:
 - Chuck Swanberg
@@ -9,7 +9,7 @@ decision-makers:
 
 # The ledger's git ref holds one claim per commit, and a channel is named in the store
 
-Status: accepted by the user on 2026-10-27, on their card.
+Status: accepted by the user on 2026-10-27, on their card; its amendment below is proposed to the user on 2026-10-27, as `briefs.15` has it, and the record stands accepted as before until they answer.
 
 Amendment (proposed to the user on 2026-10-27, on their card; accepted only on their yes): the binding of `[ledger]` this record decided, `tailrace promote` needing `[ledger]` and a file naming none binding a ledger that answers absent, is superseded by record 0021 and clause 118 as amended at `agentplot/blueprints` b64d367, under which a file naming no `[ledger]` binds the git ref on the landing's remote. The ruling that put the component into the ledger ref and the store name was `agentplot/blueprints` 7749369, not 67f95da. The rest of the record stands as accepted.
 
