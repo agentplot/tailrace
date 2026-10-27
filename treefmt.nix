@@ -31,6 +31,11 @@ _: {
     ".moon/cache/**"
     # Claude Code rewrites it in its own layout when a setting changes.
     ".claude/settings.json"
+    # The herdr plugin's jq programs: no formatter or linter for jq in the
+    # toolchain; plugin-herdr's tests run every program under sh and dash.
+    "plugins/herdr/lib/*.jq"
+    # The herdr plugin's documents and frames, compared byte for byte.
+    "plugins/herdr/tests/docs/**"
   ];
 
   programs.rustfmt.enable = true;
@@ -50,6 +55,9 @@ _: {
   settings.formatter.shellcheck.priority = 1;
   settings.formatter.shfmt.pipeline = "shell";
   settings.formatter.shfmt.priority = 2;
+  # The herdr plugin's stand-ins: #!/bin/sh scripts with no extension.
+  settings.formatter.shellcheck.includes = [ "plugins/herdr/tests/fake/*" ];
+  settings.formatter.shfmt.includes = [ "plugins/herdr/tests/fake/*" ];
 
   # .prototools is TOML and .versionrc convco's YAML, under names with no
   # extension.

@@ -1,0 +1,12 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+# The herdr plugin: POSIX sh scripts, with jq programs.
+language: 'bash'
+layer: 'application'
+
+tasks:
+  # herdr-plugin.toml as herdr will read it.
+  manifest:
+    command: 'sh tests/manifest.sh'
+    inputs: ['herdr-plugin.toml', 'bin/**/*', 'tests/manifest.sh', '/devenv.nix', '/devenv.lock']
+    tags: [check-fast]

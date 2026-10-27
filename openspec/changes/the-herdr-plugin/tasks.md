@@ -11,7 +11,7 @@ landed on `main` and this bolt has taken it: the pane reads its
 
 ## 1. The plugin's project and gate
 
-- [ ] 1.1 Add `plugins/herdr/` with `herdr-plugin.toml`, `bin/open.sh`, an empty-frame `bin/status.sh`, `lib/common.sh`, `lib/words.jq`, `README.md` and `moon.yml` as design D1 and D7 have them; add `plugin-herdr` to `.moon/workspace.yml`; add `pkgs.dash` and `pkgs.curl` to `devenv.nix`; add the jq and fixture excludes, each with its reason, and the stand-ins' shellcheck and shfmt includes to `treefmt.nix`; add `tests/manifest.sh` (spec `herdr-plugin`, the plugin is kept outside the core). Verify `devenv shell -- moon run plugin-herdr:manifest` passes and `devenv shell -- treefmt --ci` passes.
+- [x] 1.1 Add `plugins/herdr/` with `herdr-plugin.toml`, `bin/open.sh`, an empty-frame `bin/status.sh`, `lib/common.sh`, `lib/words.jq`, `README.md` and `moon.yml` as design D1 and D7 have them; add `plugin-herdr` to `.moon/workspace.yml`; add `pkgs.dash` and `pkgs.curl` to `devenv.nix`; add the jq and fixture excludes, each with its reason, and the stand-ins' shellcheck and shfmt includes to `treefmt.nix`; add `tests/manifest.sh` (spec `herdr-plugin`, the plugin is kept outside the core). Verify `devenv shell -- moon run plugin-herdr:manifest` passes and `devenv shell -- treefmt --ci` passes.
 
 ## 2. The documents are the binary's
 

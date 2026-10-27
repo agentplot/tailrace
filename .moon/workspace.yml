@@ -21,6 +21,7 @@ projects:
   cli: 'crates/tailrace'
   site: 'site'
   plugin-claude-code: 'plugins/claude-code'
+  plugin-herdr: 'plugins/herdr'
   root: '.'
 
 # --affected compares against the merge-base with main.
