@@ -1,13 +1,15 @@
 ---
 number: 21
 title: A host with no bindings file is bound to the given profiles
-status: proposed
+status: accepted
 date: 2026-10-25
 decision-makers:
 - Chuck Swanberg
 ---
 
 # A host with no bindings file is bound to the given profiles
+
+Status: accepted by the user on 2026-10-27, on their card.
 
 Deciders: proposed by the a-host-with-no-bindings-file-is-bound-to-the-defaults unit of phase 1's bolt 4, which lets a person on a laptop publish with nothing written (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4), for the user to accept with the change.
 Sources: statement clauses 58, 108, 118, C.2, C.5, C.6, C.8, C.10, C.13, as amended at blueprints ab0dfea, 85bbf54, 061bfa8, b64d367 and 53f6d44; the design agent's batch 18 rulings; ADR 0013; rules core.1, core.7, core.14, core.19, core.21, core.22, core.32; the change's design, D1 to D7a.

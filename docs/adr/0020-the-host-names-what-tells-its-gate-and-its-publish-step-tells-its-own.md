@@ -1,13 +1,15 @@
 ---
 number: 20
 title: The host names what tells its gate, and its publish step tells its own
-status: proposed
+status: accepted
 date: 2026-10-25
 decision-makers:
 - Chuck Swanberg
 ---
 
 # The host names what tells its gate, and its publish step tells its own
+
+Status: accepted by the user on 2026-10-27, on their card.
 
 Deciders: proposed by the-publishs-host-tells-the-gate unit of phase 1's bolt 4, which lets a laptop that is both the offerer and the gate move `beta` on every landing in the one run of `tailrace publish` (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4), for the user to accept with the change.
 Sources: statement clauses 20, 58, 59, 95, 108, 118, 130, C.10, C.16; ADRs 0013, 0016, 0019; rules core.1, core.4, core.10, core.14, core.19; the change's design, D1 to D3.
