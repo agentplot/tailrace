@@ -47,4 +47,4 @@
 
 ## 8. End to end
 
-- [ ] 8.1 Add a core test that publishes a component of two outputs over the fakes and then finds each artifact with `locate` by a pin of its name and version alone, landing on the index the publish answered with the layout-policy claim on it, and lists both names' versions through `versions`. Verify: `devenv shell -- moon run tailrace-core:test` passes, and the whole gate, `devenv shell -- moon run ':#check-fast' ':#check-tools'`, passes.
+- [x] 8.1 Add a core test that publishes a component of two outputs over the fakes and then finds each artifact with `locate` by a pin of its name and version alone, landing on the index the publish answered with the layout-policy claim on it, and lists both names' versions through `versions`. Verify: `devenv shell -- moon run tailrace-core:test` passes, and the whole gate, `devenv shell -- moon run ':#check-fast' ':#check-tools'`, passes.
