@@ -3,11 +3,16 @@
 Every version now carries its notes, an artifact the version rule renders
 with no build behind it, and the gate asks every artifact of a version for
 every claim the acceptance policy lists. The notes can never carry a build
-verdict, so once the gate and the notes meet on one tree every version a
-policy asks a verdict of is refused, naming its notes. The statement says
-the policy names what a built artifact requires and what a rendered one
-requires, and the gate judges each artifact against the claims required of
-artifacts made its way (134, 25, 28; agentplot/blueprints 2b8fc53).
+verdict, so on a tree holding both the gate and the notes every version a
+policy asks a verdict of is refused, naming its notes. That tree is this
+unit's: it takes main, carrying the gate, into the bolt, and sluice #62
+on `bolt/tailrace-sync-and-serve` shows the refusals (`cli:test`
+publish_tells_the_gate 6 of 10, `core:test` gate 24 of 43,
+`conformance:test` the_core_judges_at_the_gate_over_the_fakes). The
+statement says the policy names what a built artifact requires and what
+a rendered one requires, and the gate judges each artifact against the
+claims required of artifacts made its way (134, 25, 28; agentplot/blueprints
+955c25a).
 
 ## What Changes
 
@@ -39,11 +44,13 @@ for themselves which artifacts a claim is asked of (the file's form for it
 is not written in C.10; it waits on the design); judging a consumer layout
 or `verify` by an artifact's making, since a layout holds one ecosystem's
 artifact and never the notes; and adopting a later revision of the
-statement into the conformance suite's clause list. This change is
-written against the gate on `bolt/tailrace-the-gate-and-the-channels`
-(the-gate-accepts-under-the-policy) and the notes of
-a-version-carries-its-notes on this bolt; its code waits until that bolt
-lands on main and main is taken into this bolt.
+statement into the conformance suite's clause list, which does not yet
+hold 134.
+
+The unit's branch holds da0abc6, the kept merge of main 293b4a8 (the
+gate's bolt landed) into this bolt, so the unit's merge carries main into
+`bolt/tailrace-sync-and-serve`. The paths that merge brings are main's,
+not this change's, and `## Touches` names only what this change edits.
 
 ## Capabilities
 

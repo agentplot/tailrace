@@ -1,26 +1,27 @@
 ## Context
 
-Two pieces of work meet in this change, each on its own bolt today:
+Two pieces of work meet in this change, on the tree this unit's branch
+holds: this bolt, with main 293b4a8 taken into it by da0abc6.
 
-- The gate, `crates/tailrace-core/src/gate.rs` on
-  `bolt/tailrace-the-gate-and-the-channels` (the-gate-accepts-under-the-policy).
-  `accept` reads the index, then `Judging::count` takes every artifact
-  the index names against every claim `Required::claims()` lists, in
-  order, and refuses at the first wanting (28). `Judging::promote` runs
-  the same `count` under each following channel's policy. A verdict
-  counts only carried in a parsed `Provenance` body whose build names the
-  verdict's (13, 111).
-- The notes, `crates/tailrace-core/src/notes.rs` and `publish.rs` on this
-  bolt (a-version-carries-its-notes). A publish names an artifact of
+- The gate, `crates/tailrace-core/src/gate.rs`, from main
+  (the-gate-accepts-under-the-policy). `accept` reads the index, then
+  `Judging::count` takes every artifact the index names against every
+  claim `Required::claims()` lists, in order, and refuses at the first
+  wanting (28). `Judging::promote` runs the same `count` under each
+  following channel's policy. A verdict counts only carried in a parsed
+  `Provenance` body whose build names the verdict's (13, 111).
+- The notes, `crates/tailrace-core/src/notes.rs` and `publish.rs`, from
+  this bolt (a-version-carries-its-notes). A publish names an artifact of
   ecosystem `notes` in the index after the outputs' and attaches it one
   provenance claim signed by the publisher, `build: None`, whose body is
   the notes' own and no `Provenance` (134, core.9).
 
-Once main carries both, every version a policy asks a verdict of is
-refused naming its notes: the notes' claim parses as no `Provenance`, so
-no verdict is found for them. This change is written against the tree
-that merge makes; its code waits until the gate's bolt lands on main and
-main is taken into this bolt.
+On that tree every version a policy asks a verdict of is refused naming
+its notes: the notes' claim parses as no `Provenance`, so no verdict is
+found for them. Sluice #62 on the bolt shows it: the gate's tests in
+`core:test`, the gate group in `conformance:test` and the publish that
+tells the gate in `cli:test` all refuse with the verdict of `test`
+missing for the notes' digest.
 
 The policy seam answers `Required` with a flat `Vec<RequiredClaim>` per
 audience (`crates/tailrace-seams/src/policy.rs`); the policy file profile
@@ -154,7 +155,7 @@ claim.
 
 ### D6. The record
 
-One ADR, numbered next in `docs/adr/` on the merged tree, records D1 to
+One ADR, 0022 in `docs/adr/`, the next number on this tree, records D1 to
 D3: the policy names per claim which artifacts it is asked of, the file
 reads it from the kind until C.10 writes a form for it, and the gate
 tells a rendered artifact by its counted provenance naming no build. The
@@ -167,14 +168,10 @@ words.
   → It is the signer 134 trusts alone for a rendered artifact, and only
   its counted word counts; a stolen publisher key could already offer
   bytes with that same word. The ADR says so.
-- [Two bolts' trees differ where this change lands: `Required::Layout`
-  holds `given` and `signers` on this bolt and not on the gate's] → The
-  code stage starts only once main, carrying the gate, is taken into this
-  bolt; the tasks are written against that tree and name no line numbers.
-- [The acceptance spec exists only on the gate's bolt] → `openspec
-  validate` reports that archive would refuse the MODIFIED delta while
-  the spec is absent; once the merge brings it, the delta applies. The
-  verify stage runs after that merge.
+- [The unit's merge carries main into the bolt, so its diff against the
+  bolt holds main's paths beside this change's] → The planner agreed to
+  it; `## Touches` names only what this change edits, and the paths main
+  brings are read as main's.
 - [Every place that makes a `RequiredClaim` must name `asked_of`] → A
   mechanical edit across the fakes, the conformance suite and the tests;
   the compiler finds each.

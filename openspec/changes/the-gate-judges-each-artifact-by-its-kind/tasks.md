@@ -1,9 +1,10 @@
 # Tasks
 
-Every task is done on this bolt's tree once main, carrying
-`bolt/tailrace-the-gate-and-the-channels`, has been taken into it: the
-gate (`crates/tailrace-core/src/gate.rs`), its tests and the acceptance
-spec arrive with that merge. Every cargo and moon command runs inside
+The unit's branch already holds main's gate, taken into this bolt by
+da0abc6: `crates/tailrace-core/src/gate.rs`, its tests and the acceptance
+spec are on the tree. Until task 3 is done, `core:test`, `conformance:test`
+and `cli:test` fail as sluice #62 did, refusing each version for its
+notes' missing verdict. Every cargo and moon command runs inside
 `devenv shell`.
 
 ## 1. The seam names the artifacts a claim is asked of
@@ -38,14 +39,14 @@ spec arrive with that merge. Every cargo and moon command runs inside
   - beta moves with notes that carry no rebuild;
   - beta held for an output's rebuild.
 
-  Make the existing tests' policies ask their verdicts of built artifacts alone where the publish now offers notes. Verify with `moon run core:test`.
+  Make the existing tests' policies ask their verdicts, reviews and rebuilds of built artifacts alone where the publish now offers notes, which clears the 24 refusals sluice #62 showed. Verify with `moon run core:test`.
 - [ ] 3.4 In `crates/tailrace-conformance/src/core/gate.rs`, below the marker, add these scenarios to the gate group:
   - "a version whose notes carry no build verdict";
   - "a rendered artifact wanting the publisher's provenance", where the store hides the notes' claims, as `LedgerWatched` wraps the store;
   - "the outputs' claims wanting beside the notes";
   - "a following channel and the notes".
 
-  Each cites 25 and 28, the channel's 95 too, and 134 only where `statement.rs` on the tree lists it. Where it does not, the module's doc says they cite in place of 134 until the statement list holds it, and the list is left alone. Move the group's acceptance and channel policies to ask verdicts, reviews and rebuilds of built artifacts alone. Verify with `moon run conformance:test conformance:coverage`.
+  Each cites 25 and 28, and the channel's 95 too. `statement.rs` lists no 134 (it reads the statement at 157c828), so none cites it: the module's doc says they cite 25 and 28 in place of 134 until the list adopts it, and the list is left alone. Move the group's acceptance and channel policies to ask verdicts, reviews and rebuilds of built artifacts alone, which clears the group's refusals in sluice #62. Verify with `moon run conformance:test conformance:coverage`.
 
 ## 4. The policy command shows it
 
@@ -53,11 +54,11 @@ spec arrive with that merge. Every cargo and moon command runs inside
 
 ## 5. A publish that tells the gate, end to end
 
-- [ ] 5.1 In `crates/tailrace/tests/publish_tells_the_gate.rs`, and any other CLI test where a publish of a version with notes tells the gate, make the policy file's `[acceptance]` require a verdict. Assert that the version is accepted, its notes judged as rendered, and `beta` moved. Verify with `moon run cli:test`.
+- [ ] 5.1 In `crates/tailrace/tests/publish_tells_the_gate.rs`, make `test_from_the_landing` ask its verdict of built artifacts alone, so the six tests sluice #62 failed accept the version. In `a_file_with_no_gate_table_tells_the_gate_as_publish_does` or a new test beside it, assert that the version is accepted, that its acceptance names the notes' provenance and no verdict of the notes, and that `beta` moved. Do the same for any other CLI test where a publish of a version with notes tells the gate (`landings_end_to_end.rs`, `cli.rs`). Verify with `moon run cli:test`.
 
 ## 6. The record and the guide
 
-- [ ] 6.1 Add an ADR under `docs/adr/`, numbered next on the tree, recording design D1 to D3 and the publisher-key risk. Verify with `moon run root:adrs root:format`.
+- [ ] 6.1 Add ADR 0022 under `docs/adr/`, the next number on the tree, recording design D1 to D3 and the publisher-key risk. Verify with `moon run root:adrs root:format`.
 - [ ] 6.2 In `site/src/content/docs/guides/self-hosting.mdx`:
   - in the section on the gate, say that a version's notes are asked only the publisher's provenance and the claims about the version, and that a verdict, a review or a rebuild is asked of built artifacts alone (134);
   - show the mark in the `tailrace policy` example.
