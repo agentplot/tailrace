@@ -7,15 +7,17 @@
 //! through the store seam it is handed (rules core.1, core.2).
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_cache_entries, Answer, Artifact, BuildId, Contents, Layout, Miss, Output, Packed, Pinned,
-    Projection, Range, Rendered, Request, Requirement, Response, Seam, Source, Store, Version,
+    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Miss, Output,
+    Packed, Pinned, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source,
+    Store, Version,
 };
 
 use super::not_built;
 
+mod lockfile;
 mod pack;
 
 /// The ecosystem this projection packs in, as the bindings bind it.
@@ -90,8 +92,14 @@ impl Projection for NpmProjection {
         Err(not_built("serve", ECOSYSTEM, &NpmProjection::source()))
     }
 
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
-        Err(not_built("pinned", ECOSYSTEM, &NpmProjection::source()))
+    /// 137: every package the checkout's `npm-shrinkwrap.json`, else
+    /// its `package-lock.json`, pins, as it spells them (design D7);
+    /// absent naming the lockfile where it holds neither.
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+        match lockfile::find(Path::new(checkout)) {
+            Some(path) => lockfile::pins(&path),
+            None => Err(no_lockfile(&NpmProjection::source())),
+        }
     }
 
     fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
