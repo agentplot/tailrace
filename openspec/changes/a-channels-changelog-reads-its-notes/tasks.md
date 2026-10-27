@@ -18,7 +18,7 @@
 
 ## 4. The guide
 
-- [ ] 4.1 In `site/src/content/docs/guides/integrations/surfaces.mdx`, under "What status shows", say that each promotion of a chain is shown with who asked and the notes of the version it moved to, rendered from the repository's history on any machine, and that one version's notes that cannot be read leave the rest shown (134, 58); under "The pages", that the repository's page shows the same changelog beside each channel and each published version's notes beneath its row (132). Verify with `moon run site:build root:format`.
+- [x] 4.1 In `site/src/content/docs/guides/integrations/surfaces.mdx`, under "What status shows", say that each promotion of a chain is shown with who asked and the notes of the version it moved to, rendered from the repository's history on any machine, and that one version's notes that cannot be read leave the rest shown (134, 58); under "The pages", that the repository's page shows the same changelog beside each channel and each published version's notes beneath its row (132). Verify with `moon run site:build root:format`.
 
 ## 5. The whole gate
 
