@@ -84,6 +84,74 @@ names the ecosystem of the projection that packs each output, such as
 `site = "file"` or `api = "image"` (C.10). A projection not yet built
 answers render and serve absent, naming the operation.
 
+## npm
+
+A publish packs an npm output with npm's own packager. The output's
+shallowest `package.json` names the package; the files the build left
+under it are copied into a scratch directory, the version is set there
+with `npm pkg set version=<version>`, and `npm pack --ignore-scripts`
+makes the tarball, which is the artifact's bytes as npm wrote them,
+named by the package's own `name` (C.11, 84). No script of the package
+runs, `prepack` and `prepare` among them, and the build's own files are
+never edited, since tailrace builds nothing (15). npm promises no same
+tarball across its own versions, so the projection says it cannot
+promise the same bytes again (87).
+
+npm reads no files, so the host's one serving process serves an npm
+layout to it. A consuming repository writes one line in the `.npmrc`
+beside its `package.json`, once, for each scope its family publishes:
+
+```ini
+@family:registry=http://127.0.0.1:7420/agentplot/consumer/npm/
+```
+
+The address is the host's process at its one name and port, with the
+consuming repository's owner and name in the path, the same on every
+host and in every checkout (114). That line is what makes `@family` the
+family's: npm reads a package of the scope from the served layout and
+from nowhere else, and every other package from the registry it reads
+them from now. tailrace reads nothing else of the file, and writes no
+credential into it.
+
+`tailrace sync` then renders the layout at `.tailrace/layouts/npm/`: the
+family versions the checkout's `package-lock.json` (or
+`npm-shrinkwrap.json`) pins; for each family package `package.json`, or
+a workspace's, declares and no lockfile pins yet, the newest version the
+policy admits within the range it declares, so a first install needs no
+lockfile written by hand; and every family package those versions
+require, through every level (137, 140). Each is judged under the policy
+as any version is. sync prints where the layout is served and finds the
+host's process, or starts it where none answers; npm cannot start it, so
+the process stays while a served layout is there, and ends at its next
+idle time once the layout, or its checkout, is gone.
+
+A new family package is declared first and synced, then installed:
+
+```sh
+npm pkg set dependencies.@family/widget='^1.2.0'
+tailrace sync
+npm install
+```
+
+`npm install @family/widget` before the sync answers `404`, saying the
+layout holds no version of the package and that `tailrace sync` holds a
+name `package.json` declares. A tarball the lockfile pins that the layout
+lacks is rendered on npm's request, under the same policy. A version the
+policy refuses is never listed; npm's request for its tarball is
+answered `403`, and npm prints the version and the claim found wanting
+after its status line:
+
+```text
+npm error 403 403 Forbidden - GET http://127.0.0.1:7420/agentplot/consumer/npm/@family/widget/-/widget-1.5.0.tgz - … refused: npm @family/widget 1.5.0 at sha256:… wants a claim of acceptance …
+```
+
+A version the store does not name is answered `404` the same way, and
+one whose source cannot be read `502`, carrying that source's own words
+(99, 58, 59). The lockfile npm writes records each family tarball at the
+served address, `http://127.0.0.1:7420/<owner>/<name>/npm/…`, the same
+on every host and in every checkout, naming no home, checkout or store
+(49).
+
 ## Layouts under a policy
 
 `tailrace sync` fills each ecosystem's layout in the checkout after the
