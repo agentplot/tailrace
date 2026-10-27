@@ -22,4 +22,4 @@
 
 ## 5. The whole gate
 
-- [ ] 5.1 Run the check-fast tasks of every touched project: `moon run core:test conformance:test conformance:coverage cli:test site:build root:format root:lint`, plus `cli:tools` for the tools layer. The whole layers run in sluice at merge. Once committed, get a passing `sluice exec main`.
+- [x] 5.1 Run the check-fast tasks of every touched project: `moon run core:test conformance:test conformance:coverage cli:test site:build root:format root:lint`, plus `cli:tools` for the tools layer. The whole layers run in sluice at merge. Once committed, get a passing `sluice exec main`.
