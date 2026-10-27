@@ -368,9 +368,7 @@ fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() 
             assert_eq!(carried.build.as_str(), artifact["build"].as_str().unwrap());
         }
     }
-    // Beside the push's entries, the layout names each artifact by its
-    // ecosystem, name and version, and the version (138).
-    let named: BTreeSet<String> =
+    let mut named: Vec<String> =
         serde_json::from_slice::<Value>(&fs::read(laptop.layout.join("index.json")).unwrap())
             .unwrap()["manifests"]
             .as_array()
@@ -380,13 +378,18 @@ fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() 
             .filter(|name| !name.starts_with("cache/"))
             .map(str::to_string)
             .collect();
+    named.sort();
+    // Each artifact's name and the version's, and no other ref, a
+    // channel's among them (138).
+    let mut made: Vec<String> = artifacts
+        .iter()
+        .map(|a| a["store_name"].as_str().unwrap().to_string())
+        .chain(std::iter::once("v0.1.0".to_string()))
+        .collect();
+    made.sort();
     assert_eq!(
-        named,
-        BTreeSet::from(
-            ["artifact/file/notes@0.1.0", "artifact/image/image@0.1.0", "v0.1.0"]
-                .map(String::from)
-        ),
-        "the layout names another ref than the push's entries, the artifacts' and the version's, a channel"
+        named, made,
+        "the layout names another ref than the push's entries, a channel"
     );
 
     // The host's record names the store as the bindings file names it,

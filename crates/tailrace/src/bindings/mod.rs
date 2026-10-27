@@ -667,10 +667,15 @@ pub fn bind(
         };
         (bound, keeper, BTreeMap::new())
     } else {
-        let bound = profiles::store::bind(store, make)?;
-        let cache = profiles::store::bind(store, make)?;
-        let crates = profiles::store::bind(store, make)?;
-        let packages = profiles::store::bind(store, make)?;
+        // A push's store, after a landing or of what a checkout left,
+        // writes cache entries alone, into the bound build profile's cache
+        // repository on a registry (135; design D9).
+        let build = Some(profiles::build::name());
+        let push = matches!(command, For::Push | For::Left);
+        let bound = profiles::store::bind_for(store, make, build, push)?;
+        let cache = profiles::store::bind_for(store, make, build, push)?;
+        let crates = profiles::store::bind_for(store, make, build, push)?;
+        let packages = profiles::store::bind_for(store, make, build, push)?;
         let keeper = ledger(store)?;
         (
             bound,

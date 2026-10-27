@@ -5,10 +5,12 @@
 //! reached at that moment through the host's Docker configuration and
 //! the helper it names, as `Basic` or as a `Bearer` token asked of the
 //! challenge's realm for the scope it names. What authorizes the next
-//! request is held in memory by the one handle and written nowhere (64,
-//! rule core.21).
+//! request to each repository is held in memory by the one handle and
+//! written nowhere, so a token scoped to one repository is kept beside
+//! another's (64, rule core.21; design D8).
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use base64::Engine as _;
@@ -141,12 +143,26 @@ struct Token {
 }
 
 /// The connection to one registry host: the agent, the host the
-/// credential is the host's for, and what authorizes the next request.
+/// credential is the host's for, and what authorizes the next request
+/// to each repository it has been answered for.
 pub(super) struct Client {
     agent: ureq::Agent,
     host: String,
     source: Source,
-    authorization: RefCell<Option<String>>,
+    authorization: RefCell<BTreeMap<String, String>>,
+}
+
+/// The repository a request of `url` is for: the path between `/v2/` and
+/// the operation, none for the API's root (design D8).
+pub(super) fn repository_of(url: &str) -> String {
+    let Some((_, rest)) = url.split_once("/v2/") else {
+        return String::new();
+    };
+    ["/blobs/", "/manifests/", "/tags/", "/referrers/"]
+        .iter()
+        .filter_map(|op| rest.find(op))
+        .min()
+        .map_or_else(String::new, |at| rest[..at].to_string())
 }
 
 impl Client {
@@ -158,7 +174,7 @@ impl Client {
             agent: ureq::Agent::new_with_config(config),
             host: host.to_string(),
             source: source.clone(),
-            authorization: RefCell::new(None),
+            authorization: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -174,7 +190,8 @@ impl Client {
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
     ) -> Answer<Answered> {
-        let held = self.authorization.borrow().clone();
+        let repository = repository_of(url);
+        let held = self.authorization.borrow().get(&repository).cloned();
         let first = self.once(&method, url, headers, body, held.as_deref())?;
         if first.status != StatusCode::UNAUTHORIZED {
             return Ok(first);
@@ -185,7 +202,9 @@ impl Client {
         let Some(authorization) = self.authorize(&challenge)? else {
             return Ok(first);
         };
-        *self.authorization.borrow_mut() = Some(authorization.clone());
+        self.authorization
+            .borrow_mut()
+            .insert(repository, authorization.clone());
         self.once(&method, url, headers, body, Some(&authorization))
     }
 
@@ -382,6 +401,89 @@ mod tests {
     }
 
     #[test]
+    fn a_request_is_for_the_repository_its_path_names() {
+        for (url, repository) in [
+            ("http://h/v2/acme/tailrace/blobs/sha256:00", "acme/tailrace"),
+            (
+                "http://h/v2/acme/tailrace/artifact/npm/site/manifests/1.0.0",
+                "acme/tailrace/artifact/npm/site",
+            ),
+            (
+                "http://h/v2/acme/tailrace/cache/moon/blobs/uploads/?mount=x&from=acme/tailrace",
+                "acme/tailrace/cache/moon",
+            ),
+            ("http://h/v2/a/tags/list", "a"),
+            ("http://h/v2/", ""),
+        ] {
+            assert_eq!(repository_of(url), repository, "{url}");
+        }
+    }
+
+    #[test]
+    fn a_token_for_one_repository_is_kept_beside_anothers() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, OnceLock};
+        let at: Arc<OnceLock<u16>> = Arc::new(OnceLock::new());
+        let asked = Arc::new(AtomicUsize::new(0));
+        let (port_of, count) = (at.clone(), asked.clone());
+        let port = stub(7, move |head| {
+            count.fetch_add(1, Ordering::SeqCst);
+            let first = head.lines().next().unwrap_or_default().to_string();
+            let reply = |status: &str, headers: &str, body: &str| {
+                format!(
+                    "HTTP/1.1 {status}\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+            };
+            if first.contains("/token") {
+                let scope = if first.contains("one") { "one" } else { "two" };
+                return reply("200 OK", "", &format!(r#"{{"token":"{scope}"}}"#));
+            }
+            let repository = if first.contains("/v2/one/") {
+                "one"
+            } else {
+                "two"
+            };
+            let lower = head.to_lowercase();
+            if lower.contains(&format!("authorization: bearer {repository}")) {
+                return reply("200 OK", "", "{}");
+            }
+            let port = port_of.get().copied().unwrap();
+            reply(
+                "401 Unauthorized",
+                &format!(
+                    "www-authenticate: Bearer realm=\"http://127.0.0.1:{port}/token\",scope=\"repository:{repository}:pull\"\r\n"
+                ),
+                "",
+            )
+        });
+        at.set(port).unwrap();
+        let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
+        let client = Client::new(&format!("127.0.0.1:{port}"), &source);
+        let get = |repository: &str| {
+            let url = format!("http://127.0.0.1:{port}/v2/{repository}/manifests/x");
+            client.send(Method::GET, &url, &[], None).unwrap().status
+        };
+        assert_eq!(get("one"), StatusCode::OK);
+        assert_eq!(get("two"), StatusCode::OK);
+        assert_eq!(asked.load(Ordering::SeqCst), 6);
+        assert_eq!(get("one"), StatusCode::OK);
+        assert_eq!(
+            asked.load(Ordering::SeqCst),
+            7,
+            "one's token was thrown away by the request to two"
+        );
+        let held = client.authorization.borrow().clone();
+        assert_eq!(
+            held.into_iter().collect::<Vec<_>>(),
+            [
+                ("one".to_string(), "Bearer one".to_string()),
+                ("two".to_string(), "Bearer two".to_string())
+            ]
+        );
+    }
+
+    #[test]
     fn a_query_value_is_encoded() {
         assert_eq!(
             encoded("repository:acme/tailrace:pull,push"),
@@ -464,7 +566,7 @@ mod tests {
         assert_eq!(answered.status, StatusCode::OK, "{}", answered.words());
         assert_eq!(answered.body, b"{}");
         assert_eq!(
-            client.authorization.borrow().as_deref(),
+            client.authorization.borrow().get("").map(String::as_str),
             Some(format!("Basic {basic}").as_str())
         );
         let files: Vec<_> = std::fs::read_dir(dir.path())
@@ -497,6 +599,6 @@ mod tests {
             }
             other => panic!("a port nothing listens on answered {other:?}"),
         }
-        assert!(client.authorization.borrow().is_none());
+        assert!(client.authorization.borrow().is_empty());
     }
 }

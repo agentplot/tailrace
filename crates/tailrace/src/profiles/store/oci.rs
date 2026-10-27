@@ -524,6 +524,34 @@ impl Referrers {
     }
 }
 
+/// The digests a manifest's `bytes` name, each with whether it is a
+/// manifest: an index's manifests, or an image manifest's config and
+/// layers; the parser's words when they hold no JSON (design D8).
+pub(super) fn named(bytes: &[u8]) -> Result<Vec<(bool, Digest)>, String> {
+    #[derive(Deserialize)]
+    struct Naming {
+        #[serde(default)]
+        manifests: Vec<Descriptor>,
+        #[serde(default)]
+        config: Option<Descriptor>,
+        #[serde(default)]
+        layers: Vec<Descriptor>,
+    }
+    let naming: Naming = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    Ok(naming
+        .manifests
+        .into_iter()
+        .map(|d| (true, d.digest))
+        .chain(
+            naming
+                .config
+                .into_iter()
+                .chain(naming.layers)
+                .map(|d| (false, d.digest)),
+        )
+        .collect())
+}
+
 /// An artifact's metadata, from its config's bytes.
 pub(super) fn meta(config: &[u8]) -> Result<ArtifactMeta, String> {
     serde_json::from_slice(config).map_err(|e| e.to_string())
@@ -853,6 +881,26 @@ mod tests {
         other["artifactType"] = json!("application/vnd.dev.cosign.artifact.sig.v1+json");
         let words = referred(&serde_json::to_vec(&other).unwrap()).unwrap_err();
         assert!(words.contains("cosign"), "{words}");
+    }
+
+    #[test]
+    fn a_manifest_names_its_manifests_or_its_config_and_layers() {
+        let written = write(&index(), &source(), &size).unwrap();
+        assert_eq!(
+            named(&written.bytes).unwrap(),
+            [(true, Digest::of(b"site")), (true, Digest::of(b"image"))]
+        );
+        let written = write(&artifact(), &source(), &size).unwrap();
+        let config = Digest::of(&written.config.unwrap());
+        assert_eq!(
+            named(&written.bytes).unwrap(),
+            [
+                (false, config),
+                (false, Digest::of(b"one")),
+                (false, Digest::of(b"two"))
+            ]
+        );
+        assert!(named(b"not json").is_err());
     }
 
     #[test]
