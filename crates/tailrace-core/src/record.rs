@@ -34,14 +34,8 @@ use tailrace_seams::{
     Source, Version, Why,
 };
 
-// `derive` by its module's path: imported through the root's globs,
-// which take in this module's own, the compiler cannot settle the
-// attribute of the same name.
-use crate::version::{derive, Derived};
-use crate::{
-    answer_json, Declared, Entry, History, Kept, Landed, Noted, Tag, Written, LOCAL, NOTES,
-    POLICY_FILE,
-};
+use crate::notes::noted;
+use crate::{answer_json, Declared, Entry, History, Kept, Landed, Tag, Written, NOTES};
 
 /// What a rebuild is asked: the landed revision whose policy file
 /// declares the components, the branch that landed it, and the store as
@@ -155,34 +149,6 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
         record: kept.dir().display().to_string(),
         entries,
     })
-}
-
-/// 134, 21: the commits `tag`'s notes were rendered from, derived again
-/// at its landed revision under the policy file there, as the publish of
-/// it derived them (design D8).
-fn noted(history: &History, at: &Landed, name: &ComponentName, tag: &Tag) -> Answer<Noted> {
-    let declared = Declared::read(history, at)?;
-    let component = declared
-        .components
-        .iter()
-        .find(|c| c.name == *name)
-        .ok_or_else(|| {
-            Not::absent(
-                &Source::history(LOCAL),
-                format!("component {name} in {POLICY_FILE} at {}", tag.revision),
-            )
-        })?;
-    match derive(history, at, &declared.rule, component)? {
-        Derived::Versioned(versioned) => Ok(Noted::of(&versioned)),
-        Derived::Unchanged { .. } => Err(Not::unreadable(
-            &Source::history(LOCAL),
-            format!("the commits the notes of {} were rendered from", tag.name),
-            Some(format!(
-                "no version of {name} is derived at {}",
-                tag.revision
-            )),
-        )),
-    }
 }
 
 /// Whether `held`, what the digest `tag`'s name resolves to holds, is
