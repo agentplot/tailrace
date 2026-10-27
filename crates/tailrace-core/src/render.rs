@@ -61,6 +61,7 @@
 //! it (115, 50, 47; design D4). A version refused, absent or unreadable
 //! leaves the layout and its record as they were.
 
+use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -68,14 +69,17 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind,
-    Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not,
-    Pinned, Policy, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store,
-    Version, Why,
+    no_serving, Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, Check, Claim,
+    ClaimKind, Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Name,
+    NamedSigner, Not, Pinned, Policy, Request, Required, RequiredClaim, Revision, Seam, Seams,
+    SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
-use crate::{answer_json, policy_at, sync, Filled, History, Landed, Provenance, SyncAsk, BOUND};
+use crate::{
+    answer_json, layout_address, origin, policy_at, sync, Filled, History, Landed, Provenance,
+    RepositoryName, SyncAsk, BOUND,
+};
 
 /// What every name of a version's index by ecosystem, name and version
 /// begins with (138).
@@ -1097,9 +1101,10 @@ pub fn miss(seams: &Seams, layouts: &Layouts, ask: &MissAsk) -> Answer<HeldPin> 
 /// What sync asks of a checkout: the revision whose verdicts name the
 /// cache entries and whose policy judges the layouts, the branch that
 /// landed it, the checkout's working tree, when, in seconds since the Unix
-/// epoch by the asker's clock, since the core reads none, and the signers
+/// epoch by the asker's clock, since the core reads none, the signers
 /// the host trusts, its own and those its bindings name (C.10, 118;
-/// design D5).
+/// design D5), and the repository the checkout is of, by its landing's
+/// remote, or why the remote names none (114).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckoutAsk {
     pub branch: Branch,
@@ -1107,17 +1112,29 @@ pub struct CheckoutAsk {
     pub tree: PathBuf,
     pub when: u64,
     pub trusted: Vec<NamedSigner>,
+    pub repository: Answer<RepositoryName>,
 }
 
 /// 57: what sync answers of a checkout: the cache's entries as the cache
-/// answers them, and each layout of a projection that pins something, in
-/// ecosystem order.
+/// answers them, each layout of a projection that pins something, in
+/// ecosystem order, and, for each of those layouts whose projection
+/// serves it, the address its clients read it at, or why the repository
+/// has none (114, 49).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckoutSynced {
     pub branch: Branch,
     pub revision: Revision,
     pub entries: Vec<(BuildId, Answer<Filled>)>,
     pub layouts: Vec<(Ecosystem, Answer<Refresh>)>,
+    pub served: BTreeMap<Ecosystem, Answer<String>>,
+}
+
+impl CheckoutSynced {
+    /// 114: the address the layout of `ecosystem` is served at, or why
+    /// there is none; `None` where its projection serves none.
+    pub fn served(&self, ecosystem: &Ecosystem) -> Option<&Answer<String>> {
+        self.served.get(ecosystem)
+    }
 }
 
 impl Serialize for CheckoutSynced {
@@ -1137,6 +1154,7 @@ impl Serialize for CheckoutSynced {
             .map(|(ecosystem, answer)| {
                 let mut value = answer_json(answer);
                 value["ecosystem"] = json!(ecosystem);
+                value["served"] = self.served(ecosystem).map_or(Value::Null, answer_json);
                 value
             })
             .collect();
@@ -1205,11 +1223,55 @@ pub fn layouts(
         .collect()
 }
 
-/// 52 to 54, 47 to 51: the one question sync asks of a checkout: the
-/// cache filled as the cache fills it, reading no policy (53), then the
-/// checkout's layouts rendered under the policy at the same landed
-/// revision (design D5). A revision its branch has not landed is the
-/// answer, before anything is read (rule core.11).
+/// 86, 114, 49: where the layout of `ecosystem` at `at` is served: its
+/// projection asked once to serve the empty path, whose answer absent
+/// naming serving says it serves none, `None`; otherwise the repository's
+/// address for the ecosystem ([`layout_address`]), or the repository's
+/// own answer where its remote names none (design D10). The probe asks
+/// the core for no version.
+fn served_at(
+    seams: &Seams,
+    ecosystem: &Ecosystem,
+    at: &str,
+    repository: &Answer<RepositoryName>,
+) -> Option<Answer<String>> {
+    let projection = seams.projection(ecosystem)?;
+    let address = repository
+        .as_ref()
+        .map(|repository| layout_address(repository, ecosystem))
+        .map_err(Not::clone);
+    let base = match &address {
+        Ok(address) => address.trim_end_matches('/').to_string(),
+        Err(_) => format!("{}{ecosystem}", origin()),
+    };
+    let probe = Request {
+        method: "GET".into(),
+        path: String::new(),
+        base,
+    };
+    let none = |pin: &Pinned| {
+        Err(Not::absent(
+            &Source::new(Seam::Host, BOUND),
+            format!(
+                "a render of {} {}, which a probe of serving asks for none",
+                pin.name, pin.version
+            ),
+        ))
+    };
+    let layout = Layout { at: at.to_string() };
+    match projection.serve(&layout, &probe, &none) {
+        Err(not) if not == no_serving(not.source()) => None,
+        _ => Some(address),
+    }
+}
+
+/// 52 to 54, 47 to 51, 114: the one question sync asks of a checkout:
+/// the cache filled as the cache fills it, reading no policy (53), then
+/// the checkout's layouts rendered under the policy at the same landed
+/// revision (design D5), and each layout rendered or kept whose
+/// projection serves it answered with its address (design D10). A
+/// revision its branch has not landed is the answer, before anything is
+/// read (rule core.11).
 pub fn sync_checkout(seams: &Seams, record: &Layouts, ask: &CheckoutAsk) -> Answer<CheckoutSynced> {
     let synced = sync(
         seams,
@@ -1220,10 +1282,24 @@ pub fn sync_checkout(seams: &Seams, record: &Layouts, ask: &CheckoutAsk) -> Answ
         },
     )?;
     let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &ask.revision)?;
+    let layouts = layouts(seams, record, &landed, ask);
+    let served = layouts
+        .iter()
+        .filter_map(|(ecosystem, answer)| {
+            let at = match answer {
+                Ok(Refresh::Refreshed(refreshed)) => &refreshed.at,
+                Ok(Refresh::Kept(kept)) => &kept.at,
+                Err(_) => return None,
+            };
+            let served = served_at(seams, ecosystem, at, &ask.repository)?;
+            Some((ecosystem.clone(), served))
+        })
+        .collect();
     Ok(CheckoutSynced {
         branch: synced.branch,
         revision: synced.revision,
         entries: synced.entries,
-        layouts: layouts(seams, record, &landed, ask),
+        layouts,
+        served,
     })
 }
