@@ -71,7 +71,7 @@ pub fn scenarios() -> Vec<Scenario<dyn Surface>> {
         Scenario {
             name: "the command line and the page answer each promotion's notes",
             plays: None,
-            cites: &[56, 57, 132],
+            cites: &[56, 57, 132, 134],
             run: the_command_line_and_the_page_answer_each_promotions_notes,
         },
     ]
