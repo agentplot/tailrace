@@ -33,7 +33,7 @@ use ureq::http::{Method, StatusCode};
 use super::oci::{
     self, Descriptor, Referrers, EMPTY_JSON, ENVELOPE, IMAGE_INDEX, IMAGE_MANIFEST, OCTETS,
 };
-use client::{encoded, Answered, Client};
+use client::{encoded, repository_of, Answered, Client};
 
 /// What a cache entry's name begins with, and the space of repositories
 /// under the declared one its entries are held in, one per build profile
@@ -264,6 +264,29 @@ impl Registry {
         }
     }
 
+    /// What a write the registry did not take is: as
+    /// [`Registry::other`] answers it, and, where the registry answers
+    /// it 404, holding no such repository, as one that makes repositories
+    /// only by a creation template does where none applies, refused
+    /// naming the repository the write was for beside the registry's own
+    /// words, so an operator reads which one to make; nothing is asked
+    /// again (58, 59, C.1; design D13).
+    fn other_put(&self, url: &str, answered: &Answered) -> Not {
+        if answered.status != StatusCode::NOT_FOUND {
+            return self.other(url, answered);
+        }
+        Not::refused(
+            &self.source,
+            Why::Said,
+            Some(format!(
+                "the registry holds no repository {}/{}, which the write was for: {}",
+                self.host,
+                repository_of(url),
+                answered.words()
+            )),
+        )
+    }
+
     /// That `bytes`, answered for `digest`, are its bytes; refused naming
     /// both otherwise (2).
     fn same(&self, digest: &Digest, bytes: &[u8]) -> Answer<()> {
@@ -357,7 +380,7 @@ impl Registry {
         let url = self.url_in(repository, "blobs/uploads/");
         let opened = self.send(Method::POST, &url, &[], Some(&[]))?;
         if opened.status != StatusCode::ACCEPTED {
-            return Err(self.other(&url, &opened));
+            return Err(self.other_put(&url, &opened));
         }
         let location = opened.header("location").ok_or_else(|| {
             Not::unreadable(
@@ -377,7 +400,7 @@ impl Registry {
         let url = format!("{location}{sep}digest={}", encoded(digest.as_str()));
         let put = self.send(Method::PUT, &url, &[("content-type", OCTETS)], Some(bytes))?;
         if !put.status.is_success() {
-            return Err(self.other(&url, &put));
+            return Err(self.other_put(&url, &put));
         }
         self.named(digest, &put)
     }
@@ -399,7 +422,7 @@ impl Registry {
             Some(bytes),
         )?;
         if !put.status.is_success() {
-            return Err(self.other(&url, &put));
+            return Err(self.other_put(&url, &put));
         }
         self.named(&Digest::of(bytes), &put)?;
         Ok(put)
@@ -653,7 +676,7 @@ impl Registry {
                 })?;
                 self.upload_to(location, digest, &bytes)
             }
-            _ => Err(self.other(&url, &answered)),
+            _ => Err(self.other_put(&url, &answered)),
         }
     }
 
@@ -1451,6 +1474,124 @@ mod tests {
         assert!(index < tag, "{written:#?}");
         let held = stub.held("acme/store/lib").unwrap();
         assert!(held.manifests.contains_key(&version.artifacts[0]));
+    }
+
+    /// A refusal's words, once it carries the registry's words for a
+    /// repository it does not hold and names `repository` of `stub`.
+    fn refused_naming(stub: &Stub, answer: Answer<()>, repository: &str) {
+        match answer {
+            Err(Not::Refused(r)) => {
+                let said = r.said.unwrap();
+                assert!(said.contains(super::stub::NAME_UNKNOWN), "{said}");
+                assert!(said.contains(&stub.repository(repository)), "{said}");
+            }
+            other => panic!("a write into {repository} answered {other:?}"),
+        }
+    }
+
+    /// The writes `stub` was asked of `repository` since its request
+    /// `since`.
+    fn writes_of(stub: &Stub, since: usize, repository: &str) -> usize {
+        stub.asked()[since..]
+            .iter()
+            .filter(|a| {
+                (a.method == "PUT" || a.method == "POST") && a.repository() == Some(repository)
+            })
+            .count()
+    }
+
+    #[test]
+    fn a_declared_repository_that_is_not_there_is_refused_naming_it() {
+        let stub = Stub::start(
+            Behaviour {
+                makes_on_push: false,
+                ..Behaviour::default()
+            },
+            &[],
+        );
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        refused_naming(&stub, store.put_bytes(b"site").map(drop), "acme/store");
+        assert_eq!(stub.repositories(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_artifact_names_repository_missing_is_refused_naming_it_and_no_tag_put() {
+        let stub = Stub::start(
+            Behaviour {
+                makes_on_push: false,
+                ..Behaviour::default()
+            },
+            &["acme/store"],
+        );
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let version = published(&store, REPOSITORY_COMPONENT, &[("eco", "site")]);
+        let before = stub.asked().len();
+        let repository = "acme/store/artifact/eco/site";
+        refused_naming(
+            &stub,
+            store.name(&named("eco", "site", "1.3.0"), &version.index, None),
+            repository,
+        );
+        assert_eq!(writes_of(&stub, before, repository), 1, "asked again");
+        assert!(!stub
+            .asked()
+            .iter()
+            .any(|a| a.method == "PUT" && a.path.ends_with("/manifests/1.3.0")));
+    }
+
+    #[test]
+    fn a_components_repository_missing_is_refused_naming_it_and_never_asked_again() {
+        let stub = Stub::start(
+            Behaviour {
+                makes_on_push: false,
+                ..Behaviour::default()
+            },
+            &["acme/store"],
+        );
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let version = published(&store, REPOSITORY_COMPONENT, &[("eco", "lib")]);
+        let before = stub.asked().len();
+        refused_naming(
+            &stub,
+            store.name(&Name::new("lib:lib-v1.2.0"), &version.index, None),
+            "acme/store/lib",
+        );
+        assert_eq!(writes_of(&stub, before, "acme/store/lib"), 1, "asked again");
+        assert!(!stub
+            .asked()
+            .iter()
+            .any(|a| a.method == "PUT" && a.path.ends_with("/manifests/lib-v1.2.0")));
+    }
+
+    #[test]
+    fn a_cache_repository_missing_is_refused_naming_it_and_the_declared_one_is_not_written() {
+        let stub = Stub::start(
+            Behaviour {
+                makes_on_push: false,
+                ..Behaviour::default()
+            },
+            &["acme/store"],
+        );
+        let push = Registry::new(&stub.repository("acme/store"))
+            .unwrap()
+            .bound_for("moon", true);
+        refused_naming(
+            &stub,
+            push.put_bytes(b"a cache entry").map(drop),
+            "acme/store/cache/moon",
+        );
+        assert!(
+            stub.asked()
+                .iter()
+                .all(|a| a.repository() == Some("acme/store/cache/moon")),
+            "{:#?}",
+            stub.asked()
+        );
+        assert_eq!(
+            writes_of(&stub, 0, "acme/store/cache/moon"),
+            1,
+            "asked again"
+        );
     }
 
     #[test]

@@ -154,7 +154,7 @@ pub(super) struct Client {
 
 /// The repository a request of `url` is for: the path between `/v2/` and
 /// the operation, none for the API's root (design D8).
-fn repository_of(url: &str) -> String {
+pub(super) fn repository_of(url: &str) -> String {
     let Some((_, rest)) = url.split_once("/v2/") else {
         return String::new();
     };
