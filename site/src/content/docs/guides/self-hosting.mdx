@@ -791,13 +791,22 @@ jobs:
 ### The publisher in the policy
 
 The policy file names the job's signer by the public half of that key,
-for provenance alone:
+for provenance alone, and names it among the signers of the provenance
+`[acceptance]` requires:
 
 ```toml
 [signers.ci]
 ssh = "ssh-ed25519 AAAA… tailrace@ci"
 kinds = ["provenance"]
+
+[acceptance]
+require = [{ kind = "provenance", signers = ["ci"] }]
 ```
+
+The gate counts the job's provenance through that line, and from it
+tells the version's notes, which no build made, from its outputs: the
+notes are asked that provenance and never a verdict, which the policy
+file asks of built artifacts alone (134).
 
 A landing one of whose outputs the store holds no entry for is refused,
 naming the output; the pool's next run of that output's check pushes
