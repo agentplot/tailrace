@@ -22,7 +22,8 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use tailrace_seams::{
-    Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store, Why,
+    Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, Not, Put, Seam,
+    Source, Store, Version, Why,
 };
 use ureq::http::{Method, StatusCode};
 
@@ -787,6 +788,19 @@ impl Store for Registry {
             }
         };
         Ok(Held::Manifest(manifest))
+    }
+
+    /// 138: the registry lists a name's versions from the tags of the
+    /// name's own repository, which it holds no name in yet; until then
+    /// the listing cannot be read here, and is never answered empty (rule
+    /// core.19).
+    fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>> {
+        let of = tailrace_seams::artifact_name(ecosystem, name, &Version::new(""));
+        Err(Not::unreadable(
+            &self.source,
+            format!("the versions of {of}"),
+            Some("this registry store holds no artifact name's repository yet".into()),
+        ))
     }
 }
 

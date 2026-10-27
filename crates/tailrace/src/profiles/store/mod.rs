@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use tailrace_seams::{
-    Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store,
+    Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, Not, Put, Seam,
+    Source, Store, Version,
 };
 
 use crate::bindings::{self, Table};
@@ -153,6 +154,10 @@ impl Store for Unmade {
 
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.layout()?.read(digest)
+    }
+
+    fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>> {
+        self.layout()?.versions(ecosystem, name)
     }
 }
 

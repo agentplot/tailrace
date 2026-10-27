@@ -353,6 +353,13 @@ impl Store for BeforeNotes {
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.0.read(digest)
     }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.0.versions(ecosystem, name)
+    }
 }
 
 /// `world`'s `lib` published by a publisher before notes: its index names

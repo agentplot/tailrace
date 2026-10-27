@@ -870,6 +870,13 @@ impl Store for Hooked {
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.inner.read(digest)
     }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.inner.versions(ecosystem, name)
+    }
 }
 
 #[test]

@@ -18,7 +18,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use tailrace_seams::{
-    canonical, Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store, Why,
+    canonical, Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, Not, Put,
+    Seam, Source, Store, Version, Why,
 };
 
 mod blobs;
@@ -293,6 +294,20 @@ impl Store for Layout {
             },
         };
         Ok(Held::Manifest(manifest))
+    }
+
+    /// 138: the version of every ref name of `index.json` that reads back
+    /// as an artifact's of `ecosystem` and `name`, in the order of
+    /// `index.json`; nothing is written.
+    fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>> {
+        self.opened()?;
+        Ok(self
+            .read_index()?
+            .names()
+            .filter_map(|n| Name::new(n).as_artifact())
+            .filter(|(e, n, _)| e == ecosystem && n == name)
+            .map(|(_, _, v)| v)
+            .collect())
     }
 }
 
@@ -721,6 +736,38 @@ pub(super) mod tests {
             Err(Not::absent(layout.source(), missing.to_string()))
         );
         assert_eq!(layout.resolve(&name), Ok(at));
+    }
+
+    #[test]
+    fn a_names_versions_are_listed_from_the_index_names() {
+        let (_dir, layout) = fresh();
+        let index = layout.put_bytes(b"an index").unwrap().digest;
+        let npm = Ecosystem::new("npm");
+        for (name, version) in [
+            ("@acme/site", "1.0.0"),
+            ("@acme/site", "1.1.0+b.1"),
+            ("@acme/site-cli", "1.0.0"),
+        ] {
+            let name = tailrace_seams::artifact_name(
+                &npm,
+                &EcosystemName::new(name),
+                &Version::new(version),
+            );
+            layout.name(&name, &index, None).unwrap();
+        }
+        layout
+            .name(&Name::new("site-v1.0.0"), &index, None)
+            .unwrap();
+        let before = held(&layout);
+        assert_eq!(
+            layout.versions(&npm, &EcosystemName::new("@acme/site")),
+            Ok(vec![Version::new("1.0.0"), Version::new("1.1.0+b.1")])
+        );
+        assert_eq!(
+            layout.versions(&npm, &EcosystemName::new("@acme/web")),
+            Ok(vec![])
+        );
+        assert_eq!(held(&layout), before, "the listing wrote");
     }
 
     #[test]

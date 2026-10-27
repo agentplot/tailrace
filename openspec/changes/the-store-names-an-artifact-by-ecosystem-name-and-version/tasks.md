@@ -26,7 +26,7 @@
 
 ## 5. The store lists a name's versions
 
-- [ ] 5.1 Add `versions` to the `Store` trait in `crates/tailrace-seams/src/store.rs`, answering the empty list where the store names no version, and implement it in the fake store and the layout store from the names each holds (D7). Verify: unit tests in `crates/tailrace-fakes/src/store.rs` and `crates/tailrace/src/profiles/store/layout/` for the layout-store delta's listing scenarios, including a name that differs only by a longer name sharing its prefix (`site` and `site-cli`) answering only its own versions, and a name never named answering the empty list.
+- [x] 5.1 Add `versions` to the `Store` trait in `crates/tailrace-seams/src/store.rs`, answering the empty list where the store names no version, and implement it in the fake store and the layout store from the names each holds (D7). Verify: unit tests in `crates/tailrace-fakes/src/store.rs` and `crates/tailrace/src/profiles/store/layout/` for the layout-store delta's listing scenarios, including a name that differs only by a longer name sharing its prefix (`site` and `site-cli`) answering only its own versions, and a name never named answering the empty list.
 
 ## 6. A registry keeps three spaces apart
 

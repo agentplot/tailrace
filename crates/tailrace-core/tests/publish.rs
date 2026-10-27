@@ -582,6 +582,13 @@ impl Store for Misnaming {
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.0.read(digest)
     }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.0.versions(ecosystem, name)
+    }
 }
 
 #[test]
@@ -1069,6 +1076,13 @@ fn a_publish_stopped_after_one_artifact_has_published_nothing() {
         }
         fn read(&self, digest: &Digest) -> Answer<Held> {
             self.0.read(digest)
+        }
+        fn versions(
+            &self,
+            ecosystem: &tailrace_seams::Ecosystem,
+            name: &tailrace_seams::EcosystemName,
+        ) -> Answer<Vec<tailrace_seams::Version>> {
+            self.0.versions(ecosystem, name)
         }
     }
     seams.store = Box::new(SecondFails(world.fakes.store.clone(), RefCell::new(0)));
@@ -1741,6 +1755,13 @@ impl Store for NoIndex {
     }
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.0.read(digest)
+    }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.0.versions(ecosystem, name)
     }
 }
 
