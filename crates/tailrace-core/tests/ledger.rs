@@ -17,10 +17,10 @@ use tailrace_fakes::{
     FakeKeeper, FakeSigner, FakeStore, Fault, KeeperOp, SignerOp, StoreOp, Times,
 };
 use tailrace_seams::{
-    channel_name, Answer, Audience, Branch, Chain, ChannelId, ChannelName, Claim, ClaimKind,
-    ComponentName, Digest, Envelope, Keeper, Moved, NamedSigner, Not, Outcome, OutputName,
-    Promotion, Read, Report, Required, RequiredClaim, Satisfied, Seam, Seams, Signature, Signer,
-    SignerId, Store, Version, Why,
+    channel_name, Answer, AskedOf, Audience, Branch, Chain, ChannelId, ChannelName, Claim,
+    ClaimKind, ComponentName, Digest, Envelope, Keeper, Moved, NamedSigner, Not, Outcome,
+    OutputName, Promotion, Read, Report, Required, RequiredClaim, Satisfied, Seam, Seams,
+    Signature, Signer, SignerId, Store, Version, Why,
 };
 use world::{build_of, version_of, World};
 
@@ -48,6 +48,7 @@ fn wanted(kind: ClaimKind, signers: Vec<NamedSigner>) -> RequiredClaim {
         kind,
         check: None,
         signers,
+        asked_of: AskedOf::Every,
     }
 }
 

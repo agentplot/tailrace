@@ -17,10 +17,10 @@ use tailrace_core::{
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, ChannelId, ChannelName, Check,
-    Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest,
-    NamedSigner, Outcome, Output, OutputName, Pinned, Promotion, Report, Required, RequiredClaim,
-    Revision, Seam, Signer, SignerId, Source, Store, Verdict, Version,
+    Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
+    Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
+    Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
+    RequiredClaim, Revision, Seam, Signer, SignerId, Source, Store, Verdict, Version,
 };
 use tempfile::TempDir;
 
@@ -500,6 +500,7 @@ fn pinning_one_of_each(host: &Host) {
                     kinds: vec![ClaimKind::Acceptance],
                     checks: vec![],
                 }],
+                asked_of: AskedOf::Every,
             }],
             given: false,
             signers: vec![],
@@ -1620,6 +1621,7 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: vec![host_signer.clone()],
+                asked_of: AskedOf::Every,
             }],
             bound_to: None,
             promoted_by: vec![host_signer],

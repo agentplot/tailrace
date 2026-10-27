@@ -9,8 +9,9 @@ use serde_json::json;
 use tailrace_core::{verify, Published, Told, Verified, POLICY_FILE};
 use tailrace_fakes::{FakeLanding, FakePolicy, Fault, LandingOp, PolicyOp, StoreOp, Times};
 use tailrace_seams::{
-    Answer, Audience, Check, Claim, ClaimKind, Envelope, Held, Manifest, NamedSigner, Not, Outcome,
-    Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store, Verdict,
+    Answer, AskedOf, Audience, Check, Claim, ClaimKind, Envelope, Held, Manifest, NamedSigner, Not,
+    Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store,
+    Verdict,
 };
 
 use crate::core::publish::{one, passing, version_of, TAG, VERSION};
@@ -81,6 +82,7 @@ fn provenance_from(signer: NamedSigner) -> RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -89,6 +91,7 @@ fn verdict_from(signer: NamedSigner, check: &str) -> RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new(check)),
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     }
 }
 

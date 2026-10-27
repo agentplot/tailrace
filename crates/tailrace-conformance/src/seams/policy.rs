@@ -126,11 +126,13 @@ fn claims() -> Vec<RequiredClaim> {
             kind: ClaimKind::Provenance,
             check: None,
             signers: vec![named("host", &[ClaimKind::Provenance], &[])],
+            asked_of: tailrace_seams::AskedOf::Every,
         },
         RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("test")),
             signers: vec![named("landing", &[ClaimKind::Verdict], &["test"])],
+            asked_of: tailrace_seams::AskedOf::Every,
         },
     ]
 }

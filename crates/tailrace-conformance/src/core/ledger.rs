@@ -492,6 +492,7 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
         kind,
         check: None,
         signers,
+        asked_of: tailrace_seams::AskedOf::Every,
     };
     let both = [ClaimKind::Acceptance, ClaimKind::Promotion];
     let cases = [
@@ -740,6 +741,7 @@ fn given_stable(world: &FakeWorld) {
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: vec![gate.clone()],
+                asked_of: tailrace_seams::AskedOf::Every,
             }],
             bound_to: Some(ChannelName::new(BETA)),
             promoted_by: vec![gate],
@@ -806,6 +808,7 @@ fn stable_asked_by(world: &FakeWorld, approvers: &[&str]) {
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: vec![gate.clone()],
+                asked_of: tailrace_seams::AskedOf::Every,
             }],
             bound_to: Some(ChannelName::new(BETA)),
             promoted_by: vec![gate],

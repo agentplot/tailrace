@@ -749,12 +749,14 @@ impl FakeWorld {
             kind: ClaimKind::Acceptance,
             check: None,
             signers: vec![gate.clone()],
+            asked_of: tailrace_seams::AskedOf::Every,
         }];
         if rebuild {
             claims.push(tailrace_seams::RequiredClaim {
                 kind: ClaimKind::Rebuild,
                 check: None,
                 signers: vec![named(REBUILDER, &[ClaimKind::Rebuild])],
+                asked_of: tailrace_seams::AskedOf::Every,
             });
         }
         self.fakes.policy.require(

@@ -58,9 +58,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents, Digest,
-    Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned, Policy,
-    Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
+    Answer, Artifact, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents,
+    Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned,
+    Policy, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
@@ -319,6 +319,7 @@ fn given(own: Option<&Own>, trusted: &[NamedSigner]) -> (PolicyOf, Vec<RequiredC
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: Vec::new(),
+                asked_of: AskedOf::Every,
             }],
         ),
     };

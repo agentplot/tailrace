@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde_json::Value;
 use tailrace_core::{answer_json, overview, status, OverviewAsk, StatusAsk};
 use tailrace_seams::{
-    Audience, Branch, Check, ClaimKind, Digest, NamedSigner, Not, Required, RequiredClaim,
+    AskedOf, Audience, Branch, Check, ClaimKind, Digest, NamedSigner, Not, Required, RequiredClaim,
     Revision, SignerId, Version,
 };
 
@@ -103,11 +103,13 @@ fn the_command_line_answers_what_the_core_answers(surface: &dyn Surface) {
                     kind: ClaimKind::Provenance,
                     check: None,
                     signers: vec![named(HOST, ClaimKind::Provenance, &[])],
+                    asked_of: AskedOf::Every,
                 },
                 RequiredClaim {
                     kind: ClaimKind::Verdict,
                     check: Some(Check::new("test")),
                     signers: vec![named(LANDING, ClaimKind::Verdict, &["test"])],
+                    asked_of: AskedOf::Every,
                 },
             ],
         },

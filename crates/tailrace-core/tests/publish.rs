@@ -14,10 +14,11 @@ use tailrace_fakes::{
     BuildOp, FakeProjection, FakeStore, Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times,
 };
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest,
-    EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Landing, Layout, Manifest, Name,
-    NamedSigner, Not, Outcome, Output, Packed, Pinned, Projection, Put, Range, Rendered, Required,
-    RequiredClaim, Requirement, Seam, Serving, SignerId, Source, Store, Version, Why,
+    Answer, Artifact, AskedOf, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName,
+    Contents, Digest, EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Landing, Layout,
+    Manifest, Name, NamedSigner, Not, Outcome, Output, Packed, Pinned, Projection, Put, Range,
+    Rendered, Required, RequiredClaim, Requirement, Seam, Serving, SignerId, Source, Store,
+    Version, Why,
 };
 use world::{
     build_of, build_ops, by_host, eco, output, published_before_notes, version_of, Watched, World,
@@ -1080,6 +1081,7 @@ fn required(kind: ClaimKind, signer: &str) -> RequiredClaim {
             kinds: vec![kind],
             checks: vec![],
         }],
+        asked_of: AskedOf::Every,
     }
 }
 

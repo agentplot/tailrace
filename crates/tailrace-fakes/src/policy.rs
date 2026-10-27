@@ -166,7 +166,9 @@ impl Policy for FakePolicy {
 
 #[cfg(test)]
 mod tests {
-    use tailrace_seams::{ChannelName, Check, ClaimKind, ComponentName, RequiredClaim, Source};
+    use tailrace_seams::{
+        AskedOf, ChannelName, Check, ClaimKind, ComponentName, RequiredClaim, Source,
+    };
 
     use super::*;
     use crate::{Fault, Times};
@@ -176,6 +178,7 @@ mod tests {
             kind: ClaimKind::Verdict,
             check: Some(Check::new(check)),
             signers: vec![],
+            asked_of: AskedOf::Every,
         }
     }
 

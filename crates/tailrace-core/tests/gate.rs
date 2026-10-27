@@ -18,11 +18,11 @@ use tailrace_fakes::{
     FakeKeeper, FakeSigner, Fakes, Fault, KeeperOp, PolicyOp, SignerOp, StoreOp, Times,
 };
 use tailrace_seams::{
-    channel_name, Answer, Artifact, ArtifactMeta, Audience, Branch, Chain, ChannelId, ChannelName,
-    Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Envelope, Held,
-    IndexMeta, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Promotion, Put, Required,
-    RequiredClaim, Revision, Satisfied, Seam, Seams, Signer, SignerId, Source, Store, Version, Why,
-    REPOSITORY_COMPONENT,
+    channel_name, Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, Chain, ChannelId,
+    ChannelName, Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName,
+    Envelope, Held, IndexMeta, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Promotion, Put,
+    Required, RequiredClaim, Revision, Satisfied, Seam, Seams, Signer, SignerId, Source, Store,
+    Version, Why, REPOSITORY_COMPONENT,
 };
 use world::{build_of, version_of, World, HOST, LANDING};
 
@@ -47,6 +47,7 @@ fn provenance_from(signer: NamedSigner) -> RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -55,6 +56,7 @@ fn verdict_from(signer: NamedSigner, check: &str) -> RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new(check)),
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -98,6 +100,7 @@ fn from_gate() -> RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
         signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -227,6 +230,7 @@ fn each_answer_renders_in_the_one_form_naming_the_index_and_both_revisions() {
         kind: ClaimKind::Verdict,
         check: Some(Check::new("test")),
         signers: vec![],
+        asked_of: AskedOf::Every,
     };
     let promotion = Digest::of(b"promotion");
     let accepted: Answer<Judged> = Ok(Judged::Accepted {
@@ -440,6 +444,7 @@ fn a_policy_landed_after_the_publish_is_the_one_read() {
         kind: ClaimKind::Review,
         check: None,
         signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
+        asked_of: AskedOf::Every,
     };
     world.fakes.policy.require_at(
         &later,
@@ -686,6 +691,7 @@ fn rebuilt() -> (RequiredClaim, Required) {
             named(HOST, &[ClaimKind::Provenance, ClaimKind::Rebuild], &[]),
             named("verifier", &[ClaimKind::Rebuild], &[]),
         ],
+        asked_of: AskedOf::Every,
     };
     let required = Required::Acceptance {
         claims: vec![
@@ -1248,6 +1254,7 @@ fn stricter(world: &World) -> Revision {
         kind: ClaimKind::Review,
         check: None,
         signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
+        asked_of: AskedOf::Every,
     };
     let Required::Acceptance { mut claims } = acceptance() else {
         unreachable!()
@@ -1381,6 +1388,7 @@ fn a_channel_requiring_a_review_the_version_lacks_stays_while_the_version_is_acc
         kind: ClaimKind::Review,
         check: None,
         signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
+        asked_of: AskedOf::Every,
     };
     beta_requires(&world, vec![from_gate(), review.clone()]);
     let answer = judged(&world, &ask("0.2.0", told(&published)));

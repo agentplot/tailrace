@@ -152,6 +152,7 @@ fn a_host_key_listed_is_a_signer_with_its_verifier_and_reach() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop_the_given_gate()],
+                asked_of: AskedOf::Every,
             }],
         }
     );
@@ -370,6 +371,7 @@ fn a_layout_line_written_is_answered_with_nothing_of_the_given_beneath_it() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop()],
+                asked_of: AskedOf::Every,
             }],
             given: false,
             signers: vec![
@@ -529,6 +531,7 @@ fn by_the_gate(signers: Vec<NamedSigner>) -> RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
         signers,
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -694,6 +697,7 @@ fn a_bound_channel_names_the_channel_it_is_bound_to() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop_the_given_gate()],
+                asked_of: AskedOf::Every,
             }],
             bound_to: Some(ChannelName::new("edge")),
             promoted_by: vec![],
@@ -883,6 +887,7 @@ fn a_rebuild() -> RequiredClaim {
             kinds: vec![ClaimKind::Rebuild],
             checks: vec![],
         }],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -1115,6 +1120,7 @@ fn a_givens_line_naming_another_promoter_never_widens_who_signs() {
                 kind: ClaimKind::Promotion,
                 check: None,
                 signers: vec![release],
+                asked_of: AskedOf::Every,
             }],
             None
         ))
@@ -1475,6 +1481,7 @@ fn a_line_that_restates_prods_binding_adds_its_claims() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop()],
+                asked_of: AskedOf::Every,
             },
         ])
     );
@@ -1603,6 +1610,7 @@ fn a_fragment_of_other_names_is_read_with_a_line_under_one() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop()],
+                asked_of: AskedOf::Every,
             },
         ]
     );
@@ -1697,6 +1705,7 @@ fn a_laptops_policy_names_it_the_gate_for_acceptance_and_the_given_channels() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop_the_given_gate()],
+                asked_of: AskedOf::Every,
             }],
         })
     );
@@ -1731,6 +1740,7 @@ fn a_file_naming_a_gate_answers_its_provenance_signer_as_written() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop()],
+                asked_of: AskedOf::Every,
             }],
         })
     );
@@ -1836,6 +1846,7 @@ fn with_two_publishers_and_no_gate_the_layout_and_a_hand_declared_channel_answer
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     };
     assert_eq!(
         repo.policy().policy_for(&at, &Audience::Layout),

@@ -16,13 +16,42 @@ pub enum Audience {
 }
 
 /// 82: one claim a policy requires: its kind, the check it is for where
-/// it is a verdict, and the signers that may make it, each with what it
-/// may claim.
+/// it is a verdict, the signers that may make it, each with what it may
+/// claim, and the artifacts it is asked of (134), every artifact where it
+/// names none.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequiredClaim {
     pub kind: ClaimKind,
     pub check: Option<Check>,
     pub signers: Vec<NamedSigner>,
+    #[serde(default, skip_serializing_if = "AskedOf::is_every")]
+    pub asked_of: AskedOf,
+}
+
+/// 134: the artifacts a required claim is asked of: every artifact a
+/// version names, or a built artifact alone, which leaves a rendered
+/// artifact, one no build made, unasked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AskedOf {
+    #[default]
+    Every,
+    Built,
+}
+
+impl AskedOf {
+    pub fn is_every(&self) -> bool {
+        *self == AskedOf::Every
+    }
+
+    /// Whether a claim so asked is asked of an artifact a build made,
+    /// `built`, or of one rendered with no build behind it.
+    pub fn asks(self, built: bool) -> bool {
+        match self {
+            AskedOf::Every => true,
+            AskedOf::Built => built,
+        }
+    }
 }
 
 /// 82, 83: the claims an audience requires, by audience, so the policy
@@ -212,6 +241,7 @@ mod tests {
                 kinds: vec![ClaimKind::Verdict],
                 checks: vec![Check::new("test")],
             }],
+            asked_of: AskedOf::Every,
         }]
     }
 
@@ -314,6 +344,44 @@ mod tests {
                 signers: vec![],
             }
         );
+    }
+
+    #[test]
+    fn a_required_claim_reads_back_the_artifacts_it_is_asked_of() {
+        let built = RequiredClaim {
+            asked_of: AskedOf::Built,
+            ..claims().remove(0)
+        };
+        let every = RequiredClaim {
+            kind: ClaimKind::Provenance,
+            check: None,
+            signers: vec![],
+            asked_of: AskedOf::Every,
+        };
+        round_trip(built.clone());
+        round_trip(every.clone());
+        let json = serde_json::to_value(&built).unwrap();
+        assert_eq!(json["asked_of"], "built", "{json}");
+        let json = serde_json::to_value(&every).unwrap();
+        assert!(json.get("asked_of").is_none(), "{json}");
+
+        assert!(AskedOf::Every.asks(true) && AskedOf::Every.asks(false));
+        assert!(AskedOf::Built.asks(true) && !AskedOf::Built.asks(false));
+    }
+
+    #[test]
+    fn a_layout_policy_written_before_asks_every_artifact() {
+        let read: Required = serde_json::from_value(json!({
+            "layout": { "claims": [
+                { "kind": "verdict", "check": "test", "signers": [] },
+                { "kind": "acceptance", "check": null, "signers": [] },
+            ] }
+        }))
+        .unwrap();
+        assert_eq!(read.claims().len(), 2);
+        for claim in read.claims() {
+            assert_eq!(claim.asked_of, AskedOf::Every, "{claim:?}");
+        }
     }
 
     #[test]

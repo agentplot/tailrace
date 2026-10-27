@@ -9,8 +9,8 @@ notes' missing verdict. Every cargo and moon command runs inside
 
 ## 1. The seam names the artifacts a claim is asked of
 
-- [ ] 1.1 In `crates/tailrace-seams/src/policy.rs`, add `AskedOf { Every, Built }` with `is_every` and `asks(made)`, and add `asked_of: AskedOf` to `RequiredClaim` with `#[serde(default, skip_serializing_if = "AskedOf::is_every")]` (seam-contracts spec; design D1). Re-export it from the seams' root. Add tests for both seam-contracts scenarios: the two claims written and read back, and a body with no `asked_of` read as `Every`. Verify with `moon run seams:test`.
-- [ ] 1.2 Name `asked_of` in every place that makes a `RequiredClaim`: the core (`ledger.rs`, `render.rs`), the fakes, the conformance suite, the policy file profile and every crate's tests. Use `AskedOf::Every` wherever the claim is not one the change asks of built artifacts alone, so no behaviour changes in this task. Verify with `moon run seams:test fakes:test core:test conformance:test cli:test`.
+- [x] 1.1 In `crates/tailrace-seams/src/policy.rs`, add `AskedOf { Every, Built }` with `is_every` and `asks(made)`, and add `asked_of: AskedOf` to `RequiredClaim` with `#[serde(default, skip_serializing_if = "AskedOf::is_every")]` (seam-contracts spec; design D1). Re-export it from the seams' root. Add tests for both seam-contracts scenarios: the two claims written and read back, and a body with no `asked_of` read as `Every`. Verify with `moon run seams:test`.
+- [x] 1.2 Name `asked_of` in every place that makes a `RequiredClaim`: the core (`ledger.rs`, `render.rs`), the fakes, the conformance suite, the policy file profile and every crate's tests. Use `AskedOf::Every` wherever the claim is not one the change asks of built artifacts alone, so no behaviour changes in this task. Verify with `moon run seams:test fakes:test core:test conformance:test cli:test`.
 
 ## 2. The policy file reads it from the kind
 

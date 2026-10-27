@@ -21,8 +21,8 @@ use tailrace_core::{
 };
 use tailrace_fakes::{Fakes, StoreOp};
 use tailrace_seams::{
-    Audience, Branch, Build, Check, Claim, ClaimKind, Ecosystem, Landing, NamedSigner, Not,
-    OutputName, Read, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store,
+    AskedOf, Audience, Branch, Build, Check, Claim, ClaimKind, Ecosystem, Landing, NamedSigner,
+    Not, OutputName, Read, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store,
     Version, Why,
 };
 
@@ -290,6 +290,7 @@ fn s13_over_a_plain_branch_and_moon() {
                 kind: ClaimKind::Verdict,
                 check: Some(Check::new("web:build")),
                 signers: vec![named(SIGNER, &[ClaimKind::Verdict], &["web:build"])],
+                asked_of: AskedOf::Every,
             }],
         },
     );
@@ -310,6 +311,7 @@ fn s13_over_a_plain_branch_and_moon() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
+                asked_of: AskedOf::Every,
             }],
         },
     );

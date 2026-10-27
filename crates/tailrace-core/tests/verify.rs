@@ -12,9 +12,9 @@ use serde_json::json;
 use tailrace_core::{verify, Published, Told, Verified, VerifiedNotes, VerifyAsk, NOTES};
 use tailrace_fakes::{Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
-    Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, Held, IndexMeta, Manifest, Name, NamedSigner, Not, Outcome, Policy, PolicyChannels,
-    Required, RequiredClaim, Revision, Seam, SignerId, Store, Version, Why,
+    Answer, AskedOf, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
+    Digest, Envelope, Held, IndexMeta, Manifest, Name, NamedSigner, Not, Outcome, Policy,
+    PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store, Version, Why,
 };
 use world::{build_of, World, HOST, LANDING};
 
@@ -36,11 +36,13 @@ fn acceptance() -> Required {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
+                asked_of: AskedOf::Every,
             },
             RequiredClaim {
                 kind: ClaimKind::Verdict,
                 check: Some(Check::new("test")),
                 signers: vec![named(LANDING, &[ClaimKind::Verdict], &["test"])],
+                asked_of: AskedOf::Every,
             },
         ],
     }

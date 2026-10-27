@@ -11,9 +11,9 @@ use serde_json::json;
 use tailrace_core::{accept, Judged, Moved, Published, ToldBy, WhyWanting};
 use tailrace_fakes::{FakeKeeper, FakeLanding, FakeSigner, FakeStore, KeeperOp, StoreOp};
 use tailrace_seams::{
-    channel_name, Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
-    Digest, Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put, Required,
-    RequiredClaim, Revision, Seam, Signer, SignerId, Store, Why,
+    channel_name, Answer, AskedOf, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind,
+    ComponentName, Digest, Envelope, Held, Keeper, Manifest, Name, NamedSigner, Not, Outcome, Put,
+    Required, RequiredClaim, Revision, Seam, Signer, SignerId, Store, Why,
 };
 
 use crate::core::publish::{one, version_of, TAG, VERSION};
@@ -163,6 +163,7 @@ fn provenance_from(signer: NamedSigner) -> RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -171,6 +172,7 @@ fn test_from_the_landing() -> RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new("test")),
         signers: vec![named(LANDING, &[ClaimKind::Verdict], &["test"])],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -179,6 +181,7 @@ fn review() -> RequiredClaim {
         kind: ClaimKind::Review,
         check: None,
         signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -207,6 +210,7 @@ fn require(world: &FakeWorld, required: Required) {
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: vec![gate.clone()],
+                asked_of: AskedOf::Every,
             }],
             bound_to: None,
             promoted_by: vec![gate],
@@ -792,6 +796,7 @@ fn an_independent_rebuild(world: &FakeWorld) {
             named(HOST, &[ClaimKind::Provenance, ClaimKind::Rebuild], &[]),
             named("verifier", &[ClaimKind::Rebuild], &[]),
         ],
+        asked_of: AskedOf::Every,
     };
     let published = offered_under(
         world,
@@ -1031,6 +1036,7 @@ fn beta_of_one_component(_: &FakeWorld) {
                     kind: ClaimKind::Acceptance,
                     check: None,
                     signers: vec![gate.clone()],
+                    asked_of: AskedOf::Every,
                 }],
                 bound_to: None,
                 promoted_by: vec![gate.clone()],
@@ -1119,6 +1125,7 @@ fn followed_on_publish(world: &FakeWorld, revision: &Revision) -> Vec<(String, b
                     kind: ClaimKind::Acceptance,
                     check: None,
                     signers: vec![gate.clone()],
+                    asked_of: AskedOf::Every,
                 }],
                 bound_to: None,
                 promoted_by: vec![gate.clone()],

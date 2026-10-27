@@ -4,7 +4,7 @@
 use tailrace_core::{policy_at, Landed};
 use tailrace_fakes::{FakeLanding, FakePolicy, Fault, LandingOp, PolicyOp, Times};
 use tailrace_seams::{
-    Audience, Branch, Check, ClaimKind, Not, Required, RequiredClaim, Revision, Seam, Why,
+    AskedOf, Audience, Branch, Check, ClaimKind, Not, Required, RequiredClaim, Revision, Seam, Why,
 };
 
 fn main_at(rev: &str) -> (Branch, Revision) {
@@ -17,6 +17,7 @@ fn acceptance() -> Required {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("test")),
             signers: vec![],
+            asked_of: AskedOf::Every,
         }],
     }
 }

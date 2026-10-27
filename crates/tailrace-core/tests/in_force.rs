@@ -9,7 +9,7 @@ mod world;
 use tailrace_core::{answer_json, in_force, ChannelInForce, ChannelsInForce, InForce, InForceAsk};
 use tailrace_fakes::{FakePolicy, LandingOp, PolicyOp, PROFILE};
 use tailrace_seams::{
-    Answer, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
+    Answer, AskedOf, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
     EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim,
     Revision, Seam, Seams, Source, Why,
 };
@@ -27,6 +27,7 @@ fn acceptance() -> Required {
             kind: ClaimKind::Provenance,
             check: None,
             signers: vec![],
+            asked_of: AskedOf::Every,
         }],
     }
 }

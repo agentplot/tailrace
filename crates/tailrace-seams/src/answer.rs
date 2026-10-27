@@ -835,6 +835,7 @@ mod tests {
             kind: crate::ClaimKind::Verdict,
             check: Some(crate::Check::new("test")),
             signers: vec![named("landing"), named("gate")],
+            asked_of: crate::AskedOf::Every,
         };
         let why = Why::VersionWanting {
             version,
@@ -868,6 +869,7 @@ mod tests {
                 kind: crate::ClaimKind::Acceptance,
                 check: None,
                 signers: vec![],
+                asked_of: crate::AskedOf::Every,
             },
             checked: vec![],
         };

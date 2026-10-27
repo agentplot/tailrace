@@ -152,9 +152,9 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 use tailrace_seams::{
-    Answer, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
-    HeldChannel, Moves, NamedSigner, Not, Policy, PolicyChannels, Required, RequiredClaim,
-    Revision, Seam, SignerId, Source, Why,
+    Answer, AskedOf, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName,
+    DeclaredChannel, HeldChannel, Moves, NamedSigner, Not, Policy, PolicyChannels, Required,
+    RequiredClaim, Revision, Seam, SignerId, Source, Why,
 };
 use toml::Spanned;
 
@@ -1107,6 +1107,7 @@ fn claims_of(
             kind: entry.kind,
             check: entry.check.clone(),
             signers: named,
+            asked_of: AskedOf::Every,
         });
     }
     Ok(claims)
@@ -1185,6 +1186,7 @@ fn channel_policy(
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: gate.clone(),
+                asked_of: AskedOf::Every,
             }];
             all.extend(claims);
             (all, gate)
@@ -1279,6 +1281,7 @@ fn given_layout(signers: &[NamedSigner]) -> Vec<RequiredClaim> {
             .filter(|s| s.kinds.contains(&ClaimKind::Acceptance))
             .cloned()
             .collect(),
+        asked_of: AskedOf::Every,
     }]
 }
 
