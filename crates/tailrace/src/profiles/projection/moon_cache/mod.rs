@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
     no_lockfile, Answer, Artifact, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not,
-    Output, Packed, Pinned, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Store,
+    Output, Packed, Pin, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Store,
     Version, Why,
 };
 
@@ -212,7 +212,7 @@ impl Projection for MoonCache {
     /// 137: absent naming the lockfile for every checkout, since moon's
     /// cache has no lockfile: sync fills it from the landing's verdicts,
     /// never from a pin.
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
         Err(no_lockfile(&MoonCache::source()))
     }
 

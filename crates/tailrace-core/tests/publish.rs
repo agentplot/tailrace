@@ -16,7 +16,7 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName,
     Contents, Digest, EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Landing, Layout,
-    Manifest, Name, NamedSigner, Not, Outcome, Output, Packed, Pinned, Projection, Put, Range,
+    Manifest, Name, NamedSigner, Not, Outcome, Output, Packed, Pin, Projection, Put, Range,
     Rendered, Required, RequiredClaim, Requirement, Seam, Serving, SignerId, Source, Store,
     Version, Why,
 };
@@ -596,7 +596,7 @@ impl Projection for Metaless {
     fn serve(&self, layout: &Layout) -> Answer<Serving> {
         self.0.serve(layout)
     }
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.0.pinned(checkout)
     }
     fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {

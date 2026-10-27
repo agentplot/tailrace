@@ -103,18 +103,18 @@ fn refused(path: &Path, said: String) -> Not {
 #[cfg(test)]
 mod tests {
     use tailrace_fakes::FakeStore;
-    use tailrace_seams::Projection;
+    use tailrace_seams::{Pin, Projection};
     use tempfile::TempDir;
 
     use super::*;
 
     const SERVED: &str = "sparse+http://127.0.0.1:7420/agentplot/family/cargo/";
 
-    fn pin(name: &str, version: &str) -> Pinned {
-        Pinned {
+    fn pin(name: &str, version: &str) -> Pin {
+        Pin::Version(Pinned {
             name: EcosystemName::new(name),
             version: Version::new(version),
-        }
+        })
     }
 
     /// A checkout holding `files`, and the projection of it.

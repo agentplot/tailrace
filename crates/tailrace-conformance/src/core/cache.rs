@@ -13,7 +13,7 @@ use tailrace_fakes::{PolicyOp, ProjectionOp};
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, CacheEntry, ClaimKind, ComponentName,
     Contents, Digest, Ecosystem, Held, Layout, Name, NamedSigner, Not, Outcome, Output, OutputName,
-    Packed, Pinned, Projection, Range, Refusal, Rendered, Required, RequiredClaim, Requirement,
+    Packed, Pin, Projection, Range, Refusal, Rendered, Required, RequiredClaim, Requirement,
     Revision, Serving, SignerId, Store, Verdict, Version, Why,
 };
 
@@ -261,7 +261,7 @@ impl Projection for Carrying {
         unreachable!("a write serves nothing")
     }
 
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
         unreachable!("a write reads no lockfile")
     }
 

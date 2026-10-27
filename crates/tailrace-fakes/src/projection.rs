@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::json;
 use tailrace_seams::{
     canonical, no_cache_entries, no_lockfile, Answer, Artifact, ArtifactMeta, BuildId, Contents,
-    Digest, Ecosystem, EcosystemName, Holds, Layout, Not, Output, OutputName, Packed, Pinned,
+    Digest, Ecosystem, EcosystemName, Holds, Layout, Not, Output, OutputName, Packed, Pin, Pinned,
     Projection, Range, Rendered, Requirement, Seam, Serving, Version, Why,
 };
 
@@ -221,7 +221,7 @@ impl Projection for FakeProjection {
         )
     }
 
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         let given = json!({ "checkout": checkout });
         self.ask(
             ProjectionOp::Pinned,
@@ -230,7 +230,7 @@ impl Projection for FakeProjection {
             |s, source| {
                 s.lockfiles
                     .get(checkout)
-                    .cloned()
+                    .map(|pins| pins.iter().cloned().map(Pin::Version).collect())
                     .ok_or_else(|| no_lockfile(source))
             },
         )
@@ -474,7 +474,10 @@ mod tests {
         let projection = FakeProjection::new(Ecosystem::new("eco"));
         let pins = [pin("pkg", "1.1.0"), pin("lib", "0.3.0")];
         projection.lockfile("/work/checkout", &pins);
-        assert_eq!(projection.pinned("/work/checkout").unwrap(), pins);
+        assert_eq!(
+            projection.pinned("/work/checkout").unwrap(),
+            pins.iter().cloned().map(Pin::Version).collect::<Vec<_>>()
+        );
         match projection.pinned("/work/another") {
             Err(Not::Absent(a)) => {
                 assert_eq!(a.source.seam, Seam::Projection);

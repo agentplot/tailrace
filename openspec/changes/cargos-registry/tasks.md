@@ -20,7 +20,7 @@
 
 ## 4. pinned carries a checkout's ranges
 
-- [ ] 4.1 In `crates/tailrace-seams/src/projection.rs`, add `Pin`, its range the type the seam's `requires` answers, make `pinned` answer `Vec<Pin>`, and re-export it from `lib.rs`; make every projection and caller follow: the file, image and moon cache profiles and npm's where it is on the branch answering `Pin::Version` alone where they answer pins, the seams' `Nowhere`, and the core's and conformance crate's test projections (design D6). Verify: round-trip tests of a pin and a range in `projection.rs`, and every projection's existing pinned tests unchanged in what they assert, in `check-fast`
+- [x] 4.1 In `crates/tailrace-seams/src/projection.rs`, add `Pin`, its range the type the seam's `requires` answers, make `pinned` answer `Vec<Pin>`, and re-export it from `lib.rs`; make every projection and caller follow: the file, image and moon cache profiles and npm's where it is on the branch answering `Pin::Version` alone where they answer pins, the seams' `Nowhere`, and the core's and conformance crate's test projections (design D6). Verify: round-trip tests of a pin and a range in `projection.rs`, and every projection's existing pinned tests unchanged in what they assert, in `check-fast`
 - [ ] 4.2 Make the fake projection answer the pins and ranges a test sets, the ranges a test sets for each artifact when asked what it requires, whether a version satisfies a range from the versions a test sets for it, and which of two is newer from the order a test sets, recording each call, and keep its absent answer where a test sets nothing (design D7). Verify: unit tests in `crates/tailrace-fakes/src/projection.rs`
 
 ## 5. Pinned

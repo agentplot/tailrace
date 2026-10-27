@@ -19,7 +19,7 @@
 
 use tailrace_seams::{
     no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Not, Output,
-    Packed, Pinned, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Version, Why,
+    Packed, Pin, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Version, Why,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -233,7 +233,7 @@ impl Projection for ImageProjection {
 
     /// 137: absent naming the lockfile for every checkout, since an image
     /// has no lockfile.
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
         Err(no_lockfile(&ImageProjection::source()))
     }
 

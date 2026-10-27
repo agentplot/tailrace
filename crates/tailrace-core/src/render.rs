@@ -34,11 +34,12 @@
 //! core.7); the first that none satisfies is the refusal, naming it (99;
 //! design D4).
 //!
-//! The pins are the lockfile's alone: a name the checkout's manifest
-//! declares and no lockfile pins is no pin, and the layout holds none of
-//! it. A manifest's range resolved to the newest version the policy
-//! admits (137) waits on the store's listing of a name's versions, which
-//! is the store-naming unit's.
+//! The pins are the lockfile's alone: a range the checkout's manifest
+//! declares for a name no lockfile pins, which pinned answers beside the
+//! pins, is held at no version, and the layout holds none of it. A
+//! manifest's range resolved to the newest version the policy admits
+//! (137) waits on the store's listing of a name's versions, which is the
+//! store-naming unit's.
 //!
 //! A layout lives at `.tailrace/layouts/<ecosystem>/` under the
 //! checkout's working tree, the same place on every host, and
@@ -59,8 +60,9 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents,
-    Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned,
-    Policy, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
+    Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pin,
+    Pinned, Policy, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store,
+    Version, Why,
 };
 
 use crate::verify::{tell, Told};
@@ -1015,7 +1017,7 @@ pub fn layouts(
     for (ecosystem, projection) in &seams.projections {
         match projection.pinned(&tree) {
             Err(Not::Absent(_)) => continue,
-            answer => pinned.push((ecosystem.clone(), answer)),
+            answer => pinned.push((ecosystem.clone(), answer.map(versions))),
         }
     }
     let any = pinned
@@ -1048,6 +1050,17 @@ pub fn layouts(
                 ),
             };
             (ecosystem, answer)
+        })
+        .collect()
+}
+
+/// The versions `pins` names, in the order given; a range is held at
+/// none until the store lists a name's versions.
+fn versions(pins: Vec<Pin>) -> Vec<Pinned> {
+    pins.into_iter()
+        .filter_map(|pin| match pin {
+            Pin::Version(pinned) => Some(pinned),
+            Pin::Range(_) => None,
         })
         .collect()
 }

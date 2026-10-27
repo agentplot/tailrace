@@ -31,7 +31,7 @@ use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
     no_cache_entries, Answer, Artifact, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName,
-    Layout, Not, Output, Packed, Pinned, Projection, Range, Rendered, Requirement, Seam, Serving,
+    Layout, Not, Output, Packed, Pin, Projection, Range, Rendered, Requirement, Seam, Serving,
     Source, Store, Version, Why,
 };
 
@@ -127,8 +127,12 @@ impl Projection for CargoProjection {
     /// 137: the versions the checkout's root `Cargo.lock` pins from a
     /// registry, as it spells them; absent naming it where there is none
     /// (design D5).
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
-        self.lockfile_pins(checkout)
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
+        Ok(self
+            .lockfile_pins(checkout)?
+            .into_iter()
+            .map(Pin::Version)
+            .collect())
     }
 
     /// 140: each family crate `held`'s own manifest requires, with the

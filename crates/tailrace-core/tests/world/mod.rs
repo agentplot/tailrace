@@ -12,7 +12,7 @@ use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
     Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest,
     Ecosystem, Envelope, Held, IndexMeta, Layout, Manifest, Name, Outcome, Output, OutputName,
-    Packed, Pinned, Projection, Put, Range, Rendered, Report, Requirement, Revision, Seam, Serving,
+    Packed, Pin, Projection, Put, Range, Rendered, Report, Requirement, Revision, Seam, Serving,
     SignerId, Source, Store, Verdict, Version,
 };
 
@@ -257,7 +257,7 @@ impl<T, F: Fn() -> T> Projection for Watched<T, F> {
         self.inner.serve(layout)
     }
 
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.inner.pinned(checkout)
     }
 

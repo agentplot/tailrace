@@ -176,7 +176,7 @@ mod tests {
         fn serve(&self, _: &Layout) -> Answer<Serving> {
             nothing(Seam::Projection, "serve")
         }
-        fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+        fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
             nothing(Seam::Projection, "pinned")
         }
         fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
