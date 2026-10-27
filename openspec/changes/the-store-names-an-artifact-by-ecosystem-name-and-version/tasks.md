@@ -12,7 +12,7 @@
 
 ## 3. No component's tag enters a reserved space
 
-- [ ] 3.1 Add `Why::Reserved { component, what, space }` to `crates/tailrace-seams/src/answer.rs` with its words and round trip, and refuse in `Declared::read` a component's prefix, or the rule's prefix for the one undeclared component, beginning `artifact/`, `cache/` or `channel/` (D14). Verify: `crates/tailrace-core/tests/declared.rs` tests for the three scenarios of the component-versions delta's "No component's tag enters a reserved space", and a publish test that the refused file derives, claims and offers nothing.
+- [x] 3.1 Add `Why::Reserved { component, what, space }` to `crates/tailrace-seams/src/answer.rs` with its words and round trip, and refuse in `Declared::read` a component's prefix, or the rule's prefix for the one undeclared component, beginning `artifact/`, `cache/` or `channel/` (D14). Verify: `crates/tailrace-core/tests/declared.rs` tests for the three scenarios of the component-versions delta's "No component's tag enters a reserved space", and a publish test that the refused file derives, claims and offers nothing.
 - [ ] 3.2 Refuse in `Declared::read` a declared component named `artifact`, `cache` or `repository`, or whose name holds `/` or `:`, with `Why::Reserved`, and two whose names are equal once lowercased with `Why::DeclaredTwice` naming both spellings (D14). Verify: `tests/declared.rs` tests for the four scenarios of "A component's name names one repository", and `devenv shell -- moon run tailrace-core:test` passes.
 
 ## 4. A publish names each artifact

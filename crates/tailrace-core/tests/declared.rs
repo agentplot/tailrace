@@ -342,3 +342,61 @@ fn a_components_output_packed_as_notes_is_refused_naming_both() {
         "{said}"
     );
 }
+
+// Requirement: No component's tag enters a reserved space
+
+fn reserved(component: &str, what: &str, space: &str) -> Why {
+    Why::Reserved {
+        component: ComponentName::new(component),
+        what: what.into(),
+        space: space.into(),
+    }
+}
+
+fn refused_reading(policy: &str) -> tailrace_seams::Refusal {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: policy", &[(POLICY_FILE, policy)]);
+    match read(&repo) {
+        Err(Not::Refused(r)) => r,
+        other => panic!("{policy} was read: {other:?}"),
+    }
+}
+
+#[test]
+fn a_prefix_in_the_artifact_space_is_refused_naming_the_component_the_prefix_and_the_space() {
+    let r = refused_reading(&TWO.replace("web-v", "artifact/web-v"));
+    assert_eq!(
+        r.why,
+        reserved("web", "prefix \"artifact/web-v\"", "artifact/")
+    );
+    assert_eq!(r.source.seam, Seam::History);
+    let channel = refused_reading(&TWO.replace("lib-v", "channel/lib-v"));
+    assert_eq!(
+        channel.why,
+        reserved("lib", "prefix \"channel/lib-v\"", "channel/")
+    );
+}
+
+#[test]
+fn the_rules_prefix_in_the_cache_space_is_refused_naming_it() {
+    let r = refused_reading("[version]\nprefix = \"cache/\"\n");
+    assert_eq!(r.why, reserved("repository", "prefix \"cache/\"", "cache/"));
+    let text = r.why.to_string();
+    assert!(
+        text.contains("prefix \"cache/\"") && text.contains("enters cache/"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_prefix_that_only_begins_like_a_space_is_read() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit(
+        "chore: policy",
+        &[(POLICY_FILE, &TWO.replace("web-v", "artifact-v"))],
+    );
+    let declared = read(&repo).unwrap();
+    assert_eq!(declared.components[1].prefix, "artifact-v");
+}

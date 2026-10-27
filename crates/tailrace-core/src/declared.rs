@@ -6,15 +6,21 @@ use std::collections::BTreeMap;
 
 use semver::{Prerelease, Version};
 use serde::Deserialize;
-use tailrace_seams::{Answer, Component, ComponentName, Ecosystem, Not, OutputName, Source, Why};
+use tailrace_seams::{
+    Answer, Component, ComponentName, Ecosystem, Not, OutputName, Source, Why, ARTIFACT,
+};
 
-use crate::{History, Landed, LOCAL, NOTES};
+use crate::{History, Landed, CACHE, LOCAL, NOTES};
 
 /// The policy file, at the root of the repository's tree.
 pub const POLICY_FILE: &str = ".config/tailrace.toml";
 
 /// What the one component of a repository that declares none is named.
 pub use tailrace_seams::REPOSITORY_COMPONENT as REPOSITORY;
+
+/// 138: the spaces of the store's names no component's tag may enter: an
+/// artifact's, a cache entry's and a channel's (design D14).
+pub const RESERVED: [&str; 3] = [ARTIFACT, CACHE, "channel/"];
 
 /// The version rule: git-cliff's conventional bump with these settings,
 /// and a prerelease where no commit makes a release (21, section 9).
@@ -70,7 +76,10 @@ impl Default for Rule {
 /// projections key naming an output its component does not declare is
 /// unreadable naming it. A projections key naming the ecosystem `notes`,
 /// which a version's notes are carried in, is refused naming the
-/// component and the output (design D9).
+/// component and the output (design D9). A component's prefix, or the
+/// rule's where none is declared, beginning with a space of
+/// [`RESERVED`] is refused naming the component, the prefix and the
+/// space (138).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declared {
     pub rule: Rule,
@@ -132,7 +141,9 @@ impl Declared {
     /// landed revision; unreadable naming the file and the revision, with
     /// the parser's words, when it is not well formed (58, 59); refused
     /// [`Why::DeclaredTwice`] when two components share a name or a
-    /// prefix, and [`Why::Said`] when an output is packed as `notes`.
+    /// prefix, [`Why::Reserved`] when a prefix enters a space of
+    /// [`RESERVED`], and [`Why::Said`] when an output is packed as
+    /// `notes`.
     pub fn read(history: &History, landed: &Landed) -> Answer<Declared> {
         let what = format!("{POLICY_FILE} at {}", landed.revision());
         let unreadable = |said: String| Not::unreadable(&Source::history(LOCAL), &what, Some(said));
@@ -195,8 +206,27 @@ impl Declared {
             }
         };
 
+        // 138: a prefix is followed by a version, which begins with a
+        // digit, so a prefix enters a space only by beginning with it.
+        let in_space = |name: &ComponentName, prefix: &str| match RESERVED
+            .iter()
+            .find(|space| prefix.starts_with(**space))
+        {
+            Some(space) => Err(Not::refused(
+                &Source::history(LOCAL),
+                Why::Reserved {
+                    component: name.clone(),
+                    what: format!("prefix \"{prefix}\""),
+                    space: space.to_string(),
+                },
+                None,
+            )),
+            None => Ok(()),
+        };
+
         if file.component.is_empty() {
             let name = ComponentName::new(REPOSITORY);
+            in_space(&name, &rule.prefix)?;
             let packed_by = ecosystems(file.projections);
             undeclared(&name, &file.outputs, &packed_by)?;
             reserved(&name, &packed_by)?;
@@ -215,6 +245,7 @@ impl Declared {
         let mut components: Vec<Component> = Vec::new();
         let mut projections = BTreeMap::new();
         for raw in file.component {
+            in_space(&raw.name, &raw.prefix)?;
             let packed_by = ecosystems(raw.projections);
             undeclared(&raw.name, &raw.outputs, &packed_by)?;
             reserved(&raw.name, &packed_by)?;

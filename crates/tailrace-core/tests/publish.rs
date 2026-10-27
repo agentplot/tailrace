@@ -288,6 +288,34 @@ fn an_output_packed_as_notes_is_refused_before_the_build_is_asked() {
     nothing_offered(&world);
 }
 
+// Requirement: No component's tag enters a reserved space
+
+#[test]
+fn a_prefix_in_a_reserved_space_derives_claims_and_offers_nothing() {
+    let world = World::with_policy(&world::POLICY.replace("lib-v", "artifact/lib-v"));
+    let Err(Not::Refused(r)) = world.publish(&world.ask()) else {
+        panic!("a prefix in the artifact space was published")
+    };
+    assert_eq!(
+        r.why,
+        Why::Reserved {
+            component: ComponentName::new("lib"),
+            what: "prefix \"artifact/lib-v\"".into(),
+            space: "artifact/".into(),
+        }
+    );
+    assert_eq!(world.fakes.build.calls(), []);
+    assert_eq!(world.repo.tag_at("artifact/lib-v0.2.0"), None);
+    assert_eq!(world.shared.tag_at("artifact/lib-v0.2.0"), None);
+    assert!(world
+        .kept()
+        .dir()
+        .read_dir()
+        .map_or(true, |mut d| d.next().is_none()));
+    no_pack(&world);
+    nothing_offered(&world);
+}
+
 #[test]
 fn a_projection_not_bound_is_absent_naming_the_ecosystem() {
     let world =
