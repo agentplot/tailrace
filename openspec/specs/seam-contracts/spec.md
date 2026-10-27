@@ -12,13 +12,13 @@ the answers they give.
 Each seam of Part B SHALL be exactly one interface holding that seam's
 operations as the statement names them and no other: the store (66 to
 72), the build (74, 75), the landing (77, 78), the signer (79, 80), the
-policy (82), a projection (84 to 86, 137, 140), a target (88 to 91) and
-the keeper (120, 121). A profile implements one interface and nothing of
+policy (82, 131), a projection (84 to 86, 137, 140), a target (88 to
+91) and the keeper (120, 121). A profile implements one interface and nothing of
 the core (core.2).
 
 #### Scenario: Each seam's operations
 - **WHEN** a reader lists the operations of each seam's interface
-- **THEN** the store has put-bytes, put-artifact, attach, claims-of, name, resolve and read; the build has ensure and report; the landing has landed and verdicts-of; the signer has sign and verify; the policy has policy-for; a projection has pack, render, serve, pinned, requires and satisfying; a target has desired, current, apply and report; the keeper has append and chain; and no interface has any other
+- **THEN** the store has put-bytes, put-artifact, attach, claims-of, name, resolve and read; the build has ensure and report; the landing has landed and verdicts-of; the signer has sign and verify; the policy has policy-for and channels; a projection has pack, render, serve, pinned, requires and satisfying; a target has desired, current, apply and report; the keeper has append and chain; and no interface has any other
 
 #### Scenario: The seams name no tool
 - **WHEN** the seams' code is searched for the names core.1 rules out
@@ -31,11 +31,17 @@ seams, in the statement's words, and nowhere else: digest, revision,
 branch, component, output, build identity, version, ecosystem and
 ecosystem name, artifact metadata and index metadata (4, 6), cache
 entry (52), claim and signed envelope (7, 8), verdict (78), signer,
-audience and the policy's requirements (82), environment and channel,
-and a manifest's range and the requirement that pairs an ecosystem name
-with one (140). Every such type SHALL be readable by a program (57). A
-cache entry SHALL be named by its build identity and its digest alone,
-and SHALL carry no ecosystem, name or version (53). A range and a
+audience and the policy's requirements (82), the channel a policy
+declares with how it moves (131), a given channel held off with the
+line that would switch it on (C.10), environment and channel, and a
+manifest's range and the requirement that pairs an ecosystem name with
+one (140). A channel SHALL be its component and its name together, its
+component none where the repository declares no component (125). The
+name of the one component of a repository that declares none (123)
+SHALL be defined with the seams, so every profile and the core name it
+alike. Every such type SHALL be readable by a program (57). A cache
+entry SHALL be named by its build identity and its digest alone, and
+SHALL carry no ecosystem, name or version (53). A range and a
 requirement SHALL carry the text as the manifest spells it, unchanged.
 
 #### Scenario: A value written and read back
@@ -52,6 +58,16 @@ requirement SHALL carry the text as the manifest spells it, unchanged.
 
 - **WHEN** a requirement naming a scoped name and a range with an operator and a prerelease is written in its machine-readable form
 - **THEN** it names that name and that range, character for character, and reads back as the same requirement
+
+#### Scenario: A declared channel names its component
+
+- **WHEN** a channel a policy declares is written in its machine-readable form
+- **THEN** it names the channel's name, its component or that the repository declares none, and how it moves, naming the channel it is bound to where it is bound and whether it takes prereleases where it moves on each publish
+
+#### Scenario: A channel spelled
+
+- **WHEN** the channel `beta` of no declared component and the channel `beta` of `lib` are spelled
+- **THEN** they are `beta` and `lib/beta`, and the two are not equal
 
 ### Requirement: A digest is a function of bytes alone
 
@@ -203,7 +219,12 @@ The landing SHALL answer landed with whether a branch has landed a
 revision (77), and verdicts-of with every verdict recorded for a
 revision, each naming its check, its build identity, its outcome and
 its signer, with its signed envelope as the landing recorded it, and
-where the landing found it, in the landing's own words (12, 78).
+where the landing found it, in the landing's own words (12, 78). Each
+answer SHALL say how it was read: from the landing's remote, or the
+repository itself where no remote is bound, or from the host's copy as
+last fetched, because the remote did not answer, with when that copy
+was fetched and the remote's own words of why it did not answer, the
+two ways a chain says it was read (59, 60, 61, 77, C.5, C.6).
 
 #### Scenario: A revision with no verdicts
 
@@ -214,6 +235,16 @@ where the landing found it, in the landing's own words (12, 78).
 
 - **WHEN** verdicts-of answers a verdict
 - **THEN** the verdict says where the landing found it
+
+#### Scenario: An answer read from the remote
+
+- **WHEN** landed or verdicts-of is answered while the landing's remote answers
+- **THEN** the answer says it was read from the landing itself
+
+#### Scenario: An answer read as last fetched
+
+- **WHEN** landed or verdicts-of is answered while the landing's remote does not answer, from a copy the host fetched before
+- **THEN** the answer says it was read from the copy, with the time the copy was fetched and the remote's words verbatim, and it is neither refused nor unreadable
 
 ### Requirement: The signer's contract
 
@@ -232,16 +263,61 @@ current and never as absent (81).
 ### Requirement: The policy's contract
 
 The policy SHALL answer policy-for, given a repository at a landed
-revision and an audience of acceptance, a channel or a layout, with the
-claims required, each with the signers that may make it and what each
-may claim (82), or absent where no policy is declared. The policy for a
-channel bound to another SHALL name the channel it is bound to, and the
-policy for acceptance SHALL name no channel (83).
+revision and an audience of acceptance, a channel with its component,
+or a layout, with the claims required, each with the signers that may
+make it and what each may claim (82), or absent where no policy is
+declared. The policy for a channel SHALL name the signers that may sign
+its promotion (32) and the signers that may ask for it, none meaning any
+asker the gate verifies (129, C.10), and the policy for a channel bound to another SHALL
+name the channel it is bound to; the policy for acceptance SHALL name no
+channel (83). The policy SHALL answer channels, given a repository at a
+landed revision, with every channel its policy declares or gives, once
+each, ordered by name and then by component, each with the one
+component it belongs to (125) and how it moves: on each accepted
+publish, with releases alone or prereleases too, by a promotion alone,
+or bound to a channel of the same component (37, 83, 131, C.10); a
+repository that declares one component SHALL
+have every channel in it, and one that declares none SHALL have every
+channel in that one, its channels spelled by name alone (123). The
+same channels answer SHALL carry, apart from the channels in force,
+every channel the profile gives but holds until the repository switches
+it on, and the repository has not switched on, marked held, once each,
+ordered by name and then by component, each with its component, how it
+would move once switched on, and the line that would switch it on, in
+the profile's own words; an empty list where it holds none back; and
+never a channel in force (131 as amended at agentplot/blueprints
+1ae1cc5, C.10). The policy seam SHALL have no operation for the held
+givens apart from channels (136).
 
 #### Scenario: Acceptance names no channel
 
 - **WHEN** policy-for is asked for acceptance
 - **THEN** its answer names no channel, and requirements for acceptance cannot be made naming one
+
+#### Scenario: The channels and policy-for agree on a binding
+
+- **WHEN** channels answers a channel bound to another, and policy-for is asked for that channel at the same revision
+- **THEN** both name the same channel it is bound to
+
+#### Scenario: A channel's promoters
+
+- **WHEN** policy-for is asked for a channel
+- **THEN** it names the signers whose promotion of that channel counts, each with what it may claim
+
+#### Scenario: A channel's approvers
+
+- **WHEN** policy-for is asked for a channel whose policy names who may ask for it, and for one whose policy names none
+- **THEN** the first names those signers, and the second names none, which is any asker the gate verifies
+
+#### Scenario: A given held off
+
+- **WHEN** the channels are asked at a revision whose policy holds a given the repository has not switched on
+- **THEN** the one answer carries the channels in force and, apart from them, the held given marked held, naming its component, how it would move and the line that would switch it on, and no channel is both in force and held
+
+#### Scenario: A channels answer written and read back
+
+- **WHEN** a channels answer holding a channel in force and a given held off is written in its machine-readable form and read back
+- **THEN** it is the same value, the held given naming the channel, its component or that the repository declares none, how it would move and its line, apart from the channels in force
 
 ### Requirement: A projection's contract
 A projection SHALL answer pack, given an output at a build identity and
@@ -322,18 +398,42 @@ when it last converged (91).
 
 ### Requirement: The keeper's contract
 
-The keeper SHALL answer append, given a promotion claim and the digest
-of the promotion it names as its predecessor, with the claim held at
-the head of its channel's chain, or refused naming the claim at the
-head (120); and chain with every promotion claim of a channel in order
-from the first, or absent when none is held (121). A chain that holds
-two claims naming one predecessor SHALL be refused as a fork, naming
-both, never answered by choosing one (105, 122).
+The keeper SHALL answer append, given a channel with its component, a
+promotion claim and the digest of the promotion it names as its
+predecessor, with the claim held at the head of that channel's chain,
+or refused naming the claim at the head (120); and chain, given a
+channel with its component, with every promotion claim of it in order
+from the first, or absent when none is held (121). Two components'
+channels of one name SHALL be two chains (125). A chain that holds two
+claims naming one predecessor SHALL be refused as a fork, naming both,
+never answered by choosing one (105, 122). A chain answered from the
+copy the host last read, because the source holding the ledger did not
+answer, SHALL say when that copy was read and carry the source's words
+of why it did not answer, a channel the copy holds no claim of answered
+as a chain of no claims saying so, never as an absence; a chain read
+from the source itself SHALL say so. An append SHALL never be held by
+such a copy alone (60 as amended at agentplot/blueprints b64d367, 61,
+C.13, C.14).
 
 #### Scenario: An append whose predecessor is not the head
 
 - **WHEN** append is given a predecessor that is not the head of the channel's chain
 - **THEN** it is refused naming the claim at the head, and the chain is unchanged
+
+#### Scenario: A chain read as last read
+
+- **WHEN** the source holding a chain the host has read cannot be reached, and the chain is asked
+- **THEN** the answer is the claims as last read, the time of that read and the source's words, and an append is unreadable
+
+#### Scenario: An empty chain read as last read
+
+- **WHEN** the host last read a channel's chain holding no claim, and the source holding it then cannot be reached
+- **THEN** the answer is a chain of no claims, the time of that read and the source's words, and not absent
+
+#### Scenario: Two components' chains of one name
+
+- **WHEN** a promotion is appended to `beta` of `lib` and the chain of `beta` of `web` is asked
+- **THEN** the chain of `beta` of `web` is absent
 
 ### Requirement: The core is handed one binding
 
@@ -380,3 +480,71 @@ other audience's answer SHALL carry them.
 #### Scenario: A layout policy's signers written and read back
 - **WHEN** a policy for a layout carrying the file's signers is written in its machine-readable form and read back
 - **THEN** it carries the same signers, and one carrying none reads back carrying none
+
+### Requirement: The promotion claim's body
+
+A promotion claim's body SHALL be one type defined with the ledger seam,
+readable by a program and read back the same (57): the channel, the
+component, the version and index it moves to, the version and index it
+moves from or none for the channel's first, the digest of the promotion
+it follows or none, who asked, the revision the channel's policy was
+read at and the digests of the claims that satisfied it, and when, in
+seconds since the Unix epoch (33, 39, 105). Reading a claim's body SHALL
+answer none for a claim that is not a promotion of tailrace's form.
+
+#### Scenario: A promotion's body read back
+
+- **WHEN** a promotion claim is made with a body and its envelope is read back
+- **THEN** the body read is the body made, value for value, and an acceptance claim's envelope reads as no promotion
+
+### Requirement: A channel's name in the store
+
+A channel's name in the store SHALL be `channel/` and the channel as it
+is spelled: `channel/<channel>` where the repository declares no
+component, and `channel/<component>/<channel>` where it declares
+components; the same for the core and every ledger profile that walks
+from it, and never the name of a version or a cache entry (3, 125,
+C.14).
+
+#### Scenario: Stable's name
+
+- **WHEN** the store name of the channel `stable` of a repository that declares no component is asked
+- **THEN** it is `channel/stable`
+
+#### Scenario: A component's stable
+
+- **WHEN** the store name of the channel `stable` of the component `lib` is asked
+- **THEN** it is `channel/lib/stable`
+
+### Requirement: The refusals a promotion gives
+
+A promotion's refusal SHALL name, as Part A says each names: the first
+claim found wanting, by its kind, its check where it is a verdict, and
+the signers that may make it (58); the version and index a channel is
+at, or that it is empty, where a promotion expected it elsewhere (35);
+and the channel a bound channel is bound to, where the version was
+never a subject of its chain (37).
+
+#### Scenario: Each refusal read back
+
+- **WHEN** each of the three refusals is written in its machine-readable form and read back
+- **THEN** it is the same refusal, naming what it names
+
+### Requirement: Not landed as last fetched is a refusal of its own
+
+A revision the landing answers not landed from the host's copy SHALL
+be refused naming the branch, the revision and the time the copy was
+fetched, carrying the remote's words verbatim beside tailrace's and
+saying to ask again once the remote answers; it SHALL be told apart
+from a revision the landing answers not landed from its remote, in the
+JSON form as in the text (14, 57, 58, 59, 77).
+
+#### Scenario: The two refusals told apart
+
+- **WHEN** one revision is refused as not landed by a landing that answered from its remote, and another by a landing that answered from its copy as last fetched
+- **THEN** the second's refusal names the copy's time and the remote's words and says to ask again, the first's names neither, and both read back from JSON as they were made
+
+#### Scenario: A yes from the copy
+
+- **WHEN** the landing answers landed from its copy as last fetched
+- **THEN** the revision is landed, and the landed revision says it was read from the copy and when

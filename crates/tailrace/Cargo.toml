@@ -14,13 +14,20 @@ path = "src/main.rs"
 tailrace-seams = { path = "../tailrace-seams" }
 tailrace-core = { path = "../tailrace-core" }
 anyhow.workspace = true
+aws-config.workspace = true
+aws-sdk-kms.workspace = true
+aws-smithy-http-client.workspace = true
 base64.workspace = true
 clap.workspace = true
 docker_credential.workspace = true
 glob.workspace = true
+libc.workspace = true
+p256.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 ssh-key.workspace = true
+tokio.workspace = true
 toml.workspace = true
 ureq.workspace = true
 
@@ -33,6 +40,9 @@ tools = []
 [dev-dependencies]
 tailrace-fakes = { path = "../tailrace-fakes" }
 tailrace-conformance = { path = "../tailrace-conformance" }
+aws-credential-types.workspace = true
+aws-smithy-http-client = { workspace = true, features = ["test-util"] }
+http.workspace = true
 tempfile.workspace = true
 
 [lib]

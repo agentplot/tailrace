@@ -6,17 +6,23 @@
 //! namespace, and told apart by the public key the policy lists for each
 //! signer (79, 80).
 //!
-//! The profile is a signer's name and a path, and nothing else (design
-//! D1): the key is read at the moment it signs and dropped before sign
-//! answers, so no credential is kept (64, rule core.21). A host that
-//! only verifies binds it with neither, and signs nothing (79, 80).
+//! The profile is a signer's name and a path, and whether the key is the
+//! host's given one, and nothing else (design D1): the key is read at
+//! the moment it signs and dropped before sign answers, so no credential
+//! is kept (64, rule core.21). The given key, which a host whose
+//! bindings file names no `[signing]` signs with, is made the first time
+//! it signs, with its public half beside it as a policy lists it (118,
+//! C.8). A host that only verifies binds it with neither, and signs
+//! nothing (79, 80).
 
-use std::fs;
-use std::io;
-use std::os::unix::fs::PermissionsExt;
+use std::ffi::OsString;
+use std::fs::{self, DirBuilder, OpenOptions};
+use std::io::{self, Write};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use ssh_key::rand_core::{OsRng, RngCore};
 use ssh_key::{Algorithm, HashAlg, LineEnding, PrivateKey, SshSig};
 use tailrace_seams::{
     Answer, Claim, Envelope, Made, NamedSigner, Not, Seam, Signature, Signer, SignerId, Source,
@@ -39,11 +45,13 @@ pub struct HostKey {
     signing: Option<Signing>,
 }
 
-/// The identity a host key signs as, and the path of its key file.
+/// The identity a host key signs as, the path of its key file, and
+/// whether it is the host's given key, made where sign finds no file.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Signing {
     signer: SignerId,
     key: PathBuf,
+    given: bool,
 }
 
 /// The file beside a key file that holds its public half, as ssh-keygen
@@ -63,6 +71,21 @@ impl HostKey {
             signing: Some(Signing {
                 signer,
                 key: key.into(),
+                given: false,
+            }),
+        }
+    }
+
+    /// The host's given key at `key`, signing as `signer` (118, C.8;
+    /// design D3): a named key but for one thing, that a sign which finds
+    /// no file at `key` makes one, and its public half beside it, first.
+    /// Nothing is read or made until a claim is signed.
+    pub fn given(signer: SignerId, key: impl Into<PathBuf>) -> HostKey {
+        HostKey {
+            signing: Some(Signing {
+                signer,
+                key: key.into(),
+                given: true,
             }),
         }
     }
@@ -92,6 +115,56 @@ impl HostKey {
 }
 
 impl Signing {
+    /// The given key made where no file is at its path (design D3): its
+    /// directory made with its parents, mode 0700 where it is made; an
+    /// Ed25519 key with no passphrase, named for the signer, written to a
+    /// fresh file beside it, mode 0600, and linked into place, so of two
+    /// first signs at once one key is kept and both read it; then its
+    /// public half the same way, by the sign whose key was kept. A file
+    /// that is there, whatever it holds, is never replaced.
+    fn make(&self, source: &Source) -> Answer<()> {
+        match fs::metadata(&self.key) {
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+            _ => return Ok(()),
+        }
+        let dir = self
+            .key
+            .parent()
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)
+            .map_err(|e| self.unreadable(source, e.to_string()))?;
+        let mut key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519)
+            .map_err(|e| self.unreadable(source, e.to_string()))?;
+        key.set_comment(self.signer.as_str());
+        let text = key
+            .to_openssh(LineEnding::LF)
+            .map_err(|e| self.unreadable(source, e.to_string()))?;
+        let kept = place(&self.key, text.as_bytes(), 0o600)
+            .map_err(|e| self.unreadable(source, e.to_string()))?;
+        if !kept {
+            return Ok(());
+        }
+        let public = public_half(&self.key);
+        key.public_key()
+            .to_openssh()
+            .map_err(|e| e.to_string())
+            .and_then(|line| {
+                place(&public, format!("{line}\n").as_bytes(), 0o644).map_err(|e| e.to_string())
+            })
+            .map_err(|said| {
+                Not::unreadable(
+                    source,
+                    format!("the public key file {}", public.display()),
+                    Some(said),
+                )
+            })?;
+        Ok(())
+    }
+
     /// The key from its file, read now and checked in sluice's order
     /// (design D2): there, a regular file, only its owner may read it, an
     /// OpenSSH private key, no passphrase, Ed25519.
@@ -170,6 +243,39 @@ impl Signing {
     }
 }
 
+/// `bytes` at `path` with `mode`, written to a fresh file in its
+/// directory and linked into place, the fresh file removed either way:
+/// `false` where a file was already there, which is kept as it is.
+fn place(path: &Path, bytes: &[u8], mode: u32) -> io::Result<bool> {
+    let fresh = fresh_beside(path);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(mode)
+        .open(&fresh)?;
+    let written = file
+        .set_permissions(fs::Permissions::from_mode(mode))
+        .and_then(|()| file.write_all(bytes))
+        .and_then(|()| file.sync_all())
+        .and_then(|()| fs::hard_link(&fresh, path));
+    drop(file);
+    let _ = fs::remove_file(&fresh);
+    match written {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => Ok(false),
+        Err(e) => Err(e),
+    }
+}
+
+/// A fresh name beside `path`, for a file written before it is linked
+/// into place: `.signing.<random>` beside `signing`.
+fn fresh_beside(path: &Path) -> PathBuf {
+    let mut name = OsString::from(".");
+    name.push(path.file_name().unwrap_or_default());
+    name.push(format!(".{:016x}", OsRng.next_u64()));
+    path.with_file_name(name)
+}
+
 /// The key file's text overwritten before it is dropped, as ssh-key's own
 /// read of a key file does, so nothing of the key outlives the signature
 /// (64).
@@ -180,7 +286,8 @@ fn wipe(text: &mut [u8]) {
 
 impl Signer for HostKey {
     /// 79: `claim` signed as the bound signer, with the key read now and
-    /// dropped before the envelope is answered (64); absent for any other
+    /// dropped before the envelope is answered (64), the given key made
+    /// first where no file is at its path (118); absent for any other
     /// identity, and for every identity where no key is bound, with no
     /// file touched (11, rule core.8).
     fn sign(&self, claim: &Claim, identity: &SignerId) -> Answer<Envelope> {
@@ -195,6 +302,9 @@ impl Signer for HostKey {
         };
         if identity != &signing.signer {
             return Err(Not::absent(&source, format!("identity {identity}")));
+        }
+        if signing.given {
+            signing.make(&source)?;
         }
         let key = signing.read_key(&source)?;
         let payload = claim.payload();

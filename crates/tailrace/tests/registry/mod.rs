@@ -78,9 +78,8 @@ pub fn free_port() -> (u16, TcpListener) {
 }
 
 /// A port for a registry: below the ephemeral ranges every host hands a
-/// listener on port 0 from (32768 on Linux, 49152 on macOS) and above
-/// the sccache servers' (devenv.nix), so no listener of a test takes it
-/// before the registry binds it.
+/// listener on port 0 from (32768 on Linux, 49152 on macOS), so no
+/// listener of a test takes it before the registry binds it.
 fn server_port() -> u16 {
     static NEXT: AtomicU64 = AtomicU64::new(0);
     loop {

@@ -10,7 +10,7 @@ use tailrace_core::{verify, Published, Told, Verified, POLICY_FILE};
 use tailrace_fakes::{FakeLanding, FakePolicy, Fault, LandingOp, PolicyOp, StoreOp, Times};
 use tailrace_seams::{
     Answer, Audience, Check, Claim, ClaimKind, Envelope, Held, Manifest, NamedSigner, Not, Outcome,
-    Policy, Required, RequiredClaim, Revision, Seam, SignerId, Store, Verdict,
+    Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store, Verdict,
 };
 
 use crate::core::publish::{one, passing, version_of, TAG, VERSION};
@@ -303,12 +303,16 @@ impl Policy for Watched {
             .map(|c| {
                 (
                     serde_json::from_value(c.given["revision"].clone()).expect("a revision"),
-                    c.answer == Ok(json!(true)),
+                    c.answer.as_ref().is_ok_and(|a| a["landed"] == json!(true)),
                 )
             })
             .collect();
         self.seen.borrow_mut().push(answered);
         self.inner.policy_for(revision, audience)
+    }
+
+    fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
+        self.inner.channels(revision)
     }
 }
 

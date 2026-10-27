@@ -605,7 +605,7 @@ fn a_host_trusting_none_refuses_naming_acceptance_with_no_signer_checked() {
     match judge(&seams, &claims, &located, &on_index, &[]) {
         Ok(Err(Not::Refused(r))) => assert_eq!(
             r.why,
-            Why::Wanting {
+            Why::VersionWanting {
                 version: located.artifact.meta.clone(),
                 index: located.index.clone(),
                 wanting: RequiredClaim {
@@ -935,7 +935,7 @@ fn accepted() -> (Fakes, Located, Envelope) {
 fn wanting(answer: Result<Vec<SignerId>, Not>) -> (RequiredClaim, Vec<SignerId>) {
     match answer {
         Err(Not::Refused(r)) => match r.why {
-            Why::Wanting {
+            Why::VersionWanting {
                 wanting, checked, ..
             } => (wanting, checked),
             other => panic!("refused for {other:?}"),
@@ -1041,7 +1041,7 @@ fn of_two_claims_wanting_the_first_in_the_policys_order_is_named() {
             assert_eq!(r.source.seam, Seam::Policy);
             assert_eq!(
                 r.why,
-                Why::Wanting {
+                Why::VersionWanting {
                     version: located.artifact.meta.clone(),
                     index: located.index.clone(),
                     wanting: acceptance(),
@@ -1244,7 +1244,7 @@ fn a_version_refused_now_leaves_the_layout() {
     match &again.pins[0].answer {
         Err(Not::Refused(r)) => assert_eq!(
             r.why,
-            Why::Wanting {
+            Why::VersionWanting {
                 version: checkout.pkg.artifact.meta.clone(),
                 index: checkout.pkg.index.clone(),
                 wanting: provenance(),

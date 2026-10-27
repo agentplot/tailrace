@@ -149,6 +149,12 @@ pub fn derive(
     }))
 }
 
+/// 21, C.10: whether `version` is a prerelease: it parses as a semantic
+/// version with a prerelease part, the test [`derive`] makes of a tag.
+pub fn is_prerelease(version: &Named) -> bool {
+    Version::parse(version.as_str()).is_ok_and(|v| !v.pre.is_empty())
+}
+
 /// Whether git-cliff reads `commit` as a conventional feature, fix or
 /// breaking change, the commits that make a release.
 fn releases(commit: &Commit) -> bool {

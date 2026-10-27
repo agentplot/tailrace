@@ -1,6 +1,6 @@
 ---
 title: Ledgers
-description: The ledger seam, where a channel's chain is held, and the git ref and the store designed to fill it.
+description: The ledger seam, where a channel's chain is held, and the git ref and the store built to fill it.
 sidebar:
   order: 5
 ---
@@ -21,7 +21,9 @@ The seam is two operations (120, 121). **append** takes a promotion
 claim and the digest of the promotion it names as its predecessor, and
 holds the claim at the head of its channel's chain, or refuses it naming
 the claim at the head. **chain** takes a channel and answers every
-promotion claim of it in order from the first, or that none is held. The
+promotion claim of it in order from the first, or that none is held. A
+channel is its component and its name, so two components' `beta` are
+two chains (125). The
 ledger never removes or reorders a claim, and answers the same chain to
 every reader for as long as it holds it (122). Two claims that name one
 predecessor are a fork, which the gate reports and never resolves by
@@ -31,8 +33,39 @@ choosing.
 
 | member | profile | how | status |
 |---|---|---|---|
-| a git ref | C.13 | one ref per channel in the repository, `refs/tailrace/ledger/<channel>`, each commit holding one promotion claim; append is a push that fast-forwards, and a push the remote refuses is a predecessor that is not the head; the gate's own identity pushes | designed, the default |
-| the store | C.14 | the chain as the promotion claims attached to the versions they move to, walked by predecessor from the channel's tag; for a store the operator can trust to retain untagged claims, which a registry whose retention rules expire them by age is not | designed |
+| a git ref | C.13 | one ref per channel in the repository, `refs/tailrace/ledger/<channel>`, or `refs/tailrace/ledger/<component>/<channel>` where the repository declares components, each commit holding one promotion claim; append is a push that fast-forwards, and a push the remote refuses is a predecessor that is not the head; the gate's own identity pushes | built, the default |
+| the store | C.14 | the chain as the promotion claims attached to the versions they move to, walked by predecessor from the channel's name in the store, `channel/<channel>`, or `channel/<component>/<channel>` where the repository declares components, taking only the claims of that channel and component; for a store the operator can trust to retain untagged claims, which a registry whose retention rules expire them by age is not | built |
+
+The host binds one in its bindings file, `[ledger] git_ref = { remote =
+"origin" }` or `[ledger] store = {}`; see
+[self-hosting](/tailrace/guides/self-hosting/). A host with no file, or
+a file with no `[ledger]`, binds the git ref on the remote its landing
+reads, written in `[landing]` or the checkout's own `origin` or one
+remote (118, C.13): each read fetches the channel's chain from it, and
+each append pushes to it as the branch is pushed, fast-forward only,
+with the host's own git credentials. So a second machine of the same
+repository reads the chain the first appended with nothing written.
+Where the landing has no remote, the repository's own refs hold the
+chain, where it keeps its branch, and nothing is pushed.
+
+## Read as last read
+
+Where the source holding a chain does not answer, the chain is answered
+as this host last read it, saying when and carrying the source's own
+words, and nothing is appended to it or moved from it (60, 61).
+
+- **The git ref.** Every read fetches the remote's ref into the
+  repository's own copy, which only moves forward; a remote that no
+  longer extends the copy is a fork, or a loss of the claims it no
+  longer holds, and is reported, never chosen. Where the remote does not
+  answer, the chain is the copy's, as of the last time this repository
+  fetched or wrote it, from its reflog, with git's words.
+- **The store.** Every chain the host reads is kept, with the time it
+  was read, in `tailrace/ledger/<channel>.json`, or
+  `tailrace/ledger/<component>/<channel>.json`, under the repository's
+  common git directory, beside the record of published versions. Where
+  the store does not answer, the chain is that file's, with the store's
+  words. The file holds the chain and nothing else.
 
 A hosted backend binds its own append-only log as its ledger; the chain
 is the same bytes, so it moves between profiles by copying claims.
