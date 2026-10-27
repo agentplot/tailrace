@@ -87,6 +87,23 @@ and prints the repository's own page's address; the root is one link
 away. A repository no checkout on the host has named answers absent,
 saying so.
 
+## The herdr pane
+
+The herdr plugin, `plugins/herdr`, opens a pane as a split beside the
+pane a person is in. It shows every repository the host knows, one row
+each, as the root's answer gives them: every channel's head and the
+environments' four counts, or the answer given in their place. Opening a
+row shows that repository whole, as its own path answers: what
+`tailrace status --json` prints in its checkout. Both are read from the
+host's one serving process at its one address; where nothing answers
+there, the pane starts `tailrace serve` as any asker does, and the
+process's lock keeps the host to one (114, 132). The pane asks again
+every few seconds while it is open, keeps absent, refused and unreadable
+apart wherever one stands, each with the source's own words, and works
+out nothing of its own: it counts nothing and reads no store, ledger,
+policy or git (56, 58, 59). It never names a repository; a tailrace
+command run in a checkout of it does.
+
 ## Members
 
 | surface | what it is | status |
@@ -95,7 +112,7 @@ saying so.
 | the pages | every repository the host knows at `http://127.0.0.1:7420/`, and each at `http://127.0.0.1:7420/<owner>/<name>/status`, each with its JSON beside it, served by the host's one `tailrace serve` | built |
 | the command line, to come | `attest`, with a machine-readable answer | designed |
 | Claude Code | a plugin whose skill and command read status and verdicts in a session, and refuse the ecosystem's own publish command where tailrace is bound | designed |
-| herdr | a pane beside the agents showing each channel's head, each environment's state and what waits on a promotion | designed |
+| herdr | a pane beside the agents showing every repository the host knows and each one whole, read from the host's one serving process, which it starts where none answers | built |
 | Flywheel, through millpond | a promotion waiting on approval, or an environment that failed to converge, handed to millpond, the inbox, as a capture | designed |
 
 ## Adding one

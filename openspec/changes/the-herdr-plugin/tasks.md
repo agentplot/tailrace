@@ -24,7 +24,7 @@ landed on `main` and this bolt has taken it: the pane reads its
 ## 4. The two views
 
 - [x] 4.1 In `lib/words.jq` and `bin/status.sh`, the every-repository and one-repository frames, the answer rendering and the keys of D4 and D5, redrawing every five seconds and on `r`; add committed `.frame` files for the never-published documents and for hand-made documents holding each answer kind at each place it can stand, a row with counts, an empty list and a repository answered absent; test the cursor, opening a row, going back and `--repo` (spec `herdr-plugin`, every requirement on what the pane shows and that it computes nothing). Verify `devenv shell -- moon run plugin-herdr:test-sh plugin-herdr:test-dash` passes.
-- [ ] 4.2 Fill in `README.md` with what the pane shows, installing it, the key snippet and what it needs; mark the herdr row of `site/src/content/docs/guides/integrations/surfaces.mdx` built and say there that the pane shows every repository and one whole, read from the host's one process, which it starts where none answers. Verify `devenv shell -- moon run ':#check-fast'` passes.
+- [x] 4.2 Fill in `README.md` with what the pane shows, installing it, the key snippet and what it needs; mark the herdr row of `site/src/content/docs/guides/integrations/surfaces.mdx` built and say there that the pane shows every repository and one whole, read from the host's one process, which it starts where none answers. Verify `devenv shell -- moon run ':#check-fast'` passes.
 
 ## 5. The real process, by hand
 
