@@ -3,6 +3,10 @@
 //! the gate's own or refused whole naming the claim found wanting, and
 //! each channel that follows each publish moved by the gate itself (25
 //! to 30, 94 to 96, 107, 108, rules core.4, core.7, core.14; design D1).
+//! Each artifact is judged against the claims the policy asks of
+//! artifacts made its way, built or rendered, its making told once per
+//! judgment from its own provenance that counts and read by acceptance
+//! and each following channel alike (134).
 //! A publish's answer tells it of the index it offered, and the gate
 //! judges that index or nothing (95, 130). It imports nothing of publish,
 //! and publish nothing of it: what calls one and then the other is the
@@ -565,13 +569,18 @@ impl Judging<'_> {
         Ok(None)
     }
 
-    /// 28: each artifact, in the index's order, against each required
-    /// claim, in the policy's order; the first wanting refuses the whole.
+    /// 28, 134: each artifact, in the index's order, against each claim
+    /// required of artifacts made its way, in the policy's order; the
+    /// first wanting refuses the whole.
     fn count(&self, required: &Required) -> Answer<Count> {
         let named = named_in(required);
         let (mut claims, mut offered_by, mut one_host) = (Vec::new(), Vec::new(), false);
-        for (artifact, _, own) in &self.artifacts {
-            for wanted in required.claims() {
+        for (artifact, made, own) in &self.artifacts {
+            let asked = required
+                .claims()
+                .iter()
+                .filter(|c| c.asked_of.asks(*made == Made::Built));
+            for wanted in asked {
                 match self.found(wanted, artifact, own, &named)? {
                     Ok((envelope, maker)) => {
                         claims.push(envelope);
@@ -693,8 +702,9 @@ impl Judging<'_> {
         Ok(first.ok_or_else(|| near.unwrap_or(WhyWanting::Missing)))
     }
 
-    /// 33, 35, 39, 105: `channel` judged under its own policy at the head
-    /// and, where the gate is among its promoters and the policy is
+    /// 33, 35, 39, 105: `channel` judged under its own policy at the head,
+    /// each artifact by the making told under acceptance (134), and,
+    /// where the gate is among its promoters and the policy is
     /// satisfied, moved to the index: a promotion in the one body every
     /// promotion holds, signed as the gate naming the chain's head as its
     /// predecessor, appended to the chain, attached to the index, and only
