@@ -14,7 +14,7 @@ use std::time::SystemTime;
 use serde_json::{json, Value};
 use tailrace_core::{
     artifact_name, publish, sync_checkout, verify, Ask, CheckoutAsk, CheckoutSynced, History, Kept,
-    Layouts, Publish, Verified, VerifyAsk,
+    Layouts, Publish, RepositoryName, Verified, VerifyAsk,
 };
 use tailrace_fakes::{
     BuildOp, Call, FakeProjection, FakeSigner, Fakes, KeeperOp, StoreOp, TargetOp,
@@ -577,6 +577,15 @@ impl FakeWorld {
         envelope
     }
 
+    /// 114: the repository the clone is of, as its landing's remote
+    /// names it: `agentplot/consumer`.
+    pub fn repository(&self) -> RepositoryName {
+        RepositoryName {
+            owner: "agentplot".into(),
+            name: "consumer".into(),
+        }
+    }
+
     /// The host's record of the clone's layouts, under its own git
     /// directory (61, 62).
     pub fn layouts(&self) -> Layouts {
@@ -598,6 +607,7 @@ impl FakeWorld {
             tree: self.repo().path.clone(),
             when,
             trusted: trusted.to_vec(),
+            repository: Ok(self.repository()),
         };
         sync_checkout(&self.seams(), &self.layouts(), &ask)
     }

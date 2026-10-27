@@ -15,8 +15,8 @@ use tailrace_core::render::Kept;
 use tailrace_core::{
     artifact_name, judge, layout_policy_body, locate, miss, own_policy, place, policy_for, readers,
     refresh, render, sync_checkout, Carried, CheckoutAsk, HeldEntry, HeldPin, Landed, Layouts,
-    Located, MissAsk, Own, PinAnswer, PolicyOf, Provenance, Refresh, RenderAsk, Under, ARTIFACT,
-    CACHE,
+    Located, MissAsk, Own, PinAnswer, PolicyOf, Provenance, Refresh, RenderAsk, RepositoryName,
+    Under, ARTIFACT, CACHE,
 };
 use tailrace_fakes::{FakeProjection, Fakes, Fault, PolicyOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
@@ -1517,6 +1517,14 @@ fn the_record_is_kept_under_the_checkouts_own_git_directory() {
 
 const LANDED: &str = "4f2a9c1";
 
+/// The repository the checkout is of, as its landing's remote names it.
+fn consumer() -> RepositoryName {
+    RepositoryName {
+        owner: "agentplot".into(),
+        name: "consumer".into(),
+    }
+}
+
 impl Checkout {
     /// What sync asks of this checkout for the revision landed on `main`,
     /// at `when`, on a host trusting `trusted`.
@@ -1527,6 +1535,7 @@ impl Checkout {
             tree: self.tree.clone(),
             when,
             trusted,
+            repository: Ok(consumer()),
         }
     }
 
@@ -2084,4 +2093,77 @@ fn two_misses_at_once_on_two_threads_leave_both_held() {
         .collect();
     held.sort();
     assert_eq!(held, ["1.2.0", "1.3.0"]);
+}
+
+#[test]
+fn a_layout_whose_projection_serves_none_names_no_address() {
+    let checkout = Checkout::new();
+    checkout.projection.serves_none();
+    checkout.landed(vec![acceptance()], Some(&[pin("pkg", "1.1.0")]));
+    let synced = sync_checkout(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.checkout_ask(1, vec![]),
+    )
+    .unwrap();
+    assert!(matches!(
+        synced.layouts.as_slice(),
+        [(_, Ok(Refresh::Refreshed(_)))]
+    ));
+    assert_eq!(synced.served(&eco()), None);
+    let value = serde_json::to_value(&synced).unwrap();
+    assert_eq!(value["layouts"][0]["served"], json!(null));
+    assert_eq!(checkout.projection.misses(), [], "the probe asked the core");
+}
+
+#[test]
+fn a_served_layout_names_its_address_asking_its_projection_once() {
+    let checkout = Checkout::new();
+    checkout.landed(vec![acceptance()], Some(&[pin("pkg", "1.1.0")]));
+    let synced = sync_checkout(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.checkout_ask(1, vec![]),
+    )
+    .unwrap();
+    assert_eq!(
+        synced.served(&eco()),
+        Some(&Ok(
+            "http://127.0.0.1:7420/agentplot/consumer/eco/".to_string()
+        ))
+    );
+    let requests = checkout.projection.requests();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert_eq!(requests[0].path, "");
+    assert_eq!(
+        requests[0].base,
+        "http://127.0.0.1:7420/agentplot/consumer/eco"
+    );
+    assert_eq!(checkout.projection.misses(), [], "the probe asked the core");
+    let value = serde_json::to_value(&synced).unwrap();
+    assert_eq!(
+        value["layouts"][0]["served"],
+        json!({ "answer": "ok", "value": "http://127.0.0.1:7420/agentplot/consumer/eco/" })
+    );
+}
+
+#[test]
+fn a_served_layout_of_a_repository_its_remote_names_none_for_answers_why() {
+    let checkout = Checkout::new();
+    checkout.landed(vec![acceptance()], Some(&[pin("pkg", "1.1.0")]));
+    let unnamed = Not::unreadable(
+        &tailrace_seams::Source::history("origin"),
+        "an owner and a name in the address of the remote origin, /srv/consumer.git",
+        None,
+    );
+    let ask = CheckoutAsk {
+        repository: Err(unnamed.clone()),
+        ..checkout.checkout_ask(1, vec![])
+    };
+    let synced = sync_checkout(&checkout.fakes.seams(), &checkout.layouts, &ask).unwrap();
+    assert!(matches!(
+        synced.layouts.as_slice(),
+        [(_, Ok(Refresh::Refreshed(_)))]
+    ));
+    assert_eq!(synced.served(&eco()), Some(&Err(unnamed)));
 }
