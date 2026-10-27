@@ -8,6 +8,8 @@ use std::process::Command;
 use clap::Parser;
 use serde_json::Value;
 use tailrace::bindings::Teller;
+use tailrace::commands::serve::host::{self as serving, Host as ServingHost};
+use tailrace::commands::sync::{run_on as sync_on, SyncArgs};
 use tailrace::profiles::policy::file::PolicyFile;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{
@@ -19,7 +21,7 @@ use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
     Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
-    Manifest, NamedSigner, Not, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
+    Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
     RequiredClaim, Revision, Seam, Signer, SignerId, Source, Store, Verdict, Version,
 };
 use tempfile::TempDir;
@@ -477,6 +479,16 @@ fn published(host: &Host, name: &str, version: &str, accepted: bool) {
 /// does not name, under a policy for layouts requiring the gate's
 /// acceptance.
 fn pinning_one_of_each(host: &Host) {
+    pinning_one_of_each_served(host);
+    // The fake stands for a projection whose clients read files, so the
+    // sync names no address and starts no process on the host running
+    // the test.
+    host.fakes.projections[&Ecosystem::new("eco")].serves_none();
+}
+
+/// What [`pinning_one_of_each`] stages, the projection serving its
+/// layout.
+fn pinning_one_of_each_served(host: &Host) {
     published(host, "pkg", "1.1.0", true);
     published(host, "lib", "2.0.0", false);
     let tree = History::open(&host.repo).unwrap().workdir().unwrap();
@@ -550,10 +562,10 @@ fn sync_with_a_version_refused_prints_the_cores_answer_and_exits_1() {
             tree: history.workdir().unwrap(),
             when,
             trusted: vec![],
-            repository: Err(Not::absent(
-                &Source::new(Seam::Host, "sync"),
-                "repository of the checkout, which sync does not name yet",
-            )),
+            repository: Ok(RepositoryName {
+                owner: "agentplot".into(),
+                name: "tailrace".into(),
+            }),
         },
     );
     assert_eq!(printed, answer_json(&core));
@@ -2293,5 +2305,180 @@ fn policy_at_a_head_not_landed_exits_1_naming_the_branch_and_the_revision() {
     assert!(
         host.fakes.policy.calls().is_empty(),
         "the policy was asked of a head not landed"
+    );
+}
+
+/// A host of the test's own for the serving process: its state, its
+/// bindings file and its home under the scratch directory, so a sync
+/// reads and writes no file of the host running the test.
+fn serving_host(host: &Host) -> ServingHost {
+    ServingHost {
+        state: host.root().join("state/tailrace"),
+        config: host.bindings_file(),
+        home: Some(host.root().join("home")),
+        data: None,
+    }
+}
+
+/// An address of the test's own that nothing listens on: below the
+/// ranges a system hands to connections, apart for each test by `k`.
+fn unanswered(k: u16) -> std::net::SocketAddr {
+    let port = 28_000 + (std::process::id() % 500) as u16 * 4 + k;
+    std::net::SocketAddr::from(([127, 0, 0, 1], port))
+}
+
+/// A start that, once run, answers at `address` as the host's serving
+/// process does, counting each time it was run in `started`.
+fn starting(
+    address: std::net::SocketAddr,
+    started: &std::cell::Cell<u32>,
+) -> impl FnOnce() -> Answer<()> + '_ {
+    move || {
+        started.set(started.get() + 1);
+        let listener = std::net::TcpListener::bind(address).unwrap();
+        std::thread::spawn(move || {
+            let body = r#"{"serving":"tailrace","revision":"r","pid":7}"#;
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut asked = [0u8; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut asked);
+                let _ = std::io::Write::write_all(
+                    &mut stream,
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+            }
+        });
+        Ok(())
+    }
+}
+
+/// `tailrace sync --json` over the fakes on `serving`, its process found
+/// at `address` or started by `start`: the exit code and what it printed.
+fn synced_on(
+    host: &Host,
+    serving: &ServingHost,
+    address: std::net::SocketAddr,
+    start: impl FnOnce() -> Answer<()>,
+) -> (i32, Value) {
+    let args = SyncArgs {
+        revision: None,
+        branch: "main".into(),
+        json: true,
+    };
+    let mut out = Vec::new();
+    let code = sync_on(
+        &args,
+        &Ok(host.binding()),
+        &host.repo,
+        &mut out,
+        &Ok(serving.clone()),
+        address,
+        start,
+    );
+    (code, serde_json::from_slice(&out).unwrap())
+}
+
+#[test]
+fn a_sync_of_a_served_layout_names_its_address_and_finds_or_starts_the_hosts_process() {
+    let host = Host::new();
+    git(
+        &host.repo,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.com/agentplot/consumer.git",
+        ],
+    );
+    pinning_one_of_each_served(&host);
+    let serving = serving_host(&host);
+    let address = unanswered(0);
+    let started = std::cell::Cell::new(0);
+
+    let (code, printed) = synced_on(&host, &serving, address, starting(address, &started));
+    assert_eq!(code, 1, "the refused pin is not the exit: {printed}");
+    assert_eq!(
+        printed["value"]["layouts"][0]["served"],
+        serde_json::json!({
+            "answer": "ok",
+            "value": "http://127.0.0.1:7420/agentplot/consumer/eco/"
+        })
+    );
+    assert_eq!(printed["serving"]["answer"], "ok", "{printed}");
+    assert_eq!(printed["serving"]["value"]["pid"], 7);
+    assert_eq!(started.get(), 1);
+    let consumer = RepositoryName {
+        owner: "agentplot".into(),
+        name: "consumer".into(),
+    };
+    let tree = History::open(&host.repo).unwrap().workdir().unwrap();
+    assert_eq!(serving::checkout_of(&serving, &consumer), Ok(tree));
+
+    let (_, printed) = synced_on(&host, &serving, address, || {
+        panic!("started a second process")
+    });
+    assert_eq!(printed["serving"]["answer"], "ok", "{printed}");
+    assert_eq!(started.get(), 1);
+}
+
+#[test]
+fn a_sync_with_no_served_layout_names_nothing_and_starts_nothing() {
+    let host = Host::new();
+    git(
+        &host.repo,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.com/agentplot/consumer.git",
+        ],
+    );
+    pinning_one_of_each(&host);
+    let serving = serving_host(&host);
+    let (code, printed) = synced_on(&host, &serving, unanswered(1), || {
+        panic!("a process was started")
+    });
+    assert_eq!(code, 1, "{printed}");
+    assert_eq!(printed["value"]["layouts"][0]["served"], Value::Null);
+    assert!(printed.get("serving").is_none(), "{printed}");
+    assert!(
+        !serving.state.join(serving::REPOSITORIES).exists(),
+        "the host's file was written"
+    );
+}
+
+#[test]
+fn a_sync_in_a_checkout_whose_remote_names_no_owner_is_unreadable_naming_it() {
+    let host = Host::new();
+    git(
+        &host.repo,
+        &["remote", "set-url", "origin", "/srv/consumer.git"],
+    );
+    pinning_one_of_each_served(&host);
+    let serving = serving_host(&host);
+    let (code, printed) = synced_on(&host, &serving, unanswered(2), || {
+        panic!("a process was started")
+    });
+    assert_eq!(code, 3, "{printed}");
+    let layout = &printed["value"]["layouts"][0];
+    assert_eq!(
+        layout["answer"], "ok",
+        "the layout was not rendered: {printed}"
+    );
+    let served = &layout["served"];
+    assert_eq!(served["answer"], "unreadable", "{printed}");
+    let what = served["unreadable"]["what"].as_str().unwrap();
+    assert!(
+        what.contains("origin") && what.contains("/srv/consumer.git"),
+        "{what}"
+    );
+    assert!(printed.get("serving").is_none(), "{printed}");
+    assert!(
+        !serving.state.join(serving::REPOSITORIES).exists(),
+        "the host's file was written"
     );
 }
