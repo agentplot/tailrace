@@ -1,0 +1,30 @@
+# The given channels (C.10): a policy fragment in the policy file's own
+# form, for a repository that declares no component, laid beneath the
+# repository's `.config/tailrace.toml` for every component it declares.
+# A key the repository writes under one of these channels replaces the
+# key here. `held = true` is this fragment's mark alone: a channel so
+# marked is held off until the repository writes its table, empty or
+# with lines, which is the one switch; no key turns a channel on or off,
+# and nothing turns beta or stable off.
+
+# C.10: every component has beta, moved by the gate on each accepted
+# publish, taking releases alone (95).
+[channels.beta]
+on_each_publish = true
+
+# C.10: and stable, moved by promotion from among what beta has held (37).
+[channels.stable]
+bound_to = "beta"
+
+# C.10: alpha, held until its table is written, follows every accepted
+# version, prereleases too.
+[channels.alpha]
+held = true
+on_each_publish = true
+prereleases = true
+
+# C.10: lts, held until its table is written, promoted from stable. It
+# names no rule, so no publish and no report moves it: only an asking.
+[channels.lts]
+held = true
+bound_to = "stable"

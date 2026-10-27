@@ -71,7 +71,7 @@ impl Serialize for Push {
 pub fn push(seams: &Seams, ask: &PushAsk) -> Answer<Push> {
     let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &ask.revision)?;
     let mut builds: Vec<(BuildId, Check)> = Vec::new();
-    for verdict in seams.landing.verdicts_of(landed.revision())? {
+    for verdict in seams.landing.verdicts_of(landed.revision())?.verdicts {
         if verdict.outcome == Outcome::Pass && !builds.iter().any(|(b, _)| *b == verdict.build) {
             builds.push((verdict.build, verdict.check));
         }

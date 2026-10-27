@@ -16,8 +16,8 @@ use tailrace_core::render::{Kept, Refreshed};
 use tailrace_core::{layout_policy_body, CheckoutSynced, PinAnswer, PolicyOf, Refresh, Under};
 use tailrace_fakes::{Fault, StoreOp, Times};
 use tailrace_seams::{
-    Artifact, Audience, ClaimKind, Digest, Ecosystem, NamedSigner, Not, Required, RequiredClaim,
-    Revision, SignerId, Store, Why,
+    Artifact, AskedOf, Audience, ClaimKind, Digest, Ecosystem, NamedSigner, Not, Required,
+    RequiredClaim, Revision, SignerId, Store, Why,
 };
 
 use crate::world::{FakeWorld, FILE, HOST};
@@ -128,6 +128,7 @@ fn acceptance() -> RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
         signers: vec![named(GATE, &[ClaimKind::Acceptance])],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -137,6 +138,7 @@ fn provenance() -> RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![named(HOST, &[ClaimKind::Provenance])],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -246,7 +248,7 @@ fn pin<'a>(layout: &'a Refreshed, version: &str) -> &'a PinAnswer {
 fn wanting(pin: &PinAnswer) -> (RequiredClaim, Vec<SignerId>) {
     match &pin.answer {
         Err(Not::Refused(r)) => match &r.why {
-            Why::Wanting {
+            Why::VersionWanting {
                 wanting, checked, ..
             } => (wanting.clone(), checked.clone()),
             other => panic!("{:?} was refused for {other:?}", pin.pin),
@@ -415,6 +417,7 @@ fn the_publishers_policy_through_the_hosts_trust(world: &FakeWorld) {
             named(GATE, &[ClaimKind::Acceptance]),
             named("box", &[ClaimKind::Acceptance]),
         ],
+        asked_of: AskedOf::Every,
     };
     let (by_gate, _) = site(world, "1.0.0", true);
     publishers(world, &by_gate, std::slice::from_ref(&gate_or_box), GATE);
@@ -552,7 +555,7 @@ fn a_version_refused_naming_its_claim(world: &FakeWorld) {
     match &pin(refreshed(&synced), "1.0.0").answer {
         Err(Not::Refused(r)) => assert_eq!(
             r.why,
-            Why::Wanting {
+            Why::VersionWanting {
                 version: artifact.meta.clone(),
                 index,
                 wanting: acceptance(),
@@ -705,6 +708,7 @@ fn a_consumers_file_reads_under_its_own_signers_alone(world: &FakeWorld) {
             named(HOST, &[ClaimKind::Provenance]),
             named("box", &[ClaimKind::Provenance]),
         ],
+        asked_of: AskedOf::Every,
     };
     publishers(world, &curated, &[host_or_box], "curator");
     world.attach(&artifact.digest, ClaimKind::Provenance, json!({}), HOST);
@@ -766,6 +770,7 @@ fn a_claim_the_file_names_no_signer_for_read_through_the_hosts_trust(world: &Fak
             kind: ClaimKind::Acceptance,
             check: None,
             signers: vec![],
+            asked_of: AskedOf::Every,
         }],
         vec![laptop],
     );

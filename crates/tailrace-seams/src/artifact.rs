@@ -25,6 +25,10 @@ text! {
     ComponentName
 }
 
+/// What the one component of a repository that declares none is named
+/// (123), so every profile and the core name it alike.
+pub const REPOSITORY_COMPONENT: &str = "repository";
+
 /// The outputs the authors declare to take one version together, the
 /// paths whose changes version it, and the prefix its tags carry (123).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,6 +91,58 @@ text! {
 text! {
     /// A channel, by name (31).
     ChannelName
+}
+
+/// 125: a channel as every seam that takes one knows it, its component
+/// and its name together; the component none where the repository
+/// declares no component (123), so two components' channels of one name
+/// are two channels. Ordered by name, then component.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ChannelId {
+    pub component: Option<ComponentName>,
+    pub name: ChannelName,
+}
+
+impl ChannelId {
+    pub fn new(component: Option<ComponentName>, name: ChannelName) -> Self {
+        ChannelId { component, name }
+    }
+
+    /// C.13, C.14: the channel as a ref and a store name spell it: its
+    /// name where no component is declared, `<component>/<name>` where
+    /// one is.
+    pub fn spelled(&self) -> String {
+        match &self.component {
+            None => self.name.to_string(),
+            Some(component) => format!("{component}/{}", self.name),
+        }
+    }
+
+    /// The component the channel is of: the one declared, or the one
+    /// named [`REPOSITORY_COMPONENT`] where none is (123).
+    pub fn component_name(&self) -> ComponentName {
+        self.component
+            .clone()
+            .unwrap_or_else(|| ComponentName::new(REPOSITORY_COMPONENT))
+    }
+}
+
+impl Ord for ChannelId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (&self.name, &self.component).cmp(&(&other.name, &other.component))
+    }
+}
+
+impl PartialOrd for ChannelId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl fmt::Display for ChannelId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.spelled())
+    }
 }
 
 /// 4: what an artifact's bytes are: the ecosystem whose form they take,
@@ -450,5 +506,41 @@ mod tests {
         round_trip(Held::Manifest(Manifest::Index(index)));
         round_trip(Name::new("web-v1.0.0"));
         round_trip(ChannelName::new("beta"));
+    }
+
+    #[test]
+    fn a_channel_is_spelled_with_its_component_where_one_is_declared() {
+        let beta = ChannelId::new(None, ChannelName::new("beta"));
+        let libs = ChannelId::new(Some(ComponentName::new("lib")), ChannelName::new("beta"));
+        assert_eq!(beta.spelled(), "beta");
+        assert_eq!(libs.spelled(), "lib/beta");
+        assert_eq!(libs.to_string(), "lib/beta");
+        assert_ne!(beta, libs);
+        assert_eq!(beta.component_name().as_str(), REPOSITORY_COMPONENT);
+        assert_eq!(libs.component_name().as_str(), "lib");
+        assert_eq!(
+            serde_json::to_value(&beta).unwrap(),
+            serde_json::json!({ "component": null, "name": "beta" })
+        );
+        round_trip(beta);
+        round_trip(libs);
+    }
+
+    #[test]
+    fn channels_are_ordered_by_name_then_component() {
+        let id = |c: Option<&str>, n: &str| {
+            ChannelId::new(c.map(ComponentName::new), ChannelName::new(n))
+        };
+        let mut ids = [
+            id(Some("web"), "beta"),
+            id(Some("lib"), "stable"),
+            id(None, "edge"),
+            id(Some("lib"), "beta"),
+        ];
+        ids.sort();
+        assert_eq!(
+            ids.iter().map(ChannelId::spelled).collect::<Vec<_>>(),
+            ["lib/beta", "web/beta", "edge", "lib/stable"]
+        );
     }
 }

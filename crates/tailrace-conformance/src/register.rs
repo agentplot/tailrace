@@ -9,6 +9,12 @@
 //! of one bolt each remove a block of their own. A unit is a note for a
 //! reader, named by its bolt and what it builds; the check reads it as
 //! text, never as a reference.
+//!
+//! Beside them, the parts: each part of a clause a scenario cites whose
+//! behaviour a later unit builds, with the part in a few words, the unit
+//! that will build it and why it waits (section 12). The check prints
+//! each as pending on every run, and fails a part of a clause no scenario
+//! cites, which waits whole and belongs among the clauses.
 
 /// A clause that waits: the unit that will cite it, and why.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,48 +24,48 @@ pub struct Pending {
     pub why: &'static str,
 }
 
-const GATE: &str = "bolt 4 · the gate";
-const PROMOTION: &str = "bolt 4 · the keeper and promotion";
-const ACROSS: &str = "bolt 4 · status across machines";
 const SERVED: &str = "bolt 5 · the first served projection";
 const TARGET: &str = "phase 2 · the first target";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
+const PHASE_2: &str = "phase 2";
+const NOTES: &str = "the notes unit, which the user has not said yes to";
 
 // One entry per line, as the module says, wider than the formatter's
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 25, unit: GATE, why: "Acceptance is the gate's; bolt 4's gate unit adds the gate's half of S5 and S13 and takes 25 to 30 out." },
-    Pending { clause: 26, unit: GATE, why: "Acceptance changes no bytes and is a claim, and bolt 1 builds no gate." },
-    Pending { clause: 27, unit: GATE, why: "The offering and accepting credentials are kept apart by the gate, which bolt 1 does not build." },
-    Pending { clause: 28, unit: GATE, why: "Acceptance of a version is acceptance of every digest it names, and bolt 1 accepts nothing." },
-    Pending { clause: 29, unit: GATE, why: "The gate judges by the claims, the landing and the policy alone, and bolt 1 builds no gate." },
-    Pending { clause: 30, unit: GATE, why: "The gate counts an independent rebuild's claim, and bolt 1 builds no gate." },
-    Pending { clause: 94, unit: GATE, why: "Nothing accepted is un-accepted, and bolt 1 accepts nothing." },
-    Pending { clause: 95, unit: GATE, why: "The gate judges an offered version on being told of it, and bolt 1 builds no gate." },
-    Pending { clause: 96, unit: GATE, why: "No host that builds holds the accepting credential, and bolt 1 has none." },
-    Pending { clause: 107, unit: GATE, why: "The gate reads the policy at the governed branch's landed head, and bolt 1 builds no gate." },
-    Pending { clause: 108, unit: GATE, why: "One host as both offerer and gate is the gate's to say, and bolt 1 builds no gate." },
-    Pending { clause: 32, unit: PROMOTION, why: "A channel moves only by a promotion, and bolt 1 promotes nothing." },
-    Pending { clause: 33, unit: PROMOTION, why: "A promotion is recorded in the ledger before the channel moves, and bolt 1 keeps no ledger." },
-    Pending { clause: 37, unit: PROMOTION, why: "A bound channel takes only versions its bound channel held, and bolt 1 binds no channel." },
-    Pending { clause: 38, unit: PROMOTION, why: "Moving a channel away withdraws nothing, and bolt 1 moves no channel." },
-    Pending { clause: 39, unit: PROMOTION, why: "Every promotion is a claim attached to the index it moves to, and bolt 1 promotes nothing." },
-    Pending { clause: 41, unit: PROMOTION, why: "An environment that waits converges on an approver's promotion, and bolt 1 promotes nothing." },
-    Pending { clause: 97, unit: PROMOTION, why: "An approval is a promotion, and bolt 1 promotes nothing." },
-    Pending { clause: 101, unit: PROMOTION, why: "One record is the source of a channel's every state, and bolt 1 keeps no channel." },
-    Pending { clause: 106, unit: PROMOTION, why: "The keeper's chain is that record and the store is rewritten from it, and bolt 1 keeps no ledger." },
-    Pending { clause: 125, unit: PROMOTION, why: "A channel belongs to one component, and bolt 1 declares no channel." },
-    Pending { clause: 36, unit: ACROSS, why: "A channel resolves to one version for every reader, read across machines." },
-    Pending { clause: 98, unit: ACROSS, why: "What each environment should run and runs is told to every asker across machines." },
     Pending { clause: 46, unit: SERVED, why: "A consumer reads in its ecosystem's own form, which the first served projection serves." },
     Pending { clause: 49, unit: SERVED, why: "A client's recorded address names no host, which a served layout keeps." },
-    Pending { clause: 114, unit: SERVED, why: "A served layout is reached by one fixed name and port, and bolt 1 serves none." },
+    Pending { clause: 114, unit: SERVED, why: "A served layout is reached at the core's address, which bolt 5's first served projection serves and cites; the process is status-on-any-machine's, proven in the command line's tests." },
     Pending { clause: 115, unit: SERVED, why: "The host runs a served layout for as long as a client needs it, and bolt 1 serves none." },
+    Pending { clause: 41, unit: TARGET, why: "An environment that waits converges on an approver's promotion, S6's environment half, and phase 1 leaves every target to phase 2." },
+    Pending { clause: 97, unit: TARGET, why: "An approval is a promotion of the environment's own channel, S6's environment half, and phase 1 leaves every target to phase 2." },
     Pending { clause: 42, unit: TARGET, why: "A reconciler verifies before it applies, and phase 1 leaves every target to phase 2." },
     Pending { clause: 44, unit: TARGET, why: "Pushed to or pulling is the environment's own, and phase 1 leaves every target to phase 2." },
     Pending { clause: 45, unit: TARGET, why: "A reconciler acts with the environment's own credentials, and phase 1 leaves every target to phase 2." },
     Pending { clause: 119, unit: TARGET, why: "A reconciler leaves a marker of what it applied, and phase 1 leaves every target to phase 2." },
+    Pending { clause: 126, unit: TARGET, why: "The roster is a target's, and phase 1 leaves every target to phase 2." },
+    Pending { clause: 98, unit: TARGET, why: "What each environment should run and runs is reported by a target, and phase 1 leaves every target to phase 2." },
     Pending { clause: 55, unit: REBUILD, why: "A verifier's rebuild reads no cache entry it did not write, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 112, unit: REBUILD, why: "A verifier compares the digests of outputs, and phase 1 leaves the rebuild to phase 2." },
+    Pending { clause: 127, unit: PHASE_2, why: "A channel declared by a pattern over branch names, which no unit of phase 1 carves." },
+    Pending { clause: 128, unit: PHASE_2, why: "Several promotions in one act, which no unit of phase 1 carves." },
+    Pending { clause: 129, unit: PHASE_2, why: "The asker named by an identity the owner's identity provider issued, and phase 1 binds none." },
+];
+
+/// A part of a clause a scenario cites that waits: the part, the unit
+/// that will build it, and why.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Part {
+    pub clause: u16,
+    pub part: &'static str,
+    pub unit: &'static str,
+    pub why: &'static str,
+}
+
+// One part per line, as the entries are.
+#[rustfmt::skip]
+pub const PARTS: &[Part] = &[
+    Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: TARGET, why: "The pages show environments once a target reports them, and phase 1 leaves every target to phase 2." },
+    Part { clause: 132, part: "each version's notes", unit: NOTES, why: "No version carries notes yet, and the notes unit waits on the user." },
 ];

@@ -8,7 +8,7 @@
 //! | the build | [`Build`] | B.2, 74 to 76 |
 //! | the landing | [`Landing`] | B.3, 77, 78 |
 //! | the signer | [`Signer`] | B.4, 79 to 81 |
-//! | the policy | [`Policy`] | B.5, 82, 83 |
+//! | the policy | [`Policy`] | B.5, 82, 83, 131 |
 //! | a projection | [`Projection`] | B.6, 84 to 87, 137, 140 |
 //! | a target | [`Target`] | B.7, 88 to 91 |
 //! | the ledger | [`Keeper`] | B.8, 120 to 122 |
@@ -140,10 +140,10 @@ mod tests {
     }
 
     impl Landing for Nowhere {
-        fn landed(&self, _: &Branch, _: &Revision) -> Answer<bool> {
+        fn landed(&self, _: &Branch, _: &Revision) -> Answer<IsLanded> {
             nothing(Seam::Landing, "landed")
         }
-        fn verdicts_of(&self, _: &Revision) -> Answer<Vec<Verdict>> {
+        fn verdicts_of(&self, _: &Revision) -> Answer<Verdicts> {
             nothing(Seam::Landing, "verdicts-of")
         }
     }
@@ -160,6 +160,9 @@ mod tests {
     impl Policy for Nowhere {
         fn policy_for(&self, _: &Revision, _: &Audience) -> Answer<Required> {
             nothing(Seam::Policy, "policy-for")
+        }
+        fn channels(&self, _: &Revision) -> Answer<PolicyChannels> {
+            nothing(Seam::Policy, "channels")
         }
     }
 
@@ -200,10 +203,10 @@ mod tests {
     }
 
     impl Keeper for Nowhere {
-        fn append(&self, _: &ChannelName, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
+        fn append(&self, _: &ChannelId, _: &Envelope, _: Option<&Digest>) -> Answer<Digest> {
             nothing(Seam::Keeper, "append")
         }
-        fn chain(&self, _: &ChannelName) -> Answer<Vec<Envelope>> {
+        fn chain(&self, _: &ChannelId) -> Answer<Chain> {
             nothing(Seam::Keeper, "chain")
         }
     }
@@ -234,9 +237,10 @@ mod tests {
             Version::new("1.0.0"),
         )
         .unwrap();
+        let stable = ChannelId::new(None, ChannelName::new("stable"));
         let environment = Environment {
             name: EnvironmentName::new("production"),
-            channel: ChannelName::new("stable"),
+            channel: stable.clone(),
             waits: false,
         };
         let claim = Claim {
@@ -274,6 +278,7 @@ mod tests {
             asked(signer.sign(&claim, &SignerId::new("host"))),
             asked(signer.verify(&envelope, &[])),
             asked(policy.policy_for(&rev, &Audience::Acceptance)),
+            asked(policy.channels(&rev)),
             asked(projection.pack(
                 &Output {
                     name: OutputName::new("site"),
@@ -303,8 +308,8 @@ mod tests {
                 &Verified::new(d.clone(), Version::new("1.0.0")),
             )),
             asked(target.report(&environment)),
-            asked(keeper.append(&ChannelName::new("stable"), &envelope, None)),
-            asked(keeper.chain(&ChannelName::new("stable"))),
+            asked(keeper.append(&stable, &envelope, None)),
+            asked(keeper.chain(&stable)),
         ];
         let named = |seam| {
             operations
@@ -328,7 +333,7 @@ mod tests {
         assert_eq!(named(Seam::Build), ["ensure", "report"]);
         assert_eq!(named(Seam::Landing), ["landed", "verdicts-of"]);
         assert_eq!(named(Seam::Signer), ["sign", "verify"]);
-        assert_eq!(named(Seam::Policy), ["policy-for"]);
+        assert_eq!(named(Seam::Policy), ["policy-for", "channels"]);
         assert_eq!(
             named(Seam::Projection),
             [

@@ -20,11 +20,11 @@ use tailrace_fakes::{
     BuildOp, Call, FakeProjection, FakeSigner, Fakes, KeeperOp, StoreOp, TargetOp,
 };
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, ChannelName, Check, Claim,
-    ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Envelope, Environment,
-    EnvironmentName, IndexMeta, Layout, Manifest, Name, NamedSigner, Outcome, Output, OutputName,
-    Packed, Pinned, Projection, Range, Rendered, Report, Requirement, Revision, Seam, Seams,
-    Serving, Signer, SignerId, Source, Store, Verdict, Version,
+    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, ChannelId, ChannelName, Check,
+    Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Envelope,
+    Environment, EnvironmentName, IndexMeta, Layout, Manifest, Name, NamedSigner, Outcome, Output,
+    OutputName, Packed, Pinned, Projection, Range, Rendered, Report, Requirement, Revision, Seam,
+    Seams, Serving, Signer, SignerId, Source, Store, Verdict, Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -216,7 +216,7 @@ impl FakeWorld {
         fakes.projection(&Ecosystem::new(IMAGE));
         let environment = Environment {
             name: EnvironmentName::new(PRODUCTION),
-            channel: ChannelName::new(STABLE),
+            channel: ChannelId::new(None, ChannelName::new(STABLE)),
             waits: false,
         };
         fakes.target(&environment.name);
@@ -636,6 +636,241 @@ impl Projection for Watched {
 
     fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
         self.inner.satisfying(range, versions)
+    }
+}
+
+/// The identity the gate signs as, held by a signer of its own beside
+/// the host's (95).
+pub const GATE: &str = "gate";
+
+/// The moment the world's gate judges at, in seconds since the Unix
+/// epoch.
+pub const WHEN: u64 = 1_767_225_600;
+
+impl FakeWorld {
+    /// The policy file committed with `text` at the clone, pushed, and
+    /// landed on `main` with no verdicts; its revision.
+    pub fn land_policy(&self, text: &str) -> Revision {
+        let revision = self.repo().policy_file(text);
+        self.repo().push();
+        self.land(&revision, &[]);
+        revision
+    }
+
+    /// What the gate is asked of `version` on `main`, told of it by
+    /// `told`, signing as `gate`.
+    pub fn gate_ask(
+        &self,
+        version: &str,
+        told: tailrace_core::ToldBy,
+        gate: &str,
+    ) -> tailrace_core::AcceptAsk {
+        tailrace_core::AcceptAsk {
+            branch: self.main.clone(),
+            component: None,
+            version: Version::new(version),
+            told,
+            gate: SignerId::new(gate),
+            when: WHEN,
+        }
+    }
+
+    /// The fakes as the one binding, a signer of its own holding each of
+    /// `holding` bound after the host's.
+    pub fn seams_holding(&self, holding: &[&str]) -> Seams {
+        let mut seams = self.seams();
+        for id in holding {
+            let signer = FakeSigner::new();
+            signer.hold(&SignerId::new(*id));
+            seams.signers.push(Box::new(signer));
+        }
+        seams
+    }
+
+    /// The gate's judgment of `ask`, each of `holding` at hand beside the
+    /// host's identity.
+    pub fn judge(
+        &self,
+        ask: &tailrace_core::AcceptAsk,
+        holding: &[&str],
+    ) -> Answer<tailrace_core::Judged> {
+        tailrace_core::accept(&self.seams_holding(holding), &self.history(), ask)
+    }
+}
+
+/// The second signer a channel's policy may require a rebuild by, beside
+/// the gate (30).
+pub const REBUILDER: &str = "rebuild";
+
+impl FakeWorld {
+    /// A claim of `kind` about `subject` for `revision`, its body `body`,
+    /// signed as `signer` by a signer of its own and attached to the
+    /// subject; its envelope's digest.
+    pub fn attach_as(
+        &self,
+        signer: &str,
+        subject: &Digest,
+        kind: ClaimKind,
+        revision: &Revision,
+        body: serde_json::Value,
+    ) -> Digest {
+        let id = SignerId::new(signer);
+        let theirs = FakeSigner::new();
+        theirs.hold(&id);
+        let claim = Claim {
+            subject: subject.clone(),
+            kind,
+            revision: revision.clone(),
+            build: None,
+            body,
+        };
+        let envelope = theirs
+            .sign(&claim, &id)
+            .expect("their signer holds their identity");
+        tailrace_seams::Store::attach(&self.fakes.store, subject, &envelope)
+            .expect("the subject is held");
+        envelope.digest()
+    }
+
+    /// The fake policy for `channel`, of the one component: the gate's
+    /// acceptance required and, where `rebuild`, a rebuild by
+    /// [`REBUILDER`], the gate named for acceptance and promotion and the
+    /// rebuild signer for rebuilds (82, 108); bound to `bound_to` where it
+    /// names a channel (83); and the gate its one promoter (32).
+    pub fn channel_policy(&self, channel: &str, rebuild: bool, bound_to: Option<&str>) {
+        let named = |id: &str, kinds: &[ClaimKind]| tailrace_seams::NamedSigner {
+            id: SignerId::new(id),
+            verified_by: format!("{id}'s key"),
+            kinds: kinds.to_vec(),
+            checks: vec![],
+        };
+        let gate = named(GATE, &[ClaimKind::Acceptance, ClaimKind::Promotion]);
+        let mut claims = vec![tailrace_seams::RequiredClaim {
+            kind: ClaimKind::Acceptance,
+            check: None,
+            signers: vec![gate.clone()],
+            asked_of: tailrace_seams::AskedOf::Every,
+        }];
+        if rebuild {
+            claims.push(tailrace_seams::RequiredClaim {
+                kind: ClaimKind::Rebuild,
+                check: None,
+                signers: vec![named(REBUILDER, &[ClaimKind::Rebuild])],
+                asked_of: tailrace_seams::AskedOf::Every,
+            });
+        }
+        self.fakes.policy.require(
+            Audience::Channel(ChannelId::new(None, ChannelName::new(channel))),
+            tailrace_seams::Required::Channel {
+                claims,
+                bound_to: bound_to.map(ChannelName::new),
+                promoted_by: vec![gate],
+                approvers: vec![],
+            },
+        );
+    }
+
+    /// What a promotion of `channel` to `to` on `main` is asked, the gate
+    /// asking and signing at [`WHEN`].
+    pub fn promote_ask(&self, channel: &str, to: tailrace_core::To) -> tailrace_core::PromoteAsk {
+        tailrace_core::PromoteAsk {
+            branch: self.main.clone(),
+            component: None,
+            channel: ChannelName::new(channel),
+            to,
+            from: None,
+            signer: SignerId::new(GATE),
+            at: WHEN,
+        }
+    }
+
+    /// The fakes as the one binding with a signer holding the gate's
+    /// identity bound first, as on the one host that is the gate (108).
+    pub fn seams_as_gate(&self) -> Seams {
+        let mut seams = self.seams();
+        let gate = FakeSigner::new();
+        gate.hold(&SignerId::new(GATE));
+        seams.signers.insert(0, Box::new(gate));
+        seams
+    }
+
+    /// The promotion `ask` names, over [`FakeWorld::seams_as_gate`].
+    pub fn promote(&self, ask: &tailrace_core::PromoteAsk) -> Answer<tailrace_core::Promoted> {
+        tailrace_core::promote(&self.seams_as_gate(), &self.history(), ask)
+    }
+}
+
+/// The moment the status group's first promotion was made at, in
+/// seconds since the Unix epoch; each after it a second later.
+pub const PROMOTED: u64 = 1_767_312_000;
+
+impl FakeWorld {
+    /// 131: each of `channels` declared through the fake policy in the
+    /// world's one component, which declares none (123, 125), its policy
+    /// requiring nothing and naming no promoter, bound to the channel
+    /// beside it where one is named (37) and moving by a promotion alone
+    /// where none is.
+    pub fn declare_channels(&self, channels: &[(&str, Option<&str>)]) {
+        for (channel, bound_to) in channels {
+            self.fakes.policy.require(
+                Audience::Channel(ChannelId::new(None, ChannelName::new(*channel))),
+                tailrace_seams::Required::Channel {
+                    claims: vec![],
+                    bound_to: bound_to.map(ChannelName::new),
+                    promoted_by: vec![],
+                    approvers: vec![],
+                },
+            );
+        }
+    }
+
+    /// 33, 105: a promotion of `channel` to `version`, a version the
+    /// fake store names `v<version>`, appended to the fake keeper after
+    /// the chain's head, from the version the head moved to, asked by the
+    /// gate and sealed by a fake signer holding its identity; its
+    /// claim's digest. Each is made a second after the one before.
+    pub fn promote_fake(&self, channel: &str, version: &str) -> Digest {
+        let channel = ChannelId::new(None, ChannelName::new(channel));
+        let index =
+            tailrace_seams::Store::resolve(&self.fakes.store, &Name::new(format!("v{version}")))
+                .expect("the version is named in the store");
+        let read = tailrace_core::channel(&self.fakes.keeper, &channel).expect("the chain is read");
+        let (from, predecessor, made) = match read {
+            tailrace_core::Channel::Empty { .. } => (None, None, 0),
+            tailrace_core::Channel::At { head, chain, .. } => (
+                Some(head.to),
+                chain.last().map(|(d, _)| d.clone()),
+                chain.len() as u64,
+            ),
+        };
+        let promotion = tailrace_seams::Promotion {
+            channel: channel.name.clone(),
+            component: channel.component_name(),
+            to: tailrace_seams::Moved {
+                version: Version::new(version),
+                index,
+            },
+            from,
+            predecessor: predecessor.clone(),
+            asked_by: SignerId::new(GATE),
+            policy: tailrace_seams::Satisfied {
+                revision: self.head.clone(),
+                claims: vec![],
+            },
+            at: PROMOTED + made,
+        };
+        let gate = FakeSigner::new();
+        gate.hold(&SignerId::new(GATE));
+        let envelope = gate
+            .sign(&promotion.claim(self.head.clone()), &SignerId::new(GATE))
+            .expect("the gate's signer holds its identity");
+        tailrace_seams::Keeper::append(
+            &self.fakes.keeper,
+            &channel,
+            &envelope,
+            predecessor.as_ref(),
+        )
+        .expect("the keeper holds the promotion")
     }
 }
 

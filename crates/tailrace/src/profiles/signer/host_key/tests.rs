@@ -1,6 +1,7 @@
 //! Spec host-key-signer: sign and verify over keys made fresh in a
 //! temporary directory, and the fixed texts of keys this profile refuses.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -196,7 +197,7 @@ fn asked_to_sign_as_another_reads_no_key() {
 }
 
 #[test]
-fn a_missing_key_file_is_no_identity_at_hand() {
+fn a_named_key_files_absence_is_no_identity_at_hand() {
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("host");
     let what = absent(sign(&host(&path)));
@@ -301,7 +302,7 @@ fn the_key_replaced_between_two_signatures_signs_the_second() {
 }
 
 #[test]
-fn the_key_file_removed_after_a_signature_is_no_identity_at_hand() {
+fn a_named_key_file_removed_after_a_signature_is_no_identity_at_hand() {
     let dir = TempDir::new().unwrap();
     let path = written(dir.path(), "host", &new_key());
     let host = host(&path);
@@ -312,6 +313,29 @@ fn the_key_file_removed_after_a_signature_is_no_identity_at_hand() {
         what,
         format!("identity host: no key file at {}", path.display())
     );
+    assert!(!path.exists(), "a named key's sign made a key");
+}
+
+#[test]
+fn the_given_key_file_removed_after_a_signature_is_made_again() {
+    let dir = TempDir::new().unwrap();
+    let host = HostKey::given(SignerId::new("laptop"), dir.path().join("signing"));
+    let first = host.sign(&claim(), &SignerId::new("laptop")).unwrap();
+    let path = dir.path().join("signing");
+    let old = PrivateKey::read_openssh_file(&path).unwrap();
+    fs::remove_file(&path).unwrap();
+    fs::remove_file(public_half(&path)).unwrap();
+    let second = host.sign(&claim(), &SignerId::new("laptop")).unwrap();
+    let new = PrivateKey::read_openssh_file(&path).unwrap();
+    assert_ne!(new.public_key().key_data(), old.public_key().key_data());
+    for (key, envelope) in [(&old, &first), (&new, &second)] {
+        let signed = pae(&envelope.payload_type, &envelope.payload);
+        assert_eq!(
+            key.public_key()
+                .verify(NAMESPACE, &signed, &ssh_sig(envelope)),
+            Ok(())
+        );
+    }
 }
 
 /// Whether `bytes` holds `part` anywhere.
@@ -355,16 +379,228 @@ fn the_profile_is_its_signer_and_its_path_alone() {
     // Every field named, so a field added to hold anything of the key
     // fails to compile here.
     let HostKey {
-        signing: Some(Signing { signer, key }),
+        signing: Some(Signing { signer, key, given }),
     } = bound
     else {
         panic!("a keyed host key holds no signer and path")
     };
     assert_eq!(signer, SignerId::new("host"));
     assert_eq!(key, path);
+    assert!(!given, "a named key is taken for the given one");
     let HostKey { signing: None } = HostKey::verifying() else {
         panic!("the verify-only host key holds a signer")
     };
+}
+
+// Requirement: The given host key is made on first use
+
+/// The given key at `tailrace/signing` under `dir`, signing as `laptop`.
+fn given(dir: &Path) -> HostKey {
+    HostKey::given(SignerId::new("laptop"), dir.join("tailrace/signing"))
+}
+
+fn sign_given(host: &HostKey) -> Answer<Envelope> {
+    host.sign(&claim(), &SignerId::new("laptop"))
+}
+
+/// `signing.pub`'s one line as a policy lists it, under `id`.
+fn listed_as(id: &str, public: &Path) -> NamedSigner {
+    NamedSigner {
+        id: SignerId::new(id),
+        verified_by: fs::read_to_string(public).unwrap().trim().to_string(),
+        kinds: vec![ClaimKind::Provenance],
+        checks: vec![],
+    }
+}
+
+/// Each file's mode, modification time and bytes.
+fn state(paths: &[&Path]) -> Vec<(u32, std::time::SystemTime, Vec<u8>)> {
+    paths
+        .iter()
+        .map(|path| {
+            let meta = fs::metadata(path).unwrap();
+            (
+                meta.permissions().mode() & 0o777,
+                meta.modified().unwrap(),
+                fs::read(path).unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_first_sign_makes_the_key_and_its_public_half_which_a_policy_lists_as_it_stands() {
+    let dir = TempDir::new().unwrap();
+    let host = given(dir.path());
+    let envelope = sign_given(&host).unwrap();
+    let key = dir.path().join("tailrace/signing");
+    let public = dir.path().join("tailrace/signing.pub");
+    assert_eq!(public_half(&key), public);
+    assert_eq!(
+        fs::metadata(&key).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(
+        fs::metadata(&public).unwrap().permissions().mode() & 0o777,
+        0o644
+    );
+    assert_eq!(
+        fs::metadata(dir.path().join("tailrace"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o077,
+        0,
+        "the key's directory lets others in"
+    );
+    let made = PrivateKey::read_openssh_file(&key).unwrap();
+    assert!(!made.is_encrypted());
+    assert_eq!(made.algorithm(), Algorithm::Ed25519);
+    let line = fs::read_to_string(&public).unwrap();
+    assert!(line.starts_with("ssh-ed25519 "), "{line}");
+    assert!(line.ends_with(" laptop\n"), "{line}");
+    let listing = listed_as("laptop", &public);
+    let read = listed::read(&listing)
+        .unwrap()
+        .expect("a host key's listing");
+    assert_eq!(read.key.key_data(), made.public_key().key_data());
+    assert_eq!(read.valid_before, None);
+    assert_eq!(
+        HostKey::verifying().verify(&envelope, &[listing]),
+        made_by("laptop")
+    );
+    let names: BTreeSet<_> = fs::read_dir(dir.path().join("tailrace"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        names,
+        BTreeSet::from(["signing".into(), "signing.pub".into()]),
+        "the first sign left a file of its own"
+    );
+}
+
+#[test]
+fn the_second_sign_signs_with_the_key_the_first_made_and_writes_neither_file() {
+    let dir = TempDir::new().unwrap();
+    let host = given(dir.path());
+    let first = sign_given(&host).unwrap();
+    let key = dir.path().join("tailrace/signing");
+    let public = public_half(&key);
+    let before = state(&[&key, &public]);
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let second = sign_given(&host).unwrap();
+    assert_eq!(state(&[&key, &public]), before);
+    let listing = listed_as("laptop", &public);
+    for envelope in [&first, &second] {
+        assert_eq!(
+            HostKey::verifying().verify(envelope, std::slice::from_ref(&listing)),
+            made_by("laptop")
+        );
+    }
+}
+
+#[test]
+fn a_key_others_may_read_at_the_given_path_is_refused_and_kept() {
+    let dir = TempDir::new().unwrap();
+    fs::create_dir(dir.path().join("tailrace")).unwrap();
+    let path = written(&dir.path().join("tailrace"), "signing", &new_key());
+    mode(&path, 0o644);
+    let bytes = fs::read(&path).unwrap();
+    let said = refused(sign_given(&given(dir.path())));
+    let shown = path.display().to_string();
+    assert_eq!(
+        said,
+        format!(
+            "the key file {shown} has mode 0644, which lets others read it: \
+             give it mode 0600 (chmod 600 {shown})"
+        )
+    );
+    assert_eq!(fs::read(&path).unwrap(), bytes, "the key file was replaced");
+    assert!(!public_half(&path).exists(), "a public half was written");
+}
+
+#[test]
+fn two_first_signs_at_once_make_one_key_and_both_sign_with_it() {
+    let dir = TempDir::new().unwrap();
+    let host = given(dir.path());
+    let ready = std::sync::Barrier::new(2);
+    let [first, second] = std::thread::scope(|scope| {
+        let signs = [(); 2].map(|()| {
+            scope.spawn(|| {
+                ready.wait();
+                sign_given(&host)
+            })
+        });
+        signs.map(|sign| sign.join().unwrap().unwrap())
+    });
+    let tailrace = dir.path().join("tailrace");
+    let names: BTreeSet<_> = fs::read_dir(&tailrace)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(
+        names,
+        BTreeSet::from(["signing".into(), "signing.pub".into()])
+    );
+    let made = PrivateKey::read_openssh_file(&tailrace.join("signing")).unwrap();
+    let listing = listed_as("laptop", &tailrace.join("signing.pub"));
+    assert_eq!(
+        listed::read(&listing).unwrap().unwrap().key.key_data(),
+        made.public_key().key_data()
+    );
+    for envelope in [&first, &second] {
+        assert_eq!(
+            HostKey::verifying().verify(envelope, std::slice::from_ref(&listing)),
+            made_by("laptop")
+        );
+    }
+}
+
+#[test]
+fn verifying_makes_no_key() {
+    let dir = TempDir::new().unwrap();
+    let key = new_key();
+    let envelope = signed_by(&key);
+    let listing = [listing("laptop", &key, None)];
+    assert_eq!(
+        HostKey::verifying().verify(&envelope, &listing),
+        made_by("laptop")
+    );
+    assert_eq!(
+        given(dir.path()).verify(&envelope, &listing),
+        made_by("laptop")
+    );
+    assert_eq!(
+        absent(given(dir.path()).sign(&claim(), &SignerId::new("gate"))),
+        "identity gate"
+    );
+    assert_eq!(
+        fs::read_dir(dir.path()).unwrap().count(),
+        0,
+        "a file was made"
+    );
+}
+
+#[test]
+fn a_key_directory_that_cannot_be_made_is_unreadable_naming_the_path() {
+    let dir = TempDir::new().unwrap();
+    let locked = dir.path().join("locked");
+    fs::create_dir(&locked).unwrap();
+    mode(&locked, 0o555);
+    let host = given(&locked);
+    let answer = sign_given(&host);
+    let words = fs::create_dir(locked.join("tailrace"))
+        .unwrap_err()
+        .to_string();
+    mode(&locked, 0o755);
+    let (what, said) = unreadable(answer);
+    assert_eq!(
+        what,
+        format!("the key file {}", locked.join("tailrace/signing").display())
+    );
+    assert_eq!(said, words);
+    assert_eq!(fs::read_dir(&locked).unwrap().count(), 0);
 }
 
 /// `id` as a policy lists it, verified by `key`'s public half and, where
@@ -391,6 +627,10 @@ fn signed_by(key: &PrivateKey) -> Envelope {
 /// A profile with no key file, as a machine that only verifies has.
 fn verifier() -> HostKey {
     HostKey::new(SignerId::new("a verifier"), "/no/key/file/here")
+}
+
+fn made_by(id: &str) -> Answer<Made> {
+    made(id, false)
 }
 
 fn made(id: &str, expired: bool) -> Answer<Made> {

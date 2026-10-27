@@ -34,6 +34,48 @@ remote = "origin" }` or `branch = { remote = "origin" }`, the remote
 optional. With a remote, sluice's records or the branches are read from
 it; without one, from the repository's own refs and files.
 
+A host with no file, or a file with no `[landing]`, binds sluice where
+the repository is set up for it, its `HEAD` commit holding
+`.config/sluice.toml`, read from the commit and never from the working
+tree, and a plain branch otherwise, a repository with no commit yet
+among them (118, C.5, C.6). Its remote is the checkout's `origin`, else
+its one remote of another name, else none, the repository's own refs
+then read. A checkout with several remotes and none of them `origin`
+answers every command unreadable, naming each remote and `[landing]`
+remote in the bindings file, the one line that picks one. A written
+`[landing]` binds exactly what it names: one with no `remote` reads the
+repository's own refs, `origin` or not. The given ledger is kept on the
+same remote the landing reads (see [ledgers](/tailrace/guides/integrations/ledgers/)).
+
+## Read as last fetched
+
+With a remote bound, the landing is read on the remote, and each read
+fetches what it reads into the host's copy (60, 77). Where the remote
+does not answer, the landing answers from that copy as last fetched,
+saying when it was fetched and carrying the remote's own words of why it
+did not answer, never a refusal and never a guess (59, 61). Status names
+it under the branch's head, `landing: as last fetched` with the time in
+UTC and the remote's words beneath, on the command line, in its JSON and
+on the host's page.
+
+A yes from the copy is a yes: a branch only moves forward, so a revision
+it held when fetched it holds now. A no from the copy is refused as not
+landed as last fetched, naming the branch, the revision and when the
+copy was fetched, with the remote's words, and saying to ask again once
+the remote answers; a program tells it apart by
+`refused.why.not_landed_as_fetched` in the JSON. tailrace never asks
+again by itself. A question the copy cannot answer, because nothing of
+it was ever fetched, is unreadable with the remote's words.
+
+The copy is tailrace's own refs in the repository, beside its own and
+never in place of them: `refs/tailrace/landing/heads/<branch>` for a
+plain branch, and `refs/tailrace/landing/sluice/state/<branch>` and
+`refs/tailrace/landing/sluice/runs/<signer>` for sluice, remade at each
+fetch so each ref's reflog says when. No remote-tracking ref,
+`FETCH_HEAD` or branch is written. Any git reader sees the copy with no
+tailrace process running, and the next read that reaches the remote
+makes it again (62, 63).
+
 ## Adding one
 
 A landing profile implements the one landing interface and nothing of

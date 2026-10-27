@@ -1,7 +1,7 @@
 //! How every command renders the core's answer: the exit code of each of
-//! the four answers, the answer as one JSON document (57), and a reason
-//! with the source's own words on a line of their own (58, 59, rule
-//! core.19).
+//! the four answers, the answer as one JSON document (57), a reason with
+//! the source's own words on a line of their own (58, 59, rule core.19),
+//! and a moment as a person reads a time in UTC.
 
 use std::io::{self, Write};
 
@@ -69,4 +69,10 @@ pub fn not(out: &mut dyn Write, indent: &str, not: &Not) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// `seconds` since the Unix epoch as an RFC 3339 time in UTC, as every
+/// answer names a moment.
+pub fn utc(seconds: u64) -> String {
+    tailrace_seams::utc(seconds)
 }

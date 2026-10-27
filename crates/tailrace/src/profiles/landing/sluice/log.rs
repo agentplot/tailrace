@@ -4,7 +4,6 @@
 //! `to` after (77, C.5; sluice 23, 24; design D5). Every other event, and
 //! every other field, is sluice's own.
 
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
 
@@ -12,7 +11,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tailrace_seams::{Answer, Branch, Not};
 
-use super::Sluice;
+use super::{Opened, Sluice};
 
 /// The log's file, in a branch's records.
 const LOG_FILE: &str = "log.jsonl";
@@ -82,18 +81,23 @@ pub(super) fn landings(log: &[u8]) -> Result<Vec<Landed>, String> {
 
 impl Sluice {
     /// `branch`'s log: `log.jsonl` of the commit `refs/sluice/state/<branch>`
-    /// names on the remote, where the remote's listing holds it; otherwise
-    /// the host's own, under the common directory. Empty where sluice
-    /// keeps no log of the branch, which has landed nothing (sluice C.6).
-    pub(super) fn log(&self, listed: &BTreeMap<String, String>, branch: &Branch) -> Answer<Log> {
+    /// names on the remote, as `opened` lists it, where it lists it;
+    /// otherwise, where the remote answered, the host's own, under the
+    /// common directory, empty where sluice keeps no log of the branch,
+    /// which has landed nothing (sluice C.6). From the copy, a log it
+    /// does not hold is the remote's failure, since the copy cannot say
+    /// whether the remote held one (design D4).
+    pub(super) fn log(&self, opened: &Opened, branch: &Branch) -> Answer<Log> {
         let state = format!("refs/sluice/state/{branch}");
-        if let (Some(remote), Some(commit)) = (&self.remote, listed.get(&state)) {
-            self.fetch(remote, &[state.as_str()])?;
+        if let (Some(remote), Some(commit)) = (&self.remote, opened.listed.get(&state)) {
             let bytes = self.file_at(commit, LOG_FILE)?.unwrap_or_default();
             return Ok(Log {
                 at: format!("{remote} {state}:{LOG_FILE}"),
                 bytes,
             });
+        }
+        if let Some(failed) = opened.failed() {
+            return Err(failed);
         }
         let path = self
             .common()?

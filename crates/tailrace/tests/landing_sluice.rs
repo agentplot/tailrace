@@ -19,7 +19,7 @@ use scratch::{git_fails, home, moon_hash, moon_workspace, Scratch, Task, HOME_EN
 use tailrace::profiles::landing::sluice::{as_written, Sluice};
 use tailrace_conformance::seams::landing::{self, LandingRig, Recorded};
 use tailrace_conformance::{run, Rig};
-use tailrace_seams::{Branch, Landing, Not, Outcome, Revision, Verdict};
+use tailrace_seams::{Branch, IsLanded, Landing, Not, Outcome, Read, Revision, Verdict, Verdicts};
 
 const SYSTEM: &str = "linux-x64";
 
@@ -76,6 +76,11 @@ impl LandingRig for SluiceRig {
         true
     }
 
+    /// sluice's records of `main` are on the remote.
+    fn reads_a_remote(&self) -> bool {
+        true
+    }
+
     /// One submission landed, and each signer's results recorded in one
     /// run record of the combination that landed it.
     fn landed(&self, verdicts: &[Recorded]) -> Revision {
@@ -121,6 +126,58 @@ fn main_branch() -> Branch {
     Branch::new(MAIN)
 }
 
+/// The repository's refs but the landing's copy, each by the object it
+/// names.
+fn refs_but_the_copy(repo: &scratch::Repo) -> Vec<String> {
+    repo.git(&["for-each-ref"])
+        .lines()
+        .filter(|line| !line.contains("refs/tailrace/landing/"))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The copy's refs, by name, each by the object it names.
+fn the_copy(repo: &scratch::Repo) -> Vec<(String, String)> {
+    repo.git(&[
+        "for-each-ref",
+        "--format=%(refname) %(objectname)",
+        "refs/tailrace/landing/",
+    ])
+    .lines()
+    .filter_map(|l| l.split_once(' '))
+    .map(|(n, o)| (n.to_string(), o.to_string()))
+    .collect()
+}
+
+/// The remote's refs of sluice's, by name as the copy keeps each, each
+/// by the object it names.
+fn as_copied(remote: &std::path::Path) -> Vec<(String, String)> {
+    scratch::git(
+        remote,
+        &[
+            "for-each-ref",
+            "--format=%(refname) %(objectname)",
+            "refs/sluice/",
+        ],
+    )
+    .lines()
+    .filter_map(|l| l.split_once(' '))
+    .map(|(n, o)| {
+        (
+            n.replacen("refs/", "refs/tailrace/landing/", 1),
+            o.to_string(),
+        )
+    })
+    .collect()
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
 /// Where a verdict was found: its path in the signer's ref.
 fn path_of(verdict: &Verdict) -> &str {
     verdict.found.split_once(':').unwrap().1
@@ -143,7 +200,9 @@ fn each_commit_of_a_landing_of_two_entries() {
     assert_eq!(landed.commits.len(), 2);
     for commit in &landed.commits {
         assert_eq!(
-            rig.landing.landed(&main_branch(), &Revision::new(commit)),
+            rig.landing
+                .landed(&main_branch(), &Revision::new(commit))
+                .map(|l| l.landed),
             Ok(true),
             "{commit}"
         );
@@ -155,7 +214,12 @@ fn a_commit_sluice_did_not_land() {
     let rig = SluiceRig::new();
     let before = Revision::new(rig.scratch.repo.head());
     rig.recorder.land(1, true);
-    assert_eq!(rig.landing.landed(&main_branch(), &before), Ok(false));
+    assert_eq!(
+        rig.landing
+            .landed(&main_branch(), &before)
+            .map(|l| l.landed),
+        Ok(false)
+    );
 }
 
 #[test]
@@ -165,12 +229,14 @@ fn a_landing_begun_and_not_finished() {
     let begun = rig.recorder.land(1, false);
     assert_eq!(
         rig.landing
-            .landed(&main_branch(), &Revision::new(&begun.commits[0])),
+            .landed(&main_branch(), &Revision::new(&begun.commits[0]))
+            .map(|l| l.landed),
         Ok(false)
     );
     assert_eq!(
         rig.landing
-            .landed(&main_branch(), &Revision::new(&done.commits[0])),
+            .landed(&main_branch(), &Revision::new(&done.commits[0]))
+            .map(|l| l.landed),
         Ok(true)
     );
 }
@@ -182,8 +248,22 @@ fn a_branch_on_one_host() {
     let landed = recorder.land(1, true);
     let landing = Sluice::new(&scratch.repo.path, None);
     let revision = Revision::new(&landed.commits[0]);
-    assert_eq!(landing.landed(&main_branch(), &revision), Ok(true));
-    assert_eq!(landing.verdicts_of(&revision), Ok(vec![]));
+    assert_eq!(
+        landing.landed(&main_branch(), &revision).map(|l| l.read),
+        Ok(Read::Source)
+    );
+    assert_eq!(
+        landing.verdicts_of(&revision).map(|v| v.read),
+        Ok(Read::Source)
+    );
+    assert_eq!(
+        landing.landed(&main_branch(), &revision).map(|l| l.landed),
+        Ok(true)
+    );
+    assert_eq!(
+        landing.verdicts_of(&revision).map(|v| v.verdicts),
+        Ok(vec![])
+    );
 }
 
 #[test]
@@ -199,20 +279,22 @@ fn two_checks_on_one_record() {
             Ran::new("app:lint", "6de6b709", "fail"),
         ],
     );
-    let refs = rig.scratch.repo.git(&["for-each-ref"]);
+    let refs = refs_but_the_copy(&rig.scratch.repo);
     let verdicts = rig
         .landing
         .verdicts_of(&Revision::new(&landed.commits[0]))
-        .unwrap();
+        .unwrap()
+        .verdicts;
     assert_eq!(
         rig.landing
-            .landed(&main_branch(), &Revision::new(&landed.commits[0])),
+            .landed(&main_branch(), &Revision::new(&landed.commits[0]))
+            .map(|l| l.landed),
         Ok(true)
     );
     assert_eq!(
-        rig.scratch.repo.git(&["for-each-ref"]),
+        refs_but_the_copy(&rig.scratch.repo),
         refs,
-        "the landing moved a ref"
+        "the landing moved a ref beside its copy"
     );
     let read: Vec<_> = verdicts
         .iter()
@@ -253,7 +335,8 @@ fn two_signers() {
     let verdicts = rig
         .landing
         .verdicts_of(&Revision::new(&landed.commits[0]))
-        .unwrap();
+        .unwrap()
+        .verdicts;
     let mut by: Vec<&str> = verdicts.iter().map(|v| v.signer.as_str()).collect();
     by.sort_unstable();
     assert_eq!(by, ["box", "forge"]);
@@ -293,7 +376,8 @@ fn a_replay_of_an_earlier_landings_pass() {
     let verdicts = rig
         .landing
         .verdicts_of(&Revision::new(&later.commits[0]))
-        .unwrap();
+        .unwrap()
+        .verdicts;
     assert_eq!(verdicts.len(), 1, "{verdicts:?}");
     let carried = &verdicts[0];
     assert_eq!(
@@ -328,7 +412,9 @@ fn a_pass_on_another_system_does_not_stand_in() {
         &[Ran::replayed("app:test", "4863a9af")],
     );
     assert_eq!(
-        rig.landing.verdicts_of(&Revision::new(&later.commits[0])),
+        rig.landing
+            .verdicts_of(&Revision::new(&later.commits[0]))
+            .map(|v| v.verdicts),
         Ok(vec![])
     );
 }
@@ -339,7 +425,11 @@ fn a_malformed_record() {
     let landed = rig.recorder.land(1, true);
     let path = format!("{}/{SYSTEM}/0123456789abcdef.json", landed.combination);
     rig.recorder.add("box", &path, b"a record changed by hand");
-    match rig.landing.verdicts_of(&Revision::new(&landed.commits[0])) {
+    match rig
+        .landing
+        .verdicts_of(&Revision::new(&landed.commits[0]))
+        .map(|v| v.verdicts)
+    {
         Err(Not::Unreadable(u)) => {
             assert_eq!(u.source, *rig.landing.source());
             assert_eq!(u.what, format!("origin refs/sluice/runs/box:{path}"));
@@ -364,7 +454,8 @@ fn the_envelope_as_sluice_wrote_it() {
     let [verdict] = <[Verdict; 1]>::try_from(
         rig.fresh()
             .verdicts_of(&Revision::new(&landed.commits[0]))
-            .unwrap(),
+            .unwrap()
+            .verdicts,
     )
     .unwrap();
     let held = remote_file(&rig.scratch.remote, "refs/sluice/runs/box", &path);
@@ -394,6 +485,131 @@ fn the_remote_is_gone() {
             other => panic!("answered {other:?} with the remote gone"),
         }
     }
+}
+
+#[test]
+fn each_open_remakes_the_copy_whole_from_the_listing() {
+    let rig = SluiceRig::new();
+    let landed = rig.recorder.land(1, true);
+    for signer in ["box", "forge"] {
+        rig.recorder.record(
+            signer,
+            &landed.combination,
+            SYSTEM,
+            &[Ran::new("app:test", "4863a9af", "pass")],
+        );
+    }
+    let revision = Revision::new(&landed.commits[0]);
+    assert_eq!(
+        rig.landing.verdicts_of(&revision).unwrap().verdicts.len(),
+        2
+    );
+    assert_eq!(the_copy(&rig.scratch.repo), as_copied(&rig.scratch.remote));
+    assert!(the_copy(&rig.scratch.repo)
+        .iter()
+        .any(|(n, _)| n == "refs/tailrace/landing/sluice/runs/forge"));
+
+    scratch::git(
+        &rig.scratch.remote,
+        &["update-ref", "-d", "refs/sluice/runs/forge"],
+    );
+    assert!(
+        rig.landing
+            .landed(&main_branch(), &revision)
+            .unwrap()
+            .landed
+    );
+    assert_eq!(the_copy(&rig.scratch.repo), as_copied(&rig.scratch.remote));
+    assert!(
+        !the_copy(&rig.scratch.repo)
+            .iter()
+            .any(|(n, _)| n.ends_with("/runs/forge")),
+        "a ref the remote no longer lists is still in the copy"
+    );
+    assert!(!rig.scratch.repo.path.join(".git/FETCH_HEAD").exists());
+}
+
+#[test]
+fn landed_and_verdicts_as_last_fetched() {
+    let rig = SluiceRig::new();
+    let landed = rig.recorder.land(1, true);
+    rig.recorder.record(
+        "box",
+        &landed.combination,
+        SYSTEM,
+        &[
+            Ran::new("app:test", "4863a9af", "pass"),
+            Ran::new("app:lint", "6de6b709", "fail"),
+        ],
+    );
+    let revision = Revision::new(&landed.commits[0]);
+    let before = now();
+    let first = rig.landing.verdicts_of(&revision).unwrap();
+    assert_eq!(first.read, Read::Source);
+    assert_eq!(
+        rig.landing.landed(&main_branch(), &revision),
+        Ok(IsLanded {
+            landed: true,
+            read: Read::Source
+        })
+    );
+    let words = rig.unreachable();
+
+    for landing in [&rig.landing, &rig.fresh()] {
+        let Ok(IsLanded {
+            landed: true,
+            read: Read::Kept { at, said },
+        }) = landing.landed(&main_branch(), &revision)
+        else {
+            panic!("a landed revision was not answered landed from the copy")
+        };
+        assert!(at >= before, "fetched at {at}, first read at {before}");
+        assert_eq!(said, words);
+        assert_eq!(
+            landing.verdicts_of(&revision),
+            Ok(Verdicts {
+                verdicts: first.verdicts.clone(),
+                read: Read::Kept {
+                    at,
+                    said: words.clone()
+                }
+            })
+        );
+    }
+    match rig.landing.landed(&Branch::new("next"), &revision) {
+        Err(Not::Unreadable(u)) => assert_eq!(u.said, Some(words)),
+        other => panic!("a branch whose log the copy does not hold answered {other:?}"),
+    }
+}
+
+#[test]
+fn a_landing_after_the_fetch() {
+    let rig = SluiceRig::new();
+    let first = rig.recorder.land(1, true);
+    let before = now();
+    assert!(
+        rig.landing
+            .landed(&main_branch(), &Revision::new(&first.commits[0]))
+            .unwrap()
+            .landed
+    );
+    let after = now();
+    let later = rig.recorder.land(1, true);
+    let revision = Revision::new(&later.commits[0]);
+    rig.unreachable();
+
+    let Ok(IsLanded {
+        landed,
+        read: Read::Kept { at, .. },
+    }) = rig.landing.landed(&main_branch(), &revision)
+    else {
+        panic!("a revision landed after the fetch was not answered from the copy")
+    };
+    assert!(
+        !landed,
+        "a revision sluice landed after the fetch was answered landed"
+    );
+    assert!((before..=after).contains(&at), "fetched at {at}");
 }
 
 /// A hook the scratch git runs, as a gate's fetch runs sluice's own, and
@@ -447,8 +663,12 @@ fn a_real_landing() {
     let landed = Revision::new(gate.land("x", &[("app/x.txt", "x")]));
 
     let landing = Sluice::new(&scratch.repo.path, Some("origin".into()));
-    assert_eq!(landing.landed(&main_branch(), &landed), Ok(true));
-    let [verdict] = <[Verdict; 1]>::try_from(landing.verdicts_of(&landed).unwrap()).unwrap();
+    assert_eq!(
+        landing.landed(&main_branch(), &landed).map(|l| l.landed),
+        Ok(true)
+    );
+    let [verdict] =
+        <[Verdict; 1]>::try_from(landing.verdicts_of(&landed).unwrap().verdicts).unwrap();
     assert_eq!(verdict.check.as_str(), "app:test");
     assert_eq!(verdict.signer.as_str(), SIGNER);
     assert_eq!(verdict.outcome, Outcome::Pass);

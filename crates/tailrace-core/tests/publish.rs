@@ -14,10 +14,11 @@ use tailrace_fakes::{
     BuildOp, FakeProjection, FakeStore, Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times,
 };
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName, Contents, Digest,
-    EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Layout, Manifest, Name, NamedSigner,
-    Not, Outcome, Output, Packed, Pinned, Projection, Put, Range, Rendered, Required,
-    RequiredClaim, Requirement, Seam, Serving, SignerId, Source, Store, Version, Why,
+    Answer, Artifact, AskedOf, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName,
+    Contents, Digest, EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Landing, Layout,
+    Manifest, Name, NamedSigner, Not, Outcome, Output, Packed, Pinned, Projection, Put, Range,
+    Rendered, Required, RequiredClaim, Requirement, Seam, Serving, SignerId, Source, Store,
+    Version, Why,
 };
 use world::{
     build_of, build_ops, by_host, eco, output, published_before_notes, version_of, Watched, World,
@@ -120,6 +121,100 @@ fn a_landing_that_cannot_be_read_answers_its_own_words() {
     assert_eq!(u.source, Source::new(Seam::Landing, "fake"));
     assert_eq!(world.fakes.build.calls(), []);
     nothing_offered(&world);
+}
+
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+}
+
+#[test]
+fn a_revision_not_landed_as_last_fetched_is_refused_saying_when_and_nothing_else_is_asked() {
+    const WORDS: &str = "fatal: unable to access 'https://forge.example/repo.git/': \
+                         Could not resolve host: forge.example\n";
+    let world = World::new();
+    let later = world.repo.touch("feat: lib again", &["crates/lib"]);
+    let before = now();
+    world.fakes.landing.landed(&world.main, &later).unwrap();
+    let after = now();
+    world.fakes.landing.land(&world.main, &later);
+    world.fakes.landing.unreachable(WORDS);
+
+    let ask = Ask {
+        revision: later.clone(),
+        ..world.ask()
+    };
+    let Err(Not::Refused(r)) = world.publish(&ask) else {
+        panic!("a revision not landed as last fetched was published")
+    };
+    let Why::NotLandedAsFetched {
+        branch,
+        revision,
+        fetched,
+    } = &r.why
+    else {
+        panic!("{} is not a refusal as last fetched", r.why)
+    };
+    assert_eq!((branch, revision), (&world.main, &later));
+    assert!((before..=after).contains(fetched), "{fetched}");
+    assert_eq!(r.said.as_deref(), Some(WORDS));
+    assert_eq!(r.source, Source::new(Seam::Landing, BOUND));
+    let text = Not::Refused(r.clone()).to_string();
+    assert!(
+        text.contains("ask again once the landing's remote answers"),
+        "{text}"
+    );
+    assert!(text.contains(WORDS), "{text}");
+
+    assert_eq!(world.fakes.build.calls(), []);
+    assert_eq!(world.fakes.signer.calls(), []);
+    assert_eq!(world.fakes.store.calls(), []);
+    assert_eq!(world.fakes.policy.calls(), []);
+    assert_eq!(world.fakes.keeper.calls(), []);
+    no_pack(&world);
+}
+
+#[test]
+fn a_revision_landed_as_last_fetched_is_published_as_one_landed_on_the_remote() {
+    let mut world = World::new();
+    world.verdicts_for_every_output("test");
+    world
+        .fakes
+        .landing
+        .landed(&world.main, &world.head)
+        .unwrap();
+    world.fakes.landing.unreachable("fatal: remote hung up");
+    let from_copy = world.publish(&world.ask()).unwrap();
+    let read: Vec<serde_json::Value> = world
+        .fakes
+        .landing
+        .calls()
+        .into_iter()
+        .skip(1)
+        .map(|c| c.answer.unwrap()["read"].clone())
+        .collect();
+    assert!(
+        !read.is_empty()
+            && read
+                .iter()
+                .all(|r| r["kept"]["said"] == "fatal: remote hung up"),
+        "the publish was not answered from the copy: {read:?}"
+    );
+    let held = world.fakes.store.contents();
+
+    world.fakes = world.fakes_alike();
+    world.verdicts_for_every_output("test");
+    let from_remote = world.publish(&world.ask()).unwrap();
+    assert!(world
+        .fakes
+        .landing
+        .calls()
+        .iter()
+        .all(|c| c.answer.as_ref().unwrap()["read"] == "source"));
+    assert_eq!(from_copy, from_remote);
+    assert_eq!(world.fakes.store.contents(), held);
 }
 
 // Requirement: A publish names its components
@@ -986,6 +1081,7 @@ fn required(kind: ClaimKind, signer: &str) -> RequiredClaim {
             kinds: vec![kind],
             checks: vec![],
         }],
+        asked_of: AskedOf::Every,
     }
 }
 

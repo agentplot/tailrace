@@ -113,7 +113,7 @@ fn the_hosts_bindings_beside_the_landings(rig: &dyn HostRig) {
 
     let (branch, revision) = rig.landed();
     assert_eq!(
-        seams.landing.landed(&branch, &revision),
+        seams.landing.landed(&branch, &revision).map(|l| l.landed),
         Ok(true),
         "the bound landing is not the landing the file names"
     );
@@ -125,8 +125,8 @@ fn the_hosts_bindings_beside_the_landings(rig: &dyn HostRig) {
         build: None,
         body: json!({}),
     };
-    let [host] = seams.signers.as_slice() else {
-        panic!("{} signers are bound for the host", seams.signers.len())
+    let Some(host) = seams.signers.first() else {
+        panic!("no signer is bound for the host")
     };
     let envelope = ok(host.sign(&claim, &signer), "a sign by the bound signer");
     let made = ok(

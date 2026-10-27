@@ -165,7 +165,7 @@ impl Serialize for Synced {
 pub fn sync(seams: &Seams, ask: &SyncAsk) -> Answer<Synced> {
     let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &ask.revision)?;
     let mut builds: Vec<BuildId> = Vec::new();
-    for verdict in seams.landing.verdicts_of(landed.revision())? {
+    for verdict in seams.landing.verdicts_of(landed.revision())?.verdicts {
         if verdict.outcome == Outcome::Pass && !builds.contains(&verdict.build) {
             builds.push(verdict.build);
         }

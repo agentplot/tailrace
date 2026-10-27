@@ -15,10 +15,10 @@ use tailrace_core::{
 };
 use tailrace_fakes::{FakeProjection, Fakes, Fault, PolicyOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
-    Artifact, ArtifactMeta, Audience, Branch, BuildId, Check, Claim, ClaimKind, ComponentName,
-    Digest, Ecosystem, EcosystemName, Envelope, IndexMeta, Manifest, Name, NamedSigner, Not,
-    Outcome, OutputName, Pinned, Required, RequiredClaim, Revision, Seam, Signer, SignerId, Store,
-    Verdict, Version, Why,
+    Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind,
+    ComponentName, Digest, Ecosystem, EcosystemName, Envelope, IndexMeta, Manifest, Name,
+    NamedSigner, Not, Outcome, OutputName, Pinned, Required, RequiredClaim, Revision, Seam, Signer,
+    SignerId, Store, Verdict, Version, Why,
 };
 use tempfile::TempDir;
 
@@ -215,6 +215,7 @@ fn acceptance() -> RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
         signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -224,6 +225,7 @@ fn provenance() -> RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -400,6 +402,7 @@ fn given_by_trusted(ids: &[&str]) -> (PolicyOf, Vec<RequiredClaim>) {
         kind: ClaimKind::Acceptance,
         check: None,
         signers,
+        asked_of: AskedOf::Every,
     };
     (PolicyOf::Given { revision: None }, vec![acceptance])
 }
@@ -515,6 +518,7 @@ fn a_required_claim_through_a_signer_the_host_does_not_trust_is_found_wanting() 
             named(GATE, &[ClaimKind::Acceptance], &[]),
             named("box", &[ClaimKind::Acceptance], &[]),
         ],
+        asked_of: AskedOf::Every,
     };
     let on_index = [
         publishers(&located.index, std::slice::from_ref(&gate_or_box), GATE),
@@ -605,13 +609,14 @@ fn a_host_trusting_none_refuses_naming_acceptance_with_no_signer_checked() {
     match judge(&seams, &claims, &located, &on_index, &[]) {
         Ok(Err(Not::Refused(r))) => assert_eq!(
             r.why,
-            Why::Wanting {
+            Why::VersionWanting {
                 version: located.artifact.meta.clone(),
                 index: located.index.clone(),
                 wanting: RequiredClaim {
                     kind: ClaimKind::Acceptance,
                     check: None,
                     signers: vec![],
+                    asked_of: AskedOf::Every,
                 },
                 checked: vec![],
             }
@@ -693,6 +698,7 @@ fn a_file_naming_signers_counts_a_publishers_policy_through_them_alone() {
             named(GATE, &[ClaimKind::Acceptance], &[]),
             named("box", &[ClaimKind::Acceptance], &[]),
         ],
+        asked_of: AskedOf::Every,
     };
     let files = naming(
         vec![acceptance()],
@@ -760,6 +766,7 @@ fn a_claim_its_file_names_no_signer_for_is_read_through_the_hosts_trust() {
         kind: ClaimKind::Acceptance,
         check: None,
         signers: vec![],
+        asked_of: AskedOf::Every,
     };
     let ones = naming(
         vec![nobody.clone()],
@@ -877,6 +884,7 @@ fn verdict(check: &str) -> RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new(check)),
         signers: vec![named(LANDING, &[ClaimKind::Verdict], &[check])],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -935,7 +943,7 @@ fn accepted() -> (Fakes, Located, Envelope) {
 fn wanting(answer: Result<Vec<SignerId>, Not>) -> (RequiredClaim, Vec<SignerId>) {
     match answer {
         Err(Not::Refused(r)) => match r.why {
-            Why::Wanting {
+            Why::VersionWanting {
                 wanting, checked, ..
             } => (wanting, checked),
             other => panic!("refused for {other:?}"),
@@ -995,6 +1003,7 @@ fn a_claim_of_a_kind_its_signer_may_not_make_does_not_count() {
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
+        asked_of: AskedOf::Every,
     };
     let answer = judge(
         &fakes.seams(),
@@ -1041,7 +1050,7 @@ fn of_two_claims_wanting_the_first_in_the_policys_order_is_named() {
             assert_eq!(r.source.seam, Seam::Policy);
             assert_eq!(
                 r.why,
-                Why::Wanting {
+                Why::VersionWanting {
                     version: located.artifact.meta.clone(),
                     index: located.index.clone(),
                     wanting: acceptance(),
@@ -1244,7 +1253,7 @@ fn a_version_refused_now_leaves_the_layout() {
     match &again.pins[0].answer {
         Err(Not::Refused(r)) => assert_eq!(
             r.why,
-            Why::Wanting {
+            Why::VersionWanting {
                 version: checkout.pkg.artifact.meta.clone(),
                 index: checkout.pkg.index.clone(),
                 wanting: provenance(),

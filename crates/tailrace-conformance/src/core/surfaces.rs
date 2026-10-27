@@ -1,16 +1,20 @@
 //! The surfaces' group: a surface answers what the one core answers, value
-//! for value, as a program reads it (56, 57; design D6).
+//! for value, as a program reads it (56, 57; design D6); below the
+//! marker, status-on-any-machine's channels, asked of the command line
+//! and of the served page alike (36, 132).
+
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-use tailrace_core::{answer_json, status, StatusAsk};
+use tailrace_core::{answer_json, overview, status, OverviewAsk, StatusAsk};
 use tailrace_seams::{
-    Audience, Check, ClaimKind, Digest, NamedSigner, Required, RequiredClaim, Revision, SignerId,
-    Version,
+    AskedOf, Audience, Branch, Check, ClaimKind, Digest, NamedSigner, Not, Required, RequiredClaim,
+    Revision, SignerId, Version,
 };
 
-use crate::core::publish::{passing, VERSION};
-use crate::world::{FakeWorld, HOST, LANDING};
-use crate::{Rig, Scenario};
+use crate::core::publish::{one, passing, VERSION};
+use crate::world::{FakeWorld, HOST, LANDING, STABLE};
+use crate::{ok, Rig, Scenario};
 
 pub const GROUP: &str = "surfaces";
 
@@ -24,6 +28,9 @@ pub enum Question {
     Verify { version: Version },
     /// Status, of every version the host published.
     Status,
+    /// Status whole, the channels the policy at `branch`'s landed head
+    /// declares beside the environments and the record.
+    Channels { branch: Branch },
 }
 
 /// A surface over a world of fakes, made new for each scenario.
@@ -54,6 +61,12 @@ pub fn scenarios() -> Vec<Scenario<dyn Surface>> {
             run: the_command_line_answers_what_the_core_answers,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "the command line and the page answer the channels",
+            plays: None,
+            cites: &[36, 56, 57, 132],
+            run: the_command_line_and_the_page_answer_the_channels,
+        },
     ]
 }
 
@@ -90,11 +103,13 @@ fn the_command_line_answers_what_the_core_answers(surface: &dyn Surface) {
                     kind: ClaimKind::Provenance,
                     check: None,
                     signers: vec![named(HOST, ClaimKind::Provenance, &[])],
+                    asked_of: AskedOf::Every,
                 },
                 RequiredClaim {
                     kind: ClaimKind::Verdict,
                     check: Some(Check::new("test")),
                     signers: vec![named(LANDING, ClaimKind::Verdict, &["test"])],
+                    asked_of: AskedOf::Every,
                 },
             ],
         },
@@ -144,5 +159,56 @@ fn the_command_line_answers_what_the_core_answers(surface: &dyn Surface) {
             &world.kept(),
             &StatusAsk::default(),
         )),
+    );
+}
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+fn the_command_line_and_the_page_answer_the_channels(surface: &dyn Surface) {
+    let world = surface.world();
+    passing(world, &world.head);
+    ok(one(world.publish(&world.ask(&world.head))), "the publish");
+    world.declare_channels(&[("beta", None), (STABLE, Some("beta"))]);
+    world.promote_fake(STABLE, VERSION);
+
+    let before = now();
+    let through = surface.ask(&Question::Channels {
+        branch: world.main.clone(),
+    });
+    let after = now();
+    let asked = through["value"]["asked_at"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{} answered no moment asked: {through}", surface.name()));
+    assert!(
+        (before..=after).contains(&asked),
+        "{} asked at {asked}, not between {before} and {after}",
+        surface.name()
+    );
+    let history = world.history();
+    let core = overview(
+        &world.seams(),
+        &history,
+        &world.kept(),
+        &OverviewAsk {
+            branch: world.main.clone(),
+            component: None,
+            revision: None,
+            at: asked,
+        },
+    );
+    assert_eq!(
+        through,
+        answer_json(&Ok::<_, Not>(core)),
+        "the channels asked through {} answered otherwise than the core",
+        surface.name()
+    );
+    let channels = &through["value"]["channels"]["value"]["channels"];
+    assert_eq!(
+        channels[1]["at"]["value"]["head"]["to"]["version"], VERSION,
+        "stable is not at the version promoted: {through}"
     );
 }

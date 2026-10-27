@@ -1,6 +1,6 @@
 ---
 title: Signers
-description: The signer seam, and the key service, the host key and keyless signing designed to fill it.
+description: The signer seam, the key in a key service and the host key that fill it, and keyless signing designed to.
 sidebar:
   order: 4
 ---
@@ -25,7 +25,7 @@ claim says of itself.
 
 | member | profile | how | status |
 |---|---|---|---|
-| a key in AWS KMS | C.7, a key in a key service | a key the host's cloud identity may use and never export, through the host's role; the signer's name is the key's, and verification uses its public half | designed |
+| a key in AWS KMS | C.7, a key in a key service | a key the host's cloud identity may use and never export, through the host's role; the signer's name is the key's, and verification uses its public half | built |
 | a host key | C.8 | a key file on the host, as sluice's signers hold theirs, read at each signature and kept nowhere; verification uses the public key the policy lists | built |
 | keyless with Sigstore | C.9 | a short-lived certificate bound to an identity from the owner's identity provider, logged in a transparency log, as Sigstore issues and cosign uses, public or private | designed |
 
@@ -61,10 +61,105 @@ an envelope gives its signer decides nothing.
 The host key is bound by the host's bindings file's `[signing]` table,
 sluice's own shape: `signer`, the identity it signs as, and `key`, the
 key file's path, absolute or beginning `~/` (see
-[self-hosting](/tailrace/guides/self-hosting/)). A host whose file names
-no `[signing]` binds the host key verify-only: it tells every claim by
-the keys the policy lists, and answers every sign absent, saying no
-identity is at hand, reading no file.
+[self-hosting](/tailrace/guides/self-hosting/)). A key file the table
+names that is not there is absent, naming the identity and the path.
+
+A host with no file, or a file with no `[signing]`, publishes and
+promotes with the given host key, `~/.local/share/tailrace/host/signing.key`,
+under `$XDG_DATA_HOME` where it is set (118, C.8). The first claim it
+signs makes it: an Ed25519 key in OpenSSH's form with no passphrase,
+readable by its owner alone, the form sluice signs with, its directory
+readable by its owner alone where it is made, and its public half beside
+it as `signing.key.pub`. It signs as the host's short name, its first
+label in lower case, so a host named `Laptop.local` signs as `laptop`;
+that name is fixed in `signing.key.pub` when the key is made, so a host
+renamed later still signs as it. Two first signs at once end with one
+key, and a key file that is there is never replaced: one others may
+read is refused, naming `chmod 600`. Every other command, verify, sync,
+push, rebuild and status, binds the host key verify-only: it tells every
+claim by the keys the policy lists, and answers every sign absent,
+saying no identity is at hand, reading and making no file.
+
+To list the made key, print its public half and copy the one line into
+the policy under the name it gives, for provenance:
+
+```sh
+cat ~/.local/share/tailrace/host/signing.key.pub
+# ssh-ed25519 AAAA… laptop
+```
+
+```toml
+[signers.laptop]
+ssh = "ssh-ed25519 AAAA… laptop"
+kinds = ["provenance"]
+```
+
+Until the policy lists it, no claim the key makes counts (80).
+
+### A key in AWS KMS
+
+The key service signer takes an asymmetric KMS key of the key spec
+`ECC_NIST_P256` and the key usage `SIGN_VERIFY`, whose key material KMS
+made: the private half never leaves KMS, and the host signs with nothing
+on its disk. Make one in the account the fleet runs in:
+
+```sh
+aws kms create-key --key-spec ECC_NIST_P256 --key-usage SIGN_VERIFY \
+  --description "tailrace signer for the build fleet"
+```
+
+A key of another spec or usage is refused, naming it, and so is a key
+whose key material was imported (origin `EXTERNAL`) or is held in an
+external key store, since its private half was outside KMS once.
+
+The key's name is its key ARN,
+`arn:aws:kms:<region>:<account>:key/<key id>`, and nothing else: an
+alias can be moved to another key, so neither an alias nor its ARN
+names a signer. The signer's identity, the envelope's signer and key id,
+and the region KMS is reached in all come from the ARN.
+
+Grant, in the key's policy:
+
+- the signing host's role `kms:Sign` and `kms:DescribeKey`;
+- every account and role that verifies `kms:GetPublicKey` and
+  `kms:DescribeKey`, the gate's and each consumer's among them.
+
+The host signs through its own AWS credentials, found as the AWS tools
+find them at each signature: the environment, the AWS profile and its
+SSO session, web identity, the container's or the instance's role.
+tailrace keeps none of them (64). A claim is signed by KMS with
+`ECDSA_SHA_256` over the SHA-256 of the envelope's DSSE
+pre-authentication encoding, so cosign and other verifiers that take a
+KMS key read the same envelope.
+
+Bind it in the host's bindings file's `[signing]`, alone:
+
+```toml
+[signing]
+kms = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+```
+
+and list it in the policy by the same ARN:
+
+```toml
+[signers.fleet]
+kms = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab"
+kinds = ["provenance"]
+```
+
+Every host binds the key service signer, verify-only where its file
+names no KMS key, so a laptop with a host key verifies a fleet's
+claims. verify reads the key's public half and its state from KMS each
+time; an envelope with no KMS signature, a host key's, is refused
+without reaching KMS. A host with no AWS credentials that may read the
+key answers unreadable, naming the key, never a pass.
+
+To retire a key, disable it: its signatures are reported as made by
+their signer and expired (81), and still count where they counted when
+they were accepted. Enable it again and they are reported not expired.
+Never schedule a key's deletion while anything it signed is in use:
+once deletion is scheduled, KMS gives out its public half no more, and
+every claim it signed is answered unreadable.
 
 ## Adding one
 

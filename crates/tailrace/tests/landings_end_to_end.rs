@@ -21,9 +21,9 @@ use tailrace_core::{
 };
 use tailrace_fakes::{Fakes, StoreOp};
 use tailrace_seams::{
-    Audience, Branch, Build, Check, Claim, ClaimKind, Ecosystem, Landing, NamedSigner, Not,
-    OutputName, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version,
-    Why,
+    AskedOf, Audience, Branch, Build, Check, Claim, ClaimKind, Ecosystem, Landing, NamedSigner,
+    Not, OutputName, Read, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store,
+    Version, Why,
 };
 
 /// The identity of the party running tailrace, which signs (11, 79).
@@ -182,10 +182,11 @@ fn the_landings_key_is_the_builds_identity() {
     );
     let landed = world.landed_by_sluice(&["app:test"], "app/x.txt");
 
-    let verdicts = Sluice::new(&world.scratch.repo.path, Some("origin".into()))
+    let read = Sluice::new(&world.scratch.repo.path, Some("origin".into()))
         .verdicts_of(&landed)
         .unwrap();
-    let [verdict] = <[_; 1]>::try_from(verdicts).unwrap();
+    assert_eq!(read.read, Read::Source, "sluice's remote answered");
+    let [verdict] = <[_; 1]>::try_from(read.verdicts).unwrap();
     assert_eq!(verdict.check, Check::new("app:test"));
     let moon = world.moon();
     let app = OutputName::new("app");
@@ -289,6 +290,7 @@ fn s13_over_a_plain_branch_and_moon() {
                 kind: ClaimKind::Verdict,
                 check: Some(Check::new("web:build")),
                 signers: vec![named(SIGNER, &[ClaimKind::Verdict], &["web:build"])],
+                asked_of: AskedOf::Every,
             }],
         },
     );
@@ -309,6 +311,7 @@ fn s13_over_a_plain_branch_and_moon() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
+                asked_of: AskedOf::Every,
             }],
         },
     );

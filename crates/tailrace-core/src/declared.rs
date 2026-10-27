@@ -14,7 +14,7 @@ use crate::{History, Landed, LOCAL, NOTES};
 pub const POLICY_FILE: &str = ".config/tailrace.toml";
 
 /// What the one component of a repository that declares none is named.
-pub const REPOSITORY: &str = "repository";
+pub use tailrace_seams::REPOSITORY_COMPONENT as REPOSITORY;
 
 /// The version rule: git-cliff's conventional bump with these settings,
 /// and a prerelease where no commit makes a release (21, section 9).

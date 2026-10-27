@@ -71,10 +71,17 @@ records what ECR answered.
 
 The layout is bound for a host by its bindings file, `[store] layout =
 "<path>"`, and a registry by `[store] registry = "<host>/<repository>"`
-(see [self-hosting](/tailrace/guides/self-hosting/)): a publish makes
-the layout there the first time, where the path is missing or an empty
-directory, and writes into it thereafter; verify and status never make
-or write one, and nothing makes a registry's repository.
+(see [self-hosting](/tailrace/guides/self-hosting/)). A host with no
+file, or a file with no `[store]`, binds the layout at
+`~/.local/share/tailrace/layout`, under `$XDG_DATA_HOME` where it is
+set, and names it in its record by that path in full (118, C.2). A
+publish makes the layout, the given one with its parents, the first time
+it asks the store anything, where the path is missing or an empty
+directory, and writes into it thereafter, so a publish refused before it
+asks the store makes none;
+verify and status never make or write one, and answer a layout that is
+not there unreadable naming its path; nothing makes a registry's
+repository.
 
 ## Adding one
 

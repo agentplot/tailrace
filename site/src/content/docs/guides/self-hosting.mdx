@@ -14,8 +14,9 @@ names the profiles a host binds.
 
 - **One binary.** `tailrace` runs where the agents run: a laptop, an
   agent host, a build machine. There is no server of tailrace's own to
-  keep up, apart from `tailrace serve` on localhost for the ecosystems
-  that read over HTTP.
+  keep up: `tailrace serve` answers on localhost, started by the first
+  asker that finds none and ended when idle, for the status pages and
+  the ecosystems that read over HTTP.
 - **A store you own.** An OCI registry you already have, Amazon ECR,
   GitHub's registry, Harbor, zot or the reference distribution, or an OCI
   image layout in a directory on disk, read and written with no server.
@@ -40,20 +41,23 @@ names the profiles a host binds.
 
 ## One laptop
 
-A solo user needs the binary, a directory for the store in the OCI image
-layout, a host key, and the policy file in the repository. sluice lands,
-tailrace pushes into the layout on disk, the same laptop accepts and
-promotes, and `tailrace sync` fills the laptop's own npm cache, Cargo
-registry or Python index from the store. The layout syncs to a registry
-later, or never.
+A solo user needs the binary and the policy file in the repository, and
+writes nothing else: the first publish makes the store, an OCI image
+layout in the user's data directory, and a host key beside it (118).
+sluice lands, tailrace pushes into the layout on disk, the same laptop
+accepts and promotes, and `tailrace sync` fills the laptop's own npm
+cache, Cargo registry or Python index from the store. The layout syncs
+to a registry later, or never.
 
 ## The host's bindings
 
 The operator's bindings for a host are one file,
 `~/.config/tailrace/config.toml`, or under `$XDG_CONFIG_HOME` where it
 is set, beside sluice's own `config.toml` and in the same form, readable
-with any file reader (118). It names the store, the landing and the
-signer the host binds, and nothing the repository binds (92):
+with any file reader (118). A host needs none: the file is for pointing
+a host at a registry, a key service or a shared ledger. It names the
+store, the landing, the ledger, the signer and what tells the gate, and
+nothing the repository binds (92):
 
 ```toml
 [store]
@@ -64,20 +68,74 @@ layout = "~/.local/share/tailrace/layout"   # C.2
 sluice = { remote = "origin" }   # C.5; or: branch = { remote = "origin" }, C.6
                                  # remote optional; without one, local refs
 
+[ledger]
+git_ref = { remote = "origin" }  # C.13; or: store = {}, C.14, the chain in [store]
+                                 # remote optional; without one, the repository's own refs
+
 [signing]                         # sluice's own table, C.8
 signer = "laptop"
 key = "~/.config/tailrace/signing"
+                                 # or a key in AWS KMS, C.7, alone:
+                                 # kms = "arn:aws:kms:<region>:<account>:key/<key id>"
+
+[gate]                            # what tells the gate, C.16
+publish = {}                      # also with no [gate], 118
+                                 # or: job = "<the job's words>"
 ```
+
+With no file, and for each table a file leaves out, the host is bound
+to the given ones (118):
+
+- **The store**: an OCI layout at `~/.local/share/tailrace/layout`, or
+  `tailrace/layout` under `$XDG_DATA_HOME` where it is set (C.2), named
+  in the host's record by that path in full.
+- **The landing**: sluice where the repository's `HEAD` commit holds
+  `.config/sluice.toml`, read from the commit and never from the working
+  tree, and a plain branch otherwise (C.5, C.6). Its remote is the
+  checkout's `origin`, else its one remote, else none, the repository's
+  own refs then read. A checkout with several remotes and none of them
+  `origin` answers every command unreadable, naming each remote and
+  `[landing] remote`, the one line that picks one.
+- **The ledger**: the git ref on the landing's remote, written or given,
+  fetched before each read and pushed on each append as the branch is,
+  so a second machine of the same repository reads the same chain with
+  nothing written; the repository's own refs where the landing has no
+  remote (C.13).
+- **The signer**: for a publish or a promote, the host key at
+  `tailrace/host/signing.key` under the same data directory, made by the
+  first claim it signs, its public half beside it as `signing.key.pub`,
+  signing as the host's short name, which that public half fixes (C.8;
+  see [signers](/tailrace/guides/integrations/signers/)). Every other
+  command signs nothing.
+- **What tells the gate**: the host's own publish, as `[gate] publish =
+  {}` binds it (130).
+
+A file that names a table binds exactly what it names, and leaves the
+rest given: `[store] registry` alone writes into that registry and keeps
+the given landing, ledger, key and gate; `[signing] kms` alone signs
+through that key and makes no host key; `[landing] branch = {}` reads
+the repository's own refs, and keeps the given ledger there too. An
+empty file is no file.
 
 - Each seam's table names its profile by its one key; a table naming
   none or two is refused, naming it. A path is absolute or begins `~/`.
-- `tailrace publish`, `verify`, `sync`, `push` and `rebuild` read it.
-  With no file they answer absent, naming the file's path; a file that
-  is not well formed is unreadable in the parser's own words. `tailrace
-  status` reads no bindings file and answers from the host's record.
-- Only publish and push make the layout, the first time, where the path
-  is missing or an empty directory; push needs no `[signing]`, since it
-  signs nothing. verify, sync and rebuild never make or write one.
+- `tailrace publish`, `verify`, `sync`, `push`, `rebuild`, `promote` and
+  `status` read it, or bind the given tables where there is none. A file
+  that is not well formed is unreadable in the parser's own words, and
+  binds nothing given in its place: a file that is there is never guessed
+  past. Only where no given path can be placed, neither
+  `XDG_CONFIG_HOME` nor `HOME` set, is the binding absent, naming both.
+  `tailrace status` binds no signer and makes nothing, its fetch of the
+  ledger's refs into the repository's copy aside (60); a file it cannot
+  read is its channels' answer, and the host's record still answers
+  beside it.
+- Only publish and push make the layout, the given one with its parents,
+  where the path is missing or an empty directory, at the first thing
+  they ask of the store, so a publish refused before it asks the store
+  anything, a revision not landed among them, makes none; push needs no
+  `[signing]`, since it signs nothing.
+  verify, sync and rebuild never make or write one, and answer a layout
+  that is not there unreadable, naming its path.
 - The host's record of the versions it published is a file per version
   under the repository's common git directory, `tailrace/published/`,
   which status reads. It can be deleted and rebuilt with `tailrace
@@ -91,14 +149,66 @@ key = "~/.config/tailrace/signing"
   is the host's Docker configuration and the credential helper it names
   for the registry, ECR's `ecr-login` among them, reached when the
   registry asks for one and kept nowhere (64).
-- A machine that only verifies names no `[signing]`: it verifies by the
-  keys the policy lists and signs nothing, so a copy of the layout and a
-  clone of the repository are all it needs.
+- `[signing] kms` names a key in AWS KMS by its key ARN, and nothing
+  beside it: the signer's name is the ARN. The credential is never the
+  file's: it is the host's AWS chain, the environment, the AWS profile
+  and its SSO session, or the container's or the instance's role, found
+  at each signature and kept nowhere (64). A table naming `kms` with
+  `signer` or `key` is refused, naming `[signing]`.
+- A machine that only verifies signs nothing: verify reads the keys the
+  policy lists, makes no key, and needs only a copy of the layout and a
+  clone of the repository. Every host binds both
+  signers, the one its `[signing]` names signing and the other
+  verify-only, so it tells a host key's claims and a KMS key's alike.
+- `[ledger]` names where each channel's chain is held. `git_ref` keeps
+  it in the repository's refs, `refs/tailrace/ledger/<channel>`, or
+  `refs/tailrace/ledger/<component>/<channel>` where the repository
+  declares components (C.13, 125), pushed to and fetched from the remote
+  it names with the host's own git credentials, kept nowhere (64);
+  `store` keeps it as the promotion claims in the store `[store]` names,
+  walked from the channel's name there, `channel/<channel>` or
+  `channel/<component>/<channel>` (C.14), opened and never made. `tailrace
+  promote` signs with the host's `[signing]`, or the given key where the
+  file names none, and appends to the ledger `[ledger]` names, or the
+  given git ref on the landing's remote; promote never makes the layout.
+- `[gate]` names what tells the host's gate of a version a publish
+  offered, by one key (130). `publish = {}` is this host's own publish:
+  once the publish has answered, the same run tells the gate of each
+  version it offered, and prints the gate's answer beside the version's.
+  `job = "…"` names in your own words a job outside tailrace that a
+  forge's or a store's event wakes; tailrace runs nothing for it, and a
+  publish says the version is offered and the gate is told by those
+  words. A file with no `[gate]` binds `publish`, the host's default
+  (118), so a host whose gate is elsewhere names its `job`. A `[gate]`
+  naming no key, two, or another is refused, naming it.
 - The build and the projections are the repository's to bind, not the
   host's: moon is the build, and the policy file names each output's task
-  and the projection that packs it. A `[build]`, `[projections]` or
-  `[ledger]` table is refused, naming it; the ledger is bound by a later
-  bolt.
+  and the projection that packs it. A `[build]` or `[projections]` table
+  is refused, naming it.
+
+## The host's serving process
+
+One `tailrace serve` answers a host, at `http://127.0.0.1:7420` (114).
+No one is told to start it: `tailrace status --page` finds it, or
+starts it detached from the asker's terminal where none answers, and it
+ends once nothing has asked it for ten minutes. A host may also run
+`tailrace serve` as a service of its own; a second one finds the first
+holding the lock, says where it answers, and ends.
+
+What it keeps is in the host's state directory, `~/.local/state/tailrace`,
+or `tailrace` under `$XDG_STATE_HOME` where it is set:
+
+- `repositories`, the repositories a checkout named: a TOML table per
+  repository, keyed by its owner and name, naming the checkout that last
+  named it, written by `tailrace status --page` and read on each
+  request. A repository no checkout named answers absent, and a
+  checkout that is gone is its row's unreadable answer, naming the path.
+  Deleted, it is written again by the next `--page` in each checkout.
+- `serve.lock`, which the serving process holds for as long as it runs,
+  so the host has one.
+
+The process's working directory is the state directory, never a
+checkout, and no request writes a file of the record or the repository.
 
 ## The policy's signers and audiences
 
@@ -118,7 +228,7 @@ checks = ["cli:test", "core:test"]       # by the landing's names (116)
 
 [signers.gate]
 ssh = "ssh-ed25519 CCCC…"
-kinds = ["acceptance"]
+kinds = ["acceptance", "promotion"]
 
 [acceptance]
 require = [
@@ -129,17 +239,388 @@ require = [
 [layout]
 require = [{ kind = "provenance", signers = ["laptop"] }]
 
+# A line under stable, which every component is given: a verdict of
+# core:test after the gate's acceptance.
 [channels.stable]
-bound_to = "beta"
-require = [{ kind = "acceptance", signers = ["gate"] }]
+require = [{ kind = "verdict", check = "core:test", signers = ["box"] }]
 ```
 
 A signer's one key besides `kinds` and `checks` is what its signer
 profile verifies it by: for a host key, its public key as ssh-keygen
-lists one. `require` names its signers by their `[signers]` names, and a
+lists one; for a key in AWS KMS, `kms = "<key ARN>"`. `require` names its signers by their `[signers]` names, and a
 name `[signers]` does not hold is refused, naming it; only a channel
 names `bound_to`. The policy is read at the landed revision, never from
 a checkout (65).
+
+### The channels
+
+The given channels are a policy fragment shipped with tailrace, written
+in the policy file's own form and laid beneath your file (C.10):
+
+```toml
+[channels.beta]             # moves on each accepted release
+on_each_publish = true
+
+[channels.stable]           # takes only a version beta has held
+bound_to = "beta"
+
+[channels.alpha]            # held: moves on each accepted version,
+held = true                 # prereleases too
+on_each_publish = true
+prereleases = true
+
+[channels.lts]              # held: takes only a version stable has held,
+held = true                 # and names no rule, so only an asking moves it
+bound_to = "stable"
+```
+
+So every component has `beta` and `stable` with no line written,
+declared all the same, and `alpha` and `lts` are one line away (102).
+`held = true` is the fragment's own mark: your file never writes it.
+Each given channel in force requires the gate's acceptance, by the
+signers `[signers]` lets claim `acceptance`, and those same signers, the
+gate, are the ones whose promotion of it counts (32).
+
+Writing a given's table, empty or with lines, is the one switch: an
+empty `[channels.alpha]` switches `alpha` on, since its keys are already
+written beneath. No key turns a channel on or off, nothing turns `beta`
+or `stable` off, and `held` or `on` written in your file is unreadable
+naming the key. Each key you write replaces the fragment's:
+
+```toml
+[channels.alpha]            # alpha switched on, its keys already written
+
+[channels.stable]           # a claim after the gate's acceptance
+require = [{ kind = "verdict", check = "core:test", signers = ["box"] }]
+```
+
+```toml
+[channels.alpha]
+
+[channels.stable]           # the same line rebinds stable to alpha
+bound_to = "alpha"
+
+[channels.beta]             # beta takes prereleases too
+prereleases = true
+```
+
+`on_each_publish` and `bound_to` say together how a channel moves, so
+writing either replaces both, and the fragment's `prereleases` with them
+unless you write your own (37). A channel that follows each publish
+takes the releases the version rule makes, and prereleases too only
+where its line says `prereleases = true`; `prereleases` under a channel
+that does not follow each publish is unreadable naming it. A line never
+widens who signs a given channel's promotion: a signer it names for a
+promotion is a claim the version must carry, and the gate stays the
+promoter. Bindings that come round to where they began are unreadable
+naming a table, since no version could reach the channel.
+
+`approvers` under a channel names who may ask for it to move, signers
+`[signers]` holds; with none named, any asker the gate verifies may, the
+host's own signer while no identity provider stands (129). You write it
+on the channel you mean, or on a manual environment for the channel that
+environment makes, never under a channel an environment makes. It
+narrows who asks and never who signs, and an empty list is unreadable,
+since it would read as naming no one:
+
+```toml
+[signers.ci]
+ssh = "ssh-ed25519 CCCC… ci@desk"
+kinds = ["acceptance"]
+
+[channels.stable]           # only ci may ask for stable to move
+approvers = ["ci"]
+```
+
+A channel of your own is a table under a name the fragment does not
+hold, and moves as it says:
+
+```toml
+[channels.edge]
+on_each_publish = true      # moves on each accepted release
+
+[channels.next]
+bound_to = "beta"           # takes only what beta has held
+
+[channels.rc]               # moves by a promotion alone
+require = [{ kind = "acceptance", signers = ["gate"] }]
+
+[channels.nightly]
+on_each_publish = true      # moves on each accepted version,
+prereleases = true          # prereleases too
+```
+
+A channel declared by hand is promoted by the signers its `require`
+names that may claim `promotion`, as `gate` may above. A table naming
+both `on_each_publish` and `bound_to` is unreadable, since a bound
+channel takes no version from a publish (37).
+
+Each channel belongs to one component and names only its versions
+(125). Where the repository declares no component, a channel is
+`[channels.<name>]`, spelled by its name alone. Where it declares
+components, the fragment lies beneath each one's tables, every component
+has its own `beta` and `stable`, and a channel is
+`[channels.<component>.<name>]`:
+
+```toml
+[channels.lib.stable]       # lib's stable alone takes this claim
+require = [{ kind = "verdict", check = "core:test", signers = ["box"] }]
+
+[channels.lib.lts]          # lts switched on for lib, and not for web
+
+[channels.web.nightly]
+on_each_publish = true
+```
+
+A channel is bound only to another of its own component in force (37).
+A table of the other form, one under a component the file does not
+declare, or one naming a component with `component = "<name>"`, is
+unreadable naming the table and the form to use.
+
+An environment's words make channels too. `policy = "manual"` gives the
+environment a channel of its own, named for it and bound to the channel
+it names, so it waits on a promotion (41, 97); `after` gives it one bound
+to the channel the environments it names follow:
+
+```toml
+[environments.us]
+channel = "stable"
+policy = "manual"           # makes us, bound to stable
+approvers = ["ci"]          # only ci may say yes to us
+
+[environments.eu]
+channel = "stable"
+after = ["us"]              # makes eu, bound to us
+```
+
+These are listed like a channel of your own and are promoted by the
+gate's signers as a given channel is. Who may say yes to a manual
+environment is its own `approvers`, which the channel it makes takes as
+who may ask for it. A line under a made channel adds claims; one that
+changes how it moves, or names `approvers`, is unreadable naming its
+table, since the environment's words say both.
+
+An environment's table holds `channel`, `policy`, `after`, `target`,
+and `approvers` where the environment is manual, and no other key: a
+target's own settings sit in the target's table, and a key such as
+`bucket` written on the environment is unreadable naming the table and
+the key (C.10). `approvers` on an environment whose policy is `auto` is
+unreadable the same way, naming the field, since it names no one who
+could be asked (C.10). `policy` other
+than `auto` or `manual`, a made channel named as any channel the
+fragment holds, held or not, environments named in `after` that follow
+two channels, an environment not declared, or one that comes after
+itself, is unreadable naming the table. Nothing moves an `after`
+channel, or converges an environment, until a target is bound; `tailrace
+promote` moves them as any channel.
+
+The policy lists a repository's channels, each with its component and
+how it moves, read the same way as the policy for one channel, so the
+two never disagree (131).
+
+### What is in force
+
+`tailrace policy` shows the one table in force at the branch's landed
+head, the givens beside your own lines: what acceptance and a layout
+require, then every channel in force, with how it moves, whether it
+takes prereleases, the claims its versions must carry, who promotes it
+and who may ask for it. Beneath them, under `held off`, it shows each
+given you have not switched on, with how it would move and the line that
+switches it on, so a channel left off is seen one line away (C.10). The
+channels and the givens held off come in one answer of the policy, which
+carries them apart (131). A claim asked of built artifacts alone is
+shown so, after its signers (134). Each part is its own answer, so a
+missing `[layout]` is shown as absent beside the rest:
+
+```text
+$ tailrace policy
+main at 4f2a9c1…
+
+acceptance
+  provenance by laptop
+  verdict of cli:test by box, of built artifacts alone
+layout
+  the policy (policy file) holds no policy for layout in .config/tailrace.toml
+
+channels
+  alpha, each publish, prereleases too
+    requires acceptance by gate
+    promoted by gate
+    may be asked for by any asker
+  beta, each publish
+    requires acceptance by gate
+    promoted by gate
+    may be asked for by any asker
+  stable, bound to alpha
+    requires acceptance by gate, then verdict of core:test by box, of built artifacts alone
+    promoted by gate
+    may be asked for by ci
+
+held off
+  lts, bound to stable, switch on with [channels.lts]
+```
+
+`--branch` names another governed branch, and `--json` prints the
+answer as one document. It asks the landing and the policy alone and
+writes nothing (60); a head the branch has not landed is refused naming
+both, before the policy is read.
+
+### The gate and the channels that follow each publish
+
+The gate judges an offered version under `[acceptance]` as it stands at
+the branch's landed head when it judges, so a policy that lands binds
+every judgment after it (107), and a version once accepted stays
+accepted (94). It accepts the version whole or refuses it whole, naming
+the artifact and the claim it found wanting (28), and its acceptance is
+one more claim on the version's index: no byte changes (26).
+
+Each artifact is asked only the claims asked of artifacts made its way
+(134). A version's notes are rendered from its history with no build
+behind them, and carry the publisher's provenance naming no build: they
+are asked that provenance and the claims about the version as a whole,
+the gate's acceptance and a promotion, and never a verdict, a test, a
+review or a rebuild, which the policy file asks of built artifacts
+alone. The gate tells the notes are rendered from that provenance,
+counted through a signer `[acceptance]` names for provenance; an
+artifact whose provenance names its build, or whose only build-less
+provenance comes from a signer named for none, is judged as built and
+asked every claim. The notes still need the publisher's provenance: a
+version whose notes lack it is refused naming them.
+
+`beta`, and every channel of yours with `on_each_publish = true`,
+follows each publish. When a publish's answer tells the gate of a
+version of a component and the gate accepts it, the gate judges the
+version under each following channel of that component, and of no
+other, a prerelease under only those that take prereleases, and where
+the channel's policy is met and names the gate among its promoters,
+promotes the channel itself, its own act, naming its own signer as who
+asked whatever `approvers` the channel names: the promotion is held in
+the ledger before the channel's name moves (95, 125, C.10). A following channel
+whose promoters leave the gate out is refused naming them, and the
+acceptance stands. Each following channel judges each artifact as
+acceptance told it was made, so a channel's verdict or rebuild never
+holds a version for its notes. The gate learns these channels from the policy's
+list, never from the file itself (131). A publish never moves a channel,
+and a version the gate is asked about by anyone else moves none.
+
+The gate never accepts what its own signer offered (27, 96). The one
+laptop that both offers and accepts is the one signer that may claim
+both, and its acceptance then says the host accepted what it offered,
+so a reader tells it from a separated one (108). A laptop with nothing
+written needs only to list its key for provenance:
+
+```toml
+[signers.laptop]
+ssh = "ssh-ed25519 AAAA… laptop"
+kinds = ["provenance"]
+
+[acceptance]
+require = [{ kind = "provenance", signers = ["laptop"] }]
+```
+
+Where `[signers]` names no signer that may claim acceptance and exactly
+one that may claim provenance, the policy file answers that signer as
+one that may claim acceptance too: it is the repository's gate, the one
+host, accepting what it offered and moving `beta` on each publish, with
+no line written for `beta` (118, 108, C.10). The gate reads this from
+the policy's answer and decides nothing of it. Writing
+`kinds = ["provenance", "acceptance"]` says the same in so many words.
+Naming any signer that may claim acceptance ends it: that signer is the
+gate, and the laptop's own provenance is refused as offered by the gate
+when it runs the gate itself.
+
+A policy that names several signers for provenance and none that may
+claim acceptance accepts nothing, since no one host offers and accepts:
+the policy for acceptance, and for `beta` and `stable`, is refused,
+wanting an acceptance no signer may make, in the policy's own words,
+`several publishers and no gate, name an accepting signer` (C.10). Each
+publish offers its version and the gate's answer beside it carries that
+refusal; no channel moves. The line that fixes it names the gate:
+
+```toml
+[signers.gate]
+ssh = "ssh-ed25519 CCCC…"
+kinds = ["acceptance", "promotion"]
+```
+
+On a fresh laptop the first publish makes the key, and its gate's answer
+says the version is not accepted until the policy lists it. List it,
+land the policy, and the next landing's publish is accepted:
+
+1. Print the key's public half, one line naming the host:
+   `cat ~/.local/share/tailrace/host/signing.key.pub`, or
+   `$XDG_DATA_HOME/tailrace/host/signing.key.pub` where that is set.
+2. Copy the line as it stands into the policy under
+   `[signers.<name>]`, the name the line ends with, as `ssh = "<line>"`
+   with `kinds = ["provenance"]`.
+3. Land the policy; from the next landing on, `tailrace publish`
+   accepts as one host and moves `beta`.
+
+Beside that policy, the laptop's bindings file needs no `[gate]` for
+`beta` to move: with none, the laptop's own publish tells its gate
+(118), as naming it does:
+
+```toml
+[gate]
+publish = {}
+```
+
+`beta` then moves on each publish, in the same run: `tailrace publish`
+offers the version, the gate accepts it as the laptop's signer, its
+`[signing]` or the given key, and the promotion is held in the ledger
+before `beta`'s name moves. The answer shows the acceptance and `beta`'s
+move beside the version, and the publish exits as a refusal where the
+gate refused the version or held `beta`, so a landing step that runs it
+fails when `beta` did not move. With no `[ledger]`, the promotion is
+held in the given git ref on the landing's remote.
+
+Beside that policy, the laptop's bindings file needs no `[gate]` for
+`beta` to move: with none, the laptop's own publish tells its gate
+(118), as naming it does:
+
+```toml
+[gate]
+publish = {}
+```
+
+`beta` then moves on each release a publish offers, in the same run:
+`tailrace publish` offers the version, the gate accepts it as the
+laptop's `[signing]` signer, and the promotion, the gate's own act, is
+held in the ledger `[ledger]` names before `beta`'s name moves. A
+prerelease is accepted the same way and moves only the channels that
+take prereleases, `alpha` once its table is written, leaving `beta`
+where it was (C.10). The answer shows the acceptance and each channel's
+move beside the version, and the publish exits as a refusal where the
+gate refused the version or held a channel it moves, so a landing step
+that runs it fails when `beta` did not move to a release. With no
+`[ledger]`, the version is accepted and each channel's answer is absent
+naming it.
+
+### Promoting
+
+`tailrace promote 0.2.0 --to stable` moves `stable` to 0.2.0 of the one
+component, or of the one `--component` names, under the policy for that
+component's `stable` as it stands at the branch's landed head; a channel
+the policy does not list for the component is absent, naming both (125,
+131). The version's index must carry an acceptance a signer the
+channel's policy names made, and then every claim it requires, in order;
+the first found wanting is named with the signers that may make it (31,
+58). The host's `[signing]` signer must be among the channel's
+promoters, the gate's signers for a given channel and one an
+environment makes, so a host holding the gate's signer promotes
+`stable` with no line written (9, 32), and it is recorded as who asked.
+Where the channel names `approvers`, the host's signer must be one of
+them, or the promotion is refused naming it and who may ask, before
+anything is signed (32, C.10).
+A channel bound to another, as `stable` is to `beta`, takes only a
+version `beta` has held, now or before (37).
+
+The promotion is held in the ledger before `stable`'s name moves in the
+store (33). `--from 0.1.0` says where you expect `stable`, and a channel
+that has moved since is refused naming where it is (35); a promotion
+another host made between your read and your append is refused naming
+it, never retried. `tailrace promote --back --to stable` moves `stable`
+back to the version it moved from, one more promotion (34).
 
 ## A team
 
@@ -151,6 +632,20 @@ to quarantine with a signer the policy admits for that; only the gate's
 signer may accept and promote. Environments subscribe to the channels the
 gate moves, and converge through the
 [targets](/tailrace/guides/integrations/targets/) the repository binds.
+
+A host that only offers must name the job that tells the gate: without
+a `[gate]`, its publish asks its own gate, which refuses the version
+where the policy does not let the host's signer accept, and the publish
+exits as a refusal with the version still offered. With the job named,
+each publish says where the version went to be judged:
+
+```toml
+[gate]
+job = "the release job a push to main wakes"
+```
+
+tailrace runs nothing for the job and carries its words as written, and
+the publish asks the gate nothing.
 
 ## What stays yours
 

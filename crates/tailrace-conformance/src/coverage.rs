@@ -1,12 +1,13 @@
 //! The coverage check: every clause of Parts A and B cited by a scenario
-//! or named in the register, and nothing else (section 12, rule core.33,
+//! or named in the register, and nothing else, and every part the
+//! register names of a clause a scenario cites (section 12, rule core.33,
 //! ADR 0012; design D8). It finds what is missing or malformed; whether a
 //! citation is honest is the reviewer's to judge.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::register::Pending;
+use crate::register::{Part, Pending};
 use crate::Cited;
 
 /// What the check finds wrong.
@@ -36,14 +37,20 @@ pub enum Finding {
     Unexplained { clause: u16, unit: bool, why: bool },
     /// The register names the clause more than once.
     RegisteredTwice { clause: u16 },
+    /// The register names a part of the clause, which no scenario cites,
+    /// so it waits whole.
+    PartOfUncited { clause: u16 },
 }
 
-/// What the check came to: the findings, the clauses that wait, and how
-/// many clauses there are, how many are cited and how many registered.
+/// What the check came to: the findings, the clauses that wait, the parts
+/// of cited clauses that wait, the clauses cited, and how many clauses
+/// there are, how many are cited and how many registered.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Coverage {
     pub findings: Vec<Finding>,
     pub pending: Vec<Pending>,
+    pub parts: Vec<Part>,
+    pub cited_clauses: Vec<u16>,
     pub clauses: usize,
     pub cited: usize,
     pub registered: usize,
@@ -55,8 +62,14 @@ impl Coverage {
     }
 }
 
-/// Reads `citations` and `pending` against the clauses `parts` holds.
-pub fn check(parts: &[(&str, &[u16])], citations: &[Cited], pending: &[Pending]) -> Coverage {
+/// Reads `citations`, `pending` and `waiting`, the parts of clauses that
+/// wait, against the clauses `parts` holds.
+pub fn check(
+    parts: &[(&str, &[u16])],
+    citations: &[Cited],
+    pending: &[Pending],
+    waiting: &[Part],
+) -> Coverage {
     let clauses: BTreeSet<u16> = parts.iter().flat_map(|(_, c)| c.iter().copied()).collect();
     let mut findings = Vec::new();
 
@@ -107,6 +120,22 @@ pub fn check(parts: &[(&str, &[u16])], citations: &[Cited], pending: &[Pending])
         }
     }
 
+    for part in waiting {
+        if !citing.contains_key(&part.clause) {
+            findings.push(Finding::PartOfUncited {
+                clause: part.clause,
+            });
+        }
+        let (unit, why) = (part.unit.trim().is_empty(), part.why.trim().is_empty());
+        if unit || why {
+            findings.push(Finding::Unexplained {
+                clause: part.clause,
+                unit,
+                why,
+            });
+        }
+    }
+
     for &clause in &clauses {
         match (citing.get(&clause), registered.contains_key(&clause)) {
             (None, false) => findings.push(Finding::Uncovered { clause }),
@@ -121,6 +150,8 @@ pub fn check(parts: &[(&str, &[u16])], citations: &[Cited], pending: &[Pending])
     Coverage {
         findings,
         pending: pending.to_vec(),
+        parts: waiting.to_vec(),
+        cited_clauses: citing.keys().copied().collect(),
         clauses: clauses.len(),
         cited: citing.len(),
         registered: registered.keys().filter(|c| clauses.contains(c)).count(),
@@ -181,6 +212,10 @@ impl fmt::Display for Finding {
                     "registered twice {clause}: the register names it more than once"
                 )
             }
+            Finding::PartOfUncited { clause } => write!(
+                f,
+                "part of uncited {clause}: the register names a part of it, and no scenario cites it, so it waits whole"
+            ),
         }
     }
 }
@@ -190,6 +225,15 @@ impl fmt::Display for Coverage {
         for entry in &self.pending {
             writeln!(f, "pending {}  {}  {}", entry.clause, entry.unit, entry.why)?;
         }
+        for part in &self.parts {
+            writeln!(
+                f,
+                "pending part of {}, {}  {}  {}",
+                part.clause, part.part, part.unit, part.why
+            )?;
+        }
+        let cited: Vec<String> = self.cited_clauses.iter().map(u16::to_string).collect();
+        writeln!(f, "cited {}", cited.join(", "))?;
         write!(
             f,
             "{} clauses: {} cited, {} pending",
@@ -226,7 +270,12 @@ mod tests {
 
     #[test]
     fn a_clause_neither_cited_nor_registered_is_named() {
-        let coverage = check(PARTS, &[cited("one", &[1, 2]), cited("two", &[3, 8])], &[]);
+        let coverage = check(
+            PARTS,
+            &[cited("one", &[1, 2]), cited("two", &[3, 8])],
+            &[],
+            &[],
+        );
         assert_eq!(coverage.findings, [Finding::Uncovered { clause: 7 }]);
         assert!(coverage.to_string().contains("uncovered 7"), "{coverage}");
     }
@@ -237,6 +286,7 @@ mod tests {
             PARTS,
             &[cited("one", &[1, 2, 3])],
             &[pending(7, UNIT, " "), pending(8, "", WHY)],
+            &[],
         );
         assert_eq!(
             coverage.findings,
@@ -270,6 +320,7 @@ mod tests {
             PARTS,
             &[cited("one", &[1, 2, 3, 8]), cited("the gate accepts", &[7])],
             &[pending(7, UNIT, WHY)],
+            &[],
         );
         assert_eq!(
             coverage.findings,
@@ -291,6 +342,7 @@ mod tests {
         let coverage = check(
             PARTS,
             &[cited("one", &[1, 2, 3, 7, 8, 126]), cited("none", &[])],
+            &[],
             &[],
         );
         assert_eq!(
@@ -321,6 +373,7 @@ mod tests {
             PARTS,
             &[cited("one", &[1, 2, 3, 7, 8])],
             &[pending(126, UNIT, WHY)],
+            &[],
         );
         assert_eq!(
             coverage.findings,
@@ -334,6 +387,7 @@ mod tests {
             PARTS,
             &[cited("one", &[1, 2, 3, 8])],
             &[pending(7, UNIT, WHY), pending(7, "bolt 5 · render", WHY)],
+            &[],
         );
         assert_eq!(coverage.findings, [Finding::RegisteredTwice { clause: 7 }]);
     }
@@ -348,9 +402,11 @@ mod tests {
             PARTS,
             &[cited("one", &[1, 2]), cited("two", &[3])],
             &entries,
+            &[part(3, "its environments", UNIT, WHY)],
         );
         assert!(coverage.passed(), "{coverage}");
         assert_eq!(coverage.pending, entries);
+        assert_eq!(coverage.cited_clauses, [1, 2, 3]);
         assert_eq!(
             (coverage.clauses, coverage.cited, coverage.registered),
             (5, 3, 2)
@@ -359,7 +415,63 @@ mod tests {
             coverage.to_string(),
             "pending 7  bolt 4 · the gate  acceptance is the gate's\n\
              pending 8  bolt 5 · render  layouts\n\
+             pending part of 3, its environments  bolt 4 · the gate  acceptance is the gate's\n\
+             cited 1, 2, 3\n\
              5 clauses: 3 cited, 2 pending"
+        );
+    }
+
+    fn part(clause: u16, of: &'static str, unit: &'static str, why: &'static str) -> Part {
+        Part {
+            clause,
+            part: of,
+            unit,
+            why,
+        }
+    }
+
+    #[test]
+    fn a_part_of_a_clause_no_scenario_cites_is_named_waiting_whole() {
+        let coverage = check(
+            PARTS,
+            &[cited("one", &[1, 2, 3, 8])],
+            &[pending(7, UNIT, WHY)],
+            &[part(7, "its notes", UNIT, WHY)],
+        );
+        assert_eq!(coverage.findings, [Finding::PartOfUncited { clause: 7 }]);
+        assert!(
+            coverage
+                .to_string()
+                .contains("part of uncited 7: the register names a part of it, and no scenario cites it, so it waits whole"),
+            "{coverage}"
+        );
+    }
+
+    #[test]
+    fn a_part_without_its_unit_or_reason_is_named() {
+        let coverage = check(
+            PARTS,
+            &[cited("one", &[1, 2, 3, 7, 8])],
+            &[],
+            &[
+                part(7, "its notes", "", WHY),
+                part(8, "its counts", UNIT, ""),
+            ],
+        );
+        assert_eq!(
+            coverage.findings,
+            [
+                Finding::Unexplained {
+                    clause: 7,
+                    unit: true,
+                    why: false
+                },
+                Finding::Unexplained {
+                    clause: 8,
+                    unit: false,
+                    why: true
+                },
+            ]
         );
     }
 }

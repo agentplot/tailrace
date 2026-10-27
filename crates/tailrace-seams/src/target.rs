@@ -3,19 +3,20 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Answer, ChannelName, Digest, Version};
+use crate::{Answer, ChannelId, Digest, Version};
 
 text! {
     /// An environment, by name.
     EnvironmentName
 }
 
-/// One target, the channel it follows, and whether it waits for an
-/// approver rather than moving on its own (40, 41).
+/// One target, the channel it follows with its component (125), and
+/// whether it waits for an approver rather than moving on its own (40,
+/// 41).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Environment {
     pub name: EnvironmentName,
-    pub channel: ChannelName,
+    pub channel: ChannelId,
     pub waits: bool,
 }
 
@@ -72,14 +73,14 @@ pub trait Target {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::round_trip;
+    use crate::{round_trip, ChannelName, ComponentName};
 
     #[test]
     fn every_type_round_trips_through_json() {
         round_trip(EnvironmentName::new("production"));
         round_trip(Environment {
             name: EnvironmentName::new("production"),
-            channel: ChannelName::new("stable"),
+            channel: ChannelId::new(Some(ComponentName::new("web")), ChannelName::new("stable")),
             waits: true,
         });
         let verified = Verified::new(Digest::of(b"index"), Version::new("1.0.0"));
