@@ -70,14 +70,18 @@ impl Refs<'_> {
 
     /// The copy of each of `old`, the remote's ref names, deleted in one
     /// transaction, and then the copy of each of `fetched` made at the
-    /// object it names in a second, so each's reflog's one entry is now.
-    /// A crash between the two leaves no copy, never a wrong one.
+    /// object it names in a second, so each's reflog's newest entry is
+    /// now. A crash between the two leaves no copy, never a wrong one.
+    /// Each is made whether or not another read of the checkout remade
+    /// it between the two, as a serving process's two reads at once do,
+    /// its reflog then holding that read's entry, and this one's where
+    /// the two fetched other objects.
     pub fn remake(&self, old: &[&str], fetched: &BTreeMap<String, String>) -> Answer<()> {
         let deleted: String = old.iter().map(|n| format!("delete {}\n", of(n))).collect();
         self.transaction(&deleted)?;
         let made: String = fetched
             .iter()
-            .map(|(name, object)| format!("create {} {object}\n", of(name)))
+            .map(|(name, object)| format!("update {} {object}\n", of(name)))
             .collect();
         self.transaction(&made)
     }

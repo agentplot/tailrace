@@ -7,6 +7,7 @@
 mod scratch;
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 
 use scratch::{git_fails, Scratch, MAIN};
 use tailrace::profiles::landing::branch::PlainBranch;
@@ -304,6 +305,50 @@ fn each_read_remakes_the_copy_and_writes_no_other_ref() {
         !scratch.repo.path.join(".git/FETCH_HEAD").exists(),
         "the read wrote FETCH_HEAD"
     );
+}
+
+/// Two reads of one checkout at once, as two panes' status from one
+/// serving process: the other read's remake makes the copy between this
+/// read's deleting it and making it again, which a hook the scratch git
+/// runs after each ref transaction stands in for. Both answer, and the
+/// copy says when it was fetched.
+#[test]
+fn a_read_whose_copy_another_read_remakes_meanwhile() {
+    let scratch = Scratch::new();
+    let landing = PlainBranch::new(&scratch.repo.path, Some("origin".into()));
+    let head = Revision::new(scratch.repo.head());
+    let hooks = scratch.repo.path.join(".git/hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    let hook = hooks.join("reference-transaction");
+    fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\n\
+             [ \"$1\" = committed ] || exit 0\n\
+             while read -r old new ref; do\n\
+             \x20 case \"$ref:$new\" in\n\
+             \x20 {COPY_OF_MAIN}:*[!0]*) ;;\n\
+             \x20 {COPY_OF_MAIN}:*) git update-ref --create-reflog \"$ref\" {head} ;;\n\
+             \x20 esac\n\
+             done\n"
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    let before = now();
+    assert_eq!(
+        landing.landed(&main_branch(), &head),
+        Ok(IsLanded {
+            landed: true,
+            read: Read::Source
+        })
+    );
+    assert_eq!(
+        scratch.repo.git(&["rev-parse", COPY_OF_MAIN]),
+        head.as_str()
+    );
+    let (at, _) = copied_at(&scratch.repo);
+    assert!(at >= before, "the copy's time is {at}, before the read");
 }
 
 #[test]
