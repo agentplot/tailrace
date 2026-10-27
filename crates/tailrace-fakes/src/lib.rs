@@ -243,20 +243,20 @@ mod tests {
                 Some(&Version::new("1.0.0")),
             )
             .is_ok());
+        let request = Request {
+            method: "GET".into(),
+            path: format!("{}@{}", artifact.meta.name(), artifact.meta.version()),
+            base: "http://127.0.0.1:7420/o/r/eco-b".into(),
+        };
         let rendered = projection
             .render(Contents::Artifacts(&[artifact]), "layouts/eco-b")
             .unwrap();
-        let request = Request {
-            method: "GET".into(),
-            path: String::new(),
-            base: "http://127.0.0.1:7420/o/r/eco-b".into(),
-        };
         assert_eq!(
             projection
-                .serve(&rendered.layout, &request, &|_| Ok(()))
+                .serve(&rendered.layout, &request, &|_| panic!("asked the core"))
                 .unwrap()
-                .body,
-            b"fake://eco-b/layouts/eco-b"
+                .status,
+            200
         );
         let projection = seams.projection(&eco_a).unwrap();
         assert!(projection
@@ -270,7 +270,7 @@ mod tests {
                 &request,
                 &|_| Ok(())
             )
-            .is_ok());
+            .is_ok_and(|served| served.status == 200));
 
         let bound = seams.target(&production.name).expect("production is bound");
         assert!(bound.desired(&production).is_err());
