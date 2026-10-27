@@ -4,9 +4,11 @@ language: 'rust'
 dependsOn: [seams, core, fakes, conformance]
 
 tasks:
+  # The crate's tests over the fakes and git alone, herdr_documents among
+  # them, which compares the herdr plugin's documents with the binary's.
   test:
     command: 'cargo test -p tailrace'
-    inputs: ['/crates/tailrace/**/*', '/crates/tailrace-seams/**/*', '/crates/tailrace-core/**/*', '/crates/tailrace-fakes/**/*', '/crates/tailrace-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock']
+    inputs: ['/crates/tailrace/**/*', '/crates/tailrace-seams/**/*', '/crates/tailrace-core/**/*', '/crates/tailrace-fakes/**/*', '/crates/tailrace-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/plugins/herdr/tests/docs/**/*']
     tags: [cargo-test, check-fast]
     options: {runFromWorkspaceRoot: true}
   # The profiles' tests that run moon, sluice and ssh-keygen against

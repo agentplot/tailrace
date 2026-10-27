@@ -1,0 +1,66 @@
+{
+  "answer": "ok",
+  "value": {
+    "asked_at": 1793000100,
+    "repositories": [
+      {
+        "answer": "unreadable",
+        "unreadable": {
+          "source": {
+            "seam": "host",
+            "profile": "/scratch/gadget/repo"
+          },
+          "what": "the checkout of agentplot/gadget at /scratch/gadget/repo",
+          "said": "failed to resolve path '/scratch/gadget/repo': No such file or directory"
+        }
+      },
+      {
+        "answer": "ok",
+        "value": {
+          "repository": {
+            "owner": "agentplot",
+            "name": "widget"
+          },
+          "heads": {
+            "answer": "ok",
+            "value": [
+              {
+                "component": "repository",
+                "channel": "beta",
+                "at": {
+                  "answer": "ok",
+                  "value": {
+                    "state": "at",
+                    "version": "0.2.0",
+                    "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                  }
+                }
+              },
+              {
+                "component": "repository",
+                "channel": "stable",
+                "at": {
+                  "answer": "ok",
+                  "value": {
+                    "state": "empty"
+                  }
+                }
+              }
+            ]
+          },
+          "environments": {
+            "answer": "unreadable",
+            "unreadable": {
+              "source": {
+                "seam": "target",
+                "profile": "unread"
+              },
+              "what": "the environments: what each environment should run and runs is read from a target, and no target is read",
+              "said": null
+            }
+          }
+        }
+      }
+    ]
+  }
+}

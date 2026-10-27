@@ -1,0 +1,172 @@
+{
+  "answer": "ok",
+  "value": {
+    "branch": "main",
+    "asked_at": 1793000100,
+    "channels": {
+      "answer": "ok",
+      "value": {
+        "revision": "1111111111111111111111111111111111111111",
+        "landing": "source",
+        "channels": [
+          {
+            "channel": {
+              "component": null,
+              "name": "beta"
+            },
+            "moves": {
+              "by": "each_publish",
+              "prereleases": false
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "head": {
+                  "channel": "beta",
+                  "component": "repository",
+                  "to": {
+                    "version": "0.2.0",
+                    "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                  },
+                  "from": {
+                    "version": "0.1.0",
+                    "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                  },
+                  "predecessor": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                  "asked_by": "gate",
+                  "policy": {
+                    "revision": "1111111111111111111111111111111111111111",
+                    "claims": [
+                      "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+                    ]
+                  },
+                  "at": 1793000001
+                },
+                "chain": [
+                  [
+                    "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                    {
+                      "channel": "beta",
+                      "component": "repository",
+                      "to": {
+                        "version": "0.1.0",
+                        "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                      },
+                      "from": null,
+                      "predecessor": null,
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "1111111111111111111111111111111111111111",
+                        "claims": [
+                          "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+                        ]
+                      },
+                      "at": 1793000000
+                    }
+                  ],
+                  [
+                    "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+                    {
+                      "channel": "beta",
+                      "component": "repository",
+                      "to": {
+                        "version": "0.2.0",
+                        "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      },
+                      "from": {
+                        "version": "0.1.0",
+                        "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                      },
+                      "predecessor": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "1111111111111111111111111111111111111111",
+                        "claims": [
+                          "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+                        ]
+                      },
+                      "at": 1793000001
+                    }
+                  ]
+                ],
+                "read": "source"
+              }
+            },
+            "notes": [
+              {
+                "version": "0.1.0",
+                "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "notes": {
+                  "answer": "unreadable",
+                  "unreadable": {
+                    "source": {
+                      "seam": "history",
+                      "profile": "git, local"
+                    },
+                    "what": "the notes of repository 0.1.0",
+                    "said": "the history holds no tag v0.1.0 reached from 1111111111111111111111111111111111111111"
+                  }
+                }
+              },
+              {
+                "version": "0.2.0",
+                "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "notes": {
+                  "answer": "unreadable",
+                  "unreadable": {
+                    "source": {
+                      "seam": "history",
+                      "profile": "git, local"
+                    },
+                    "what": "the notes of repository 0.2.0",
+                    "said": "the history holds no tag v0.2.0 reached from 1111111111111111111111111111111111111111"
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "channel": {
+              "component": null,
+              "name": "stable"
+            },
+            "moves": {
+              "by": "bound",
+              "to": "beta"
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "empty",
+                "read": "source"
+              }
+            },
+            "notes": []
+          }
+        ]
+      }
+    },
+    "environments": {
+      "answer": "unreadable",
+      "unreadable": {
+        "source": {
+          "seam": "target",
+          "profile": "unread"
+        },
+        "what": "the environments: what each environment should run and runs is read from a target, and no target is read",
+        "said": null
+      }
+    },
+    "published": {
+      "answer": "absent",
+      "absent": {
+        "source": {
+          "seam": "host",
+          "profile": "/scratch/widget/repo/.git/tailrace/published"
+        },
+        "what": "version it published"
+      }
+    }
+  }
+}

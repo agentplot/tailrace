@@ -1,0 +1,15 @@
+#!/bin/sh
+# A stand-in tailrace: logs each call with the directory it ran in. Its
+# serve takes a mkdir lock, as the core's lock keeps the host to one
+# process, notes that it took it in $FAKE/served, writes the document the
+# stand-in curl answers /serving.json with, and exits; one that finds the
+# lock held exits at once. With $FAKE/mute it writes no document, a
+# process that never answers.
+printf '%s\t%s\n' "$PWD" "$*" >>"$FAKE/tailrace-calls"
+[ "$1" = serve ] || exit 2
+mkdir "$FAKE/serve.lock" 2>/dev/null || exit 0
+printf '%s\n' $$ >>"$FAKE/served"
+[ -f "$FAKE/mute" ] && exit 0
+mkdir -p "$FAKE/http"
+printf '{"serving":"tailrace","revision":"test","pid":%s}\n' $$ >"$FAKE/serving.json.$$"
+mv "$FAKE/serving.json.$$" "$FAKE/http/serving.json"

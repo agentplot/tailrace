@@ -1,0 +1,49 @@
+{
+  "answer": "ok",
+  "value": {
+    "branch": "main",
+    "asked_at": 1793000100,
+    "channels": {
+      "answer": "refused",
+      "refused": {
+        "source": {
+          "seam": "landing",
+          "profile": "branch, origin"
+        },
+        "why": {
+          "not_landed_as_fetched": {
+            "branch": "main",
+            "revision": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+            "fetched": 1793000050
+          }
+        },
+        "said": "ssh: connect to host example.com port 22: Connection refused"
+      }
+    },
+    "environments": {
+      "answer": "absent",
+      "absent": {
+        "source": {
+          "seam": "target",
+          "profile": "unread"
+        },
+        "what": "environment of agentplot/beta"
+      }
+    },
+    "published": {
+      "answer": "refused",
+      "refused": {
+        "source": {
+          "seam": "host",
+          "profile": "/srv/beta/.git/tailrace/published"
+        },
+        "why": {
+          "kept_other": {
+            "path": "app/1.0.0.json"
+          }
+        },
+        "said": null
+      }
+    }
+  }
+}
