@@ -28,4 +28,4 @@ landed on `main` and this bolt has taken it: the pane reads its
 
 ## 5. The real process, by hand
 
-- [ ] 5.1 Add `tests/host.sh` and the `host` task tagged `check-host` as design D6 part 3 has it, refusing to run where anything answers at the core's address (spec `herdr-plugin`, two panes on one host). This task cannot run in the gate, because it binds the core's port. Verify it by hand: `devenv shell -- moon run plugin-herdr:host` passes on a host where nothing answers at `127.0.0.1:7420`, and refuses, naming the address, while a `tailrace serve` runs.
+- [x] 5.1 Add `tests/host.sh` and the `host` task tagged `check-host` as design D6 part 3 has it, refusing to run where anything answers at the core's address (spec `herdr-plugin`, two panes on one host). This task cannot run in the gate, because it binds the core's port. Verify it by hand: `devenv shell -- moon run plugin-herdr:host` passes on a host where nothing answers at `127.0.0.1:7420`, and refuses, naming the address, while a `tailrace serve` runs.
