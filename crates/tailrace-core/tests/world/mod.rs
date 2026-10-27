@@ -153,6 +153,26 @@ impl World {
         );
     }
 
+    /// One commit more on `lib` with the message `subject`, landed on
+    /// `main`, every output built and passing there: a revision a later
+    /// version is published from.
+    pub fn next(&self, subject: &str) -> Revision {
+        let revision = self.repo.touch(subject, &["crates/lib"]);
+        self.fakes.landing.land(&self.main, &revision);
+        for o in ["lib-pack", "lib-docs", "site"] {
+            self.fakes.build.made(
+                &revision,
+                &OutputName::new(o),
+                Report {
+                    build: build_of(o, &revision),
+                    outcome: Outcome::Pass,
+                    files: vec![format!("dist/{o}.tar")],
+                },
+            );
+        }
+        revision
+    }
+
     pub fn ask(&self) -> Ask {
         Ask {
             branch: self.main.clone(),
