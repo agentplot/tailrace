@@ -27,6 +27,10 @@ part exists.
 - **[core.7]** A claim counts for a verdict only through a signer the policy names and a claim that signer may make, never through what the claim says of itself.
 - **[core.8]** tailrace signs only as the party running it and only what that party observed; a claim another party made is carried as made, never re-signed.
 - **[core.9]** Every claim tailrace writes names the revision it is about, and the build identity where it has one.
+- **[core.39]** A signature by an identity whose standing has lapsed is answered made and expired, never valid and never absent, and a claim that counted at acceptance keeps counting.
+- **[core.40]** A signer's name names one key and never moves; no alias and no name a provider may point at another key names a signer.
+- **[core.41]** A key-service signer signs only with a key whose private half never left the service; imported material and an external key store are refused at sign.
+- **[core.42]** A signer the policy lists that cannot be read is unreadable naming it, never passed over.
 
 ### Publishing
 
@@ -35,6 +39,7 @@ part exists.
 - **[core.12]** Every declared output's outcome is read before any artifact is offered, and the index is offered last.
 - **[core.13]** The version's name is derived from history by the authors' rule and claimed in the shared history before any artifact is packed, and no build is handed a version.
 - **[core.37]** A version is derived for one declared component over the commits that touch its paths and the tags that carry its prefix, and no code path derives a version, claims a name or moves a channel without naming the component.
+- **[core.52]** The core starts nothing after an offer or a landing; what tells the gate is named in the host's bindings file and nowhere in the core, and tailrace runs nothing for a job named there.
 
 ### Acceptance and channels
 
@@ -46,12 +51,22 @@ part exists.
 - **[core.16]** A channel moves only from the version it is at, and an environment is never handed a version except through its channel.
 - **[core.34]** A promotion is appended to its channel's chain only after the claim it names as predecessor is the chain's head, and two claims naming one predecessor are reported as a fork, never chosen between.
 - **[core.35]** No code path converges an environment that waits except by a promotion of the channel it follows; there is no approval that is not a promotion.
+- **[core.43]** The core names no channel, and nothing but the policy profile reads a key of the policy file.
+- **[core.44]** A line under a channel narrows who may ask or adds a claim its versions must carry, and never widens who signs; approvers never join who signs.
+- **[core.45]** Nothing is appended, attached or moved from a chain read as last read, and nothing is signed or appended before every claim the channel's policy requires has been judged.
+- **[core.46]** The asker of a promotion is a signer the gate verified, never a word the asker gives.
+- **[core.47]** A ledger ref is never force-pushed and the repository's copy of it only moves forward; a remote holding less than the copy is unreadable naming the claims it lost.
+- **[core.48]** A channel's store name is under `channel/`, made by the seam's one function, and is never a version's, a prefix's or a cache entry's.
+- **[core.49]** A store profile declares whether its names take a condition, and the suite runs the stale-move refusal where they do and the repair where they do not; a tag read back at the former place is read again up to the profile's bound, a third digest refused at once, and the put never repeated.
+- **[core.50]** A channel's head is read from its chain, never from a resolve of its store name.
+- **[core.51]** No media type or artifact type the registry profile writes carries a parameter.
 
 ### Consumers
 
 - **[core.17]** A consumer layout holds only versions whose verdict under its policy is satisfied, and a refused version is reported naming the claim found wanting.
 - **[core.18]** An address a client records names no host and no one owner's store.
-- **[core.36]** One serving process answers a host, at one fixed name and port with the repository in the path, and no checkout starts one of its own.
+- **[core.36]** One serving process answers a host, at one fixed name and port with the repository in the path, started by the first asker that finds none under the host's one lock, ending only when nothing has asked for a while and no layout is served; no checkout starts one of its own and no person is told to start one.
+- **[core.56]** A page a surface renders is one HTML document with no script, every string escaped and every refusal in the source's own words.
 
 ### Answers and records
 
@@ -63,6 +78,8 @@ part exists.
 - **[core.31]** Every surface calls the one core and renders its answer; no surface computes a verdict, a version or a channel of its own.
 - **[core.32]** A read of what tailrace holds opens no connection to a store, a signer or a target and writes nothing.
 - **[core.33]** Every profile passes the one conformance suite, and every scenario of the suite cites the clauses it exercises; a clause no scenario cites is named in the suite's register with the unit of the plan that will cite it, or with the phase of the plan while that phase has no units carved, and why, and leaves the register with the commit that cites it.
+- **[core.53]** A bindings table the file leaves out is bound to its given; a file or table that is there and cannot be read is unreadable naming it and binds nothing given in its place.
+- **[core.54]** The configuration directory holds nothing tailrace made; the given key is made only by a sign, and a key file that is there is never replaced.
 
 ### Design and records
 
@@ -80,9 +97,9 @@ part exists.
 - **core.1** Rules out: the strings `oci`, `ecr`, `ghcr`, `oras`, `cosign`, `moon`, `sluice`, `kms`, `npm`, `maven`, `cargo`, `flux`, `gh` in any source module outside a profile directory or a plugin directory; an import of a profile from the core. Not ruled out: `git`, which section 9 of the statement fixes, except in the ledger's code, which reaches where the chain is held through the ledger seam (B.8) and names no git; the in-toto and DSSE forms, the givens' default for every attestation; `.moon/` and the other configuration of this repository's own checks, which are no module; a plugin, which is a surface outside the core and names the ecosystem command it refuses. Source: statement preamble, clause 92; ADRs 0002, 0003, 0005.
 - **core.2** Rules out: a profile calling another profile; a core function with a profile-specific branch; a projection that reaches the store other than through the store seam. Source: clauses 92, 93; ADR 0002.
 - **core.3** Rules out: a seam whose only profile is undocumented as such. Source: ADR 0008.
-- **core.4** Rules out: reading a tag, a version or a channel and acting on what it names without resolving it; a record of an act that names a tag and no digest; a channel head read to decide what to deploy without the digest beside it. Source: clauses 3, 40; ADR 0003.
+- **core.4** Rules out: reading a tag, a version or a channel and acting on what it names without resolving it; a record of an act that names a tag and no digest; a channel head read to decide what to deploy without the digest beside it; a gate told of a version by a publish that judges a digest other than the one the telling named (95). Source: clauses 3, 40; ADR 0003.
 - **core.5** Rules out: a put under a digest computed from anything but the bytes; a copy that recompresses or rewrites; an "update" of an artifact's bytes. Not ruled out: packing the same outputs with a new version, which makes a new artifact with its own digest (24). Source: clauses 1, 2, 73; ADR 0003.
-- **core.6** Rules out: a tag put without the expected digest where the store supports one; a loop that re-reads and retries a refused move; a channel moved without reading what it is at. Source: clauses 35, 70; ADR 0007.
+- **core.6** Rules out: a tag put without the expected digest where the store supports one; a loop that re-reads and retries a refused move; a channel moved without reading what it is at. Not ruled out: on a store whose names take no condition, the tag read again after its put up to the profile's bound with no second put, the check best effort (C.1; ADR 0015). Source: clauses 35, 70, C.1; ADRs 0007, 0015.
 - **core.7** Rules out: a verdict that counts a claim because its predicate type is right; a signer's claim counted beyond what the policy lets it claim; a verdict that trusts a carrier's word that it verified what it carried. Not ruled out: keeping every claim attached, counted or not (9). Source: clauses 9, 80; ADR 0007.
 - **core.8** Rules out: signing a provenance for a build this host did not run; re-signing sluice's run record under tailrace's key; a claim in a reviewer's or a gate's name made on their behalf. Source: clauses 11, 12; ADR 0005.
 - **core.9** Rules out: a provenance naming outputs and no build identity; a verdict carried with no revision; a test result with no build identity, which no verdict can join. Not ruled out: a promotion claim, which has no build (39). Source: clause 13; ADR 0005.
@@ -91,7 +108,7 @@ part exists.
 - **core.12** Rules out: offering an artifact while another output's build is still running or has failed; offering the index before every artifact it names is held. Source: clauses 16, 17; ADR 0004.
 - **core.13** Rules out: a version a publisher passes on the command line that the rule did not derive; packing before the name is claimed; a build task given the version in its environment. Not ruled out: a prerelease derived from a branch's name under the authors' rule. Source: clauses 21, 22, 24; ADR 0004.
 - **core.37** Rules out: a version computed from the whole tree in a repository that declares components; a tag pushed without the component's prefix; a channel that names versions of two components; a publish of one component that re-versions another. Not ruled out: two components naming one path. Source: clauses 22, 110, 123 to 125; ADR 0010.
-- **core.38** Rules out: a required gate task that reads an SSO profile, a key file or a token from the host; a gate task that passes or fails with the state of a person's sign-in; a tools-layer check against a hosted service in `#check-tools`. Not ruled out: the same check under its own tag, run by hand or by a job with an identity; the gate proving a profile against a service it runs itself, such as a registry in the tools layer. Source: clause 64; sluice clause 114; the gate's places formed from a cleared environment (sluice C.2).
+- **core.38** Rules out: a required gate task that reads an SSO profile, a key file or a token from the host; a gate task that passes or fails with the state of a person's sign-in; a tools-layer check against a hosted service in `#check-tools`. Not ruled out: the same check under its own tag, run by hand or by a job with an identity; the gate proving a profile against a service it runs itself, such as a registry in the tools layer. Rules out as well: a change to the forms the registry profile writes, or to how name reads a tag, landed with no run of the registry's check against ECR by hand (ADR 0015). Source: clause 64; sluice clause 114; the gate's places formed from a cleared environment (sluice C.2).
 - **core.14** Rules out: a publish path that also accepts; a host configuration holding the accepting credential beside the offering one; acceptance by anything that is not the gate. Not ruled out: the one host a policy names as both offerer and gate for a repository with one publisher (108), whose acceptance claim says it accepted what it offered; the host the policy file answers as the gate where `[signers]` names no signer that may claim acceptance, its acceptance claim saying it accepted what it offered (118, 108, C.10). Source: clauses 25, 27, 96, 108, 118; ADRs 0007, 0009, 0021.
 - **core.15** Rules out: moving a tag and writing the ledger after; a ledger entry edited, compacted or pruned; a rollback that removes the entry it undoes. Source: clauses 33, 34; ADR 0007.
 - **core.16** Rules out: a promotion without the expected starting version; a reconciler given a version to apply rather than a channel to follow. Source: clauses 35, 40; ADR 0007.
@@ -99,10 +116,10 @@ part exists.
 - **core.35** Rules out: an approval claim a reconciler checks for apart from its channel's head; an environment configured to wait that follows a channel it does not own. Source: clauses 41, 97; ADR 0009.
 - **core.17** Rules out: a layout rendered with no policy; a version left in a layout after its policy refuses it; a refusal swallowed into an absent version. Source: clauses 47, 51; ADR 0006.
 - **core.18** Rules out: a served registry whose name differs per host; a layout path that embeds a registry host or an account; a lockfile written with a class's or an owner's host in it. Source: clause 49; ADR 0006.
-- **core.36** Rules out: a port chosen at start and written into a client's configuration; a server started by a worktree's agent; two servers on one host for two checkouts of one repository. Source: clauses 114, 115; ADR 0006, interview 1.
-- **core.19** Rules out: an empty list for a failed read; a 404 treated like a refusal; a refusal rewritten in tailrace's words alone; `unknown` as a verdict. Source: clauses 58, 59.
-- **core.20** Rules out: state held only in a running process; a record only a server reads; a layout treated as a source of truth; a record that cannot be rebuilt and is not the version claim. Source: clauses 61 to 63.
-- **core.21** Rules out: a token written into a client's configuration by tailrace; a credential cached in tailrace's own state; a reconciler that holds a target's credential outside the environment. Not ruled out: a client's own credential helper the ecosystem provides. Source: clauses 45, 64.
+- **core.36** Rules out: a port chosen at start and written into a client's configuration; a server started by a worktree's agent; two servers on one host for two checkouts of one repository; a second process started by an asker that found one; a process that ends while a layout is served; a message telling a person to start the server. Source: clauses 114, 115, 132; ADRs 0006, 0018, interview 1.
+- **core.19** Rules out: an empty list for a failed read; a 404 treated like a refusal; a refusal rewritten in tailrace's words alone; `unknown` as a verdict; `held` as a fourth answer for a channel the gate did not move. Source: clauses 58, 59.
+- **core.20** Rules out: state held only in a running process; a record only a server reads; a layout treated as a source of truth; a record that cannot be rebuilt and is not the version claim. Not ruled out: what the host knows of its checkouts, the host's own and not rebuilt (63, 132; ADR 0018). Source: clauses 61 to 63, 132.
+- **core.21** Rules out: a token written into a client's configuration by tailrace; a credential cached in tailrace's own state; a reconciler that holds a target's credential outside the environment. Not ruled out: a client's own credential helper the ecosystem provides; a credential reached at use and held in the process's own memory for its life, written nowhere (64; ADR 0015). Source: clauses 45, 64.
 - **core.22** Rules out: reading `.config/tailrace.toml` from the publisher's worktree; a submission that relaxes the policy it is judged under. Source: clause 65.
 - **core.23** Rules out: a comment or commit that reinterprets a clause; a behavior the statement forbids kept behind a flag. Source: ADR 0001.
 - **core.24** Rules out: a pricing table, a tier name, a customer name, a hosted-plan reference in any file. Source: ADR 0001; statement section 9.
@@ -113,5 +130,22 @@ part exists.
 - **core.29** Rules out: an apply that trusts the channel's word; a reconciler with no policy to verify under. Source: clause 42.
 - **core.30** Rules out: a channel tag on a cache entry; an index naming a cache entry's digest without a publish; a publish that fails because the cache is empty. Not ruled out: a store profile's manifest of the cache-entry type, which only lets a tag name an entry's bytes and names no ecosystem. Source: clauses 53, 54, 100; ADR 0014.
 - **core.31** Rules out: a plugin that reads the store itself; a pane that derives a channel's head from a tag listing. Source: clause 56.
-- **core.32** Rules out: `status` that lists referrers from the registry; a read that refreshes a layout. Source: clause 60.
+- **core.32** Rules out: `status` that lists referrers from the registry; a read that refreshes a layout. Not ruled out: `status --page` naming the checkout's repository to the host's serving process (132; ADR 0018). Source: clauses 60, 132.
 - **core.33** Rules out: a profile merged with no suite run; a scenario citing no clause; a scenario citing a clause it does not exercise; a clause neither cited by a scenario nor named in the register; a clause both cited and still in the register; a register entry naming neither a unit nor a phase, or no reason. Not ruled out: a clause named in the register with the unit that will cite it, or with a phase whose units are not yet carved, reported as pending on every run; the planner names the unit when it carves the phase. Source: clause 93, section 12; ADR 0012.
+- **core.39** Rules out: a disabled key's signature answered valid, absent or unreadable; a claim that counted at acceptance dropped because its key is now disabled. Not ruled out: a key pending deletion or deleted answered unreadable until the policy carries its public half (C.7). Source: clauses 81, 117; ADR 0017.
+- **core.40** Rules out: a signer listed by a key alias; a signer named by anything a provider can repoint. Source: C.7; ADR 0017.
+- **core.41** Rules out: a sign with a key whose material was imported or is held in an external key store; a verify that passes such a key's signature as the signer's. Source: C.7; ADR 0017.
+- **core.42** Rules out: a `[signers]` listing that is no key ARN and no key text skipped and the rest checked; a broken listing in `[signing]` or the policy answered absent. Source: clauses 58, 80; ADR 0017.
+- **core.43** Rules out: `beta`, `stable` or any channel's name in a core, seam or fake source; the gate or the ledger parsing `.config/tailrace.toml`; a surface reading the givens fragment. Not ruled out: the policy profile's fragment, which names the givens (C.10). Source: clauses 131, C.10; ADR 0019.
+- **core.44** Rules out: a channel's `require` adding a signer to who may claim acceptance or promotion for a given or made channel; an approver counted as a promoter. Not ruled out: a hand-declared channel's promoters as record 0019 proposes them, open against clause 32 (`_open.md`). Source: clauses 32, C.10; ADR 0019.
+- **core.45** Rules out: a promotion, a store repair or an append from a chain answered as last read; a signature made before a required claim is judged wanting. Source: clauses 33, 58, 60; ADR 0016.
+- **core.46** Rules out: an `--as <name>` flag or any field the asker fills with a name; an asker recorded from a phrase. Not ruled out: the host's own signer as the asker while no identity provider stands (129). Source: clause 129; ADR 0016.
+- **core.47** Rules out: `push +<commit>:<ref>` or `--force` on a ledger ref; a copy rewound to a remote that lost claims; a diverging remote read as the chain. Source: clauses 105, 122, C.13; ADR 0016.
+- **core.48** Rules out: a channel's store name spelled anywhere but the seam's `channel_name`; a version, a prefix or a cache entry under `channel/`. Source: clauses 4, 125, C.14; ADR 0016.
+- **core.49** Rules out: a profile that declares neither; the stale-move refusal run on a profile whose names take no condition, or the repair on one whose names do; a second put after a read at the former place; a bound the suite does not read. Source: clauses 70, 71, 109, C.1; ADR 0015.
+- **core.50** Rules out: a head taken from `channel/<name>`'s digest; a promotion or a status that resolves the tag to find where the channel is. Source: clauses 33, 109; ADRs 0015, 0016.
+- **core.51** Rules out: `; version=` or any parameter on a media type or artifact type the registry profile writes, which ECR refuses and the gate cannot see (core.38). Source: ADRs 0014, 0015.
+- **core.52** Rules out: a watcher, a scheduler, a hook or a timer in a core crate that runs a publish or tells the gate; the core running the job the bindings name. Not ruled out: the host's publish step telling its own gate where the bindings bind it (core.10; ADR 0020). Source: clauses 130, C.16; ADR 0020.
+- **core.53** Rules out: a missing table answered absent where 118 gives it a binding; a malformed file or a table naming no profile or two bound to the given in its place. Source: clauses 58, 118; ADRs 0013, 0021.
+- **core.54** Rules out: a key, a layout or any made state written under `$XDG_CONFIG_HOME`; a key made by a verify or a status; a key file overwritten because it could not be read. Source: clauses 118, C.8; ADR 0021.
+- **core.56** Rules out: a `<script>` in a rendered page; an unescaped string from an answer; a refusal reworded on a page. Source: clauses 57, 132; ADR 0018.
