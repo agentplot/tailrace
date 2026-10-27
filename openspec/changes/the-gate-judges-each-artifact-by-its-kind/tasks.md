@@ -50,7 +50,7 @@ notes' missing verdict. Every cargo and moon command runs inside
 
 ## 4. The policy command shows it
 
-- [ ] 4.1 In `crates/tailrace/src/commands/policy.rs`, render a `Built` required claim with `, of built artifacts alone` after its signers, and nothing more for an `Every` claim (command-line spec; design D5). In `crates/tailrace/tests/cli.rs`, add a test for the command-line scenario, and update the expected text of the existing policy tests where a verdict or a rebuild now shows the mark. Verify with `moon run cli:test`.
+- [x] 4.1 In `crates/tailrace/src/commands/policy.rs`, render a `Built` required claim with `, of built artifacts alone` after its signers, and nothing more for an `Every` claim (command-line spec; design D5). In `crates/tailrace/tests/cli.rs`, add a test for the command-line scenario, and update the expected text of the existing policy tests where a verdict or a rebuild now shows the mark. Verify with `moon run cli:test`.
 
 ## 5. A publish that tells the gate, end to end
 

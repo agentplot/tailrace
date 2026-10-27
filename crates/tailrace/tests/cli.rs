@@ -1894,7 +1894,45 @@ fn policy_through_the_command_line_prints_the_givens_beside_a_line_value_for_val
         .collect();
     assert_eq!(kinds, ["acceptance", "rebuild"]);
     assert_eq!(claims[0]["signers"][0]["id"], "gate");
+    assert!(claims[0].get("asked_of").is_none(), "{claims}");
+    assert_eq!(claims[1]["asked_of"], "built", "{claims}");
     assert_eq!(channels.len(), 2, "{printed}");
+}
+
+#[test]
+fn policy_shows_a_verdict_asked_of_built_artifacts_alone() {
+    let host = Host::new();
+    fs::write(
+        host.repo.join(".config/tailrace.toml"),
+        format!(
+            "{POLICY}\n[signers.laptop]\nssh = \"ssh-ed25519 AAAA\"\nkinds = [\"provenance\"]\n\n\
+             [signers.box]\nssh = \"ssh-ed25519 BBBB\"\nkinds = [\"verdict\"]\nchecks = [\"cli:test\"]\n\n\
+             [acceptance]\nrequire = [\n  {{ kind = \"provenance\", signers = [\"laptop\"] }},\n  \
+             {{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"] }},\n]\n"
+        ),
+    )
+    .unwrap();
+    git(&host.repo, &["commit", "-q", "-am", "chore: the policy"]);
+    let head = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
+    host.fakes.landing.land(&Branch::new("main"), &head);
+
+    let (lines, json) = policy_lines(&host);
+    let printed = lines.join("\n");
+    let acceptance = lines
+        .iter()
+        .position(|l| l == "acceptance")
+        .unwrap_or_else(|| panic!("no acceptance: {printed}"));
+    assert_eq!(
+        lines[acceptance + 1..acceptance + 3],
+        [
+            "  provenance by laptop",
+            "  verdict of cli:test by box, of built artifacts alone",
+        ],
+        "{printed}"
+    );
+    let claims = &json["value"]["acceptance"]["value"]["acceptance"]["claims"];
+    assert!(claims[0].get("asked_of").is_none(), "{claims}");
+    assert_eq!(claims[1]["asked_of"], "built", "{claims}");
 }
 
 #[test]
