@@ -1114,17 +1114,49 @@ impl Store for Registry {
         Err(Not::absent(&self.source, digest.to_string()))
     }
 
-    /// 138: the registry lists a name's versions from the tags of the
-    /// name's own repository, which it holds no name in yet; until then
-    /// the listing cannot be read here, and is never answered empty (rule
-    /// core.19).
+    /// 138: the versions of `name` of `ecosystem`, each tag of the
+    /// name's repository read back, every page of its tag list followed;
+    /// the empty list where the registry holds no such repository or it
+    /// holds no tag, and unreadable naming the repository and a tag that
+    /// does not read back as one the store wrote, never leaving it out
+    /// (rule core.19; design D11).
     fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>> {
-        let of = tailrace_seams::artifact_name(ecosystem, name, &Version::new(""));
-        Err(Not::unreadable(
-            &self.source,
-            format!("the versions of {of}"),
-            Some("this registry store holds no artifact name's repository yet".into()),
-        ))
+        #[derive(Deserialize)]
+        struct Tags {
+            #[serde(default)]
+            tags: Option<Vec<String>>,
+        }
+        let repository = self.under(&[ARTIFACT_SPACE, ecosystem.as_str(), name.as_str()])?;
+        let mut url = self.url_in(&repository, "tags/list");
+        let mut versions = Vec::new();
+        loop {
+            let answered = self.send(Method::GET, &url, &[], None)?;
+            match answered.status {
+                StatusCode::OK => {}
+                StatusCode::NOT_FOUND => return Ok(versions),
+                _ => return Err(self.other(&url, &answered)),
+            }
+            let page: Tags = serde_json::from_slice(&answered.body)
+                .map_err(|e| Not::unreadable(&self.source, &url, Some(e.to_string())))?;
+            for written in page.tags.unwrap_or_default() {
+                let Some(version) = tag::read(&written) else {
+                    return Err(Not::unreadable(
+                        &self.source,
+                        format!("the tag {written} of {}/{repository}", self.host),
+                        Some(format!(
+                            "{}/{repository} holds the tag {written}, which names no version \
+                             of {ecosystem} {name} as this store writes one",
+                            self.host
+                        )),
+                    ));
+                };
+                versions.push(Version::new(version));
+            }
+            match answered.header("link").and_then(next) {
+                Some(link) => url = self.absolute(&link),
+                None => return Ok(versions),
+            }
+        }
     }
 }
 
@@ -1592,6 +1624,64 @@ mod tests {
             1,
             "asked again"
         );
+    }
+
+    #[test]
+    fn a_names_versions_are_its_repositorys_tags_every_page_read_back() {
+        let stub = Stub::start(
+            Behaviour {
+                page: 2,
+                ..Behaviour::default()
+            },
+            &[],
+        );
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let version = published(&store, REPOSITORY_COMPONENT, &[("npm", "@acme/site")]);
+        for v in ["1.0.0", "1.1.0+b.1", "2.0.0-rc.1"] {
+            store
+                .name(&named("npm", "@acme/site", v), &version.index, None)
+                .unwrap();
+        }
+        let mut listed = store
+            .versions(&Ecosystem::new("npm"), &EcosystemName::new("@acme/site"))
+            .unwrap();
+        listed.sort();
+        assert_eq!(
+            listed,
+            [
+                Version::new("1.0.0"),
+                Version::new("1.1.0+b.1"),
+                Version::new("2.0.0-rc.1")
+            ]
+        );
+        let pages = stub
+            .asked()
+            .iter()
+            .filter(|a| a.path.contains("/tags/list"))
+            .count();
+        assert_eq!(pages, 2, "every page was not read");
+        assert_eq!(
+            store.versions(&Ecosystem::new("npm"), &EcosystemName::new("never-named")),
+            Ok(vec![])
+        );
+    }
+
+    #[test]
+    fn a_tag_that_reads_back_as_no_version_is_unreadable_naming_it() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        stub.tag("acme/store/artifact/eco/site", "_zz", &Digest::of(b"x"));
+        match store.versions(&Ecosystem::new("eco"), &EcosystemName::new("site")) {
+            Err(Not::Unreadable(u)) => {
+                assert!(u.what.contains("_zz"), "{}", u.what);
+                assert!(
+                    u.what.contains("acme/store/artifact/eco/site"),
+                    "{}",
+                    u.what
+                );
+            }
+            other => panic!("a tag no version writes answered {other:?}"),
+        }
     }
 
     #[test]

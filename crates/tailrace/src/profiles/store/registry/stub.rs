@@ -125,6 +125,18 @@ impl Stub {
             .cloned()
     }
 
+    /// `tag` of `repository` put at `digest`, as another tool would.
+    pub(crate) fn tag(&self, repository: &str, tag: &str, digest: &Digest) {
+        self.state
+            .lock()
+            .unwrap()
+            .repositories
+            .entry(repository.to_string())
+            .or_default()
+            .tags
+            .insert(tag.to_string(), digest.clone());
+    }
+
     /// Every repository the stub holds.
     pub(crate) fn repositories(&self) -> Vec<String> {
         self.state

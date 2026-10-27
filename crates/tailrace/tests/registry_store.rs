@@ -196,7 +196,237 @@ on_both!(
     a_version_in_a_layout_copied_into_a_registry,
     a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger,
     the_check_before_the_put_refuses_a_move_from_where_the_name_is_not,
+    artifact_names_are_tags_of_their_own_repositories,
+    a_declared_components_versions_and_channels_are_tags_of_its_own_repository,
+    cache_entries_are_tags_of_the_build_profiles_cache_repository,
 );
+
+/// The tags `store`'s repository `under` its declared one holds, sorted;
+/// none where the registry holds no such repository.
+fn tags_of(store: &Registry, under: &str) -> Option<Vec<String>> {
+    let base = match under {
+        "" => store.base().to_string(),
+        under => format!("{}{under}/", store.base()),
+    };
+    let (status, bytes) = get(&format!("{base}tags/list"), "application/json");
+    if status == 404 {
+        return None;
+    }
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&bytes));
+    let listed: Value = serde_json::from_slice(&bytes).unwrap();
+    let mut tags: Vec<String> = listed["tags"]
+        .as_array()
+        .map(|t| t.iter().map(|t| t.as_str().unwrap().to_string()).collect())
+        .unwrap_or_default();
+    tags.sort();
+    Some(tags)
+}
+
+/// Whether `store`'s repository `under` its declared one holds the
+/// manifest `digest`.
+fn holds(store: &Registry, under: &str, digest: &Digest) -> bool {
+    let (status, _) = get(
+        &format!("{}{under}/manifests/{digest}", store.base()),
+        &format!("{IMAGE_INDEX}, {IMAGE_MANIFEST}"),
+    );
+    status == 200
+}
+
+/// An index of `component` naming an artifact of `name` over `bytes`,
+/// put with an attestation on it and on the artifact; its digest.
+fn index_of(store: &Registry, component: &str, name: &str, bytes: &[u8]) -> Digest {
+    let manifest = artifact(store, name, "1.3.0", bytes);
+    let digest = store.put_artifact(&manifest).unwrap().digest;
+    store
+        .attach(&digest, &attestation(&digest, "the artifact"))
+        .unwrap();
+    let index = IndexMeta::new(
+        ComponentName::new(component),
+        Version::new("1.3.0"),
+        vec![Artifact {
+            digest,
+            meta: meta(name, "1.3.0"),
+        }],
+    )
+    .unwrap();
+    let index = store.put_artifact(&Manifest::Index(index)).unwrap().digest;
+    store
+        .attach(&index, &attestation(&index, "the index"))
+        .unwrap();
+    index
+}
+
+/// No repository but the declared one holds an attestation: none of
+/// `under`'s tags is a referrers tag, and where the registry answers a
+/// referrers API, none lists a referrer of `subject` there.
+fn no_attestation_under(store: &Registry, kind: Kind, under: &str, subject: &Digest) {
+    let tags = tags_of(store, under).unwrap_or_default();
+    assert!(
+        tags.iter().all(|t| !t.starts_with("sha256-")),
+        "{under} holds a referrers tag: {tags:?}"
+    );
+    if kind == Kind::Zot {
+        let (status, bytes) = get(
+            &format!("{}{under}/referrers/{subject}", store.base()),
+            IMAGE_INDEX,
+        );
+        if status == 200 {
+            let listed: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(listed["manifests"], json!([]), "{under}");
+        }
+    }
+    assert!(!store.claims_of(subject).unwrap().is_empty());
+}
+
+fn artifact_names_are_tags_of_their_own_repositories(kind: Kind) {
+    let server = Server::start(kind);
+    let store = server.store();
+    let first = index_of(&store, "repository", "@acme/site", b"the scoped site");
+    let second = index_of(&store, "repository", "acme-site", b"the other site");
+    let npm = Ecosystem::new("npm");
+    let name = |artifact: &str, version: &str| {
+        tailrace_seams::artifact_name(&npm, &EcosystemName::new(artifact), &Version::new(version))
+    };
+    let (scoped, plain) = (name("@acme/site", "1.3.0"), name("acme-site", "1.3.0"));
+    store.name(&scoped, &first, None).unwrap();
+    store.name(&plain, &second, None).unwrap();
+    assert_eq!(store.resolve(&scoped), Ok(first.clone()));
+    assert_eq!(store.resolve(&plain), Ok(second.clone()));
+    assert_eq!(
+        tags_of(&store, "artifact/npm/0_40acme_2fsite"),
+        Some(vec!["1.3.0".into()])
+    );
+    assert_eq!(
+        tags_of(&store, "artifact/npm/acme-site"),
+        Some(vec!["1.3.0".into()])
+    );
+
+    let built = name("@acme/site", "1.0.0+build.1");
+    store.name(&built, &first, None).unwrap();
+    assert_eq!(
+        tags_of(&store, "artifact/npm/0_40acme_2fsite"),
+        Some(vec!["1.0.0_2bbuild.1".into(), "1.3.0".into()])
+    );
+    let mut listed = store
+        .versions(&npm, &EcosystemName::new("@acme/site"))
+        .unwrap();
+    listed.sort();
+    assert_eq!(
+        listed,
+        [Version::new("1.0.0+build.1"), Version::new("1.3.0")]
+    );
+    assert_eq!(
+        store.versions(&npm, &EcosystemName::new("never-named")),
+        Ok(vec![])
+    );
+
+    assert_eq!(
+        refused(store.name(&scoped, &second, None)).why,
+        Why::NameAt {
+            at: Some(first.clone())
+        }
+    );
+    assert_eq!(store.resolve(&scoped), Ok(first.clone()));
+    for (under, subject) in [
+        ("artifact/npm/0_40acme_2fsite", &first),
+        ("artifact/npm/acme-site", &second),
+    ] {
+        no_attestation_under(&store, kind, under, subject);
+    }
+}
+
+fn a_declared_components_versions_and_channels_are_tags_of_its_own_repository(kind: Kind) {
+    let server = Server::start(kind);
+    let store = server.store();
+    let lib = index_of(&store, "lib", "lib", b"the lib");
+    let app = index_of(&store, "app", "app", b"the app");
+    assert!(holds(&store, "lib", &lib), "lib's index is not held in lib");
+    // The reference distribution answers a repository with no tag 404.
+    assert_eq!(
+        tags_of(&store, "lib").unwrap_or_default(),
+        Vec::<String>::new(),
+        "lib's index is tagged"
+    );
+
+    let version = Name::new("lib:lib-v1.2.0");
+    store.name(&version, &lib, None).unwrap();
+    assert_eq!(store.resolve(&version), Ok(lib.clone()));
+    let (libs, apps) = (Name::new("channel/lib/beta"), Name::new("channel/app/beta"));
+    store.name(&libs, &lib, None).unwrap();
+    store.name(&apps, &app, None).unwrap();
+    assert_eq!(store.resolve(&libs), Ok(lib.clone()));
+    assert_eq!(store.resolve(&apps), Ok(app.clone()));
+    assert_eq!(
+        tags_of(&store, "lib"),
+        Some(vec!["beta".into(), "lib-v1.2.0".into()])
+    );
+    assert_eq!(tags_of(&store, "app"), Some(vec!["beta".into()]));
+    let declared = tags_of(&store, "").unwrap();
+    assert!(
+        declared.iter().all(|t| t.starts_with("sha256-")),
+        "the declared repository holds a component's tag: {declared:?}"
+    );
+    assert_eq!(
+        refused(store.name(&libs, &app, Some(&Digest::of(b"a third")))).why,
+        Why::NameAt {
+            at: Some(lib.clone())
+        }
+    );
+    assert_eq!(store.resolve(&libs), Ok(lib.clone()));
+
+    let undeclared = index_of(&store, "repository", "site", b"the site");
+    store.name(&Name::new("v1.2.0"), &undeclared, None).unwrap();
+    store
+        .name(&Name::new("channel/stable"), &undeclared, None)
+        .unwrap();
+    let declared = tags_of(&store, "").unwrap();
+    assert!(
+        declared.contains(&"v1.2.0".into()) && declared.contains(&"channel_2fstable".into()),
+        "{declared:?}"
+    );
+    assert_eq!(tags_of(&store, "repository"), None);
+
+    assert!(!holds(&store, "lib", &undeclared));
+    store
+        .name(&Name::new("channel/lib/stable"), &undeclared, None)
+        .unwrap();
+    assert!(
+        holds(&store, "lib", &undeclared),
+        "the index was not held in lib"
+    );
+    for (under, subject) in [("lib", &lib), ("app", &app)] {
+        no_attestation_under(&store, kind, under, subject);
+    }
+}
+
+fn cache_entries_are_tags_of_the_build_profiles_cache_repository(kind: Kind) {
+    let server = Server::start(kind);
+    let publish = server.store().bound_for("moon", false);
+    let bytes = publish.put_bytes(b"a cache entry").unwrap().digest;
+    let entry = Name::new("cache/b7e1");
+    publish.name(&entry, &bytes, None).unwrap();
+    assert_eq!(publish.resolve(&entry), Ok(bytes.clone()));
+    assert_eq!(tags_of(&publish, "cache/moon"), Some(vec!["b7e1".into()]));
+
+    let repository = server.repository();
+    let push = Registry::new(&repository).unwrap().bound_for("moon", true);
+    let pushed = push.put_bytes(b"a pushed entry").unwrap().digest;
+    push.name(&entry, &pushed, None).unwrap();
+    assert_eq!(push.resolve(&entry), Ok(pushed.clone()));
+    assert_eq!(tags_of(&push, "cache/moon"), Some(vec!["b7e1".into()]));
+    let (status, _) = get(&format!("{}cache/moon/blobs/{pushed}", push.base()), "*/*");
+    assert_eq!(status, 200, "the cache repository holds no bytes");
+    assert_eq!(tags_of(&push, ""), None, "the declared repository was made");
+    let (status, _) = get(&format!("{}blobs/{pushed}", push.base()), "*/*");
+    assert_eq!(status, 404, "the declared repository holds the bytes");
+
+    let sync = Registry::new(&repository).unwrap().bound_for("moon", false);
+    let resolved = sync.resolve(&entry).unwrap();
+    assert_eq!(
+        sync.read(&resolved),
+        Ok(Held::Bytes(b"a pushed entry".to_vec()))
+    );
+}
 
 fn the_same_bytes_put_twice_are_uploaded_once(kind: Kind) {
     let server = Server::start(kind);
