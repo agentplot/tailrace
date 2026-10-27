@@ -185,11 +185,14 @@ pub trait Projection {
     /// the core's (rule core.2).
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>>;
 
-    /// 140: every name of the ecosystem the manifest of `held`, an
-    /// artifact a layout holds, requires, with the range it requires of
-    /// it, as the manifest spells them, in the order it gives them.
-    /// Which of those names the family publishes is the store's listing
-    /// to say, not the projection's. A projection with a manifest reads
+    /// 140: every name the manifest of `held`, an artifact a layout
+    /// holds, requires that the layout serves, with the range it requires
+    /// of it, as the manifest spells them, in the order it gives them. A
+    /// name the layout serves is one the consuming checkout's own
+    /// configuration of the ecosystem routes to the served address, as
+    /// the ecosystem spells that routing; every other name is the public
+    /// registry's and no concern of the layout's (section 8). A
+    /// projection with a manifest reads
     /// the artifact's bytes through the store seam it was bound with,
     /// never from a layout (48, rule core.2). An ecosystem with no
     /// manifest answers none, an empty list, reading nothing, and never
