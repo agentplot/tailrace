@@ -58,7 +58,7 @@ notes' missing verdict. Every cargo and moon command runs inside
 
 ## 6. The record and the guide
 
-- [ ] 6.1 Add ADR 0022 under `docs/adr/`, the next number on the tree, recording design D1 to D3 and the publisher-key risk. Verify with `moon run root:adrs root:format`.
+- [x] 6.1 Add ADR 0022 under `docs/adr/`, the next number on the tree, recording design D1 to D3 and the publisher-key risk. Verify with `moon run root:adrs root:format`.
 - [ ] 6.2 In `site/src/content/docs/guides/self-hosting.mdx`:
   - in the section on the gate, say that a version's notes are asked only the publisher's provenance and the claims about the version, and that a verdict, a review or a rebuild is asked of built artifacts alone (134);
   - show the mark in the `tailrace policy` example.
