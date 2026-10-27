@@ -236,7 +236,7 @@ fn of_two_components_only_the_touched_one_is_published() {
         .contents()
         .names
         .keys()
-        .any(|n| n.as_str().starts_with("web-v")));
+        .any(|n| n.as_str().starts_with("web:")));
 }
 
 #[test]
@@ -592,7 +592,15 @@ fn a_store_that_names_bytes_wrongly_is_refused_naming_both() {
     seams.store = Box::new(Misnaming(world.fakes.store.clone()));
     let publish = publish(&seams, &history, &Kept::at(&history), &world.ask_for("lib")).unwrap();
     let r = refused(publish.components.into_iter().next().unwrap().1);
-    let packed = world.fakes.store.calls()[1].given["bytes"].clone();
+    let packed = world
+        .fakes
+        .store
+        .calls()
+        .into_iter()
+        .find(|c| c.op == StoreOp::PutBytes)
+        .unwrap()
+        .given["bytes"]
+        .clone();
     let bytes: Vec<u8> = serde_json::from_value(packed).unwrap();
     assert_eq!(
         r.why,
@@ -706,9 +714,9 @@ fn no_identity_at_hand_is_absent_and_offers_no_index() {
         world
             .fakes
             .store
-            .resolve(&Name::new("lib-v0.2.0"))
+            .resolve(&Name::new("lib:lib-v0.2.0"))
             .unwrap_err(),
-        Not::absent(&Source::new(Seam::Store, "fake"), "name lib-v0.2.0")
+        Not::absent(&Source::new(Seam::Store, "fake"), "name lib:lib-v0.2.0")
     );
 }
 
@@ -904,11 +912,64 @@ fn a_publish_stopped_after_one_artifact_has_published_nothing() {
         "one artifact was put"
     );
     assert!(indexes(&world).is_empty());
-    assert!(world.fakes.store.resolve(&Name::new("lib-v0.2.0")).is_err());
+    assert!(world
+        .fakes
+        .store
+        .resolve(&Name::new("lib:lib-v0.2.0"))
+        .is_err());
     assert!(matches!(
         world.kept().read(&Default::default()),
         Err(Not::Absent(_))
     ));
+}
+
+// Requirement: A declared component's version is named with its component
+
+#[test]
+fn a_declared_components_version_is_named_with_its_component_and_no_bare_tag() {
+    let world = World::new();
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&published);
+    let names = world.fakes.store.contents().names;
+    assert_eq!(names.get(&Name::new("lib:lib-v0.2.0")), Some(index));
+    assert!(!names.contains_key(&Name::new("lib-v0.2.0")), "{names:?}");
+
+    let undeclared = World::with_policy(world::UNDECLARED);
+    let published = undeclared.publish_one(&undeclared.ask()).unwrap();
+    let (_, index) = version_of(&published);
+    let names = undeclared.fakes.store.contents().names;
+    assert_eq!(names.get(&Name::new("v0.1.0")), Some(index));
+    assert!(!names.keys().any(|n| n.as_str().contains(':')), "{names:?}");
+}
+
+#[test]
+fn a_version_held_under_its_bare_tag_is_named_the_new_way_at_the_same_index() {
+    let world = World::new();
+    let first = world.publish_one(&world.ask_for("lib")).unwrap();
+    let (_, index) = version_of(&first);
+    let (named, bare) = (Name::new("lib:lib-v0.2.0"), Name::new("lib-v0.2.0"));
+    world.fakes.store.forget(&named);
+    world.fakes.store.name(&bare, index, None).unwrap();
+    let held = world.fakes.store.contents().held;
+    let before = world.fakes.store.calls().len();
+
+    let second = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert_eq!(second, first);
+    let calls = world.fakes.store.calls()[before..].to_vec();
+    assert!(
+        !calls
+            .iter()
+            .any(|c| matches!(c.op, StoreOp::PutBytes | StoreOp::PutArtifact)),
+        "something was put: {calls:?}"
+    );
+    let made: Vec<_> = calls.iter().filter(|c| c.op == StoreOp::Name).collect();
+    let last = made.last().expect("a name made");
+    assert_eq!(last.given["name"], named.as_str());
+    assert_eq!(last.given["expected"], serde_json::Value::Null);
+    let names = world.fakes.store.contents().names;
+    assert_eq!(names.get(&named), Some(index));
+    assert_eq!(names.get(&bare), Some(index));
+    assert_eq!(world.fakes.store.contents().held, held);
 }
 
 // Requirement: A second publish of a revision ends at the same index
@@ -988,7 +1049,11 @@ fn a_projection_that_packs_differently_is_refused_and_the_name_stays() {
         "{again:?}"
     );
     assert_eq!(
-        world.fakes.store.resolve(&Name::new("lib-v0.2.0")).unwrap(),
+        world
+            .fakes
+            .store
+            .resolve(&Name::new("lib:lib-v0.2.0"))
+            .unwrap(),
         *index
     );
 }
@@ -1012,7 +1077,7 @@ fn the_answer_names_every_digest_the_store_holds() {
 
     let contents = world.fakes.store.contents();
     let index: Digest = serde_json::from_value(value["index"].clone()).unwrap();
-    assert_eq!(contents.names[&Name::new("lib-v0.2.0")], index);
+    assert_eq!(contents.names[&Name::new("lib:lib-v0.2.0")], index);
     let Held::Manifest(Manifest::Index(meta)) = &contents.held[&index] else {
         panic!("no index under {index}")
     };
@@ -1093,7 +1158,7 @@ fn a_publish_moves_no_channel_and_reaches_no_target() {
         .filter(|c| c.op == StoreOp::Name)
         .collect();
     assert_eq!(named.len(), 1);
-    assert_eq!(named[0].given["name"], "lib-v0.2.0");
+    assert_eq!(named[0].given["name"], "lib:lib-v0.2.0");
 }
 
 // Requirement: The index carries the publisher's layout policy
@@ -1251,7 +1316,11 @@ fn a_policy_for_layouts_that_cannot_be_read_stops_the_publish_before_the_name() 
         matches!(&answer, Err(Not::Unreadable(u)) if u.said.as_deref() == Some("the policy file does not parse")),
         "{answer:?}"
     );
-    assert!(world.fakes.store.resolve(&Name::new("lib-v0.2.0")).is_err());
+    assert!(world
+        .fakes
+        .store
+        .resolve(&Name::new("lib:lib-v0.2.0"))
+        .is_err());
 }
 
 // Requirement: The notes are an artifact of the version named in its index
@@ -1383,7 +1452,7 @@ fn a_publish_stopped_after_the_notes_keeps_no_notes_as_a_version() {
     )));
     assert!(indexes(&world).is_empty());
     assert!(matches!(
-        world.fakes.store.resolve(&Name::new("lib-v0.2.0")),
+        world.fakes.store.resolve(&Name::new("lib:lib-v0.2.0")),
         Err(Not::Absent(_))
     ));
 }
@@ -1505,7 +1574,7 @@ fn notes_that_render_differently_are_refused_naming_both_digests() {
         .put_artifact(&Manifest::Index(elsewhere.unwrap()))
         .unwrap()
         .digest;
-    let name = Name::new("lib-v0.2.0");
+    let name = Name::new("lib:lib-v0.2.0");
     store.name(&name, &moved, Some(index)).unwrap();
     let calls_before = store.calls().len();
 

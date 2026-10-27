@@ -168,12 +168,40 @@ fn a_version_published_before_notes_is_rebuilt_naming_no_notes() {
 }
 
 #[test]
+fn each_version_is_found_by_its_components_name_or_its_bare_tag() {
+    let world = World::new();
+    published(&world);
+    fs::remove_dir_all(world.kept().dir()).unwrap();
+    let before = world.fakes.store.calls().len();
+    assert_eq!(
+        versions(&rebuilt(&world)),
+        [("lib", "0.2.0"), ("web", "0.1.0")]
+    );
+    let resolved = world::resolved_since(&world.fakes.store, before);
+    assert!(
+        resolved.contains(&"lib:lib-v0.2.0".to_string())
+            && resolved.contains(&"web:web-v0.1.0".to_string()),
+        "{resolved:?}"
+    );
+
+    let undeclared = World::with_policy(world::UNDECLARED);
+    undeclared.publish_one(&undeclared.ask()).unwrap();
+    fs::remove_dir_all(undeclared.kept().dir()).unwrap();
+    let before = undeclared.fakes.store.calls().len();
+    assert_eq!(versions(&rebuilt(&undeclared)), [("repository", "0.1.0")]);
+    assert_eq!(
+        world::resolved_since(&undeclared.fakes.store, before),
+        ["v0.1.0"]
+    );
+}
+
+#[test]
 fn a_tag_claimed_with_no_name_in_the_store_gives_no_entry() {
     let world = World::new();
     published(&world);
     let kept = world.kept();
     fs::remove_dir_all(kept.dir()).unwrap();
-    world.fakes.store.forget(&Name::new("web-v0.1.0"));
+    world.fakes.store.forget(&Name::new("web:web-v0.1.0"));
 
     let answer = rebuilt(&world);
     assert_eq!(
@@ -198,7 +226,7 @@ fn a_tag_on_a_revision_the_branch_did_not_land_gives_no_entry() {
             .store
             .contents()
             .names
-            .contains_key(&Name::new("web-v0.1.0")),
+            .contains_key(&Name::new("web:web-v0.1.0")),
         "the store names no index for the other branch's version"
     );
 
@@ -380,7 +408,7 @@ fn a_name_at_bytes_is_unreadable_naming_the_tag_and_the_digest_and_writes_no_fil
     fs::remove_dir_all(kept.dir()).unwrap();
     let store_handle = &world.fakes.store;
     let bytes = store_handle.put_bytes(b"not an index").unwrap().digest;
-    let name = Name::new("web-v0.1.0");
+    let name = Name::new("web:web-v0.1.0");
     store_handle
         .name(&name, &bytes, Some(&entries[1].index))
         .unwrap();

@@ -29,6 +29,19 @@ text! {
 /// (123), so every profile and the core name it alike.
 pub const REPOSITORY_COMPONENT: &str = "repository";
 
+/// 22, 123, C.1: the name a version takes in the store, its tag as the
+/// authors spell it where the repository declares no component, and
+/// `<component>:<tag>` where it declares one, so every store can tell
+/// whose version it is. No git tag holds a `:`, so the one is never the
+/// other (design D18).
+pub fn version_name(component: &ComponentName, tag: &str) -> Name {
+    if component.as_str() == REPOSITORY_COMPONENT {
+        Name::new(tag)
+    } else {
+        Name::new(format!("{component}:{tag}"))
+    }
+}
+
 /// The outputs the authors declare to take one version together, the
 /// paths whose changes version it, and the prefix its tags carry (123).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -116,6 +129,26 @@ impl Name {
             EcosystemName::new(name),
             Version::new(version),
         ))
+    }
+
+    /// C.1: [`version_name`] read back for a declared component: for a
+    /// name outside the artifact, cache and channel spaces holding a `:`,
+    /// the component before the first `:` and the tag after it; none for
+    /// any other name, the undeclared component's bare tag among them,
+    /// and none where either part is empty (design D18).
+    pub fn as_version(&self) -> Option<(ComponentName, String)> {
+        let text = self.as_str();
+        if [ARTIFACT, "cache/", "channel/"]
+            .iter()
+            .any(|space| text.starts_with(space))
+        {
+            return None;
+        }
+        let (component, tag) = text.split_once(':')?;
+        if component.is_empty() || tag.is_empty() {
+            return None;
+        }
+        Some((ComponentName::new(component), tag.to_string()))
     }
 }
 
@@ -704,6 +737,36 @@ mod tests {
             let name = artifact_name(&parts.0, &parts.1, &parts.2);
             assert_eq!(name.as_str(), spelled);
             assert_eq!(name.as_artifact(), Some(parts), "{spelled}");
+        }
+    }
+
+    #[test]
+    fn a_declared_components_version_is_named_with_it_and_read_back() {
+        let name = version_name(&ComponentName::new("lib"), "lib-v1.2.0");
+        assert_eq!(name.as_str(), "lib:lib-v1.2.0");
+        assert_eq!(
+            name.as_version(),
+            Some((ComponentName::new("lib"), "lib-v1.2.0".to_string()))
+        );
+    }
+
+    #[test]
+    fn the_undeclared_components_version_is_its_bare_tag_and_reads_back_as_none() {
+        let name = version_name(&ComponentName::new(REPOSITORY_COMPONENT), "v1.2.0");
+        assert_eq!(name.as_str(), "v1.2.0");
+        assert_eq!(name.as_version(), None);
+    }
+
+    #[test]
+    fn a_name_holding_a_colon_elsewhere_reads_back_as_no_version() {
+        for name in [
+            "cache/sha256:ab",
+            "artifact/eco/site@1:2",
+            "channel/lib:x/beta",
+            ":v1",
+            "lib:",
+        ] {
+            assert_eq!(Name::new(name).as_version(), None, "{name}");
         }
     }
 

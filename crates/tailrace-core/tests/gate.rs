@@ -357,6 +357,25 @@ fn the_answer_names_the_index_the_name_resolves_to_and_reads_nothing_before() {
 }
 
 #[test]
+fn a_declared_components_version_is_accepted_by_its_component_and_tag() {
+    let (world, published) = published_under(provenance_only());
+    let (_, index) = version_of(&published);
+    let names = world.fakes.store.contents().names;
+    assert_eq!(names.get(&Name::new("lib:lib-v0.2.0")), Some(index));
+    assert!(!names.contains_key(&Name::new("lib-v0.2.0")), "{names:?}");
+    let before = world.fakes.store.calls().len();
+    let Ok(Judged::Accepted { index: judged, .. }) = judged(&world, &ask("0.2.0", ToldBy::Asked))
+    else {
+        panic!("the version was not accepted")
+    };
+    assert_eq!(&judged, index);
+    assert_eq!(
+        world::resolved_since(&world.fakes.store, before),
+        ["lib:lib-v0.2.0"]
+    );
+}
+
+#[test]
 fn told_the_index_the_name_resolves_to_the_gate_judges_it() {
     let (world, published) = beta_world();
     let (_, index) = version_of(&published);
@@ -887,7 +906,7 @@ fn a_name_that_resolves_to_no_index_is_unreadable_and_no_refusal() {
     let (world, published) = published_under(acceptance());
     let (_, index) = version_of(&published);
     let artifact = artifacts(&published)[0].clone();
-    let tag = Name::new("lib-v0.2.0");
+    let tag = Name::new("lib:lib-v0.2.0");
     world
         .fakes
         .store
@@ -957,7 +976,7 @@ fn an_accepted_version_holds_one_more_claim_on_its_index_and_no_byte_changes() {
     }
     assert_eq!(world.fakes.store.read(index).unwrap(), manifest);
     assert_eq!(
-        world.fakes.store.resolve(&Name::new("lib-v0.2.0")),
+        world.fakes.store.resolve(&Name::new("lib:lib-v0.2.0")),
         Ok(index.clone())
     );
     let asked: Vec<StoreOp> = world.fakes.store.calls()[before..]

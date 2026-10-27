@@ -12,16 +12,17 @@
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim, ClaimKind, Component,
-    ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Name, Not, Outcome,
-    Output, OutputName, Projection, Report, Required, Revision, Seam, Seams, SignerId, Source,
-    Verdict, Version, Why,
+    version_name, Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim, ClaimKind,
+    Component, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Not,
+    Outcome, Output, OutputName, Projection, Report, Required, Revision, Seam, Seams, SignerId,
+    Source, Verdict, Version, Why,
 };
 
 use crate::notes::{self, Rendered};
 use crate::{
     claim, derive, layout_policy_body, policy_at, touched, Carried, Declared, Derived, Entry,
     History, Kept, Landed, Noted, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
+    REPOSITORY,
 };
 
 /// What a publish is asked: the revision, the branch that landed it, the
@@ -343,7 +344,7 @@ impl<'a> Run<'a> {
         // is derived from, so nothing of them exists before the claim
         // (134; design D5).
         let claimed = claim(self.history, self.landed, versioned)?;
-        let name = Name::new(&versioned.name);
+        let name = version_name(&component.name, &versioned.name);
         let rendered = notes::render(
             self.history,
             &component.name,
@@ -353,10 +354,21 @@ impl<'a> Run<'a> {
             &Noted::of(versioned),
         )?;
 
-        // 8: a name already held makes this a repeat (18).
-        let held = match self.seams.store.resolve(&name) {
-            Ok(index) => Some(self.held(&index)?),
-            Err(Not::Absent(_)) => None,
+        // 8: a name already held makes this a repeat (18); so does a
+        // declared component's bare tag, as a publish before version
+        // names carried their component named it, which this one names
+        // the new way at the same index (C.1; design D3, D18).
+        let (held, unnamed) = match self.seams.store.resolve(&name) {
+            Ok(index) => (Some(self.held(&index)?), false),
+            Err(Not::Absent(_)) if component.name.as_str() != REPOSITORY => {
+                let bare = version_name(&ComponentName::new(REPOSITORY), &versioned.name);
+                match self.seams.store.resolve(&bare) {
+                    Ok(index) => (Some(self.held(&index)?), true),
+                    Err(Not::Absent(_)) => (None, false),
+                    Err(not) => return Err(not),
+                }
+            }
+            Err(Not::Absent(_)) => (None, false),
             Err(not) => return Err(not),
         };
 
@@ -394,6 +406,9 @@ impl<'a> Run<'a> {
             Some((index, artifacts)) => {
                 let (artifacts, notes) =
                     self.again(versioned, &outputs, &packed, &rendered, &artifacts)?;
+                if unnamed {
+                    self.seams.store.name(&name, &index, None)?;
+                }
                 return self.record(
                     versioned,
                     component,

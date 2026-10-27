@@ -97,6 +97,45 @@ fn carried(verified: &Verified) -> Vec<&Told> {
 // Requirement: Verify resolves the version to its index first
 
 #[test]
+fn a_declared_components_version_is_verified_by_its_component_and_tag() {
+    let (world, published) = published();
+    let (_, index) = world::version_of(&published);
+    let before = world.fakes.store.calls().len();
+    let verified = verified(&world, &ask("0.2.0")).unwrap();
+    assert_eq!(&verified.index, index);
+    assert_eq!(
+        world::resolved_since(&world.fakes.store, before),
+        ["lib:lib-v0.2.0"]
+    );
+}
+
+#[test]
+fn an_undeclared_components_version_is_verified_by_its_bare_tag() {
+    let world = World::with_policy(world::UNDECLARED);
+    world
+        .fakes
+        .policy
+        .require(Audience::Acceptance, acceptance());
+    let published = world.publish_one(&world.ask()).unwrap();
+    let (_, index) = world::version_of(&published);
+    let before = world.fakes.store.calls().len();
+    let verified = verified(
+        &world,
+        &VerifyAsk {
+            component: None,
+            ..ask("0.1.0")
+        },
+    )
+    .unwrap();
+    assert_eq!(&verified.index, index);
+    assert_eq!(verified.tag, "v0.1.0");
+    assert_eq!(
+        world::resolved_since(&world.fakes.store, before),
+        ["v0.1.0"]
+    );
+}
+
+#[test]
 fn a_published_version_names_its_index_and_every_artifact() {
     let (world, published) = published();
     let Published::Version {
@@ -527,7 +566,7 @@ fn notes_whose_bytes_are_not_text_are_unreadable_naming_the_digest() {
         IndexMeta::new(meta.component().clone(), meta.version().clone(), artifacts).unwrap();
     let other = store.put_artifact(&Manifest::Index(other)).unwrap().digest;
     store
-        .name(&Name::new("lib-v0.2.0"), &other, Some(index))
+        .name(&Name::new("lib:lib-v0.2.0"), &other, Some(index))
         .unwrap();
 
     let verified = verified(&world, &ask("0.2.0")).unwrap();

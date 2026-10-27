@@ -7,9 +7,9 @@
 
 use serde::{Serialize, Serializer};
 use tailrace_seams::{
-    Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, Component, ComponentName, Digest,
-    Envelope, Held, Manifest, Name, NamedSigner, Not, Required, Revision, Seam, Seams, SignerId,
-    Source, Version, Why,
+    version_name, Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, Component,
+    ComponentName, Digest, Envelope, Held, Manifest, NamedSigner, Not, Required, Revision, Seam,
+    Seams, SignerId, Source, Version, Why,
 };
 
 use crate::ledger::listed;
@@ -97,7 +97,7 @@ pub fn verify(seams: &Seams, history: &History, ask: &VerifyAsk) -> Answer<Verif
     let tag = format!("{}{}", component.prefix, ask.version);
 
     // 2: the name resolved in the store (rule core.4).
-    let index = seams.store.resolve(&Name::new(&tag))?;
+    let index = seams.store.resolve(&version_name(&component.name, &tag))?;
 
     // 3: the tag's revision, landed, and the policy at it (65).
     let revision = history

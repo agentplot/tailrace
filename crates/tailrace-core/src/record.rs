@@ -30,8 +30,8 @@
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Branch, ComponentName, Digest, Held, IndexMeta, Manifest, Name, Not, Revision, Seams,
-    Source, Version, Why,
+    version_name, Answer, Branch, ComponentName, Digest, Held, IndexMeta, Manifest, Not, Revision,
+    Seams, Source, Version, Why,
 };
 
 use crate::notes::noted;
@@ -105,7 +105,10 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
                 Err(Not::Absent(_)) => continue,
                 Err(not) => return Err(not),
             };
-            let index = match seams.store.resolve(&Name::new(&tag.name)) {
+            let index = match seams
+                .store
+                .resolve(&version_name(&component.name, &tag.name))
+            {
                 Ok(index) => index,
                 Err(Not::Absent(_)) => continue,
                 Err(not) => return Err(not),

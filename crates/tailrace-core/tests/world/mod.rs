@@ -36,6 +36,10 @@ prefix = "web-v"
 projections = { site = "eco-a" }
 "#;
 
+/// A policy declaring no component: the one component's `site`, packed
+/// in `eco-a`, versioned under the rule's prefix `v` (123).
+pub const UNDECLARED: &str = "outputs = [\"site\"]\n[projections]\nsite = \"eco-a\"\n";
+
 pub const HOST: &str = "host";
 pub const LANDING: &str = "landing";
 
@@ -288,6 +292,16 @@ impl<T, F: Fn() -> T> Projection for Watched<T, F> {
     fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
         self.inner.satisfying(range, versions)
     }
+}
+
+/// Every name `store` was asked to resolve since its call `since`, in
+/// the order asked.
+pub fn resolved_since(store: &FakeStore, since: usize) -> Vec<String> {
+    store.calls()[since..]
+        .iter()
+        .filter(|c| c.op == tailrace_fakes::StoreOp::Resolve)
+        .map(|c| c.given["name"].as_str().unwrap().to_string())
+        .collect()
 }
 
 /// The calls a fake build recorded, by operation.
