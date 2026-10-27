@@ -8,7 +8,7 @@
 //! | `render` | a local registry holding exactly the crates given, each checked before anything is written (85, 48) |
 //! | `index` | a crate's index line, from its normalized manifest |
 //! | `crate_file` | a crate's normalized manifest, read from its bytes |
-//! | `pinned` | the versions a checkout's `Cargo.lock` pins from a registry (137) |
+//! | `pinned` | the versions a checkout's `Cargo.lock` pins from a registry, and the ranges its manifests declare in `tailrace` for names it pins none of (137) |
 //! | `requires` | what a held crate requires of the family, from its normalized manifest (140) |
 //! | `satisfying` | the versions within a range, newest first, by Cargo's rules (140, 23) |
 //!
@@ -125,14 +125,11 @@ impl Projection for CargoProjection {
     }
 
     /// 137: the versions the checkout's root `Cargo.lock` pins from a
-    /// registry, as it spells them; absent naming it where there is none
-    /// (design D5).
+    /// registry, as it spells them, and the ranges its manifests declare
+    /// in `tailrace` for names it pins no version of, with or without a
+    /// lockfile (design D5).
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
-        Ok(self
-            .lockfile_pins(checkout)?
-            .into_iter()
-            .map(Pin::Version)
-            .collect())
+        self.pins_and_ranges(checkout)
     }
 
     /// 140: each family crate `held`'s own manifest requires, with the
