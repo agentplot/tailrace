@@ -7,6 +7,7 @@ pub mod copy;
 pub mod gate;
 pub mod layouts;
 pub mod ledger;
+pub mod naming;
 pub mod publish;
 pub mod record;
 pub mod status;

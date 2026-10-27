@@ -118,13 +118,21 @@ impl StoreRig for LaggingRig {
 }
 
 /// The report's words over a lagging store whose rig declares `within`,
-/// which fails the one scenario that reads a moved name.
+/// which fails the two scenarios that read a name once it is moved: the
+/// move refused, and the names a listing's versions resolve by (138).
 fn failed(within: Duration, elsewhere: Option<Digest>) -> String {
     let report = run(store::GROUP, &store::scenarios(), &|| {
         Box::new(LaggingRig::new(within, elsewhere.clone()))
     });
     let failed: Vec<&str> = report.failures.iter().map(|f| f.scenario).collect();
-    assert_eq!(failed, ["a name moved from where it is not"], "{report}");
+    assert_eq!(
+        failed,
+        [
+            "a name moved from where it is not",
+            "a name's versions listed"
+        ],
+        "{report}"
+    );
     report.to_string()
 }
 
