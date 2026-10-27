@@ -40,7 +40,7 @@ notes' missing verdict. Every cargo and moon command runs inside
   - beta held for an output's rebuild.
 
   Make the existing tests' policies ask their verdicts, reviews and rebuilds of built artifacts alone where the publish now offers notes, which clears the 24 refusals sluice #62 showed. Verify with `moon run core:test`.
-- [ ] 3.4 In `crates/tailrace-conformance/src/core/gate.rs`, below the marker, add these scenarios to the gate group:
+- [x] 3.4 In `crates/tailrace-conformance/src/core/gate.rs`, below the marker, add these scenarios to the gate group:
   - "a version whose notes carry no build verdict";
   - "a rendered artifact wanting the publisher's provenance", where the store hides the notes' claims, as `LedgerWatched` wraps the store;
   - "the outputs' claims wanting beside the notes";
