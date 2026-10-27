@@ -306,13 +306,20 @@ impl fmt::Display for RepositoryName {
 
 /// 6, 110: an index's metadata: one component, one version, and every
 /// artifact of the component at that version by digest and metadata,
-/// each carrying the index's version.
+/// each carrying the index's version; and, where it has them, the
+/// revision it was published from and the publishing repository (13,
+/// 138). An index put before it named either still reads, naming
+/// neither, and is written in the same form (design D4).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "RawIndexMeta")]
 pub struct IndexMeta {
     component: ComponentName,
     version: Version,
     artifacts: Vec<Artifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision: Option<Revision>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repository: Option<RepositoryName>,
 }
 
 #[derive(Deserialize)]
@@ -320,13 +327,18 @@ struct RawIndexMeta {
     component: ComponentName,
     version: Version,
     artifacts: Vec<Artifact>,
+    #[serde(default)]
+    revision: Option<Revision>,
+    #[serde(default)]
+    repository: Option<RepositoryName>,
 }
 
 impl TryFrom<RawIndexMeta> for IndexMeta {
     type Error = BadMeta;
 
     fn try_from(raw: RawIndexMeta) -> Result<Self, BadMeta> {
-        IndexMeta::new(raw.component, raw.version, raw.artifacts)
+        Ok(IndexMeta::new(raw.component, raw.version, raw.artifacts)?
+            .with(raw.revision, raw.repository))
     }
 }
 
@@ -355,7 +367,25 @@ impl IndexMeta {
             component,
             version,
             artifacts,
+            revision: None,
+            repository: None,
         })
+    }
+
+    /// 13, 138: the index naming the revision a publish put it from and
+    /// the publishing repository, where its remote gives one.
+    pub fn published_from(self, revision: Revision, repository: Option<RepositoryName>) -> Self {
+        self.with(Some(revision), repository)
+    }
+
+    /// The index naming `revision` and `repository` as they are, none
+    /// for either it does not name: as read, or as a copy keeps them.
+    pub fn with(self, revision: Option<Revision>, repository: Option<RepositoryName>) -> Self {
+        IndexMeta {
+            revision,
+            repository,
+            ..self
+        }
     }
 
     pub fn component(&self) -> &ComponentName {
@@ -368,6 +398,19 @@ impl IndexMeta {
 
     pub fn artifacts(&self) -> &[Artifact] {
         &self.artifacts
+    }
+
+    /// The revision the index was published from, none for an index put
+    /// before indexes named it.
+    pub fn revision(&self) -> Option<&Revision> {
+        self.revision.as_ref()
+    }
+
+    /// The publishing repository by its remote's owner and name, none
+    /// where its remote gave none or the index was put before indexes
+    /// named it.
+    pub fn repository(&self) -> Option<&RepositoryName> {
+        self.repository.as_ref()
     }
 }
 
@@ -517,6 +560,49 @@ mod tests {
         assert_eq!(index.component().as_str(), "web");
         assert_eq!(index.version().as_str(), "1.0.0");
         assert_eq!(index.artifacts(), &[a, b]);
+    }
+
+    #[test]
+    fn an_index_names_where_it_came_from() {
+        let index = IndexMeta::new(
+            ComponentName::new("web"),
+            Version::new("1.0.0"),
+            vec![artifact(b"a", "1.0.0")],
+        )
+        .unwrap()
+        .published_from(
+            Revision::new("4f2a9c1"),
+            Some(RepositoryName {
+                owner: "acme".into(),
+                name: "site".into(),
+            }),
+        );
+        assert_eq!(index.revision(), Some(&Revision::new("4f2a9c1")));
+        assert_eq!(
+            index.repository().map(ToString::to_string).as_deref(),
+            Some("acme/site")
+        );
+        let json = serde_json::to_value(&index).unwrap();
+        assert_eq!(json["revision"], "4f2a9c1");
+        assert_eq!(
+            json["repository"],
+            serde_json::json!({ "owner": "acme", "name": "site" })
+        );
+        round_trip(index);
+    }
+
+    #[test]
+    fn an_index_written_before_it_named_where_it_came_from_reads_and_writes_the_same() {
+        let before = concat!(
+            r#"{"component":"web","version":"1.0.0","artifacts":[{"digest":"#,
+            r#""sha256:ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","#,
+            r#""meta":{"ecosystem":"eco","name":"pkg","version":"1.0.0"}}]}"#
+        );
+        let index: IndexMeta = serde_json::from_str(before).unwrap();
+        assert_eq!(index.revision(), None);
+        assert_eq!(index.repository(), None);
+        assert_eq!(index.artifacts(), &[artifact(b"a", "1.0.0")]);
+        assert_eq!(serde_json::to_string(&index).unwrap(), before);
     }
 
     #[test]
