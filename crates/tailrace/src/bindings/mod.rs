@@ -663,11 +663,12 @@ pub fn bind(
     } else {
         let bound = profiles::store::bind(store, make)?;
         let cache = profiles::store::bind(store, make)?;
+        let packages = profiles::store::bind(store, make)?;
         let keeper = ledger(store)?;
         (
             bound,
             keeper,
-            profiles::projection::bound(cache, repository),
+            profiles::projection::bound(cache, packages, repository),
         )
     };
     Ok(Binding {

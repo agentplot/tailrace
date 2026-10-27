@@ -8,15 +8,17 @@
 //!
 //! It packs no cache entries: a pack with no version and a render of
 //! cache entries answer absent naming them, and read and write nothing
-//! (84, 85). Its render of artifacts and serve are not built and answer
-//! absent. A file has no lockfile, so pinned answers absent naming the
+//! (84, 85). Its render of artifacts is not built and answers absent.
+//! Its clients read files, so serve answers absent naming serving for
+//! every request and asks the core nothing (86). A file has no lockfile, so pinned answers absent naming the
 //! lockfile for every checkout, and reads nothing (137). A file has no
 //! manifest either, so requires and satisfying answer none, an empty
 //! list, and read nothing (140).
 
 use tailrace_seams::{
-    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Output, Packed,
-    Pinned, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Version,
+    no_cache_entries, no_lockfile, no_serving, Answer, Artifact, BuildId, Contents, Layout, Miss,
+    Output, Packed, Pinned, Projection, Range, Rendered, Request, Requirement, Response, Seam,
+    Source, Version,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -66,8 +68,10 @@ impl Projection for FileProjection {
         }
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
-        Err(not_built("serve", ECOSYSTEM, &FileProjection::source()))
+    /// 86: absent naming serving for every request, since the
+    /// ecosystem's clients read files; the core is asked nothing.
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
+        Err(no_serving(&FileProjection::source()))
     }
 
     /// 137: absent naming the lockfile for every checkout, since a file
@@ -206,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn render_and_serve_are_absent_and_write_nothing() {
+    fn render_is_absent_and_writes_nothing_and_serve_absent_naming_serving() {
         let dir = TempDir::new().unwrap();
         let at = dir.path().join("layouts").join("file");
         let artifacts = [Artifact {
@@ -225,13 +229,24 @@ mod tests {
         let layout = Layout {
             at: at.display().to_string(),
         };
-        assert_eq!(
-            FileProjection.serve(&layout),
-            Err(Not::absent(
-                &FileProjection::source(),
-                "serve of the file projection"
-            ))
-        );
+        let asked = std::cell::Cell::new(0);
+        for path in ["", "notes.txt", "notes.txt@1.4.0"] {
+            let request = Request {
+                method: "GET".into(),
+                path: path.into(),
+                base: "http://127.0.0.1:7420/o/r/file".into(),
+            };
+            let miss = |_: &Pinned| {
+                asked.set(asked.get() + 1);
+                Ok(())
+            };
+            assert_eq!(
+                FileProjection.serve(&layout, &request, &miss),
+                Err(Not::absent(&FileProjection::source(), "serving")),
+                "{path}"
+            );
+        }
+        assert_eq!(asked.get(), 0, "the core was asked for a version");
     }
 
     #[test]

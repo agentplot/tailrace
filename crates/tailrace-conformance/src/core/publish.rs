@@ -12,9 +12,9 @@ use tailrace_core::{answer_json, publish, Provenance, Publish, Published, CACHE,
 use tailrace_fakes::{FakeBuild, FakeStore, PROFILE};
 use tailrace_seams::{
     Answer, Artifact, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
-    Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Name, Not, Outcome, Output,
-    OutputName, Packed, Pinned, Projection, Put, Range, Rendered, Required, Requirement, Revision,
-    Seam, Serving, Source, Store, Verdict, Version, Why,
+    Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Miss, Name, Not, Outcome,
+    Output, OutputName, Packed, Pinned, Projection, Put, Range, Rendered, Request, Required,
+    Requirement, Response, Revision, Seam, Source, Store, Verdict, Version, Why,
 };
 
 use crate::fixture::DATE;
@@ -964,8 +964,8 @@ impl Projection for Filling {
         self.inner.render(contents, at)
     }
 
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        self.inner.serve(layout)
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.inner.serve(layout, request, miss)
     }
 
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {

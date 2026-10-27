@@ -502,7 +502,7 @@ fn a_file_naming_no_ledger_binds_the_git_ref_in_the_repository() {
         .keys()
         .map(|e| e.as_str())
         .collect();
-    assert_eq!(ecosystems, ["file", "image", "moon-cache"]);
+    assert_eq!(ecosystems, ["file", "image", "moon-cache", "npm"]);
 }
 
 /// A repository in the host's directory, made with git, and its path.

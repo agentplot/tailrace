@@ -14,9 +14,9 @@ use tailrace_core::{
 use tailrace_fakes::{PolicyOp, ProjectionOp};
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, CacheEntry, ClaimKind, ComponentName,
-    Contents, Digest, Ecosystem, Held, Layout, Left, Name, NamedSigner, Not, Outcome, Output,
-    OutputName, Packed, Pinned, Projection, Range, Refusal, Rendered, Required, RequiredClaim,
-    Requirement, Revision, Serving, SignerId, Store, Verdict, Version, Why,
+    Contents, Digest, Ecosystem, Held, Layout, Left, Miss, Name, NamedSigner, Not, Outcome, Output,
+    OutputName, Packed, Pinned, Projection, Range, Refusal, Rendered, Request, Required,
+    RequiredClaim, Requirement, Response, Revision, SignerId, Store, Verdict, Version, Why,
 };
 
 use crate::core::publish::{landed, one, passing, version_of};
@@ -271,7 +271,7 @@ impl Projection for Carrying {
         unreachable!("a write renders nothing")
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
         unreachable!("a write serves nothing")
     }
 

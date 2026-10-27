@@ -17,9 +17,9 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName,
     Contents, Digest, EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Landing, Layout,
-    Manifest, Name, NamedSigner, Not, Outcome, Output, Packed, Pinned, Projection, Put, Range,
-    Rendered, Required, RequiredClaim, Requirement, Seam, Serving, SignerId, Source, Store,
-    Version, Why,
+    Manifest, Miss, Name, NamedSigner, Not, Outcome, Output, Packed, Pinned, Projection, Put,
+    Range, Rendered, Request, Required, RequiredClaim, Requirement, Response, Seam, SignerId,
+    Source, Store, Version, Why,
 };
 use world::{
     build_of, build_ops, by_host, eco, output, published_before_notes, version_of, Watched, World,
@@ -363,8 +363,8 @@ impl Projection for Filling {
         self.inner.render(contents, at)
     }
 
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        self.inner.serve(layout)
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.inner.serve(layout, request, miss)
     }
 
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
@@ -829,8 +829,8 @@ impl Projection for Metaless {
     fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
         self.0.render(contents, at)
     }
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        self.0.serve(layout)
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.0.serve(layout, request, miss)
     }
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
         self.0.pinned(checkout)
