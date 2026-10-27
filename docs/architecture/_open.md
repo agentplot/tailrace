@@ -12,5 +12,4 @@ Deleted when empty.
 
 ## Decisions waiting
 
-- **Record 0016, its `[ledger]` binding.** Superseded by record 0021 and clause 118; the amendment marking it so is proposed on the user's card.
 - **Clause 54 and a registry's lifecycle rule.** A rule expiring untagged manifests may take an accepted version's attestations, which are untagged referrers; ADR 0015 left it unread.
