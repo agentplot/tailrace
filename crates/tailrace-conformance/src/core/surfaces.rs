@@ -1,15 +1,16 @@
 //! The surfaces' group: a surface answers what the one core answers, value
 //! for value, as a program reads it (56, 57; design D6); below the
 //! marker, status-on-any-machine's channels, asked of the command line
-//! and of the served page alike (36, 132).
+//! and of the served page alike (36, 132), and each promotion's notes
+//! beside them, the bytes each version's index names (132, 134).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
-use tailrace_core::{answer_json, overview, status, OverviewAsk, StatusAsk};
+use tailrace_core::{answer_json, overview, status, OverviewAsk, StatusAsk, NOTES};
 use tailrace_seams::{
-    AskedOf, Audience, Branch, Check, ClaimKind, Digest, NamedSigner, Not, Required, RequiredClaim,
-    Revision, SignerId, Version,
+    AskedOf, Audience, Branch, Check, ClaimKind, Digest, Held, Manifest, NamedSigner, Not,
+    Required, RequiredClaim, Revision, SignerId, Store, Version,
 };
 
 use crate::core::publish::{one, passing, VERSION};
@@ -66,6 +67,12 @@ pub fn scenarios() -> Vec<Scenario<dyn Surface>> {
             plays: None,
             cites: &[36, 56, 57, 132],
             run: the_command_line_and_the_page_answer_the_channels,
+        },
+        Scenario {
+            name: "the command line and the page answer each promotion's notes",
+            plays: None,
+            cites: &[56, 57, 132],
+            run: the_command_line_and_the_page_answer_each_promotions_notes,
         },
     ]
 }
@@ -211,4 +218,82 @@ fn the_command_line_and_the_page_answer_the_channels(surface: &dyn Surface) {
         channels[1]["at"]["value"]["head"]["to"]["version"], VERSION,
         "stable is not at the version promoted: {through}"
     );
+}
+
+/// The version a feature on the site after the head takes.
+const GROWN: &str = "0.3.0";
+
+/// The text of the notes the index at `index` names, as the fake store
+/// holds their bytes.
+fn notes_held(world: &FakeWorld, index: &Digest) -> String {
+    let store = &world.fakes.store;
+    let Ok(Held::Manifest(Manifest::Index(meta))) = store.read(index) else {
+        panic!("{index} holds no index")
+    };
+    let notes = meta
+        .artifacts()
+        .iter()
+        .find(|a| a.meta.ecosystem().as_str() == NOTES)
+        .unwrap_or_else(|| panic!("the index {index} names no notes"));
+    let Ok(Held::Manifest(Manifest::Artifact { layers, .. })) = store.read(&notes.digest) else {
+        panic!("{} holds no artifact", notes.digest)
+    };
+    let Ok(Held::Bytes(bytes)) = store.read(&layers[0]) else {
+        panic!("{} holds no bytes", layers[0])
+    };
+    String::from_utf8(bytes).expect("the notes are text")
+}
+
+fn the_command_line_and_the_page_answer_each_promotions_notes(surface: &dyn Surface) {
+    let world = surface.world();
+    passing(world, &world.head);
+    ok(one(world.publish(&world.ask(&world.head))), "the publish");
+    let grown = world.grow();
+    passing(world, &grown);
+    ok(one(world.publish(&world.ask(&grown))), "the second publish");
+    world.declare_channels(&[(STABLE, None)]);
+    for version in [VERSION, GROWN] {
+        world.promote_fake(STABLE, version);
+    }
+
+    let through = surface.ask(&Question::Channels {
+        branch: world.main.clone(),
+    });
+    let asked = through["value"]["asked_at"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{} answered no moment asked: {through}", surface.name()));
+    let history = world.history();
+    let core = overview(
+        &world.seams(),
+        &history,
+        &world.kept(),
+        &OverviewAsk {
+            branch: world.main.clone(),
+            component: None,
+            revision: None,
+            at: asked,
+        },
+    );
+    assert_eq!(
+        through,
+        answer_json(&Ok::<_, Not>(core.clone())),
+        "the channels asked through {} answered otherwise than the core",
+        surface.name()
+    );
+    let channels = core.channels.expect("the channels answered");
+    let stable = &channels.channels[0];
+    let versions: Vec<&str> = stable.notes.iter().map(|l| l.version.as_str()).collect();
+    assert_eq!(
+        versions,
+        [VERSION, GROWN],
+        "stable's notes are not one per version its chain moved it to, oldest first"
+    );
+    for logged in &stable.notes {
+        assert_eq!(
+            logged.notes,
+            Ok(notes_held(world, &logged.index)),
+            "the notes of {} are not the bytes its index names",
+            logged.version
+        );
+    }
 }

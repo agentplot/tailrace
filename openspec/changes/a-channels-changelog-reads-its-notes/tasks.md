@@ -14,7 +14,7 @@
 
 ## 3. The conformance suite cites 132's notes
 
-- [ ] 3.1 In `crates/tailrace-conformance/src/core/surfaces.rs`, below the marker, add "the command line and the page answer each promotion's notes", citing 56, 57 and 132: two versions published and `stable` promoted to each, the channels asked through the surface equal to the core's answer, and each `Logged`'s notes equal to the bytes of the `notes` artifact its index names in the fake store (design D5). Add to `crates/tailrace-conformance/src/world.rs` and `crates/tailrace/tests/conformance.rs` only what the scenario needs to publish a second version. Remove the `Part` for 132 "each version's notes" and the `NOTES` constant from `crates/tailrace-conformance/src/register.rs`. Verify with `moon run conformance:test conformance:coverage cli:test`.
+- [x] 3.1 In `crates/tailrace-conformance/src/core/surfaces.rs`, below the marker, add "the command line and the page answer each promotion's notes", citing 56, 57 and 132: two versions published and `stable` promoted to each, the channels asked through the surface equal to the core's answer, and each `Logged`'s notes equal to the bytes of the `notes` artifact its index names in the fake store (design D5). Add to `crates/tailrace-conformance/src/world.rs` and `crates/tailrace/tests/conformance.rs` only what the scenario needs to publish a second version. Remove the `Part` for 132 "each version's notes" and the `NOTES` constant from `crates/tailrace-conformance/src/register.rs`. Verify with `moon run conformance:test conformance:coverage cli:test`.
 
 ## 4. The guide
 
