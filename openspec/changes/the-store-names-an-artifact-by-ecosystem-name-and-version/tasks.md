@@ -8,7 +8,7 @@
 - [x] 2.2 Move `RepositoryName`, `from_remote`, `path`, `Display` and their tests from `crates/tailrace-core/src/served.rs` to `crates/tailrace-seams/src/artifact.rs`, export it from the seams' `lib.rs`, and leave `pub use tailrace_seams::RepositoryName;` in `served.rs` (D4). Verify: `devenv shell -- moon run tailrace-seams:test tailrace-core:test` passes with the moved tests.
 - [x] 2.3 Give `IndexMeta` `revision: Option<Revision>` and `repository: Option<RepositoryName>`, skipped in its machine-readable form when none, with accessors and `published_from(revision, repository)`; `IndexMeta::new` keeps its arguments (D4). Verify: seams unit tests for the seam-contracts delta's two index scenarios, one asserting the form naming neither equals a fixed JSON string of today's form.
 - [x] 2.4 Write and read `org.opencontainers.image.revision` and `io.github.agentplot.tailrace.repository` on the OCI image index in `crates/tailrace/src/profiles/store/oci.rs`, each only where named; a malformed repository annotation reads as unreadable naming the digest (D6). Verify: layout store unit tests for the layout-store delta's index scenarios, the second asserting a fixed digest computed from today's bytes.
-- [ ] 2.5 Fix every other caller and fake that builds or matches `IndexMeta` (the fake store, `copy.rs`, the conformance world, the core's tests) so a copied index keeps both fields. Verify: `devenv shell -- moon run ':#check-fast'` passes.
+- [x] 2.5 Fix every other caller and fake that builds or matches `IndexMeta` (the fake store, `copy.rs`, the conformance world, the core's tests) so a copied index keeps both fields. Verify: `devenv shell -- moon run ':#check-fast'` passes.
 
 ## 3. No component's tag enters a reserved space
 
