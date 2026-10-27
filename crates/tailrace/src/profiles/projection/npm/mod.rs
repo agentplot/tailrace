@@ -6,14 +6,17 @@
 //! 140). It names npm and nothing else, and reaches the store only
 //! through the store seam it is handed (rules core.1, core.2).
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use tailrace_seams::{
-    Answer, Artifact, BuildId, Contents, Layout, Miss, Output, Packed, Pinned, Projection, Range,
-    Rendered, Request, Requirement, Response, Seam, Source, Store, Version,
+    no_cache_entries, Answer, Artifact, BuildId, Contents, Layout, Miss, Output, Packed, Pinned,
+    Projection, Range, Rendered, Request, Requirement, Response, Seam, Source, Store, Version,
 };
 
 use super::not_built;
+
+mod pack;
 
 /// The ecosystem this projection packs in, as the bindings bind it.
 pub const ECOSYSTEM: &str = "npm";
@@ -31,6 +34,7 @@ pub struct NpmProjection {
     store: Box<dyn Store>,
     #[allow(dead_code)]
     origin: String,
+    path: Option<OsString>,
 }
 
 impl NpmProjection {
@@ -46,6 +50,16 @@ impl NpmProjection {
             root: root.into(),
             store,
             origin: origin.into(),
+            path: None,
+        }
+    }
+
+    /// The projection running npm under `path` as its `PATH`, in place of
+    /// the process's own.
+    pub fn with_path(self, path: impl Into<OsString>) -> NpmProjection {
+        NpmProjection {
+            path: Some(path.into()),
+            ..self
         }
     }
 
@@ -56,8 +70,16 @@ impl NpmProjection {
 }
 
 impl Projection for NpmProjection {
-    fn pack(&self, _: &Output, _: &BuildId, _: Option<&Version>) -> Answer<Packed> {
-        Err(not_built("pack", ECOSYSTEM, &NpmProjection::source()))
+    /// 84, 87: `output` packed at `version` by npm's own packager, its
+    /// bytes the tarball npm wrote and its name the package's own; npm
+    /// promises no same bytes across its versions, so it answers it
+    /// cannot promise them (design D6). With no version, absent naming
+    /// cache entries: npm packs none.
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+        let Some(version) = version else {
+            return Err(no_cache_entries(&NpmProjection::source()));
+        };
+        pack::pack(self.path.as_deref(), output, version)
     }
 
     fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
