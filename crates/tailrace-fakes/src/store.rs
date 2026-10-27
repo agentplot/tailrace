@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 use tailrace_seams::{
-    canonical, Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Store, Why,
+    artifact_name, canonical, Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest,
+    Name, Not, Put, Seam, Store, Version, Why,
 };
 
 use crate::Fake;
@@ -20,6 +21,7 @@ pub enum StoreOp {
     Name,
     Resolve,
     Read,
+    Versions,
 }
 
 /// Everything the fake store holds.
@@ -182,6 +184,26 @@ impl Store for FakeStore {
             },
         )
     }
+
+    /// 138: the version of every name it holds that reads back as an
+    /// artifact's of `ecosystem` and `name`, in the order of its names.
+    fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>> {
+        let given = json!({ "ecosystem": ecosystem, "name": name });
+        let of = artifact_name(ecosystem, name, &Version::new(""));
+        self.ask(
+            StoreOp::Versions,
+            given,
+            format!("the names {of}"),
+            |s, _| {
+                Ok(s.names
+                    .keys()
+                    .filter_map(Name::as_artifact)
+                    .filter(|(e, n, _)| e == ecosystem && n == name)
+                    .map(|(_, _, v)| v)
+                    .collect())
+            },
+        )
+    }
 }
 
 #[cfg(test)]
@@ -220,6 +242,40 @@ mod tests {
 
     fn source() -> Source {
         Source::new(Seam::Store, "fake")
+    }
+
+    #[test]
+    fn a_names_versions_are_listed_from_the_names_held() {
+        let store = FakeStore::new();
+        let index = store.put_bytes(b"an index").unwrap().digest;
+        for (name, version) in [
+            ("site", "1.0.0"),
+            ("site", "1.1.0+b.1"),
+            ("site-cli", "1.0.0"),
+            ("@acme/site", "2.0.0"),
+        ] {
+            let name = artifact_name(
+                &Ecosystem::new("eco"),
+                &EcosystemName::new(name),
+                &Version::new(version),
+            );
+            store.name(&name, &index, None).unwrap();
+        }
+        store.name(&Name::new("site-v1.0.0"), &index, None).unwrap();
+        let held = store.contents();
+        let versions = |e: &str, n: &str| {
+            store
+                .versions(&Ecosystem::new(e), &EcosystemName::new(n))
+                .unwrap()
+        };
+        assert_eq!(
+            versions("eco", "site"),
+            [Version::new("1.0.0"), Version::new("1.1.0+b.1")]
+        );
+        assert_eq!(versions("eco", "@acme/site"), [Version::new("2.0.0")]);
+        assert_eq!(versions("eco", "web"), Vec::<Version>::new());
+        assert_eq!(versions("other", "site"), Vec::<Version>::new());
+        assert_eq!(store.contents(), held);
     }
 
     #[test]
@@ -487,6 +543,7 @@ mod tests {
             StoreOp::Name,
             StoreOp::Resolve,
             StoreOp::Read,
+            StoreOp::Versions,
         ];
         for op in ops {
             store.fault(op, Fault::Refused("no".into()), Times::Once);
@@ -499,6 +556,9 @@ mod tests {
             store.name(&name, &d, None).map(drop),
             store.resolve(&name).map(drop),
             store.read(&d).map(drop),
+            store
+                .versions(&Ecosystem::new("eco"), &EcosystemName::new("x"))
+                .map(drop),
         ];
         for answer in answers {
             assert_eq!(

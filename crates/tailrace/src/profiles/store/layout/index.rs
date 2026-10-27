@@ -106,6 +106,14 @@ impl Index {
         })
     }
 
+    /// Every name an entry holds, in the order of `index.json`.
+    pub(super) fn names(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().filter_map(|e| match e {
+            Entry::Name(n, _) => Some(n.as_str()),
+            _ => None,
+        })
+    }
+
     /// The entries of the attestations about `subject`, in the order
     /// attached.
     pub(super) fn attestations<'a>(

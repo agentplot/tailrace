@@ -453,7 +453,9 @@ impl FakeWorld {
                         to: serde_json::from_value(read("to")).ok()?,
                         expected: serde_json::from_value(read("expected")).ok()?,
                     },
-                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read => return None,
+                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read | StoreOp::Versions => {
+                        return None
+                    }
                 })
             })
             .collect()

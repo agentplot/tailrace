@@ -108,8 +108,8 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tailrace_seams::{
-    Answer, Branch, Digest, Envelope, Held, IsLanded, Landing, Manifest, Name, NamedSigner, Not,
-    Put, Revision, Seam, Seams, SignerId, Source, Store, Verdicts,
+    Answer, Branch, Digest, Ecosystem, EcosystemName, Envelope, Held, IsLanded, Landing, Manifest,
+    Name, NamedSigner, Not, Put, Revision, Seam, Seams, SignerId, Source, Store, Verdicts, Version,
 };
 
 use crate::profiles::signer::Signing;
@@ -531,6 +531,10 @@ impl Store for Unopened {
     }
 
     fn read(&self, _: &Digest) -> Answer<Held> {
+        Err(self.not.clone())
+    }
+
+    fn versions(&self, _: &Ecosystem, _: &EcosystemName) -> Answer<Vec<Version>> {
         Err(self.not.clone())
     }
 }

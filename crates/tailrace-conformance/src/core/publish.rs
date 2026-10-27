@@ -287,7 +287,7 @@ fn a_landed_revision_published(world: &FakeWorld) {
     );
 
     // 17: every artifact and its claims before the index, the index
-    // before the name.
+    // before the names: each artifact's, then the version's.
     let writes = world.writes();
     let indexes: Vec<usize> = (0..writes.len())
         .filter(|i| writes[*i].is_index())
@@ -313,14 +313,20 @@ fn a_landed_revision_published(world: &FakeWorld) {
             .all(|w| !matches!(w, Write::Name { .. })),
         "a name was moved before the index was put: {writes:?}"
     );
-    assert_eq!(
-        &writes[at + 1..],
-        [Write::Name {
-            name: Name::new(TAG),
+    let made: Vec<Write> = artifacts
+        .iter()
+        .map(|a| a.store_name.clone())
+        .chain(std::iter::once(Name::new(TAG)))
+        .map(|name| Write::Name {
+            name,
             to: index.clone(),
             expected: None,
-        }],
-        "after the index, the version's name was not made from nothing at it, alone"
+        })
+        .collect();
+    assert_eq!(
+        &writes[at + 1..],
+        made,
+        "after the index, each artifact's name and then the version's were not made from nothing at it, alone"
     );
 
     // 7, 11 to 13: one provenance per artifact, in the host's identity,
@@ -721,6 +727,13 @@ macro_rules! delegate {
             }
             fn read(&self, digest: &Digest) -> Answer<Held> {
                 self.0.read(digest)
+            }
+            fn versions(
+                &self,
+                ecosystem: &tailrace_seams::Ecosystem,
+                name: &tailrace_seams::EcosystemName,
+            ) -> Answer<Vec<tailrace_seams::Version>> {
+                self.0.versions(ecosystem, name)
             }
         }
     };

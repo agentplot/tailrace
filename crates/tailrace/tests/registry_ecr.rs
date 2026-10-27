@@ -72,6 +72,13 @@ impl Store for Prefixed {
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.registry.read(digest)
     }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.registry.versions(ecosystem, name)
+    }
 }
 
 /// The store group's rig over the host's ECR repository, a scenario's
