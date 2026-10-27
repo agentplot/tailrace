@@ -15,7 +15,7 @@ landed on `main` and this bolt has taken it: the pane reads its
 
 ## 2. The documents are the binary's
 
-- [ ] 2.1 Add `crates/tailrace/tests/herdr_documents.rs` as design D6 part 2 has it, writing `plugins/herdr/tests/docs/never-published/` with `TAILRACE_HERDR_DOCS=write` and comparing otherwise; add `/plugins/herdr/tests/docs/**/*` to `cli:test`'s inputs in `crates/tailrace/moon.yml` (spec `herdr-plugin`, the pane shows what status prints on a machine that never published). Verify `devenv shell -- moon run cli:test` passes, and fails naming the field when one committed document is edited.
+- [x] 2.1 Add `crates/tailrace/tests/herdr_documents.rs` as design D6 part 2 has it, writing `plugins/herdr/tests/docs/never-published/` with `TAILRACE_HERDR_DOCS=write` and comparing otherwise; add `/plugins/herdr/tests/docs/**/*` to `cli:test`'s inputs in `crates/tailrace/moon.yml` (spec `herdr-plugin`, the pane shows what status prints on a machine that never published). Verify `devenv shell -- moon run cli:test` passes, and fails naming the field when one committed document is edited.
 
 ## 3. Finding, starting and asking the process
 

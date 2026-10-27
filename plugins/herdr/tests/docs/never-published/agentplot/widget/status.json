@@ -1,0 +1,139 @@
+{
+  "answer": "ok",
+  "value": {
+    "branch": "main",
+    "asked_at": 1793000100,
+    "channels": {
+      "answer": "ok",
+      "value": {
+        "revision": "0000000000000000000000000000000000000001",
+        "landing": "source",
+        "channels": [
+          {
+            "channel": {
+              "component": null,
+              "name": "beta"
+            },
+            "moves": {
+              "by": "each_publish",
+              "prereleases": false
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "head": {
+                  "channel": "beta",
+                  "component": "repository",
+                  "to": {
+                    "version": "0.2.0",
+                    "index": "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+                  },
+                  "from": {
+                    "version": "0.1.0",
+                    "index": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+                  },
+                  "predecessor": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+                  "asked_by": "gate",
+                  "policy": {
+                    "revision": "0000000000000000000000000000000000000001",
+                    "claims": [
+                      "sha256:0000000000000000000000000000000000000000000000000000000000000004"
+                    ]
+                  },
+                  "at": 1793000001
+                },
+                "chain": [
+                  [
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+                    {
+                      "channel": "beta",
+                      "component": "repository",
+                      "to": {
+                        "version": "0.1.0",
+                        "index": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+                      },
+                      "from": null,
+                      "predecessor": null,
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "0000000000000000000000000000000000000001",
+                        "claims": [
+                          "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+                        ]
+                      },
+                      "at": 1793000000
+                    }
+                  ],
+                  [
+                    "sha256:0000000000000000000000000000000000000000000000000000000000000006",
+                    {
+                      "channel": "beta",
+                      "component": "repository",
+                      "to": {
+                        "version": "0.2.0",
+                        "index": "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+                      },
+                      "from": {
+                        "version": "0.1.0",
+                        "index": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+                      },
+                      "predecessor": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "0000000000000000000000000000000000000001",
+                        "claims": [
+                          "sha256:0000000000000000000000000000000000000000000000000000000000000004"
+                        ]
+                      },
+                      "at": 1793000001
+                    }
+                  ]
+                ],
+                "read": "source"
+              }
+            }
+          },
+          {
+            "channel": {
+              "component": null,
+              "name": "stable"
+            },
+            "moves": {
+              "by": "bound",
+              "to": "beta"
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "empty",
+                "read": "source"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "environments": {
+      "answer": "unreadable",
+      "unreadable": {
+        "source": {
+          "seam": "target",
+          "profile": "unread"
+        },
+        "what": "the environments: what each environment should run and runs is read from a target, and no target is read",
+        "said": null
+      }
+    },
+    "published": {
+      "answer": "absent",
+      "absent": {
+        "source": {
+          "seam": "host",
+          "profile": "/scratch/widget/repo/.git/tailrace/published"
+        },
+        "what": "version it published"
+      }
+    }
+  }
+}
