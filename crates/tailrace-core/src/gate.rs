@@ -206,7 +206,8 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
         ToldBy::Asked => Vec::new(),
     };
 
-    // 5: the index, and the claims of it and of each artifact (29).
+    // 5: the index, the claims of it and of each artifact, and how each
+    // artifact was made, told once under the acceptance policy (29, 134).
     let Held::Manifest(Manifest::Index(meta)) = seams.store.read(&index)? else {
         return Err(Not::unreadable(
             &Source::new(Seam::Store, BOUND),
@@ -218,7 +219,8 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
     let mut artifacts = Vec::new();
     for artifact in meta.artifacts() {
         let claims = seams.store.claims_of(&artifact.digest)?;
-        artifacts.push((artifact.digest.clone(), claims));
+        let made = made(seams, &required, &revision, &artifact.digest, &claims)?;
+        artifacts.push((artifact.digest.clone(), made, claims));
     }
     let mut judging = Judging {
         seams,
@@ -400,6 +402,76 @@ fn sign(seams: &Seams, claim: &Claim, gate: &SignerId) -> Answer<Envelope> {
     ))
 }
 
+/// 134: how an artifact of a version was made, as the gate tells it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Made {
+    /// A build made it: a provenance that counts names its build, or none
+    /// says it was rendered.
+    Built,
+    /// Rendered with no build behind it, as a version's notes are: a
+    /// provenance that counts names no build, and none names one.
+    Rendered,
+}
+
+/// 13, 29, 134: how `artifact` was made, told from the provenance of
+/// `revision` attached to it alone (never to the index), counting only
+/// through a signer `required` names for a provenance, within its reach,
+/// and not expired (rule core.7): rendered where such a provenance counts
+/// and none that counts names a build, built otherwise, so a policy that
+/// asks no provenance judges every artifact as built.
+fn made(
+    seams: &Seams,
+    required: &Required,
+    revision: &Revision,
+    artifact: &Digest,
+    own: &[Envelope],
+) -> Answer<Made> {
+    let mut signers: Vec<NamedSigner> = Vec::new();
+    for signer in required
+        .claims()
+        .iter()
+        .filter(|c| c.kind == ClaimKind::Provenance)
+        .flat_map(|c| &c.signers)
+    {
+        if !signers.iter().any(|s| s.id == signer.id) {
+            signers.push(signer.clone());
+        }
+    }
+    if signers.is_empty() {
+        return Ok(Made::Built);
+    }
+    let mut rendered = false;
+    for envelope in own {
+        let Some(claim) = Claim::from_envelope(envelope) else {
+            continue;
+        };
+        if claim.kind != ClaimKind::Provenance || claim.revision != *revision {
+            continue;
+        }
+        let told = tell(
+            seams,
+            &signers,
+            artifact,
+            envelope,
+            Some(claim.kind),
+            None,
+            None,
+        )?;
+        if !told.counts || told.expired {
+            continue;
+        }
+        if claim.build.is_some() {
+            return Ok(Made::Built);
+        }
+        rendered = true;
+    }
+    Ok(if rendered {
+        Made::Rendered
+    } else {
+        Made::Built
+    })
+}
+
 /// Every signer `required` names, once each, as it first names it.
 fn named_in(required: &Required) -> Vec<NamedSigner> {
     let mut named: Vec<NamedSigner> = Vec::new();
@@ -423,7 +495,8 @@ fn offers_and_accepts(wanted: &RequiredClaim, signer: &SignerId) -> bool {
 
 /// One version of `component` being judged by the gate signing as
 /// `gate`: its revision, its index, the claims attached to the index,
-/// and each artifact in the index's order with the claims attached to it.
+/// and each artifact in the index's order with how it was made and the
+/// claims attached to it.
 struct Judging<'a> {
     seams: &'a Seams,
     gate: &'a SignerId,
@@ -432,7 +505,7 @@ struct Judging<'a> {
     revision: &'a Revision,
     index: &'a Digest,
     on_index: Vec<Envelope>,
-    artifacts: Vec<(Digest, Vec<Envelope>)>,
+    artifacts: Vec<(Digest, Made, Vec<Envelope>)>,
 }
 
 /// What one policy's judgment of every artifact came to.
@@ -497,7 +570,7 @@ impl Judging<'_> {
     fn count(&self, required: &Required) -> Answer<Count> {
         let named = named_in(required);
         let (mut claims, mut offered_by, mut one_host) = (Vec::new(), Vec::new(), false);
-        for (artifact, own) in &self.artifacts {
+        for (artifact, _, own) in &self.artifacts {
             for wanted in required.claims() {
                 match self.found(wanted, artifact, own, &named)? {
                     Ok((envelope, maker)) => {
