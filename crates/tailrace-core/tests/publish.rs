@@ -972,6 +972,85 @@ fn a_version_held_under_its_bare_tag_is_named_the_new_way_at_the_same_index() {
     assert_eq!(world.fakes.store.contents().held, held);
 }
 
+// Requirement: The index names its revision and its repository
+
+/// The index `published` names, as the store holds it.
+fn index_meta(world: &World, published: &Published) -> IndexMeta {
+    let (_, index) = version_of(published);
+    match world.fakes.store.contents().held.get(index) {
+        Some(Held::Manifest(Manifest::Index(meta))) => meta.clone(),
+        other => panic!("{index} holds {other:?}"),
+    }
+}
+
+/// `world`'s remote addressed as `url`, which this host's git rewrites
+/// to the shared history's path, so git reaches it while the address
+/// reads as written (design D17).
+fn addressed(world: &World, url: &str) {
+    world.repo.git(&["remote", "set-url", "origin", url]);
+    let shared = format!("url.{}.insteadOf", world.shared.path.display());
+    world.repo.git(&["config", &shared, url]);
+}
+
+#[test]
+fn a_repository_with_a_remote_names_its_owner_and_name_on_the_index() {
+    let world = World::new();
+    addressed(&world, "https://example.com/acme/site.git");
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let meta = index_meta(&world, &published);
+    assert_eq!(meta.revision(), Some(&world.head));
+    assert_eq!(
+        meta.repository().map(ToString::to_string).as_deref(),
+        Some("acme/site")
+    );
+    assert!(
+        world.shared.tag_at("lib-v0.2.0").is_some(),
+        "the tag was not shared"
+    );
+}
+
+#[test]
+fn a_repository_with_no_remote_names_the_revision_and_no_repository() {
+    let world = World::new();
+    world.repo.git(&["config", "--unset", "branch.main.remote"]);
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    assert!(matches!(published, Published::Version { .. }));
+    let meta = index_meta(&world, &published);
+    assert_eq!(meta.revision(), Some(&world.head));
+    assert_eq!(meta.repository(), None);
+
+    let local = World::new();
+    let published = local.publish_one(&local.ask_for("lib")).unwrap();
+    let meta = index_meta(&local, &published);
+    assert_eq!(meta.revision(), Some(&local.head));
+    assert_eq!(meta.repository(), None, "a local path names no owner");
+}
+
+#[test]
+fn a_remotes_address_that_cannot_be_read_offers_nothing() {
+    let world = World::new();
+    addressed(&world, "https://example.com/acme/HERE.git");
+    let config = world.repo.path.join(".git/config");
+    let bytes = std::fs::read(&config).unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    let mut unreadable = Vec::new();
+    for (i, part) in text.split("HERE").enumerate() {
+        if i > 0 {
+            unreadable.push(0xff);
+        }
+        unreadable.extend_from_slice(part.as_bytes());
+    }
+    std::fs::write(&config, unreadable).unwrap();
+
+    let Err(Not::Unreadable(u)) = world.publish_one(&world.ask_for("lib")) else {
+        panic!("a remote's address that cannot be read was published past")
+    };
+    assert_eq!(u.what, "remote.origin.url");
+    assert_eq!(world.repo.tag_at("lib-v0.2.0"), None);
+    no_pack(&world);
+    nothing_offered(&world);
+}
+
 // Requirement: A second publish of a revision ends at the same index
 
 #[test]

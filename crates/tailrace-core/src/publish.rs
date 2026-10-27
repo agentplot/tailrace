@@ -14,8 +14,8 @@ use serde_json::{json, Value};
 use tailrace_seams::{
     version_name, Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim, ClaimKind,
     Component, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Not,
-    Outcome, Output, OutputName, Projection, Report, Required, Revision, Seam, Seams, SignerId,
-    Source, Verdict, Version, Why,
+    Outcome, Output, OutputName, Projection, Report, RepositoryName, Required, Revision, Seam,
+    Seams, SignerId, Source, Verdict, Version, Why,
 };
 
 use crate::notes::{self, Rendered};
@@ -178,6 +178,7 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
         declared: &declared,
         verdicts: None,
         layout: None,
+        repository: None,
     };
     let components = versions
         .into_iter()
@@ -199,8 +200,9 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
 }
 
 /// One publish's state across its components: the landing's verdicts,
-/// read once for the revision (78), and the policy for layouts, read once
-/// at it where an index is put (113).
+/// read once for the revision (78), the policy for layouts, read once at
+/// it where an index is put (113), and the publishing repository, read
+/// once before the first pack (13, 138).
 struct Run<'a> {
     seams: &'a Seams,
     history: &'a History,
@@ -210,6 +212,7 @@ struct Run<'a> {
     declared: &'a Declared,
     verdicts: Option<Answer<Vec<Verdict>>>,
     layout: Option<Answer<Required>>,
+    repository: Option<Answer<Option<RepositoryName>>>,
 }
 
 /// An output with what the build reported of it, the ecosystem and
@@ -236,6 +239,27 @@ impl<'a> Run<'a> {
         let revision = self.landed.revision();
         self.verdicts
             .get_or_insert_with(|| seams.landing.verdicts_of(revision).map(|v| v.verdicts))
+            .clone()
+    }
+
+    /// 13, 138: the publishing repository, by the owner and name of its
+    /// landed branch's remote's address as the git configuration writes
+    /// it, whatever a host's `insteadOf` makes of it (49, 114); none where
+    /// the branch names no remote or its address gives no owner and name,
+    /// as a local path does, and the publish goes on (22). A
+    /// configuration that cannot be read is the answer (design D5).
+    fn repository(&mut self) -> Answer<Option<RepositoryName>> {
+        let (history, branch) = (self.history, self.landed.branch());
+        self.repository
+            .get_or_insert_with(|| {
+                let Some(remote) = history.remote(branch)? else {
+                    return Ok(None);
+                };
+                Ok(history
+                    .remote_url(&remote)?
+                    .as_deref()
+                    .and_then(RepositoryName::from_remote))
+            })
             .clone()
     }
 
@@ -339,6 +363,11 @@ impl<'a> Run<'a> {
             output.verdicts = judge(&output.name, &output.report, &verdicts)?;
         }
 
+        // The publishing repository, read before anything is claimed or
+        // packed, so a configuration that cannot be read offers nothing
+        // (design D5).
+        let repository = self.repository()?;
+
         // 7: the name claimed after judging and before any pack (22, rule
         // core.13), then the version's notes rendered from the commits it
         // is derived from, so nothing of them exists before the claim
@@ -433,7 +462,8 @@ impl<'a> Run<'a> {
                 .chain(std::iter::once(notes))
                 .collect(),
         )
-        .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))?;
+        .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))?
+        .published_from(claimed.revision.clone(), repository);
         let index = self
             .seams
             .store
