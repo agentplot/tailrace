@@ -15,6 +15,10 @@
 //! (58, 59, rule core.19).
 
 mod client;
+// The repository paths and the tags read back are the store spaces' (design
+// D8 to D12), which the registry places its names in from the next
+// commit; until then only their tests call them.
+#[allow(dead_code)]
 mod tag;
 
 use std::thread;
