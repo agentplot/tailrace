@@ -53,6 +53,13 @@
 //! each holds the layout's lock beside its record from its first read to
 //! the record's write, so the record always names what the layout holds
 //! (48, 62).
+//!
+//! A served layout's client may ask for a version the layout lacks: the
+//! core resolves and judges that one version as a pin, under the policy
+//! a sync in the checkout would use, and where the policy admits it,
+//! renders the layout holding what its record holds and it, and records
+//! it (115, 50, 47; design D4). A version refused, absent or unreadable
+//! leaves the layout and its record as they were.
 
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -61,9 +68,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents,
-    Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned,
-    Policy, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
+    Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind,
+    Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not,
+    Pinned, Policy, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store,
+    Version, Why,
 };
 
 use crate::verify::{tell, Told};
@@ -970,6 +978,120 @@ pub fn refresh(seams: &Seams, layouts: &Layouts, ask: &RenderAsk) -> Answer<Refr
             kept(layouts, &ask.ecosystem, at, because)
         }
     }
+}
+
+/// 115: what a render on a miss is asked: the branch and the revision a
+/// sync with no argument takes in the checkout, the layout's ecosystem,
+/// the checkout's working tree, the one version its client asked for and
+/// the layout lacks, the signers the host trusts, its own and those its
+/// bindings name, and when, in seconds since the Unix epoch by the
+/// asker's clock, since the core reads none.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MissAsk {
+    pub branch: Branch,
+    pub revision: Revision,
+    pub ecosystem: Ecosystem,
+    pub tree: PathBuf,
+    pub pin: Pinned,
+    pub trusted: Vec<NamedSigner>,
+    pub when: u64,
+}
+
+/// The artifact a record's entry names, rebuilt from its name, version
+/// and digest; unreadable naming the record where they make no metadata.
+fn rebuilt(layouts: &Layouts, ecosystem: &Ecosystem, entry: &HeldEntry) -> Answer<Artifact> {
+    let meta = ArtifactMeta::new(ecosystem.clone(), entry.name.clone(), entry.version.clone())
+        .map_err(|bad| {
+            Not::unreadable(
+                &layouts.source(),
+                layouts.path(ecosystem).display().to_string(),
+                Some(bad.to_string()),
+            )
+        })?;
+    Ok(Artifact {
+        digest: entry.artifact.clone(),
+        meta,
+    })
+}
+
+/// 115, 50, 47, 99, 113: the one version `ask` names, which a served
+/// layout's client asked for and the layout lacks, rendered into the
+/// layout where the policy admits it (design D4). Under the layout's
+/// lock: a version the record already holds is answered held at once, a
+/// second request having raced the first; otherwise the revision is
+/// checked landed, the consumer's own policy read at it, and the one pin
+/// resolved and judged exactly as [`render`] judges a pin, so it is
+/// judged under the consumer's layout line, else its publisher's, else
+/// the given (C.10). Held, the projection renders the record's held
+/// artifacts and this one, and the record is written with it added and
+/// the rest as they were. Absent, refused naming the claim found wanting,
+/// or unreadable with the source's own words, nothing is written. Only
+/// the one version is read from the store.
+pub fn miss(seams: &Seams, layouts: &Layouts, ask: &MissAsk) -> Answer<HeldPin> {
+    let projection = seams.projection(&ask.ecosystem).ok_or_else(|| {
+        Not::absent(
+            &Source::new(Seam::Host, BOUND),
+            format!("projection for {}", ask.ecosystem),
+        )
+    })?;
+    let _held = layouts.lock(&ask.ecosystem)?;
+    let record = match layouts.read(&ask.ecosystem) {
+        Ok(record) => Some(record),
+        Err(Not::Absent(_)) => None,
+        Err(not) => return Err(not),
+    };
+    let entries = record.as_ref().map_or(&[][..], |r| r.held.as_slice());
+    if let Some(entry) = entries
+        .iter()
+        .find(|e| e.name == ask.pin.name && e.version == ask.pin.version)
+    {
+        return Ok(HeldPin {
+            index: entry.index.clone(),
+            artifact: entry.artifact.clone(),
+            expired: Vec::new(),
+        });
+    }
+
+    let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &ask.revision)?;
+    let own = own_policy(seams.policy.as_ref(), &landed)?;
+    let render_ask = RenderAsk {
+        ecosystem: ask.ecosystem.clone(),
+        pins: vec![ask.pin.clone()],
+        own,
+        trusted: ask.trusted.clone(),
+        tree: ask.tree.clone(),
+        when: ask.when,
+    };
+    let (answer, artifact) = judged(seams, &render_ask, &ask.pin)?;
+    let held = answer.answer.clone()?;
+    let entry = held_entry(&answer).expect("a pin held was judged under a policy");
+    let artifact = artifact.expect("a pin held names its artifact");
+
+    let mut artifacts = entries
+        .iter()
+        .map(|e| rebuilt(layouts, &ask.ecosystem, e))
+        .collect::<Answer<Vec<Artifact>>>()?;
+    artifacts.push(artifact);
+    let at = place(&ask.tree, &ask.ecosystem).display().to_string();
+    ignored(&ask.tree)?;
+    projection.render(Contents::Artifacts(&artifacts), &at)?;
+    let (policy, mut held_entries, refused) = match record {
+        Some(record) => (record.policy, record.held, record.refused),
+        None => (Under::of(render_ask.own.as_ref()), Vec::new(), Vec::new()),
+    };
+    held_entries.push(entry);
+    layouts.write(&LayoutRecord {
+        ecosystem: ask.ecosystem.clone(),
+        at,
+        rendered_at: ask.when,
+        policy,
+        held: held_entries,
+        refused: refused
+            .into_iter()
+            .filter(|r| r.name != ask.pin.name || r.version != ask.pin.version)
+            .collect(),
+    })?;
+    Ok(held)
 }
 
 /// What sync asks of a checkout: the revision whose verdicts name the
