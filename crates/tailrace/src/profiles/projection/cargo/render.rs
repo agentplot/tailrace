@@ -17,7 +17,8 @@ use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Digest, Held, Holds, Layout, Manifest, Not, Rendered, Why,
 };
 
-use super::{crate_file, index, CargoProjection, ECOSYSTEM};
+use super::crate_file::{self, CrateManifest};
+use super::{index, CargoProjection, ECOSYSTEM};
 
 /// Where a local registry keeps its index, under its root.
 const INDEX: &str = "index";
@@ -69,6 +70,42 @@ impl CargoProjection {
     /// `artifact` read through the store and checked, or refused naming
     /// it; the store's own answer where it cannot be read.
     fn check(&self, artifact: &Artifact) -> Answer<Checked> {
+        let digest = &artifact.digest;
+        let (layer, bytes) = self.crate_bytes(artifact)?;
+        let manifest = crate_file::manifest(&bytes)
+            .map_err(|said| refused(format!("the crate of {digest} cannot be read: {said}")))?;
+        names_artifact(&manifest, artifact)?;
+        if !is_crate_name(&manifest.name) {
+            return Err(refused(format!(
+                "the crate of {digest} is named {}, which is no name Cargo gives a crate",
+                manifest.name
+            )));
+        }
+        let order = semver::Version::parse(&manifest.version).map_err(|e| {
+            refused(format!(
+                "the crate of {digest} names the version {}, which Cargo cannot read: {e}",
+                manifest.version
+            ))
+        })?;
+        let line = index::line(&manifest, layer.hex()).map_err(|said| {
+            refused(format!(
+                "the crate of {digest} writes no index line: {said}"
+            ))
+        })?;
+        Ok(Checked {
+            meta: artifact.meta.clone(),
+            digest: digest.clone(),
+            bytes,
+            line,
+            order,
+        })
+    }
+
+    /// The bytes of `artifact`'s crate read through the store, and their
+    /// digest: of the ecosystem `cargo`, its manifest naming one layer,
+    /// the layer's bytes of that digest, or refused naming the artifact;
+    /// the store's own answer where it cannot be read.
+    pub(super) fn crate_bytes(&self, artifact: &Artifact) -> Answer<(Digest, Vec<u8>)> {
         let (digest, meta) = (&artifact.digest, &artifact.meta);
         if meta.ecosystem().as_str() != ECOSYSTEM {
             return Err(refused(format!(
@@ -124,42 +161,25 @@ impl CargoProjection {
                 None,
             ));
         }
-        let manifest = crate_file::manifest(&bytes)
-            .map_err(|said| refused(format!("the crate of {digest} cannot be read: {said}")))?;
-        if manifest.name != meta.name().as_str() || manifest.version != meta.version().as_str() {
-            return Err(refused(format!(
-                "the crate of {digest} names {} {}, and its artifact {} {}",
-                manifest.name,
-                manifest.version,
-                meta.name(),
-                meta.version()
-            )));
-        }
-        if !is_crate_name(&manifest.name) {
-            return Err(refused(format!(
-                "the crate of {digest} is named {}, which is no name Cargo gives a crate",
-                manifest.name
-            )));
-        }
-        let order = semver::Version::parse(&manifest.version).map_err(|e| {
-            refused(format!(
-                "the crate of {digest} names the version {}, which Cargo cannot read: {e}",
-                manifest.version
-            ))
-        })?;
-        let line = index::line(&manifest, answered.hex()).map_err(|said| {
-            refused(format!(
-                "the crate of {digest} writes no index line: {said}"
-            ))
-        })?;
-        Ok(Checked {
-            meta: meta.clone(),
-            digest: digest.clone(),
-            bytes,
-            line,
-            order,
-        })
+        Ok((answered, bytes))
     }
+}
+
+/// Refused naming both where the crate's own `manifest` names another
+/// name or version than `artifact`'s metadata.
+pub(super) fn names_artifact(manifest: &CrateManifest, artifact: &Artifact) -> Answer<()> {
+    let meta = &artifact.meta;
+    if manifest.name == meta.name().as_str() && manifest.version == meta.version().as_str() {
+        return Ok(());
+    }
+    Err(refused(format!(
+        "the crate of {} names {} {}, and its artifact {} {}",
+        artifact.digest,
+        manifest.name,
+        manifest.version,
+        meta.name(),
+        meta.version()
+    )))
 }
 
 /// Refused, by this projection, for `said`.

@@ -16,6 +16,23 @@ use super::crate_file::CrateManifest;
 /// reference).
 pub(super) const CRATES_IO: &str = "https://github.com/rust-lang/crates.io-index";
 
+/// The name and port the host's serving process answers at (114).
+const SERVING: &str = "127.0.0.1:7420";
+
+/// Whether `index` is a family repository's served Cargo address,
+/// `sparse+http://<host>:<port>/<owner>/<name>/cargo/` at the host's
+/// serving process, for any owner and name (49, 114; design D8).
+pub(super) fn served(index: &str) -> bool {
+    let Some(path) = index.strip_prefix(&format!("sparse+http://{SERVING}/")) else {
+        return false;
+    };
+    let path = path.strip_suffix('/').unwrap_or(path);
+    matches!(
+        path.split('/').collect::<Vec<_>>().as_slice(),
+        [owner, name, "cargo"] if !owner.is_empty() && !name.is_empty()
+    )
+}
+
 /// One version's line.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct Line {
@@ -302,6 +319,27 @@ mod tests {
             "{line}"
         );
         assert!(line.ends_with(",\"v\":2}"), "{line}");
+    }
+
+    #[test]
+    fn a_served_address_is_any_owners_and_names_cargo_registry_at_the_serving_process() {
+        for index in [
+            "sparse+http://127.0.0.1:7420/agentplot/family/cargo/",
+            "sparse+http://127.0.0.1:7420/another/repo/cargo",
+        ] {
+            assert!(served(index), "{index}");
+        }
+        for index in [
+            "sparse+http://127.0.0.1:7420/agentplot/family/npm/",
+            "sparse+http://127.0.0.1:7420/agentplot/cargo/",
+            "sparse+http://127.0.0.1:7420//family/cargo/",
+            "sparse+http://127.0.0.1:7421/agentplot/family/cargo/",
+            "sparse+https://registry.example/agentplot/family/cargo/",
+            "http://127.0.0.1:7420/agentplot/family/cargo/",
+            CRATES_IO,
+        ] {
+            assert!(!served(index), "{index}");
+        }
     }
 
     #[test]

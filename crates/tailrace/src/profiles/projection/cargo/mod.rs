@@ -8,6 +8,9 @@
 //! | `render` | a local registry holding exactly the crates given, each checked before anything is written (85, 48) |
 //! | `index` | a crate's index line, from its normalized manifest |
 //! | `crate_file` | a crate's normalized manifest, read from its bytes |
+//! | `pinned` | the versions a checkout's `Cargo.lock` pins from a registry (137) |
+//! | `requires` | what a held crate requires of the family, from its normalized manifest (140) |
+//! | `satisfying` | the versions within a range, newest first, by Cargo's rules (140, 23) |
 //!
 //! It packs no cache entries: a pack with no version and a render of
 //! cache entries answer absent naming them, and read and write nothing
@@ -19,13 +22,17 @@ mod crate_file;
 mod fixture;
 mod index;
 mod pack;
+mod pinned;
 mod render;
+mod requires;
+mod satisfying;
 
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_cache_entries, Answer, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName, Layout,
-    Not, Output, Packed, Projection, Rendered, Seam, Serving, Source, Store, Version, Why,
+    no_cache_entries, Answer, Artifact, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName,
+    Layout, Not, Output, Packed, Pinned, Projection, Range, Rendered, Requirement, Seam, Serving,
+    Source, Store, Version, Why,
 };
 
 use crate::profiles::run::Tool;
@@ -115,6 +122,25 @@ impl Projection for CargoProjection {
             "serve of the cargo projection, whose local registry Cargo reads itself through \
              source replacement",
         ))
+    }
+
+    /// 137: the versions the checkout's root `Cargo.lock` pins from a
+    /// registry, as it spells them; absent naming it where there is none
+    /// (design D5).
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+        self.lockfile_pins(checkout)
+    }
+
+    /// 140: each family crate `held`'s own manifest requires, with the
+    /// requirement it writes (design D8).
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        self.required(held)
+    }
+
+    /// 140, 23: those of `versions` within `range`, newest first, by
+    /// Cargo's own rules (design D8).
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        satisfying::satisfying(range, versions)
     }
 }
 

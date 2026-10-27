@@ -20,7 +20,7 @@ use tailrace_conformance::{run, Rig};
 use tailrace_fakes::FakeStore;
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, Ecosystem, EcosystemName, Manifest, Output, OutputName,
-    Projection, Store, Version,
+    Pinned, Projection, Range, Requirement, Store, Version,
 };
 
 /// The family crate the workspace holds.
@@ -119,6 +119,33 @@ fn crate_manifest(bytes: &[u8]) -> String {
     panic!("the crate holds no Cargo.toml")
 }
 
+/// A crate of `name` at `version` whose normalized manifest is
+/// `manifest`, as `cargo package` lays one out, made in memory.
+fn crate_of(name: &str, version: &str, manifest: &str) -> Vec<u8> {
+    let mut archive = tar::Builder::new(flate2::write::GzEncoder::new(
+        Vec::new(),
+        flate2::Compression::default(),
+    ));
+    for (file, text) in [("Cargo.toml", manifest), ("src/lib.rs", LIB)] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(text.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        archive
+            .append_data(
+                &mut header,
+                format!("{name}-{version}/{file}"),
+                text.as_bytes(),
+            )
+            .unwrap();
+    }
+    archive.into_inner().unwrap().finish().unwrap()
+}
+
+/// The served Cargo address of the family repository the rig's crates
+/// depend on.
+const SERVED: &str = "sparse+http://127.0.0.1:7420/agentplot/family/cargo/";
+
 /// The workspace, a layout store beside it, and the projection of the
 /// workspace reading crates from the store.
 struct CargoRig {
@@ -189,6 +216,96 @@ impl ProjectionRig for CargoRig {
         false
     }
 
+    fn has_lockfile(&self) -> bool {
+        true
+    }
+
+    /// A consumer's checkout beside the workspace, its `Cargo.lock`
+    /// pinning a family crate from the served address, a crate of
+    /// crates.io and its own package, where `lockfile`.
+    fn checkout(&self, lockfile: bool) -> (String, Vec<Pinned>) {
+        let at = self.workspace.scratch.path().join("consumer");
+        fs::create_dir_all(&at).unwrap();
+        let pin = |name: &str, version: &str| Pinned {
+            name: EcosystemName::new(name),
+            version: Version::new(version),
+        };
+        let pins = if lockfile {
+            fs::write(
+                at.join("Cargo.lock"),
+                format!(
+                    "version = 4\n\n\
+                     [[package]]\nname = \"consumer\"\nversion = \"0.1.0\"\n\n\
+                     [[package]]\nname = \"fam-lib\"\nversion = \"1.1.0\"\n\
+                     source = \"{SERVED}\"\n\n\
+                     [[package]]\nname = \"serde\"\nversion = \"1.0.228\"\n\
+                     source = \"registry+https://github.com/rust-lang/crates.io-index\"\n"
+                ),
+            )
+            .unwrap();
+            vec![pin("fam-lib", "1.1.0"), pin("serde", "1.0.228")]
+        } else {
+            Vec::new()
+        };
+        (at.display().to_string(), pins)
+    }
+
+    fn has_manifest(&self) -> bool {
+        true
+    }
+
+    /// A crate held in the layout store requiring two family crates at the
+    /// served address, beside one of crates.io and a dev dependency.
+    fn held(&self) -> (Artifact, Vec<Requirement>) {
+        let manifest = format!(
+            "[package]\nname = \"fam-app\"\nversion = \"2.0.0\"\n\n\
+             [dependencies.fam-lib]\nversion = \"^1.1\"\nregistry-index = \"{SERVED}\"\n\n\
+             [dependencies.serde]\nversion = \"1\"\n\n\
+             [dev-dependencies.fam-test]\nversion = \"1\"\nregistry-index = \"{SERVED}\"\n\n\
+             [build-dependencies.fam-build]\nversion = \"0.3\"\n\
+             registry-index = \"{SERVED}\"\n"
+        );
+        let bytes = crate_of("fam-app", "2.0.0", &manifest);
+        let layer = self.layout.put_bytes(&bytes).unwrap().digest;
+        let meta = ArtifactMeta::new(
+            Ecosystem::new(ECOSYSTEM),
+            EcosystemName::new("fam-app"),
+            Version::new("2.0.0"),
+        )
+        .unwrap();
+        let digest = self
+            .layout
+            .put_artifact(&Manifest::Artifact {
+                meta: meta.clone(),
+                layers: vec![layer],
+            })
+            .unwrap()
+            .digest;
+        let requirement = |name: &str, range: &str| Requirement {
+            name: EcosystemName::new(name),
+            range: Range::new(range),
+        };
+        (
+            Artifact { digest, meta },
+            vec![
+                requirement("fam-lib", "^1.1"),
+                requirement("fam-build", "0.3"),
+            ],
+        )
+    }
+
+    /// The range `1`, satisfied by three of the versions listed, newest
+    /// first by Cargo's order, which is neither the order listed nor the
+    /// spelling's.
+    fn ranged(&self) -> (Range, Vec<Version>, Vec<Version>) {
+        let versions = |texts: &[&str]| texts.iter().map(|v| Version::new(*v)).collect();
+        (
+            Range::new("1"),
+            versions(&["1.2.0", "2.0.0", "1.10.0", "1.5.0-rc.1", "1.9.0"]),
+            versions(&["1.10.0", "1.9.0", "1.2.0"]),
+        )
+    }
+
     /// The cargo the projection runs removed, and the operating system's
     /// words for running it.
     fn unreachable(&self) -> String {
@@ -201,11 +318,12 @@ impl ProjectionRig for CargoRig {
     }
 }
 
-/// The scenarios a projection that packs no cache entries is not held
-/// to, by the group's own word.
-const CACHE: [&str; 2] = [
+/// The scenarios a projection that packs no cache entries, and whose
+/// ecosystem has a manifest, is not held to, by the group's own word.
+const CACHE: [&str; 3] = [
     "a cache entry packed with no version",
     "a layout of the build identities given",
+    "no manifest, none",
 ];
 
 #[test]
