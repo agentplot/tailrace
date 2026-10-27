@@ -20,6 +20,7 @@ use super::not_built;
 mod family;
 #[cfg(test)]
 mod fixture;
+mod layout;
 mod lockfile;
 mod pack;
 mod tarball;
@@ -85,8 +86,16 @@ impl Projection for NpmProjection {
         pack::pack(self.path.as_deref(), output, version)
     }
 
-    fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
-        Err(not_built("render", ECOSYSTEM, &NpmProjection::source()))
+    /// 85, 47, 49: a registry read layout at `at` of exactly the
+    /// artifacts given, each tarball read through the store and checked
+    /// against its layer's digest, and one packument per name listing the
+    /// versions given (design D8); absent naming cache entries for cache
+    /// entries, which npm packs none of.
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        match contents {
+            Contents::Artifacts(artifacts) => layout::render(self.store.as_ref(), artifacts, at),
+            Contents::CacheEntries(_) => Err(no_cache_entries(&NpmProjection::source())),
+        }
     }
 
     fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
