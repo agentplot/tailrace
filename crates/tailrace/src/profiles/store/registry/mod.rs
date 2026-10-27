@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tailrace_seams::{
     Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, Not, Put, Seam,
-    Source, Store, Version, Why,
+    Source, Store, Version, Why, REPOSITORY_COMPONENT,
 };
 use ureq::http::{Method, StatusCode};
 
@@ -87,6 +87,7 @@ enum Space {
     Declared,
     Artifact,
     Cache,
+    Component,
 }
 
 /// The few fields of a manifest's JSON the store reads before its form.
@@ -512,12 +513,17 @@ impl Registry {
 
     /// Where `name` is held (design D8 to D10): the repository it is a
     /// tag of, and the tag, read as an artifact's name first, then a
-    /// cache entry's. An artifact's name is the tag of its version in
+    /// cache entry's, a channel's and a version's, so a `:` in a build
+    /// identity or a version is never read as a component's. An
+    /// artifact's name is the tag of its version in
     /// `artifact/<ecosystem>/<name>` under the declared repository; a
     /// cache entry's the tag of its build identity in the bound build
     /// profile's cache repository, refused naming the entry where the
-    /// store is bound for none; every other name a tag of the declared
-    /// repository.
+    /// store is bound for none; a declared component's channel and
+    /// version the tags of the channel's name and the version's tag in
+    /// the component's own repository; every other name, the undeclared
+    /// component's versions and channels among them, a tag of the
+    /// declared repository (125).
     fn place(&self, name: &Name) -> Answer<Place> {
         if let Some((ecosystem, artifact, version)) = name.as_artifact() {
             return Ok(Place {
@@ -545,6 +551,20 @@ impl Registry {
                 repository,
                 tag: self.tag(&Name::new(identity))?,
                 space: Space::Cache,
+            });
+        }
+        let component = match (name.as_channel(), name.as_version()) {
+            (Some(channel), _) => channel
+                .component
+                .map(|component| (component, channel.name.to_string())),
+            (None, Some((component, tag))) => Some((component, tag)),
+            (None, None) => None,
+        };
+        if let Some((component, tag)) = component {
+            return Ok(Place {
+                repository: self.under(&[component.as_str()])?,
+                tag: self.tag(&Name::new(tag))?,
+                space: Space::Component,
             });
         }
         Ok(Place {
@@ -916,24 +936,29 @@ impl Store for Registry {
         };
         let written = oci::write(manifest, &self.source, &size)?;
         let digest = Digest::of(&written.bytes);
-        if self.manifest_head(&self.path, digest.as_str())?.is_some() {
-            return Ok(Put {
-                digest,
-                held_already: true,
-            });
+        let held_already = self.manifest_head(&self.path, digest.as_str())?.is_some();
+        if !held_already {
+            if let Some(config) = &written.config {
+                self.put_bytes_in(&self.path, config)?;
+            }
+            self.put_manifest(
+                &self.path,
+                digest.as_str(),
+                written.media_type,
+                &written.bytes,
+            )?;
         }
-        if let Some(config) = &written.config {
-            self.put_bytes(config)?;
+        // C.1: a declared component's index is held in its own
+        // repository too, from the publish that puts it (design D10).
+        if let Manifest::Index(index) = manifest {
+            if index.component().as_str() != REPOSITORY_COMPONENT {
+                let repository = self.under(&[index.component().as_str()])?;
+                self.hold(&repository, &digest)?;
+            }
         }
-        self.put_manifest(
-            &self.path,
-            digest.as_str(),
-            written.media_type,
-            &written.bytes,
-        )?;
         Ok(Put {
             digest,
-            held_already: false,
+            held_already,
         })
     }
 
@@ -1182,7 +1207,11 @@ mod tests {
         }
         assert_eq!(
             stub.repositories(),
-            ["acme/store", "acme/store/artifact/eco/site"]
+            [
+                "acme/store",
+                "acme/store/artifact/eco/site",
+                "acme/store/web"
+            ]
         );
         let declared = stub.held("acme/store").unwrap();
         assert!(
@@ -1301,6 +1330,127 @@ mod tests {
             other => panic!("a cache entry with no build profile answered {other:?}"),
         }
         assert_eq!(stub.asked().len(), before);
+    }
+
+    #[test]
+    fn a_declared_components_version_is_a_tag_of_its_own_repository() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let version = published(&store, "lib", &[("eco", "lib")]);
+        let name = Name::new("lib:lib-v1.2.0");
+        store.name(&name, &version.index, None).unwrap();
+        assert_eq!(store.resolve(&name), Ok(version.index.clone()));
+        let held = stub.held("acme/store/lib").unwrap();
+        assert_eq!(held.tags.get("lib-v1.2.0"), Some(&version.index));
+        let declared = stub.held("acme/store").unwrap();
+        assert!(!declared.tags.contains_key("lib-v1.2.0"));
+        assert!(!declared.tags.contains_key("lib_3alib-v1.2.0"));
+    }
+
+    #[test]
+    fn two_components_channels_of_one_name_are_tags_of_their_own_repositories() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let lib = published(&store, "lib", &[("eco", "lib")]);
+        let app = published(&store, "app", &[("eco", "app")]);
+        let (libs, apps) = (Name::new("channel/lib/beta"), Name::new("channel/app/beta"));
+        store.name(&libs, &lib.index, None).unwrap();
+        store.name(&apps, &app.index, None).unwrap();
+        assert_eq!(store.resolve(&libs), Ok(lib.index.clone()));
+        assert_eq!(store.resolve(&apps), Ok(app.index.clone()));
+        assert_eq!(
+            stub.held("acme/store/lib").unwrap().tags.get("beta"),
+            Some(&lib.index)
+        );
+        assert_eq!(
+            stub.held("acme/store/app").unwrap().tags.get("beta"),
+            Some(&app.index)
+        );
+        let declared = stub.held("acme/store").unwrap();
+        assert!(
+            declared.tags.keys().all(|t| t.starts_with("sha256-")),
+            "{:?}",
+            declared.tags
+        );
+    }
+
+    #[test]
+    fn a_repository_declaring_no_component_keeps_its_version_and_channel_in_the_declared_one() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let version = published(&store, REPOSITORY_COMPONENT, &[("eco", "site")]);
+        for name in ["v1.2.0", "channel/stable"] {
+            store.name(&Name::new(name), &version.index, None).unwrap();
+        }
+        let declared = stub.held("acme/store").unwrap();
+        assert_eq!(declared.tags.get("v1.2.0"), Some(&version.index));
+        assert_eq!(declared.tags.get("channel_2fstable"), Some(&version.index));
+        assert_eq!(stub.repositories(), ["acme/store"]);
+    }
+
+    #[test]
+    fn a_channel_moved_from_where_it_is_not_is_refused_naming_where_it_is_in_its_repository() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let [one, two, three] =
+            ["one", "two", "three"].map(|n| published(&store, "lib", &[("eco", n)]));
+        let beta = Name::new("channel/lib/beta");
+        store.name(&beta, &one.index, None).unwrap();
+        match store.name(&beta, &two.index, Some(&three.index)) {
+            Err(Not::Refused(r)) => assert_eq!(
+                r.why,
+                Why::NameAt {
+                    at: Some(one.index.clone())
+                }
+            ),
+            other => panic!("a move from a third index answered {other:?}"),
+        }
+        assert_eq!(store.resolve(&beta), Ok(one.index));
+    }
+
+    #[test]
+    fn a_declared_components_index_is_held_in_its_repository_untagged_from_the_put() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let version = published(&store, "lib", &[("eco", "lib"), ("eco", "lib-docs")]);
+        let held = stub.held("acme/store/lib").unwrap();
+        for digest in std::iter::once(&version.index).chain(&version.artifacts) {
+            assert!(held.manifests.contains_key(digest), "{digest} not held");
+        }
+        for blob in &version.blobs {
+            assert!(held.blobs.contains_key(blob), "{blob} not held");
+        }
+        assert!(held.tags.is_empty(), "{:?}", held.tags);
+        assert_eq!(held.manifests.len(), 3, "an attestation was held in lib");
+        let declared = stub.held("acme/store").unwrap();
+        assert!(declared.manifests.contains_key(&version.index));
+        assert_eq!(store.claims_of(&version.index).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn an_index_its_components_repository_lacks_is_held_there_before_a_channels_tag() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        // An index the component's repository does not hold, as one put
+        // before indexes were held there is.
+        let version = published(&store, REPOSITORY_COMPONENT, &[("eco", "lib")]);
+        assert_eq!(stub.held("acme/store/lib").map(|h| h.manifests.len()), None);
+        let before = stub.asked().len();
+        store
+            .name(&Name::new("channel/lib/beta"), &version.index, None)
+            .unwrap();
+        let written = writes(&stub, before);
+        let tag = written
+            .iter()
+            .position(|w| w.ends_with("/v2/acme/store/lib/manifests/beta"))
+            .unwrap();
+        let index = written
+            .iter()
+            .position(|w| w.ends_with(&format!("/v2/acme/store/lib/manifests/{}", version.index)))
+            .unwrap();
+        assert!(index < tag, "{written:#?}");
+        let held = stub.held("acme/store/lib").unwrap();
+        assert!(held.manifests.contains_key(&version.artifacts[0]));
     }
 
     #[test]
