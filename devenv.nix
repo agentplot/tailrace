@@ -288,6 +288,11 @@ in
     zot
     pkgs.distribution
     pkgs.amazon-ecr-credential-helper
+    # The tools layer's npm: the npm projection's pack scenarios
+    # (crates/tailrace/tests/npm_projection.rs) and npm install against a
+    # served layout (crates/tailrace/tests/npm_served.rs) run the npm this
+    # Node.js carries.
+    pkgs.nodejs
     # The Claude Code plugin's checks (plugins/claude.sh).
     claude
   ]
