@@ -385,7 +385,15 @@ fn a_build_identity_with_a_path_in_it_refuses_the_render_and_nothing_is_written(
 fn serve_is_absent() {
     let rig = Rig::new();
     assert!(matches!(
-        rig.projection().serve(&Layout { at: "at".into() }),
+        rig.projection().serve(
+            &Layout { at: "at".into() },
+            &Request {
+                method: "GET".into(),
+                path: String::new(),
+                base: "http://127.0.0.1:7420/o/r/moon-cache".into(),
+            },
+            &|_| panic!("the moon cache asked the core for a version"),
+        ),
         Err(Not::Absent(_))
     ));
 }

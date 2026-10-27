@@ -126,7 +126,7 @@ mod tests {
     use tailrace_seams::{
         Artifact, Audience, Branch, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
         Environment, IsLanded, Layout, Manifest, Name, NamedSigner, Output, OutputName, Read,
-        Required, Revision, SignerId, Verdicts, Verified, Version,
+        Request, Required, Revision, SignerId, Verdicts, Verified, Version,
     };
 
     use super::*;
@@ -246,18 +246,30 @@ mod tests {
         let rendered = projection
             .render(Contents::Artifacts(&[artifact]), "layouts/eco-b")
             .unwrap();
+        let request = Request {
+            method: "GET".into(),
+            path: String::new(),
+            base: "http://127.0.0.1:7420/o/r/eco-b".into(),
+        };
         assert_eq!(
-            projection.serve(&rendered.layout).unwrap().address,
-            "fake://eco-b/layouts/eco-b"
+            projection
+                .serve(&rendered.layout, &request, &|_| Ok(()))
+                .unwrap()
+                .body,
+            b"fake://eco-b/layouts/eco-b"
         );
         let projection = seams.projection(&eco_a).unwrap();
         assert!(projection
             .render(Contents::Artifacts(&[]), "layouts/eco-a")
             .is_ok());
         assert!(projection
-            .serve(&Layout {
-                at: "layouts/eco-a".into()
-            })
+            .serve(
+                &Layout {
+                    at: "layouts/eco-a".into()
+                },
+                &request,
+                &|_| Ok(())
+            )
             .is_ok());
 
         let bound = seams.target(&production.name).expect("production is bound");

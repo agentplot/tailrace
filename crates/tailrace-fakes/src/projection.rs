@@ -14,8 +14,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::json;
 use tailrace_seams::{
     canonical, no_cache_entries, no_lockfile, Answer, Artifact, ArtifactMeta, BuildId, Contents,
-    Digest, Ecosystem, EcosystemName, Holds, Layout, Not, Output, OutputName, Packed, Pinned,
-    Projection, Range, Rendered, Requirement, Seam, Serving, Version, Why,
+    Digest, Ecosystem, EcosystemName, Holds, Layout, Miss, Not, Output, OutputName, Packed, Pinned,
+    Projection, Range, Rendered, Request, Requirement, Response, Seam, Version, Why,
 };
 
 use crate::Fake;
@@ -207,15 +207,17 @@ impl Projection for FakeProjection {
         )
     }
 
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        let given = json!({ "layout": layout });
+    fn serve(&self, layout: &Layout, request: &Request, _: Miss<'_>) -> Answer<Response> {
+        let given = json!({ "layout": layout, "request": request });
         self.ask(
             ProjectionOp::Serve,
             given,
             format!("the layout at {}", layout.at),
             |s, _| {
-                Ok(Serving {
-                    address: format!("fake://{}/{}", s.ecosystem, layout.at),
+                Ok(Response {
+                    status: 200,
+                    content_type: "text/plain".into(),
+                    body: format!("fake://{}/{}", s.ecosystem, layout.at).into_bytes(),
                 })
             },
         )
@@ -456,9 +458,17 @@ mod tests {
             .unwrap();
         assert_eq!(rendered.layout.at, "layouts/eco");
         assert_eq!(rendered.holds, Holds::Versions(vec![meta]));
+        let request = Request {
+            method: "GET".into(),
+            path: String::new(),
+            base: "http://127.0.0.1:7420/o/r/eco".into(),
+        };
         assert_eq!(
-            projection.serve(&rendered.layout).unwrap().address,
-            "fake://eco/layouts/eco"
+            projection
+                .serve(&rendered.layout, &request, &|_| panic!("asked the core"))
+                .unwrap()
+                .body,
+            b"fake://eco/layouts/eco"
         );
     }
 
@@ -621,7 +631,14 @@ mod tests {
         projection.manifest(&held("1.0.0").digest, &[requirement("lib", "^1")]);
         assert!(projection.pack(&output(), &b7e1(), None).is_err());
         assert!(projection.render(Contents::Artifacts(&[]), "at").is_err());
-        assert!(projection.serve(&Layout { at: "at".into() }).is_err());
+        let request = Request {
+            method: "GET".into(),
+            path: String::new(),
+            base: "http://127.0.0.1:7420/o/r/eco".into(),
+        };
+        assert!(projection
+            .serve(&Layout { at: "at".into() }, &request, &|_| Ok(()))
+            .is_err());
         assert!(projection.pinned("checkout").is_err());
         assert!(projection.requires(&held("1.0.0")).is_err());
         assert!(projection
