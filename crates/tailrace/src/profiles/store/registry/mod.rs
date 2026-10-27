@@ -73,11 +73,20 @@ pub struct Registry {
 /// are held in, one per ecosystem and name (138, C.1; design D8).
 const ARTIFACT_SPACE: &str = "artifact";
 
-/// Where a name is held: the repository path it is a tag of, and the
-/// tag (design D8 to D10).
+/// Where a name is held: the repository path it is a tag of, the tag,
+/// and the space the repository is in (design D8 to D10).
 struct Place {
     repository: String,
     tag: String,
+    space: Space,
+}
+
+/// The spaces of the store's names on a registry (C.1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Space {
+    Declared,
+    Artifact,
+    Cache,
 }
 
 /// The few fields of a manifest's JSON the store reads before its form.
@@ -502,20 +511,57 @@ impl Registry {
     }
 
     /// Where `name` is held (design D8 to D10): the repository it is a
-    /// tag of, and the tag. An artifact's name is the tag of its version
-    /// in `artifact/<ecosystem>/<name>` under the declared repository;
-    /// every other name a tag of the declared repository.
+    /// tag of, and the tag, read as an artifact's name first, then a
+    /// cache entry's. An artifact's name is the tag of its version in
+    /// `artifact/<ecosystem>/<name>` under the declared repository; a
+    /// cache entry's the tag of its build identity in the bound build
+    /// profile's cache repository, refused naming the entry where the
+    /// store is bound for none; every other name a tag of the declared
+    /// repository.
     fn place(&self, name: &Name) -> Answer<Place> {
         if let Some((ecosystem, artifact, version)) = name.as_artifact() {
             return Ok(Place {
                 repository: self.under(&[ARTIFACT_SPACE, ecosystem.as_str(), artifact.as_str()])?,
                 tag: self.tag(&Name::new(version.as_str()))?,
+                space: Space::Artifact,
+            });
+        }
+        if let Some(identity) = name
+            .as_str()
+            .strip_prefix(CACHE_SPACE)
+            .and_then(|rest| rest.strip_prefix('/'))
+        {
+            let repository = self.cache_repository()?.ok_or_else(|| {
+                Not::refused(
+                    &self.source,
+                    Why::Said,
+                    Some(format!(
+                        "{name} is a cache entry's name, and this store is bound for no build \
+                         profile, whose cache repository holds its entries"
+                    )),
+                )
+            })?;
+            return Ok(Place {
+                repository,
+                tag: self.tag(&Name::new(identity))?,
+                space: Space::Cache,
             });
         }
         Ok(Place {
             repository: self.path.clone(),
             tag: self.tag(name)?,
+            space: Space::Declared,
         })
+    }
+
+    /// The bound build profile's cache repository, `cache/<build>` under
+    /// the declared one; none where the store is bound for none (design
+    /// D9).
+    fn cache_repository(&self) -> Answer<Option<String>> {
+        self.build
+            .as_deref()
+            .map(|build| self.under(&[CACHE_SPACE, build]))
+            .transpose()
     }
 
     /// The manifest `digest` held in `repository` with everything it
@@ -545,7 +591,7 @@ impl Registry {
             if manifest {
                 self.hold(repository, &named)?;
             } else {
-                self.mount(repository, &named)?;
+                self.mount(repository, &named, &self.path)?;
             }
         }
         let media_type = typed.media_type.unwrap_or_else(|| IMAGE_MANIFEST.into());
@@ -553,13 +599,14 @@ impl Registry {
         Ok(())
     }
 
-    /// The blob `digest` held in `repository`: nothing where a `HEAD`
-    /// finds it there, mounted from the declared repository otherwise,
-    /// and, where the registry declines the mount, its bytes read from
-    /// the declared repository and uploaded under their digest through
-    /// the upload the declined mount opened (rule core.5; design D8).
-    fn mount(&self, repository: &str, digest: &Digest) -> Answer<()> {
-        if repository == self.path || self.blob_size(repository, digest)?.is_some() {
+    /// The blob `digest` held in `repository`: nothing where it is held
+    /// in `from` and `from` is `repository`, or a `HEAD` finds it there;
+    /// mounted from `from` otherwise, and, where the registry declines the
+    /// mount, its bytes read from `from` and uploaded under their digest
+    /// through the upload the declined mount opened (rule core.5; design
+    /// D8, D9).
+    fn mount(&self, repository: &str, digest: &Digest, from: &str) -> Answer<()> {
+        if repository == from || self.blob_size(repository, digest)?.is_some() {
             return Ok(());
         }
         let url = self.url_in(
@@ -567,14 +614,14 @@ impl Registry {
             &format!(
                 "blobs/uploads/?mount={}&from={}",
                 encoded(digest.as_str()),
-                encoded(&self.path)
+                encoded(from)
             ),
         );
         let answered = self.send(Method::POST, &url, &[], Some(&[]))?;
         match answered.status {
             StatusCode::CREATED => Ok(()),
             StatusCode::ACCEPTED => {
-                let Some(bytes) = self.blob(&self.path, digest)? else {
+                let Some(bytes) = self.blob(from, digest)? else {
                     return Err(Not::absent(&self.source, digest.to_string()));
                 };
                 let location = answered.header("location").ok_or_else(|| {
@@ -594,35 +641,83 @@ impl Registry {
     /// held in `place`'s repository: `to`'s own where `to` is a manifest,
     /// held as [`Registry::hold`] holds it; and where `to` is bytes, the
     /// cache manifest of them, the bytes held as [`Registry::mount`]
-    /// holds them (design D8, D14). Absent where `to` is neither.
+    /// holds them (design D8, D14). `to` is asked of the declared
+    /// repository and then the cache repository, as a read is, and of the
+    /// cache repository alone by a push's store, which asks nothing of the
+    /// declared one its credential may not read (135; design D9). Absent
+    /// where `to` is neither.
     fn named_at(&self, place: &Place, to: &Digest) -> Answer<(String, Vec<u8>)> {
-        match self.manifest(&self.path, to)? {
-            Some((bytes, typed)) => {
-                if let Ok(Some(layer)) = oci::cached(&bytes) {
-                    return Err(Not::refused(
-                        &self.source,
-                        Why::Said,
-                        Some(format!(
-                            "{to} is the cache manifest of {layer}, and a name names the bytes, \
-                             {layer}"
-                        )),
-                    ));
-                }
-                self.hold(&place.repository, to)?;
-                let media_type = typed.media_type.unwrap_or_else(|| IMAGE_MANIFEST.into());
-                Ok((media_type, bytes))
+        let asked = if self.push && place.space == Space::Cache {
+            vec![place.repository.clone()]
+        } else {
+            let mut asked = vec![self.path.clone()];
+            asked.extend(self.cache_repository()?);
+            asked
+        };
+        for repository in &asked {
+            let Some((bytes, typed)) = self.manifest(repository, to)? else {
+                continue;
+            };
+            if let Ok(Some(layer)) = oci::cached(&bytes) {
+                return Err(Not::refused(
+                    &self.source,
+                    Why::Said,
+                    Some(format!(
+                        "{to} is the cache manifest of {layer}, and a name names the bytes, \
+                         {layer}"
+                    )),
+                ));
             }
-            None => match self.blob_size(&self.path, to)? {
-                Some(size) => {
-                    self.mount(&place.repository, to)?;
-                    Ok((
-                        IMAGE_MANIFEST.to_string(),
-                        self.cache(&place.repository, to, size)?,
-                    ))
-                }
-                None => Err(Not::absent(&self.source, to.to_string())),
-            },
+            self.hold(&place.repository, to)?;
+            let media_type = typed.media_type.unwrap_or_else(|| IMAGE_MANIFEST.into());
+            return Ok((media_type, bytes));
         }
+        for repository in &asked {
+            if let Some(size) = self.blob_size(repository, to)? {
+                self.mount(&place.repository, to, repository)?;
+                return Ok((
+                    IMAGE_MANIFEST.to_string(),
+                    self.cache(&place.repository, to, size)?,
+                ));
+            }
+        }
+        Err(Not::absent(&self.source, to.to_string()))
+    }
+
+    /// What `digest` holds in `repository`, read as [`Store::read`]
+    /// answers it; none where the repository holds no such digest.
+    fn read_in(&self, repository: &str, digest: &Digest) -> Answer<Option<Held>> {
+        let Some((bytes, typed)) = self.manifest(repository, digest)? else {
+            return Ok(self.blob(repository, digest)?.map(Held::Bytes));
+        };
+        if !typed
+            .artifact_type
+            .as_deref()
+            .is_some_and(oci::is_tailraces)
+        {
+            return Ok(Some(Held::Bytes(bytes)));
+        }
+        let none = |digest: &Digest, words: String| {
+            Not::unreadable(
+                &self.source,
+                self.url_in(repository, &format!("manifests/{digest}")),
+                Some(words),
+            )
+        };
+        let media_type = typed.media_type.unwrap_or_default();
+        let manifest = match oci::read(&media_type, &bytes).map_err(|w| none(digest, w))? {
+            oci::Read::Index(index) => Manifest::Index(index),
+            oci::Read::Artifact { config, layers } => {
+                let Some(meta) = self.blob(repository, &config)? else {
+                    return Err(none(digest, format!("its config {config} is not held")));
+                };
+                Manifest::Artifact {
+                    meta: oci::meta(&meta).map_err(|w| none(&config, w))?,
+                    layers,
+                }
+            }
+        };
+        Ok(Some(Held::Manifest(manifest)))
     }
 
     fn read_back(&self, tag: &str) {
@@ -800,11 +895,8 @@ impl Store for Registry {
     /// in the declared repository, or, for a store bound for a push, its
     /// cache repository (5, 66, 135, design D5, D9).
     fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
-        match (&self.build, self.push) {
-            (Some(build), true) => {
-                let cache = self.under(&[CACHE_SPACE, build])?;
-                self.put_bytes_in(&cache, bytes)
-            }
+        match self.cache_repository()? {
+            Some(cache) if self.push => self.put_bytes_in(&cache, bytes),
             _ => self.put_bytes_in(&self.path, bytes),
         }
     }
@@ -959,42 +1051,19 @@ impl Store for Registry {
 
     /// The manifest held under `digest`, read in its form when it is
     /// tailrace's, an artifact's metadata from its config; any other
-    /// manifest's bytes, or a blob's (72, design D5).
+    /// manifest's bytes, or a blob's; asked of the declared repository and,
+    /// where it holds no such digest, the bound build profile's cache
+    /// repository, so bytes a push left there are read with no map of
+    /// digests kept (72, 135, rule core.20; design D5, D9).
     fn read(&self, digest: &Digest) -> Answer<Held> {
-        let Some((bytes, typed)) = self.manifest(&self.path, digest)? else {
-            return match self.blob(&self.path, digest)? {
-                Some(bytes) => Ok(Held::Bytes(bytes)),
-                None => Err(Not::absent(&self.source, digest.to_string())),
-            };
-        };
-        if !typed
-            .artifact_type
-            .as_deref()
-            .is_some_and(oci::is_tailraces)
-        {
-            return Ok(Held::Bytes(bytes));
-        }
-        let none = |digest: &Digest, words: String| {
-            Not::unreadable(
-                &self.source,
-                self.url(&format!("manifests/{digest}")),
-                Some(words),
-            )
-        };
-        let media_type = typed.media_type.unwrap_or_default();
-        let manifest = match oci::read(&media_type, &bytes).map_err(|w| none(digest, w))? {
-            oci::Read::Index(index) => Manifest::Index(index),
-            oci::Read::Artifact { config, layers } => {
-                let Some(meta) = self.blob(&self.path, &config)? else {
-                    return Err(none(digest, format!("its config {config} is not held")));
-                };
-                Manifest::Artifact {
-                    meta: oci::meta(&meta).map_err(|w| none(&config, w))?,
-                    layers,
-                }
+        let mut repositories = vec![self.path.clone()];
+        repositories.extend(self.cache_repository()?);
+        for repository in &repositories {
+            if let Some(held) = self.read_in(repository, digest)? {
+                return Ok(held);
             }
-        };
-        Ok(Held::Manifest(manifest))
+        }
+        Err(Not::absent(&self.source, digest.to_string()))
     }
 
     /// 138: the registry lists a name's versions from the tags of the
@@ -1127,6 +1196,111 @@ mod tests {
             "an attestation was held in the artifact's repository"
         );
         assert_eq!(store.claims_of(&version.index).unwrap().len(), 1);
+    }
+
+    /// The writes `stub` was asked since its request `since`, as method
+    /// and path without the query.
+    fn writes(stub: &Stub, since: usize) -> Vec<String> {
+        stub.asked()[since..]
+            .iter()
+            .filter(|a| a.method == "PUT" || a.method == "POST")
+            .map(|a| format!("{} {}", a.method, a.path.split('?').next().unwrap()))
+            .collect()
+    }
+
+    #[test]
+    fn an_entry_named_from_bytes_the_declared_repository_holds_is_held_in_the_cache_repository() {
+        for declines_mounts in [false, true] {
+            let stub = Stub::start(
+                Behaviour {
+                    declines_mounts,
+                    ..Behaviour::default()
+                },
+                &[],
+            );
+            let store = Registry::new(&stub.repository("acme/store"))
+                .unwrap()
+                .bound_for("moon", false);
+            let bytes = store.put_bytes(b"a cache entry").unwrap().digest;
+            let before = stub.asked().len();
+            let entry = Name::new("cache/b7e1");
+            store.name(&entry, &bytes, None).unwrap();
+            assert_eq!(store.resolve(&entry), Ok(bytes.clone()));
+
+            let cache = "/v2/acme/store/cache/moon";
+            let written = writes(&stub, before);
+            assert!(
+                written.iter().all(|w| w.contains(cache)),
+                "{declines_mounts}: {written:#?}"
+            );
+            let tag = written
+                .iter()
+                .position(|w| w.ends_with("/manifests/b7e1"))
+                .unwrap();
+            let manifest = written
+                .iter()
+                .position(|w| w.contains("/manifests/sha256:"))
+                .unwrap();
+            let blob = written
+                .iter()
+                .position(|w| w.contains("/blobs/uploads/"))
+                .unwrap();
+            assert!(blob < manifest && manifest < tag, "{written:#?}");
+            let held = stub.held("acme/store/cache/moon").unwrap();
+            assert_eq!(
+                held.blobs.get(&bytes).map(|b| Digest::of(b)),
+                Some(bytes.clone())
+            );
+            assert!(held.tags.contains_key("b7e1"));
+        }
+    }
+
+    #[test]
+    fn a_pushs_cache_entry_is_held_in_the_cache_repository_alone() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let push = Registry::new(&stub.repository("acme/store"))
+            .unwrap()
+            .bound_for("moon", true);
+        let bytes = push.put_bytes(b"a cache entry").unwrap().digest;
+        let entry = Name::new("cache/b7e1");
+        push.name(&entry, &bytes, None).unwrap();
+        assert_eq!(push.resolve(&entry), Ok(bytes.clone()));
+        assert!(
+            stub.asked()
+                .iter()
+                .all(|a| a.repository() == Some("acme/store/cache/moon")),
+            "the declared repository was asked: {:#?}",
+            stub.asked()
+        );
+        assert_eq!(stub.repositories(), ["acme/store/cache/moon"]);
+        let held = stub.held("acme/store/cache/moon").unwrap();
+        assert!(held.blobs.contains_key(&bytes));
+        let at = held.tags["b7e1"].clone();
+        assert_eq!(oci::cached(&held.manifests[&at].1), Ok(Some(bytes.clone())));
+
+        let sync = Registry::new(&stub.repository("acme/store"))
+            .unwrap()
+            .bound_for("moon", false);
+        let resolved = sync.resolve(&entry).unwrap();
+        assert_eq!(
+            sync.read(&resolved),
+            Ok(Held::Bytes(b"a cache entry".to_vec()))
+        );
+    }
+
+    #[test]
+    fn a_store_bound_for_no_build_profile_refuses_a_cache_entrys_name() {
+        let stub = Stub::start(Behaviour::default(), &[]);
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let bytes = store.put_bytes(b"a cache entry").unwrap().digest;
+        let before = stub.asked().len();
+        match store.name(&Name::new("cache/b7e1"), &bytes, None) {
+            Err(Not::Refused(r)) => {
+                assert!(r.said.unwrap().contains("cache/b7e1"));
+            }
+            other => panic!("a cache entry with no build profile answered {other:?}"),
+        }
+        assert_eq!(stub.asked().len(), before);
     }
 
     #[test]

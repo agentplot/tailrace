@@ -631,25 +631,40 @@ fn two_names_differing_only_in_escaped_characters_resolve_apart(kind: Kind) {
     assert_eq!(tags, ["a_2fb_2bc", "a_5f2fb_2bc"]);
 }
 
+/// The moon build profile's cache repository under `store`'s declared
+/// one, as a path, and its API's base (design D9).
+fn cache_of(store: &Registry) -> (String, String) {
+    let path = format!(
+        "{}/cache/moon",
+        store.repository().split_once('/').unwrap().1
+    );
+    let base = format!("{}cache/moon/", store.base());
+    (path, base)
+}
+
 fn bytes_are_named_through_a_cache_manifest(kind: Kind) {
     let server = Server::start(kind);
     let proxy = Proxy::before(&server);
-    let store = proxy.store(&server.repository());
+    let store = proxy.store(&server.repository()).bound_for("moon", false);
     registry::cache_entries(&store, store.bound());
 
     let entry = b"a cache entry under two names";
     let bytes = store.put_bytes(entry).unwrap().digest;
     let manifest = cache_manifest(entry);
+    let (cache, base) = cache_of(&store);
     for (name, tag, writes) in [
         (
             "cache/site",
-            "cache_2fsite",
-            vec![Digest::of(&manifest).to_string(), "cache_2fsite".into()],
+            "site",
+            vec![
+                format!("PUT /v2/{cache}/manifests/{}", Digest::of(&manifest)),
+                format!("PUT /v2/{cache}/manifests/site"),
+            ],
         ),
         (
             "cache/server",
-            "cache_2fserver",
-            vec!["cache_2fserver".into()],
+            "server",
+            vec![format!("PUT /v2/{cache}/manifests/server")],
         ),
     ] {
         proxy.passed();
@@ -657,20 +672,11 @@ fn bytes_are_named_through_a_cache_manifest(kind: Kind) {
         let wrote: Vec<String> = proxy
             .passed()
             .into_iter()
-            .filter(|p| p.method != "HEAD" && p.method != "GET")
+            .filter(|p| p.method == "PUT" && p.path.contains("/manifests/"))
             .map(|p| format!("{} {}", p.method, p.path))
             .collect();
-        let expected: Vec<String> = writes
-            .iter()
-            .map(|r| {
-                format!(
-                    "PUT /v2/{}/manifests/{r}",
-                    store.repository().split_once('/').unwrap().1
-                )
-            })
-            .collect();
-        assert_eq!(wrote, expected, "naming {name}");
-        let (status, held) = get(&format!("{}manifests/{tag}", store.base()), IMAGE_MANIFEST);
+        assert_eq!(wrote, writes, "naming {name}");
+        let (status, held) = get(&format!("{base}manifests/{tag}"), IMAGE_MANIFEST);
         assert_eq!(status, 200);
         assert_eq!(
             held,
@@ -699,14 +705,14 @@ fn a_race_lost_on_a_cache_entrys_name_is_refused_naming_the_other_writer(kind: K
     let server = Server::start(kind);
     let proxy = Proxy::before(&server);
     let repository = server.repository();
-    let direct = Registry::new(&repository).unwrap();
+    let direct = Registry::new(&repository).unwrap().bound_for("moon", false);
     let [at, to, other] =
         [b"one".as_slice(), b"two", b"three"].map(|bytes| direct.put_bytes(bytes).unwrap().digest);
     let name = Name::new("cache/site");
     direct.name(&name, &at, None).unwrap();
-    let mut store = proxy.store(&repository);
+    let mut store = proxy.store(&repository).bound_for("moon", false);
     let (moved, to_) = (other.clone(), to.clone());
-    let writer = Registry::new(&repository).unwrap();
+    let writer = Registry::new(&repository).unwrap().bound_for("moon", false);
     store.between_put_and_read_back(move |_| {
         writer
             .name(&Name::new("cache/site"), &moved, Some(&to_))
@@ -722,7 +728,7 @@ fn a_race_lost_on_a_cache_entrys_name_is_refused_naming_the_other_writer(kind: K
     let tagged: Vec<_> = proxy
         .passed()
         .into_iter()
-        .filter(|p| p.method == "PUT" && p.path.ends_with("manifests/cache_2fsite"))
+        .filter(|p| p.method == "PUT" && p.path.ends_with("cache/moon/manifests/site"))
         .collect();
     assert_eq!(tagged.len(), 1, "{tagged:?}");
     assert_eq!(direct.resolve(&name), Ok(other));
@@ -988,7 +994,7 @@ fn a_race_lost_on_a_channels_tag_is_repaired_from_the_ledger(kind: Kind) {
 fn the_check_before_the_put_refuses_a_move_from_where_the_name_is_not(kind: Kind) {
     let server = Server::start(kind);
     let proxy = Proxy::before(&server);
-    let store = proxy.store(&server.repository());
+    let store = proxy.store(&server.repository()).bound_for("moon", false);
     assert!(!store.names_conditional());
     let [at, other, elsewhere] = ["1.0.0", "1.1.0", "1.2.0"].map(|v| put(&store, v));
     let [bytes, moved] = [b"a cache entry".as_slice(), b"another cache entry"]

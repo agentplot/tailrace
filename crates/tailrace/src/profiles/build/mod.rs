@@ -13,3 +13,10 @@ use moon::Moon;
 pub fn bind(repository: &Path) -> Box<dyn Build> {
     Box::new(Moon::new(repository))
 }
+
+/// The name of the build profile [`bind`] binds, which a store's cache
+/// repository is named for, so no binding names the tool (C.1, rule
+/// core.1; design D9).
+pub fn name() -> &'static str {
+    "moon"
+}

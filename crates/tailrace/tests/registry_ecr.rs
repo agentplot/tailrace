@@ -38,7 +38,10 @@ fn repository() -> String {
     }
 }
 
-/// A registry store whose every name is the run's prefix and the name.
+/// A registry store whose every name carries the run's prefix in the
+/// space it is in: an artifact's on its name, so each run lists a
+/// repository of its own, a cache entry's on its build identity, and
+/// every other name before it.
 struct Prefixed {
     registry: Registry,
     prefix: String,
@@ -46,7 +49,17 @@ struct Prefixed {
 
 impl Prefixed {
     fn named(&self, name: &Name) -> Name {
-        Name::new(format!("{}{name}", self.prefix))
+        if let Some((ecosystem, artifact, version)) = name.as_artifact() {
+            return tailrace_seams::artifact_name(&ecosystem, &self.artifact(&artifact), &version);
+        }
+        match name.as_str().strip_prefix("cache/") {
+            Some(identity) => Name::new(format!("cache/{}{identity}", self.prefix)),
+            None => Name::new(format!("{}{name}", self.prefix)),
+        }
+    }
+
+    fn artifact(&self, name: &tailrace_seams::EcosystemName) -> tailrace_seams::EcosystemName {
+        tailrace_seams::EcosystemName::new(format!("{}{name}", self.prefix))
     }
 }
 
@@ -77,7 +90,7 @@ impl Store for Prefixed {
         ecosystem: &tailrace_seams::Ecosystem,
         name: &tailrace_seams::EcosystemName,
     ) -> Answer<Vec<tailrace_seams::Version>> {
-        self.registry.versions(ecosystem, name)
+        self.registry.versions(ecosystem, &self.artifact(name))
     }
 }
 
@@ -176,7 +189,9 @@ fn ecr_keeps_the_stores_contract() {
 #[test]
 fn ecr_names_a_cache_entry_through_a_cache_manifest() {
     let repository = repository();
-    let registry = Registry::new(&repository).expect("the repository the host names");
+    let registry = Registry::new(&repository)
+        .expect("the repository the host names")
+        .bound_for("moon", false);
     let within = registry.bound();
     cache_entries(
         &Prefixed {
