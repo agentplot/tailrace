@@ -1054,8 +1054,25 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
         ),
         "{printed}"
     );
+    // Neither version was ever tagged here: each promotion's notes are
+    // unreadable beneath it, two spaces in, naming the tag, with the
+    // history's words on a line of their own.
+    let indent = lines[stable + 1].len() - lines[stable + 1].trim_start().len();
+    let unread = |version: &str| {
+        [
+            format!(
+                "{}the history (git, local) could not read the notes of repository {version}",
+                " ".repeat(indent + 2)
+            ),
+            format!(
+                "the history holds no tag v{version} reached from {}",
+                host.head
+            ),
+        ]
+    };
+    assert_eq!(lines[stable + 2..stable + 4], unread("0.2.0"), "{printed}");
     assert_eq!(
-        lines[stable + 2].trim_start(),
+        lines[stable + 4].trim_start(),
         format!(
             "0.1.0, the first, asked by host, under the policy at {} satisfied by {}, \
              2026-10-26T07:33:20Z, claim {}",
@@ -1065,6 +1082,7 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
         ),
         "{printed}"
     );
+    assert_eq!(lines[stable + 5..stable + 7], unread("0.1.0"), "{printed}");
     let environments = at("environments");
     assert!(
         lines[environments + 1].contains("no target is read"),
@@ -1072,6 +1090,66 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
     );
     let published = at("published from this host");
     assert!(lines[published + 1].contains("holds no"), "{printed}");
+}
+
+// Requirement (channel-status): A channel's changelog is its chain read
+// with each promotion's notes
+
+#[test]
+fn status_prints_each_promotions_notes_beneath_it_and_carries_them_beside_the_channel() {
+    let host = Host::new();
+    let second = grown(&host);
+    promotable(&host, &host.fakes, &second);
+    for version in ["0.1.0", "0.2.0"] {
+        let (code, printed) = host.run(&["promote", version, "--to", "stable"]);
+        assert_eq!(code, 0, "{printed}");
+    }
+
+    let (code, json) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let channel = &json["value"]["channels"]["value"]["channels"][0];
+    assert_eq!(channel["channel"]["name"], "stable", "{json}");
+    let notes = channel["notes"]
+        .as_array()
+        .expect("the notes beside the channel");
+    assert_eq!(notes.len(), 2, "{json}");
+    let published = &json["value"]["published"]["value"]["components"][0]["versions"];
+    let mut texts = Vec::new();
+    for (i, version) in ["0.1.0", "0.2.0"].into_iter().enumerate() {
+        assert_eq!(notes[i]["version"], version, "{json}");
+        assert_eq!(notes[i]["index"], published[i]["index"], "{json}");
+        assert_eq!(notes[i]["notes"]["answer"], "ok", "{json}");
+        // The same text as the notes of the version this host published.
+        assert_eq!(
+            notes[i]["notes"]["value"], published[i]["notes"]["value"],
+            "{json}"
+        );
+        texts.push(notes[i]["notes"]["value"].as_str().unwrap().to_string());
+    }
+    assert_ne!(texts[0], texts[1]);
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let stable = lines
+        .iter()
+        .position(|l| l.starts_with("  stable "))
+        .unwrap_or_else(|| panic!("no stable line: {printed}"));
+    let mut at = stable + 1;
+    for (version, text) in [("0.2.0", &texts[1]), ("0.1.0", &texts[0])] {
+        assert!(
+            lines[at].trim_start().starts_with(version) && lines[at].contains("asked by host"),
+            "{printed}"
+        );
+        let indent = " ".repeat(lines[at].len() - lines[at].trim_start().len() + 2);
+        let shown: Vec<String> = text
+            .lines()
+            .map(|l| format!("{indent}{l}").trim_end().to_string())
+            .collect();
+        assert_eq!(lines[at + 1..at + 1 + shown.len()], shown, "{printed}");
+        at += 1 + shown.len();
+    }
 }
 
 // Requirement: Status says when the landing was fetched

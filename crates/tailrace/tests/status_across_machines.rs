@@ -24,6 +24,7 @@ use ssh_key::rand_core::OsRng;
 use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use tailrace::bindings::{self, For};
 use tailrace::commands::serve::host::{find_or_start, name, Host};
+use tailrace::commands::serve::page::escape;
 use tailrace::commands::serve::serve_on;
 use tailrace::profiles::store::layout::Layout;
 use tailrace::{run, Binding, Cli};
@@ -302,6 +303,26 @@ fn a_machine_that_never_published_answers_every_channel_as_the_one_that_promoted
             "{theirs}"
         );
     }
+    // Beside each channel, the same notes of every version its chain
+    // moved it to, rendered from the history B fetched (134).
+    let notes = rc["notes"].as_array().expect("rc's notes");
+    assert_eq!(notes.len(), 2, "{theirs}");
+    for (logged, (version, feature)) in notes
+        .iter()
+        .zip([("0.1.0", "The site"), ("0.2.0", "The site grows")])
+    {
+        assert_eq!(logged["version"], version, "{theirs}");
+        assert_eq!(logged["notes"]["answer"], "ok", "{theirs}");
+        let text = logged["notes"]["value"].as_str().unwrap();
+        assert!(text.contains(&format!("- {feature}\n")), "{text}");
+    }
+    for name in ["beta", "rc", "stable"] {
+        assert_eq!(
+            channel(&theirs, name)["notes"],
+            channel(&ours, name)["notes"],
+            "{name}: {theirs}"
+        );
+    }
     assert_eq!(
         theirs["value"]["channels"]["value"]["revision"],
         ours["value"]["channels"]["value"]["revision"]
@@ -329,6 +350,15 @@ fn a_machine_that_never_published_answers_every_channel_as_the_one_that_promoted
     let address = serve_b(&two);
     let page = get(address, "/o/r/status.json");
     assert_eq!(unasked(page), unasked(status(&two.bind_b(), &two.b.path)));
+    // And B's page shows each promotion's notes.
+    let html = body(address, "/o/r/status");
+    for logged in notes {
+        let text = logged["notes"]["value"].as_str().unwrap();
+        assert!(
+            html.contains(&format!("<pre>{}</pre></li>", escape(text))),
+            "{html}"
+        );
+    }
 }
 
 #[test]

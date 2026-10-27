@@ -28,7 +28,6 @@ const SERVED: &str = "bolt 5 · the first served projection";
 const TARGET: &str = "phase 2 · the first target";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
 const PHASE_2: &str = "phase 2";
-const NOTES: &str = "the notes unit, which the user has not said yes to";
 
 // One entry per line, as the module says, wider than the formatter's
 // width.
@@ -67,5 +66,4 @@ pub struct Part {
 #[rustfmt::skip]
 pub const PARTS: &[Part] = &[
     Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: TARGET, why: "The pages show environments once a target reports them, and phase 1 leaves every target to phase 2." },
-    Part { clause: 132, part: "each version's notes", unit: NOTES, why: "No version carries notes yet, and the notes unit waits on the user." },
 ];

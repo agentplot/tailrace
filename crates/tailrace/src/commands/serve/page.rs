@@ -1,4 +1,4 @@
-//! The serving process's pages (57, 59, 132; design D8): each one HTML
+//! The serving process's pages (57, 59, 132, 134; design D8): each one HTML
 //! document, its styles inline and no script, rendered from one answer
 //! of the core and nothing else (rule core.31). Every string is escaped,
 //! and every refusal and unreadable answer is shown with the source's
@@ -7,7 +7,7 @@
 use std::fmt::Write as _;
 
 use tailrace_core::{
-    Channel, ChannelStatus, Channels, EnvironmentCounts, HeadAt, Overview, Repositories,
+    Channel, ChannelStatus, Channels, EnvironmentCounts, HeadAt, Logged, Overview, Repositories,
     RepositoryName, Row, Status,
 };
 use tailrace_seams::{Answer, ComponentName, Digest, Moves, Not, Promotion, Read};
@@ -151,8 +151,9 @@ fn row_html(body: &mut String, row: &Row) {
 
 /// 132: `repository`'s page, from its status answer: its channels by
 /// component, each with its version or empty or its own answer and its
-/// chain newest first, then the environments and what this host
-/// published.
+/// chain newest first, each promotion with the notes of the version it
+/// moved to, then the environments and what this host published, each
+/// version with its notes beneath it (134).
 pub fn repository(repository: &RepositoryName, answer: &Answer<Overview>) -> String {
     let mut body = String::from("<p><a href=\"/\">Every repository on this host</a></p>\n");
     let _ = writeln!(body, "<h1>{}</h1>", escape(&repository.to_string()));
@@ -261,7 +262,12 @@ fn channel_html(body: &mut String, channel: &ChannelStatus) {
             }
             at.push_str("<ol class=\"chain\" reversed>");
             for (claim, promotion) in chain.iter().rev() {
-                let _ = write!(at, "<li>{}</li>", promoted(claim, promotion));
+                let _ = write!(
+                    at,
+                    "<li>{}{}</li>",
+                    promoted(claim, promotion),
+                    logged(&channel.notes, promotion)
+                );
             }
             at.push_str("</ol>");
             at
@@ -313,6 +319,25 @@ fn promoted(claim: &Digest, promotion: &Promotion) -> String {
     )
 }
 
+/// 134: the notes of the version `promotion` moved its channel to, as
+/// `notes` answers them, beneath the promotion (design D4).
+fn logged(notes: &[Logged], promotion: &Promotion) -> String {
+    let to = &promotion.to;
+    notes
+        .iter()
+        .find(|l| l.version == to.version && l.index == to.index)
+        .map_or_else(String::new, |l| notes_html(&l.notes))
+}
+
+/// 134: a version's notes, escaped in a `<pre>` of their own, or why they
+/// cannot be read with the source's own words (58, 59).
+fn notes_html(notes: &Answer<String>) -> String {
+    match notes {
+        Ok(text) => format!("<pre>{}</pre>", escape(text)),
+        Err(not) => self::not(not),
+    }
+}
+
 /// 98: the environments' four counts, or the part's own answer.
 pub fn environments(answer: &Answer<EnvironmentCounts>) -> String {
     match answer {
@@ -351,6 +376,13 @@ fn published(body: &mut String, answer: &Answer<Status>) {
                 escape(entry.index.as_str()),
                 escape(&entry.store.to_string())
             );
+            if let Some(notes) = &shown.notes {
+                let _ = writeln!(
+                    body,
+                    "<tr><td colspan=\"7\">{}</td></tr>",
+                    notes_html(notes)
+                );
+            }
         }
     }
     body.push_str("</table>\n");
