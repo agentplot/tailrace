@@ -20,10 +20,11 @@ use clap::Parser;
 use scratch::{Repo, Scratch, MAIN, POLICY_FILE};
 use serde_json::Value;
 use tailrace::commands::serve::host::{checkout_of, find_or_start, name, Host, SERVING};
+use tailrace::commands::serve::page::escape;
 use tailrace::commands::serve::{serve_on, Served};
 use tailrace::commands::status::page;
 use tailrace::{run, Cli, REVISION};
-use tailrace_core::{answer_json, Entry, History, Kept, OverviewAsk, RepositoryName};
+use tailrace_core::{answer_json, Entry, History, Kept, Noted, OverviewAsk, RepositoryName};
 use tailrace_fakes::FakeSigner;
 use tailrace_seams::{
     Answer, Branch, ChannelId, ChannelName, ComponentName, Digest, Moved, Not, Promotion, Revision,
@@ -454,6 +455,115 @@ fn a_promotion_after_one_request_is_shown_by_the_next() {
     assert_eq!(head(&second), "0.2.0", "{second}");
     let (_, page) = get(address, "/o/r/status");
     assert!(page.contains("0.2.0"), "{page}");
+}
+
+#[test]
+fn the_changelog_beside_the_channel_shows_each_promotions_notes_escaped_or_why_they_cannot_be_read()
+{
+    let world = World::new();
+    let repo = world.repo();
+    repo.write("site/index.html", "<p>the page</p>");
+    let feature = repo.commit("feat: <b>the</b> page & its notes");
+    repo.push();
+    repo.git(&["tag", "v0.1.0", &feature]);
+    let repository = world.named();
+    // 0.2.0 was never tagged here: its notes cannot be rendered.
+    world.promote("stable", &["0.1.0", "0.2.0"]);
+    let (address, _) = serving(&world.host, Duration::from_secs(60));
+    let (_, served) = json(address, &format!("{}/status.json", repository.path()));
+    assert_eq!(unasked(served.clone()), unasked(world.status()));
+    let notes = &served["value"]["channels"]["value"]["channels"][1]["notes"];
+    assert_eq!(notes[0]["version"], "0.1.0", "{served}");
+    assert_eq!(notes[0]["notes"]["answer"], "ok", "{served}");
+    let text = notes[0]["notes"]["value"].as_str().unwrap();
+    assert!(text.contains("<b>the</b> page & its notes"), "{text}");
+    assert_eq!(notes[1]["version"], "0.2.0", "{served}");
+    assert_eq!(notes[1]["notes"]["answer"], "unreadable", "{served}");
+    let said = notes[1]["notes"]["unreadable"]["said"].as_str().unwrap();
+    assert!(said.contains("no tag v0.2.0"), "{said}");
+
+    let (status, page) = get(address, &format!("{}/status", repository.path()));
+    assert_eq!(status, 200, "{page}");
+    // Inside each promotion's item, after who asked, the notes of the
+    // version it moved to, the same text the JSON carries, escaped.
+    assert!(
+        page.contains(&format!(
+            "asked by gate, under the policy at <code>{}</code> satisfied by <code>{}</code>, \
+             2026-10-26T07:33:20Z; claim",
+            world.head,
+            acceptance("0.1.0")
+        )),
+        "{page}"
+    );
+    assert!(
+        page.contains(&format!("<pre>{}</pre></li>", escape(text))),
+        "{page}"
+    );
+    assert!(
+        page.contains("&lt;b&gt;the&lt;/b&gt; page &amp; its notes"),
+        "{page}"
+    );
+    assert!(!page.contains("<b>the</b>"), "{page}");
+    // In the unreadable version's place, the answer with the history's
+    // words.
+    assert!(
+        page.contains(&format!(
+            "could not read the notes of repository 0.2.0</span><pre>{}</pre></li>",
+            escape(said)
+        )),
+        "{page}"
+    );
+}
+
+#[test]
+fn the_notes_of_a_version_this_host_published_are_shown_beneath_its_row() {
+    let world = World::new();
+    let repo = world.repo();
+    repo.write("site/index.html", "<p>the record</p>");
+    let fix = Revision::new(repo.commit("fix: <i>the</i> record & its notes"));
+    repo.push();
+    let history = History::open(&repo.path).unwrap();
+    let kept = Kept::at(&history);
+    fs::remove_dir_all(kept.dir()).unwrap();
+    kept.write(&Entry {
+        component: ComponentName::new("repository"),
+        version: Version::new("0.1.0"),
+        tag: "v0.1.0".into(),
+        revision: fix.clone(),
+        branch: Branch::new(MAIN),
+        index: Digest::of(b"0.1.0's index"),
+        store: Source::new(Seam::Store, "layout /srv/tailrace/layout"),
+        notes: Some(Noted {
+            last: None,
+            commits: vec![fix.clone(), world.head.clone()],
+        }),
+    })
+    .unwrap();
+    let repository = world.named();
+    let (address, _) = serving(&world.host, Duration::from_secs(60));
+    let (_, served) = json(address, &format!("{}/status.json", repository.path()));
+    let version = &served["value"]["published"]["value"]["components"][0]["versions"][0];
+    assert_eq!(version["notes"]["answer"], "ok", "{served}");
+    let text = version["notes"]["value"].as_str().unwrap();
+    assert!(text.contains("<i>the</i> record & its notes"), "{text}");
+
+    let (status, page) = get(address, &format!("{}/status", repository.path()));
+    assert_eq!(status, 200, "{page}");
+    let row = page
+        .find(&format!("<td><code>{fix}</code></td>"))
+        .unwrap_or_else(|| panic!("no row for the version: {page}"));
+    let notes = format!(
+        "</tr>\n<tr><td colspan=\"7\"><pre>{}</pre></td></tr>",
+        escape(text)
+    );
+    assert_eq!(
+        page[row..]
+            .find(&notes)
+            .map(|at| page[row..row + at].contains("</tr>")),
+        Some(false),
+        "the notes are not the row beneath the version's: {page}"
+    );
+    assert!(!page.contains("<i>the</i>"), "{page}");
 }
 
 #[test]
