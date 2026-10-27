@@ -7,6 +7,8 @@
 #                 build, the plugins' hooks and manifests: under a minute
 #   check-tools   the profiles' tests against moon, sluice and OpenSSH in
 #                 scratch repositories, the tools the devenv shell pins
+#   check-host    the herdr pane against a real tailrace serve at the
+#                 core's address, the host's own port: by hand, in no gate
 # The cargo tests are also tagged `cargo-test`. A task whose inputs are
 # identical to a run that passed on this host, in any worktree, replays
 # from .moon/cache/outputs (a link into the git common dir, made by

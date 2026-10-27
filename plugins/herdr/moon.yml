@@ -21,3 +21,11 @@ tasks:
     command: 'sh tests/dash.sh'
     inputs: ['herdr-plugin.toml', 'bin/**/*', 'lib/**/*', 'tests/**/*', '/devenv.nix', '/devenv.lock']
     tags: [check-fast]
+  # Two panes against a real tailrace serve at the core's address, by
+  # hand with `moon run plugin-herdr:host`: serve binds the host's own
+  # port, so this is in no gate, and it refuses to run where anything
+  # answers there. It builds tailrace, so it never replays.
+  host:
+    command: 'sh tests/host.sh'
+    tags: [check-host]
+    options: {cache: false}
