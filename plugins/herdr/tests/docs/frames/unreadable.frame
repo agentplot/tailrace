@@ -1,0 +1,10 @@
+tailrace · every repository on this host
+
+unreadable — the host (/home/a/.local/state/tailrace/repositories) could not read /home/a/.local/state/tailrace/repositories
+  TOML parse error at line 1, column 1
+    |
+  1 | [[
+    | ^
+  invalid table header
+
+↑↓ choose · enter open · r ask again · q close

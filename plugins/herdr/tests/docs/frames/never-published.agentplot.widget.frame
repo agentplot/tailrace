@@ -1,0 +1,12 @@
+agentplot/widget · main at 111111111111, as of 2026-10-26T07:35:00Z
+
+beta 0.2.0 sha256:111111111111
+  ← 0.2.0 from 0.1.0, asked by gate at 2026-10-26T07:33:21Z, claim sha256:666666666666
+  ← 0.1.0, the first, asked by gate at 2026-10-26T07:33:20Z, claim sha256:333333333333
+stable empty, bound to beta
+
+environments: unreadable — the target (unread) could not read the environments: what each environment should run and runs is read from a target, and no target is read
+
+published on this host: absent — the host (/scratch/widget/repo/.git/tailrace/published) holds no version it published
+
+b back · r ask again · q close

@@ -1,0 +1,29 @@
+agentplot/alpha · main at 111111111111, as of 2026-10-26T07:35:00Z
+landing: as last fetched 2026-10-26T07:34:00Z
+  fatal: unable to access 'https://example.com/agentplot/alpha.git/': Could not resolve host: example.com
+
+beta (app) 1.2.0 sha256:aaaaaaaaaaaa, prereleases too
+  ← 1.2.0 from 1.1.0, asked by gate at 2026-10-26T07:33:21Z, claim sha256:666666666666
+  ← 1.1.0, the first, asked by gate at 2026-10-26T07:33:20Z, claim sha256:555555555555
+stable (app) refused — the keeper (git ref, origin) refused: fork: predecessor sha256:bbbbbbbbbbbb, claims sha256:cccccccccccc, sha256:dddddddddddd
+  error: two claims name one predecessor
+   see the ledger's [31mlog[0m
+edge (app) empty, bound to beta, as last read 2026-10-26T07:33:50Z
+    fatal: could not read from remote repository.
+nightly (app) absent — the keeper (git ref, origin) holds no chain of app/nightly
+canary (app) unreadable — the keeper (git ref, origin) could not read chain of app/canary
+  fatal: unable to access 'origin': Could not resolve host
+
+environments: 0 running what they should · 0 behind · 0 waiting on a person · 2 cannot be read
+
+published on this host:
+  app 1.1.0 (app-v1.1.0) from 222222222222 on main: index sha256:999999999999 in the store (registry ghcr.io/agentplot)
+  app 1.2.0 (app-v1.2.0) from 333333333333 on main: index sha256:aaaaaaaaaaaa in the store (registry ghcr.io/agentplot)
+    ## 1.2.0
+    
+    - feat: the pane
+  docs 0.3.0 (docs-v0.3.0) from 444444444444 on main: index sha256:ffffffffffff in the store (layout /srv/layout)
+    notes: unreadable — the history (git, local) could not read commit 4444444444444444444444444444444444444444
+      fatal: bad object 4444444444444444444444444444444444444444
+
+b back · r ask again · q close

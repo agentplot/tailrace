@@ -180,10 +180,13 @@ impl Fixed {
                 .strip_prefix("sha256:")
                 .and_then(|after| hex_run(after, 64))
             {
-                out.push_str(&format!("sha256:{:064x}", seen(&mut self.digests, hex)));
+                out.push_str(&format!(
+                    "sha256:{}",
+                    fixed(seen(&mut self.digests, hex), 64)
+                ));
                 rest = &rest["sha256:".len() + 64..];
             } else if let Some(hex) = hex_run(rest, 40).filter(|_| !word_before(&out)) {
-                out.push_str(&format!("{:040x}", seen(&mut self.revisions, hex)));
+                out.push_str(&fixed(seen(&mut self.revisions, hex), 40));
                 rest = &rest[40..];
             } else {
                 out.push(c);
@@ -213,6 +216,13 @@ fn word_before(out: &str) -> bool {
     out.chars()
         .last()
         .is_some_and(|c| c.is_ascii_alphanumeric())
+}
+
+/// The fixed value of `n` hex digits for the `n`th seen: its number in
+/// hex, repeated, so values shown short still differ.
+fn fixed(seen: usize, n: usize) -> String {
+    let hex = format!("{seen:x}");
+    hex.repeat(n / hex.len() + 1)[..n].to_string()
 }
 
 /// The number `value` is fixed as: its place among those seen, from 1.
