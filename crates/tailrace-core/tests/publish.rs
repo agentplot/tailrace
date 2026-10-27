@@ -1385,6 +1385,16 @@ fn the_answer_names_every_digest_the_store_holds() {
         assert_eq!(artifact["digest"], held.digest.as_str());
         assert_eq!(artifact["ecosystem"], held.meta.ecosystem().as_str());
         assert_eq!(artifact["name"], held.meta.name().as_str());
+        let store_name = artifact["store_name"].as_str().unwrap();
+        assert_eq!(
+            store_name,
+            format!(
+                "artifact/{}/{}@0.2.0",
+                held.meta.ecosystem(),
+                held.meta.name()
+            )
+        );
+        assert_eq!(contents.names[&Name::new(store_name)], index);
         assert_eq!(artifact["same_again"], true);
         let claims = artifact["claims"].as_array().unwrap();
         assert_eq!(claims.len(), 1);

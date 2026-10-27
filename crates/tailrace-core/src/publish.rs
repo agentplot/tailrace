@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 use tailrace_seams::{
     artifact_name, version_name, Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim,
     ClaimKind, Component, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
-    Manifest, Not, Outcome, Output, OutputName, Projection, Report, RepositoryName, Required,
+    Manifest, Name, Not, Outcome, Output, OutputName, Projection, Report, RepositoryName, Required,
     Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
 };
 
@@ -78,7 +78,8 @@ pub enum Published {
 }
 
 /// An artifact a publish offered: its digest, its bytes' digest, its
-/// ecosystem and name there, the output and the build identity it came
+/// ecosystem and name there, the name the store holds it under by those
+/// and its version (138), the output and the build identity it came
 /// from, whether its projection promises the same bytes again (87), and
 /// every claim this publish attached to it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -87,6 +88,7 @@ pub struct PublishedArtifact {
     pub bytes: Digest,
     pub ecosystem: Ecosystem,
     pub name: EcosystemName,
+    pub store_name: Name,
     pub output: OutputName,
     pub build: BuildId,
     pub same_again: bool,
@@ -852,6 +854,7 @@ fn answered(
         bytes,
         ecosystem: meta.ecosystem().clone(),
         name: meta.name().clone(),
+        store_name: artifact_name(meta.ecosystem(), meta.name(), meta.version()),
         output: output.name.clone(),
         build: output.report.build.clone(),
         same_again: packed.same_again,
