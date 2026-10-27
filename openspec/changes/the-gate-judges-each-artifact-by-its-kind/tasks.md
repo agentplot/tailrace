@@ -54,7 +54,7 @@ notes' missing verdict. Every cargo and moon command runs inside
 
 ## 5. A publish that tells the gate, end to end
 
-- [ ] 5.1 In `crates/tailrace/tests/publish_tells_the_gate.rs`, make `test_from_the_landing` ask its verdict of built artifacts alone, so the six tests sluice #62 failed accept the version. In `a_file_with_no_gate_table_tells_the_gate_as_publish_does` or a new test beside it, assert that the version is accepted, that its acceptance names the notes' provenance and no verdict of the notes, and that `beta` moved. Do the same for any other CLI test where a publish of a version with notes tells the gate (`landings_end_to_end.rs`, `cli.rs`). Verify with `moon run cli:test`.
+- [x] 5.1 In `crates/tailrace/tests/publish_tells_the_gate.rs`, make `test_from_the_landing` ask its verdict of built artifacts alone, so the six tests sluice #62 failed accept the version. In `a_file_with_no_gate_table_tells_the_gate_as_publish_does` or a new test beside it, assert that the version is accepted, that its acceptance names the notes' provenance and no verdict of the notes, and that `beta` moved. Do the same for any other CLI test where a publish of a version with notes tells the gate (`landings_end_to_end.rs`, `cli.rs`). Verify with `moon run cli:test`.
 
 ## 6. The record and the guide
 
