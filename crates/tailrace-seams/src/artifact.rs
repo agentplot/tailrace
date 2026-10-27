@@ -88,6 +88,37 @@ text! {
     Name
 }
 
+/// What every name of a version's index by ecosystem, name and version
+/// begins with (138).
+pub const ARTIFACT: &str = "artifact/";
+
+/// 138: the store's name for the index of `version` of `name` in
+/// `ecosystem`, spelled from the three alone, so it names no host, store,
+/// component, prefix or repository (49, rule core.18; design D1).
+pub fn artifact_name(ecosystem: &Ecosystem, name: &EcosystemName, version: &Version) -> Name {
+    Name::new(format!("{ARTIFACT}{ecosystem}/{name}@{version}"))
+}
+
+impl Name {
+    /// 138: [`artifact_name`] read back: after [`ARTIFACT`], the
+    /// ecosystem up to the first `/`, the version after the last `@` and
+    /// the name between; none for a name outside the space or with a part
+    /// empty (design D1).
+    pub fn as_artifact(&self) -> Option<(Ecosystem, EcosystemName, Version)> {
+        let rest = self.as_str().strip_prefix(ARTIFACT)?;
+        let (ecosystem, rest) = rest.split_once('/')?;
+        let (name, version) = rest.rsplit_once('@')?;
+        if ecosystem.is_empty() || name.is_empty() || version.is_empty() {
+            return None;
+        }
+        Some((
+            Ecosystem::new(ecosystem),
+            EcosystemName::new(name),
+            Version::new(version),
+        ))
+    }
+}
+
 text! {
     /// A channel, by name (31).
     ChannelName
@@ -506,6 +537,47 @@ mod tests {
         round_trip(Held::Manifest(Manifest::Index(index)));
         round_trip(Name::new("web-v1.0.0"));
         round_trip(ChannelName::new("beta"));
+    }
+
+    #[test]
+    fn an_artifact_name_reads_back_to_what_spelled_it() {
+        for (e, n, v, spelled) in [
+            ("eco", "site", "1.3.0", "artifact/eco/site@1.3.0"),
+            (
+                "npm",
+                "@acme/site",
+                "1.3.0+b.1",
+                "artifact/npm/@acme/site@1.3.0+b.1",
+            ),
+            (
+                "cargo",
+                "site",
+                "1.0.0+build.1",
+                "artifact/cargo/site@1.0.0+build.1",
+            ),
+        ] {
+            let parts = (Ecosystem::new(e), EcosystemName::new(n), Version::new(v));
+            let name = artifact_name(&parts.0, &parts.1, &parts.2);
+            assert_eq!(name.as_str(), spelled);
+            assert_eq!(name.as_artifact(), Some(parts), "{spelled}");
+        }
+    }
+
+    #[test]
+    fn a_name_outside_the_artifact_space_reads_back_as_none() {
+        for name in [
+            "cache/b7e1",
+            "cache/x",
+            "artifact/npm",
+            "artifact/npm/site@",
+            "artifact/npm/site",
+            "artifact//site@1.0.0",
+            "artifact/npm/@1.0.0",
+            "web-v1.0.0",
+            "channel/beta",
+        ] {
+            assert_eq!(Name::new(name).as_artifact(), None, "{name}");
+        }
     }
 
     #[test]
