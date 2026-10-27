@@ -1,10 +1,8 @@
 //! A projection's group: 84 to 87, and 48 and 50 as far as a projection
 //! keeps them (B.6), for artifacts and, where the projection packs them,
-//! cache entries; what a checkout's lockfile pins (137), cited as 50
-//! and 58 until the suite's statement list holds 137; and what a held
+//! cache entries; what a checkout's lockfile pins (137); and what a held
 //! version's manifest requires and which versions satisfy a range, newest
-//! first (140), cited as 23, 50 and 58 until the statement list holds
-//! 140.
+//! first (140).
 
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Output, Pinned,
@@ -113,31 +111,31 @@ pub fn scenarios() -> Vec<Scenario<dyn ProjectionRig>> {
         Scenario {
             name: "pinned as the lockfile spells it",
             plays: None,
-            cites: &[50, 58],
+            cites: &[137],
             run: pinned_as_the_lockfile_spells_it,
         },
         Scenario {
             name: "no lockfile, absent",
             plays: None,
-            cites: &[50, 58],
+            cites: &[58, 137],
             run: no_lockfile_absent,
         },
         Scenario {
             name: "required as the manifest spells it",
             plays: None,
-            cites: &[50, 58],
+            cites: &[140],
             run: required_as_the_manifest_spells_it,
         },
         Scenario {
             name: "satisfied by the ecosystem's own ordering",
             plays: None,
-            cites: &[23],
+            cites: &[23, 140],
             run: satisfied_by_the_ecosystems_own_ordering,
         },
         Scenario {
             name: "no manifest, none",
             plays: None,
-            cites: &[58],
+            cites: &[140],
             run: no_manifest_none,
         },
     ]

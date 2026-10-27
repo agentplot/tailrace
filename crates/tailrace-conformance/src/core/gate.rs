@@ -8,10 +8,7 @@
 //! artifacts made its way (134): the policies here ask the landing's
 //! verdict, a review and a rebuild of built artifacts alone, so a
 //! version's notes, rendered with no build, are asked the publisher's
-//! provenance and the claims about the version. The scenarios of the
-//! notes cite 25 and 28, and a following channel's 95 too, in place of
-//! 134, which the statement's clause list, read at 157c828, does not
-//! hold; they cite 134 once the list adopts it.
+//! provenance and the claims about the version.
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -151,25 +148,25 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         Scenario {
             name: "a version whose notes carry no build verdict",
             plays: None,
-            cites: &[25, 28],
+            cites: &[25, 28, 134],
             run: a_version_whose_notes_carry_no_build_verdict,
         },
         Scenario {
             name: "a rendered artifact wanting the publisher's provenance",
             plays: None,
-            cites: &[25, 28],
+            cites: &[25, 28, 134],
             run: a_rendered_artifact_wanting_the_publishers_provenance,
         },
         Scenario {
             name: "the outputs' claims wanting beside the notes",
             plays: None,
-            cites: &[25, 28],
+            cites: &[25, 28, 134],
             run: the_outputs_claims_wanting_beside_the_notes,
         },
         Scenario {
             name: "a following channel and the notes",
             plays: None,
-            cites: &[25, 28, 95],
+            cites: &[25, 28, 95, 134],
             run: a_following_channel_and_the_notes,
         },
     ]

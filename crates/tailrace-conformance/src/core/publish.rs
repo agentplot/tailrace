@@ -1,5 +1,6 @@
 //! The publish group: a landed revision offered as a version with its
-//! notes, S1 and S2, and what publish refuses (2 to 22, 102, 110, 111);
+//! notes, S1 and S2, and what publish refuses (2 to 22, 102, 110, 111,
+//! 134);
 //! and, below the marker, a landing read from its copy as last fetched, a
 //! no refused saying when and a yes published as from the remote (14, 59,
 //! 77).
@@ -23,13 +24,13 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         Scenario {
             name: "a landed revision published",
             plays: Some("S1"),
-            cites: &[6, 7, 11, 12, 13, 17, 19, 20, 21, 22, 110],
+            cites: &[6, 7, 11, 12, 13, 17, 19, 20, 21, 22, 110, 134],
             run: a_landed_revision_published,
         },
         Scenario {
             name: "the same revision again",
             plays: Some("S2"),
-            cites: &[3, 5, 18],
+            cites: &[3, 5, 18, 134],
             run: the_same_revision_again,
         },
         Scenario {
