@@ -8,26 +8,36 @@
 //! layouts read the consumer's layout line, or, where it writes none, the
 //! publisher's, else the given, each claim read through the signers the
 //! consumer's file names for it, else through the host's own signer and
-//! those its bindings trust (113, C.10). It writes nothing to the store. Text names each layout's place
+//! those its bindings trust (113, C.10). It writes nothing to the store.
+//! Where a layout's projection serves it, the layout names the address
+//! its clients read it at, the core's name and port with the checkout's
+//! repository in the path, and sync names the repository to the host and
+//! finds the host's serving process or starts it, as `tailrace status
+//! --page` does (114, 132; design D10). Text names each layout's place
 //! and, per pin, held with its index, refused with the claim found
 //! wanting and the signers checked, and a count of the pins the store
 //! does not name; a layout that cannot be refreshed says what it holds
-//! and when it was rendered, beside what could not be read. The exit is
+//! and when it was rendered, beside what could not be read; then where
+//! each served layout is served and the process serving it. The exit is
 //! the worst among the entries and pins not absent, a layout that cannot
-//! be refreshed counting as its cause (design D9).
+//! be refreshed counting as its cause, a served layout's address and the
+//! serving process each counting as a layout's answer (57; design D9).
 
 use std::io::{self, Write};
+use std::net::SocketAddr;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use tailrace_core::render::{Kept, Refreshed};
 use tailrace_core::{
-    sync_checkout, CheckoutAsk, CheckoutSynced, History, Layouts, PinAnswer, PolicyOf, Refresh,
-    Under, LOCAL,
+    answer_json, sync_checkout, CheckoutAsk, CheckoutSynced, History, Layouts, PinAnswer, PolicyOf,
+    Refresh, RepositoryName, Under, LOCAL,
 };
-use tailrace_seams::{Answer, Branch, Ecosystem, Not, Seam, Source};
+use tailrace_seams::{Answer, Branch, Ecosystem, Not, Source};
 
+use crate::commands::serve::{self, host, host::Host, host::Serving};
+use crate::commands::status::detached;
 use crate::{render, Binding};
 
 #[derive(Debug, Args)]
@@ -45,14 +55,82 @@ pub struct SyncArgs {
     pub json: bool,
 }
 
+/// Sync asked over `binding` in the repository at `at`, on the host the
+/// environment places, its serving process at the core's address, started
+/// from this binary where none answers.
 pub fn run(args: &SyncArgs, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write) -> i32 {
-    let answer = ask(args, binding, at);
-    let _ = if args.json {
-        render::json(out, &answer)
-    } else {
-        text(out, &answer)
+    let host = Host::of_environment();
+    let start = || match &host {
+        Ok(host) => detached(host)(),
+        Err(not) => Err(not.clone()),
     };
-    exit(&answer)
+    run_on(args, binding, at, out, &host, serve::address(), start)
+}
+
+/// Sync asked over `binding` in the repository at `at`, on `host`, its
+/// serving process found at `address` or started by `start` where a
+/// layout is served and none answers: what the command line prints, with
+/// its exit code. A test gives a host, an address and a start of its own,
+/// so it reads no file of the host running it and starts nothing real.
+pub fn run_on(
+    args: &SyncArgs,
+    binding: &Answer<Binding>,
+    at: &Path,
+    out: &mut dyn Write,
+    host: &Answer<Host>,
+    address: SocketAddr,
+    start: impl FnOnce() -> Answer<()>,
+) -> i32 {
+    let (answer, repository) = ask(args, binding, at, host);
+    let serving = answer
+        .as_ref()
+        .ok()
+        .and_then(|synced| serving(synced, &repository, host, at, address, start));
+    let _ = if args.json {
+        let mut value = answer_json(&answer);
+        if let Some(serving) = &serving {
+            value["serving"] = answer_json(serving);
+        }
+        serde_json::to_writer_pretty(&mut *out, &value)
+            .map_err(io::Error::from)
+            .and_then(|()| writeln!(out))
+    } else {
+        text(out, &answer).and_then(|()| match &serving {
+            Some(serving) => serving_text(out, address, serving),
+            None => Ok(()),
+        })
+    };
+    render::worst([
+        exit(&answer),
+        serving.as_ref().map_or(render::OK, render::exit),
+    ])
+}
+
+/// 114, 132: where any layout `synced` answers is served at an address,
+/// the checkout's repository named to `host` and the host's serving
+/// process found at `address`, or `start` run where none answers, as
+/// `tailrace status --page` does; none where no layout is served, so
+/// nothing is named or started.
+fn serving(
+    synced: &CheckoutSynced,
+    repository: &Answer<RepositoryName>,
+    host: &Answer<Host>,
+    at: &Path,
+    address: SocketAddr,
+    start: impl FnOnce() -> Answer<()>,
+) -> Option<Answer<Serving>> {
+    if !synced.served.values().any(Result::is_ok) {
+        return None;
+    }
+    let found = || {
+        let host = host.as_ref().map_err(Not::clone)?;
+        let repository = repository.as_ref().map_err(Not::clone)?;
+        let history = History::open(at)?;
+        let root = history.workdir().unwrap_or_else(|| history.common_dir());
+        host::name(host, repository, &root)?;
+        host::find_or_start(address, start)
+    };
+    Some(found())
 }
 
 /// Seconds since the Unix epoch by this host's clock, the time a layout
@@ -63,7 +141,29 @@ fn now() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-fn ask(args: &SyncArgs, binding: &Answer<Binding>, at: &Path) -> Answer<CheckoutSynced> {
+/// The core's answer of the checkout at `at`, and the repository the
+/// checkout is of, by its landing's remote as `host`'s bindings file
+/// names it.
+fn ask(
+    args: &SyncArgs,
+    binding: &Answer<Binding>,
+    at: &Path,
+    host: &Answer<Host>,
+) -> (Answer<CheckoutSynced>, Answer<RepositoryName>) {
+    let repository = host
+        .as_ref()
+        .map_err(Not::clone)
+        .and_then(|host| host::repository_of(host, at));
+    let synced = synced(args, binding, at, &repository);
+    (synced, repository)
+}
+
+fn synced(
+    args: &SyncArgs,
+    binding: &Answer<Binding>,
+    at: &Path,
+    repository: &Answer<RepositoryName>,
+) -> Answer<CheckoutSynced> {
     let binding = binding.as_ref().map_err(Not::clone)?;
     let history = History::open(at)?;
     let branch = Branch::new(&args.branch);
@@ -83,10 +183,7 @@ fn ask(args: &SyncArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Checkout
         tree,
         when: now(),
         trusted: binding.trust.clone(),
-        repository: Err(Not::absent(
-            &Source::new(Seam::Host, "sync"),
-            "repository of the checkout, which sync does not name yet",
-        )),
+        repository: repository.clone(),
     };
     sync_checkout(&binding.seams, &Layouts::at(&history), &ask)
 }
@@ -118,7 +215,8 @@ fn exit(answer: &Answer<CheckoutSynced>) -> i32 {
         Ok(Refresh::Kept(kept)) => render::code(&kept.because),
         Ok(Refresh::Refreshed(refreshed)) => render::worst(refreshed.pins.iter().map(pin_code)),
     });
-    render::worst(entries.chain(layouts))
+    let served = synced.served.values().map(render::exit);
+    render::worst(entries.chain(layouts).chain(served))
 }
 
 /// `seconds` since the Unix epoch as a UTC date and time, as a person
@@ -250,8 +348,30 @@ fn text(out: &mut dyn Write, answer: &Answer<CheckoutSynced>) -> io::Result<()> 
             Ok(Refresh::Kept(layout)) => kept(out, ecosystem, layout)?,
             Err(not) => render::not(out, &format!("layout {ecosystem}: "), not)?,
         }
+        match synced.served(ecosystem) {
+            Some(Ok(address)) => writeln!(out, "  served at {address}")?,
+            Some(Err(not)) => render::not(out, "  not served: ", not)?,
+            None => {}
+        }
     }
     Ok(())
+}
+
+/// The host's serving process as sync found or started it, or why it
+/// could not.
+fn serving_text(
+    out: &mut dyn Write,
+    address: SocketAddr,
+    serving: &Answer<Serving>,
+) -> io::Result<()> {
+    match serving {
+        Ok(serving) => writeln!(
+            out,
+            "the host's tailrace serve answers at http://{address}, process {}",
+            serving.pid
+        ),
+        Err(not) => render::not(out, "serving: ", not),
+    }
 }
 
 #[cfg(test)]

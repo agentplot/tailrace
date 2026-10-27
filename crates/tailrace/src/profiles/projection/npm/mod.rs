@@ -10,15 +10,22 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Miss, Output,
+    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Miss, Not, Output,
     Packed, Pinned, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source,
     Store, Version,
 };
 
 use super::not_built;
 
+mod family;
+#[cfg(test)]
+mod fixture;
+mod layout;
 mod lockfile;
 mod pack;
+mod tarball;
+#[cfg(test)]
+mod tests;
 
 /// The ecosystem this projection packs in, as the bindings bind it.
 pub const ECOSYSTEM: &str = "npm";
@@ -28,13 +35,8 @@ pub const ECOSYSTEM: &str = "npm";
 /// serving process's address, which a family scope's registry begins
 /// with.
 pub struct NpmProjection {
-    // Read by requires and render, which the projection's later
-    // operations write.
-    #[allow(dead_code)]
     root: PathBuf,
-    #[allow(dead_code)]
     store: Box<dyn Store>,
-    #[allow(dead_code)]
     origin: String,
     path: Option<OsString>,
 }
@@ -84,8 +86,16 @@ impl Projection for NpmProjection {
         pack::pack(self.path.as_deref(), output, version)
     }
 
-    fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
-        Err(not_built("render", ECOSYSTEM, &NpmProjection::source()))
+    /// 85, 47, 49: a registry read layout at `at` of exactly the
+    /// artifacts given, each tarball read through the store and checked
+    /// against its layer's digest, and one packument per name listing the
+    /// versions given (design D8); absent naming cache entries for cache
+    /// entries, which npm packs none of.
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        match contents {
+            Contents::Artifacts(artifacts) => layout::render(self.store.as_ref(), artifacts, at),
+            Contents::CacheEntries(_) => Err(no_cache_entries(&NpmProjection::source())),
+        }
     }
 
     fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
@@ -102,11 +112,53 @@ impl Projection for NpmProjection {
         }
     }
 
-    fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
-        Err(not_built("requires", ECOSYSTEM, &NpmProjection::source()))
+    /// 140: each family package the `package.json` inside `held`'s
+    /// tarball requires, with its range as written: the names of the
+    /// scopes the bound checkout's `.npmrc` sends to the host's serving
+    /// process, of its `dependencies`, `optionalDependencies` and the
+    /// `peerDependencies` npm installs, a bundled name and a spec that is
+    /// no range passed over (design D13, D14). The tarball is read
+    /// through the store by the digest `held` names and checked against
+    /// it; one the store does not hold, or with no `package.json`, is
+    /// unreadable naming the artifact.
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        let scopes = family::scopes(&self.root, &self.origin)?;
+        let (_, bytes) = tarball::read(self.store.as_ref(), held)?;
+        let manifest = tarball::package_json(held, &bytes)?;
+        let manifest: family::Manifest = serde_json::from_slice(&manifest).map_err(|e| {
+            Not::unreadable(
+                &NpmProjection::source(),
+                format!(
+                    "the package.json of {} {} at {}",
+                    held.meta.name(),
+                    held.meta.version(),
+                    held.digest
+                ),
+                Some(e.to_string()),
+            )
+        })?;
+        Ok(manifest.requires(&scopes))
     }
 
-    fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
-        Err(not_built("satisfying", ECOSYSTEM, &NpmProjection::source()))
+    /// 140, 23: those of `versions` within `range` by npm's own rules,
+    /// newest first by npm's own order of versions, a prerelease within
+    /// a range only where npm takes it there; a version or a range that
+    /// does not parse is within nothing (design D14).
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        let Ok(range) = nodejs_semver::Range::parse(range.as_str()) else {
+            return Ok(Vec::new());
+        };
+        let mut within: Vec<(nodejs_semver::Version, &Version)> = versions
+            .iter()
+            .filter_map(|v| {
+                nodejs_semver::Version::parse(v.as_str())
+                    .ok()
+                    .map(|p| (p, v))
+            })
+            .filter(|(parsed, _)| range.satisfies(parsed))
+            .collect();
+        within.sort_by(|(a, _), (b, _)| b.cmp(a));
+        within.dedup_by(|(a, _), (b, _)| a == b);
+        Ok(within.into_iter().map(|(_, v)| v.clone()).collect())
     }
 }
