@@ -1,12 +1,16 @@
-//! A crate's line in a Cargo registry's index (design D5), written from
+//! A crate's line in a Cargo registry's index (design D8), written from
 //! the crate's own normalized manifest: its name and version, its
 //! dependencies of every kind and target, its checksum, its features, and
 //! the links and Rust version it declares. Keys are written in one fixed
-//! order, so one crate always writes one line.
+//! order, so one crate always writes one line. A dependency at any
+//! family repository's served Cargo address is written as one of the
+//! registry serving the line, so a consumer resolves it from its own
+//! served address (49, 138).
 
 use std::collections::BTreeMap;
 
 use serde::Serialize;
+use tailrace_core::{SERVING_HOST, SERVING_PORT};
 
 use super::crate_file::CrateManifest;
 
@@ -16,14 +20,12 @@ use super::crate_file::CrateManifest;
 /// reference).
 pub(super) const CRATES_IO: &str = "https://github.com/rust-lang/crates.io-index";
 
-/// The name and port the host's serving process answers at (114).
-const SERVING: &str = "127.0.0.1:7420";
-
 /// Whether `index` is a family repository's served Cargo address,
 /// `sparse+http://<host>:<port>/<owner>/<name>/cargo/` at the host's
 /// serving process, for any owner and name (49, 114; design D8).
 pub(super) fn served(index: &str) -> bool {
-    let Some(path) = index.strip_prefix(&format!("sparse+http://{SERVING}/")) else {
+    let Some(path) = index.strip_prefix(&format!("sparse+http://{SERVING_HOST}:{SERVING_PORT}/"))
+    else {
         return false;
     };
     let path = path.strip_suffix('/').unwrap_or(path);
@@ -52,7 +54,8 @@ struct Line {
     v: Option<u32>,
 }
 
-/// One dependency of a line: `name` as the crate's code names it, and
+/// One dependency of a line: `name` as the crate's code names it,
+/// `registry` none where it is of the registry serving the line, and
 /// `package` the crate it is where the dependency renames it.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 struct Dependency {
@@ -63,7 +66,7 @@ struct Dependency {
     default_features: bool,
     target: Option<String>,
     kind: &'static str,
-    registry: String,
+    registry: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     package: Option<String>,
 }
@@ -151,7 +154,7 @@ fn dependency(
         default_features: true,
         target: target.map(str::to_string),
         kind,
-        registry: CRATES_IO.to_string(),
+        registry: Some(CRATES_IO.to_string()),
         package: None,
     };
     let spec = match spec {
@@ -181,7 +184,7 @@ fn dependency(
         .or(flag("default_features"))
         .unwrap_or(true);
     if let Some(index) = text("registry-index") {
-        dep.registry = index.to_string();
+        dep.registry = (!served(index)).then(|| index.to_string());
     } else if let Some(registry) = text("registry") {
         return Err(format!(
             "the dependency {name} names the registry {registry} by name and not by its index"
@@ -232,7 +235,10 @@ mod tests {
     use super::super::fixture::crate_of;
     use super::*;
 
-    const FAMILY: &str = "sparse+https://tailrace.invalid/cargo/";
+    /// A family repository's served Cargo address, and another
+    /// registry's index.
+    const FAMILY: &str = "sparse+http://127.0.0.1:7420/agentplot/family/cargo/";
+    const ELSEWHERE: &str = "sparse+https://registry.example/index/";
 
     fn line_of(manifest: &str) -> Result<String, String> {
         let bytes = crate_of("fam-app", "2.0.0", manifest);
@@ -251,6 +257,10 @@ mod tests {
              [dependencies.fam-lib]\n\
              version = \"^1.4.0\"\n\
              registry-index = \"{FAMILY}\"\n\
+             \n\
+             [dependencies.vendored]\n\
+             version = \"2\"\n\
+             registry-index = \"{ELSEWHERE}\"\n\
              \n\
              [dependencies.json]\n\
              version = \"1\"\n\
@@ -277,7 +287,7 @@ mod tests {
             "{{\"name\":\"fam-app\",\"vers\":\"2.0.0\",\"deps\":[\
              {{\"name\":\"fam-lib\",\"req\":\"^1.4.0\",\"features\":[],\"optional\":false,\
              \"default_features\":true,\"target\":null,\"kind\":\"normal\",\
-             \"registry\":\"{FAMILY}\"}},\
+             \"registry\":null}},\
              {{\"name\":\"json\",\"req\":\"1\",\"features\":[],\"optional\":false,\
              \"default_features\":true,\"target\":null,\"kind\":\"normal\",\
              \"registry\":\"{CRATES_IO}\",\"package\":\"serde_json\"}},\
@@ -289,7 +299,10 @@ mod tests {
              \"registry\":\"{CRATES_IO}\"}},\
              {{\"name\":\"tempfile\",\"req\":\"3\",\"features\":[],\"optional\":false,\
              \"default_features\":true,\"target\":null,\"kind\":\"dev\",\
-             \"registry\":\"{CRATES_IO}\"}}],\
+             \"registry\":\"{CRATES_IO}\"}},\
+             {{\"name\":\"vendored\",\"req\":\"2\",\"features\":[],\"optional\":false,\
+             \"default_features\":true,\"target\":null,\"kind\":\"normal\",\
+             \"registry\":\"{ELSEWHERE}\"}}],\
              \"cksum\":\"c0ffee\",\
              \"features\":{{\"default\":[\"plain\"],\"plain\":[]}},\
              \"features2\":{{\"serde\":[\"dep:serde\"]}},\
