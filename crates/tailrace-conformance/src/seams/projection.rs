@@ -1,12 +1,16 @@
 //! A projection's group: 84 to 87, and 48 and 50 as far as a projection
 //! keeps them (B.6), for artifacts and, where the projection packs them,
-//! cache entries; what a checkout's lockfile pins (137); and what a held
+//! cache entries; what a checkout's lockfile pins (137); what a held
 //! version's manifest requires and which versions satisfy a range, newest
-//! first (140).
+//! first (140); and a served layout's answer to its client's request for
+//! a version, held or asked of the core (86, 46, 115, 50, 99, 49).
+
+use std::cell::RefCell;
 
 use tailrace_seams::{
-    Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Output, Pin, Pinned,
-    Projection, Range, Request, Requirement, Seam, Version,
+    Answer, Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Layout, Not,
+    Output, Pin, Pinned, Projection, Range, Request, Requirement, Response, Seam, Source, Version,
+    Why,
 };
 
 use crate::seams::{absent, unreadable};
@@ -28,6 +32,15 @@ pub trait ProjectionRig: Rig {
     /// Whether the ecosystem's clients read no files, so the projection
     /// serves its layouts (86).
     fn serves(&self) -> bool;
+
+    /// The path below a served layout's prefix of the ecosystem's own
+    /// request for the bytes of the version `meta` names, since a
+    /// request's form is the ecosystem's (86): by default
+    /// `<name>/<version>`, which a projection that serves none answers
+    /// absent as it answers any path.
+    fn request(&self, meta: &ArtifactMeta) -> String {
+        format!("{}/{}", meta.name(), meta.version())
+    }
 
     /// Whether the projection packs cache entries; one that packs none
     /// answers absent for one (84, 85).
@@ -138,6 +151,30 @@ pub fn scenarios() -> Vec<Scenario<dyn ProjectionRig>> {
             cites: &[140],
             run: no_manifest_none,
         },
+        Scenario {
+            name: "a version held, served",
+            plays: None,
+            cites: &[86, 46],
+            run: a_version_held_served,
+        },
+        Scenario {
+            name: "a version lacked, asked of the core",
+            plays: None,
+            cites: &[115, 50],
+            run: a_version_lacked_asked_of_the_core,
+        },
+        Scenario {
+            name: "a refusal in the response",
+            plays: None,
+            cites: &[99, 59],
+            run: a_refusal_in_the_response,
+        },
+        Scenario {
+            name: "one base, two places",
+            plays: None,
+            cites: &[49],
+            run: one_base_two_places,
+        },
     ]
 }
 
@@ -149,6 +186,102 @@ const B7E1: &str = "b7e1";
 
 /// Another build identity, for a second cache entry.
 const C3D4: &str = "c3d4";
+
+/// Where the group renders a second layout of the same artifacts.
+const ELSEWHERE: &str = "layouts/conformance-elsewhere";
+
+/// The base the group serves its layouts under, as a client reached it.
+const BASE: &str = "http://127.0.0.1:7420/o/r/conformance";
+
+/// The words of the refusal the core answers a miss with.
+const WANTING: &str = "acceptance wanting";
+
+/// The client's `GET` of `path` below a layout served under [`BASE`].
+fn get(path: String) -> Request {
+    Request {
+        method: "GET".into(),
+        path,
+        base: BASE.into(),
+    }
+}
+
+/// The pin naming `meta`'s ecosystem name and version.
+fn pin_of(meta: &ArtifactMeta) -> Pinned {
+    Pinned {
+        name: meta.name().clone(),
+        version: meta.version().clone(),
+    }
+}
+
+/// That `response` answers the request it was asked: `200` with bytes.
+fn answers(response: &Response, asked: &str) {
+    assert!(
+        response.status == 200 && !response.body.is_empty(),
+        "{asked} answered {} {} with {} bytes",
+        response.status,
+        response.content_type,
+        response.body.len()
+    );
+}
+
+/// Whether `bytes` hold `words` as they are.
+fn holds(bytes: &[u8], words: &str) -> bool {
+    bytes
+        .windows(words.len())
+        .any(|window| window == words.as_bytes())
+}
+
+/// The versions a miss asked the core for, recorded, the core answering
+/// each with `answer`.
+struct Asked<F: Fn() -> Answer<()>> {
+    pins: RefCell<Vec<Pinned>>,
+    answer: F,
+}
+
+impl<F: Fn() -> Answer<()>> Asked<F> {
+    fn new(answer: F) -> Self {
+        Asked {
+            pins: RefCell::new(Vec::new()),
+            answer,
+        }
+    }
+
+    fn miss(&self, pin: &Pinned) -> Answer<()> {
+        self.pins.borrow_mut().push(pin.clone());
+        (self.answer)()
+    }
+
+    fn pins(&self) -> Vec<Pinned> {
+        self.pins.borrow().clone()
+    }
+}
+
+/// Not applicable to a projection whose ecosystem's clients read files,
+/// once it answers the rig's request absent naming serving and asks the
+/// core nothing (86).
+fn not_served(rig: &dyn ProjectionRig) {
+    if rig.serves() {
+        return;
+    }
+    let (held, _) = rig.held();
+    let asked = Asked::new(|| Ok(()));
+    let layout = Layout { at: AT.into() };
+    absent(
+        rig.projection()
+            .serve(&layout, &get(rig.request(&held.meta)), &|pin| {
+                asked.miss(pin)
+            }),
+        Seam::Projection,
+        "serving",
+        "serve of a projection whose clients read files",
+    );
+    assert_eq!(
+        asked.pins(),
+        [],
+        "a projection that serves none asked the core"
+    );
+    not_applicable("the ecosystem's clients read files");
+}
 
 fn packed_the_same_again(rig: &dyn ProjectionRig) {
     let (projection, output, version) = (rig.projection(), rig.output(), Version::new("1.4.0"));
@@ -225,22 +358,25 @@ fn served_where_the_clients_read_no_files(rig: &dyn ProjectionRig) {
         return;
     }
     let projection = rig.projection();
+    let artifacts = rig.artifacts(1);
     let rendered = ok(
-        projection.render(Contents::Artifacts(&rig.artifacts(1)), AT),
+        projection.render(Contents::Artifacts(&artifacts), AT),
         "render",
     );
-    let request = Request {
-        method: "GET".into(),
-        path: String::new(),
-        base: "http://127.0.0.1:7420/o/r/conformance".into(),
-    };
-    let serving = ok(
-        projection.serve(&rendered.layout, &request, &|_| Ok(())),
+    let asked = Asked::new(|| Ok(()));
+    let served = ok(
+        projection.serve(
+            &rendered.layout,
+            &get(rig.request(&artifacts[0].meta)),
+            &|pin| asked.miss(pin),
+        ),
         "serve",
     );
-    assert!(
-        !serving.body.is_empty(),
-        "a served layout answered nothing: {serving:?}"
+    answers(&served, "the request for a version the layout holds");
+    assert_eq!(
+        asked.pins(),
+        [],
+        "serving a version the layout holds asked the core"
     );
 }
 
@@ -440,5 +576,132 @@ fn no_manifest_none(rig: &dyn ProjectionRig) {
         satisfying,
         [],
         "satisfying answered versions from an ecosystem with no manifest"
+    );
+}
+
+fn a_version_held_served(rig: &dyn ProjectionRig) {
+    not_served(rig);
+    let projection = rig.projection();
+    let artifacts = rig.artifacts(2);
+    let rendered = ok(
+        projection.render(Contents::Artifacts(&artifacts), AT),
+        "render",
+    );
+    let asked = Asked::new(|| Ok(()));
+    let served = ok(
+        projection.serve(
+            &rendered.layout,
+            &get(rig.request(&artifacts[1].meta)),
+            &|pin| asked.miss(pin),
+        ),
+        "serve",
+    );
+    answers(&served, "the request for a version the layout holds");
+    assert_eq!(
+        asked.pins(),
+        [],
+        "serving a version the layout holds asked the core"
+    );
+}
+
+fn a_version_lacked_asked_of_the_core(rig: &dyn ProjectionRig) {
+    not_served(rig);
+    let projection = rig.projection();
+    let artifacts = rig.artifacts(2);
+    let rendered = ok(
+        projection.render(Contents::Artifacts(&artifacts[..1]), AT),
+        "render of the first",
+    );
+    // The core holds the version asked by rendering both into the layout.
+    let asked = Asked::new(|| {
+        projection
+            .render(Contents::Artifacts(&artifacts), AT)
+            .map(|_| ())
+    });
+    let served = ok(
+        projection.serve(
+            &rendered.layout,
+            &get(rig.request(&artifacts[1].meta)),
+            &|pin| asked.miss(pin),
+        ),
+        "serve",
+    );
+    assert_eq!(
+        asked.pins(),
+        [pin_of(&artifacts[1].meta)],
+        "the core was not asked once for the version the layout lacks"
+    );
+    answers(&served, "the request for a version the core rendered");
+}
+
+fn a_refusal_in_the_response(rig: &dyn ProjectionRig) {
+    not_served(rig);
+    let projection = rig.projection();
+    let artifacts = rig.artifacts(2);
+    let rendered = ok(
+        projection.render(Contents::Artifacts(&artifacts[..1]), AT),
+        "render of the first",
+    );
+    let refused = Not::refused(
+        &Source::new(Seam::Policy, "conformance"),
+        Why::Said,
+        Some(WANTING.into()),
+    );
+    let asked = Asked::new(|| Err(refused.clone()));
+    let served = ok(
+        projection.serve(
+            &rendered.layout,
+            &get(rig.request(&artifacts[1].meta)),
+            &|pin| asked.miss(pin),
+        ),
+        "serve",
+    );
+    assert_eq!(asked.pins(), [pin_of(&artifacts[1].meta)]);
+    assert_ne!(
+        served.status, 200,
+        "a version the core refused was answered as served"
+    );
+    assert!(
+        holds(&served.body, WANTING),
+        "the response to a refused version does not carry {WANTING:?} verbatim: {}",
+        String::from_utf8_lossy(&served.body)
+    );
+}
+
+fn one_base_two_places(rig: &dyn ProjectionRig) {
+    not_served(rig);
+    let projection = rig.projection();
+    let artifacts = rig.artifacts(2);
+    let asked = Asked::new(|| Ok(()));
+    let mut served = Vec::new();
+    for at in [AT, ELSEWHERE] {
+        let rendered = ok(
+            projection.render(Contents::Artifacts(&artifacts), at),
+            &format!("render at {at}"),
+        );
+        served.push(ok(
+            projection.serve(
+                &rendered.layout,
+                &get(rig.request(&artifacts[0].meta)),
+                &|pin| asked.miss(pin),
+            ),
+            &format!("serve at {at}"),
+        ));
+    }
+    answers(&served[0], "the request for a version the layout holds");
+    assert_eq!(
+        served[0], served[1],
+        "one request under one base answered otherwise from two places"
+    );
+    for at in [AT, ELSEWHERE] {
+        assert!(
+            !holds(&served[0].body, at),
+            "a served layout's response names the place {at}"
+        );
+    }
+    assert_eq!(
+        asked.pins(),
+        [],
+        "serving what the layouts hold asked the core"
     );
 }
