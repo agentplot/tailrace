@@ -31,10 +31,11 @@ use tailrace_core::{
 };
 use tailrace_fakes::{FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, ChannelId, ChannelName, Claim,
-    ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, IndexMeta, Manifest, Moved,
-    NamedSigner, Not, Pinned, Promotion, Request, Required, RequiredClaim, Revision, Satisfied,
-    Seam, Signer, SignerId, Source, Store, Version,
+    Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
+    Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, IndexMeta, Layout,
+    Manifest, Miss, Moved, NamedSigner, Not, Output, Packed, Pinned, Projection, Promotion, Range,
+    Rendered, Request, Required, RequiredClaim, Requirement, Revision, Satisfied, Seam, Signer,
+    SignerId, Source, Store, Version,
 };
 
 /// The host the tests serve: a state directory, a bindings file, a home
@@ -1019,9 +1020,11 @@ impl Consumer {
         self.ask(path, "GET")
     }
 
-    /// `method` of `path`, asked as [`Consumer::get`] asks.
+    /// `method` of `path`, asked as [`Consumer::get`] asks, of the process
+    /// at [`asked_at`].
     fn ask(&self, path: &str, method: &str) -> Response {
         respond_with(
+            asked_at(),
             &self.world.host,
             &|checkout, command| {
                 assert_eq!(command, For::Sync, "a served layout bound for another");
@@ -1044,6 +1047,12 @@ impl Consumer {
             .map(|h| h.version.to_string())
             .collect()
     }
+}
+
+/// The address the process's own handling of a request is asked at in
+/// these tests, bound by nothing and never the core's.
+fn asked_at() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], 7499))
 }
 
 fn text(response: &Response) -> String {
@@ -1070,10 +1079,11 @@ fn a_served_layout_is_its_projections_response_from_the_checkout_that_named_it()
             Request {
                 method: "GET".into(),
                 path: "pkg/1.2.0".into(),
-                base: "http://127.0.0.1:7420/agentplot/consumer/eco".into(),
+                base: "http://127.0.0.1:7499/agentplot/consumer/eco".into(),
             }
         ],
-        "sync's probe, then the request below the layout's prefix at its base"
+        "sync's probe at the core's address, then the request below the layout's prefix \
+         at the address the process was asked at"
     );
     assert_eq!(consumer.projection.misses(), []);
     let rendered: Vec<String> = consumer
@@ -1216,6 +1226,7 @@ fn a_repository_none_named_and_a_checkout_that_cannot_be_bound_are_their_own_ans
         Some("expected `=`".into()),
     );
     let response = respond_with(
+        asked_at(),
         &consumer.world.host,
         &|_, _| Err(unbound.clone()),
         "GET",
@@ -1279,6 +1290,72 @@ fn ends(server: JoinHandle<Answer<Served>>) -> Answer<Served> {
         thread::sleep(Duration::from_millis(10));
     }
     server.join().unwrap()
+}
+
+/// A projection answering every request it is asked with the base it was
+/// handed, the fake answering all else.
+struct Based(FakeProjection);
+
+impl Projection for Based {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+        self.0.pack(output, at, version)
+    }
+
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        self.0.render(contents, at)
+    }
+
+    fn serve(
+        &self,
+        _: &Layout,
+        request: &Request,
+        _: Miss<'_>,
+    ) -> Answer<tailrace_seams::Response> {
+        Ok(tailrace_seams::Response {
+            status: 200,
+            content_type: "text/plain; charset=utf-8".into(),
+            body: request.base.clone().into_bytes(),
+        })
+    }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+        self.0.pinned(checkout)
+    }
+
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        self.0.requires(held)
+    }
+
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        self.0.satisfying(range, versions)
+    }
+}
+
+#[test]
+fn a_served_layout_is_handed_the_base_of_the_address_the_process_is_bound_at() {
+    let consumer = Consumer::new();
+    let bind: Binder = Arc::new(|_, _| {
+        let mut seams = Fakes::new().seams();
+        seams
+            .projections
+            .insert(eco(), Box::new(Based(FakeProjection::new(eco()))));
+        Ok(Binding {
+            seams,
+            store: Source::new(Seam::Store, "fake"),
+            signer: None,
+            gate: Teller::Job("the gate's job".into()),
+            trust: vec![],
+        })
+    });
+    let (address, server) = serving_with(&consumer.world.host, bind);
+    let (status, body) = get(address, "/agentplot/consumer/eco/pkg/1.2.0");
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body,
+        format!("http://{address}/agentplot/consumer/eco"),
+        "the base names another address than the one the process is bound at"
+    );
+    assert_eq!(ends(server), Ok(Served::Idle));
 }
 
 #[test]
