@@ -572,10 +572,11 @@ impl Registry {
     }
 
     /// The repository path `parts` make under the declared one, each
-    /// written as one path component; refused naming it where it runs
+    /// written as one path component, for what `held` names as written;
+    /// refused naming it, the path and its length where the path runs
     /// past 255 characters (design D12).
-    fn under(&self, parts: &[&str]) -> Answer<String> {
-        tag::repository(&self.host, &self.path, parts)
+    fn under(&self, parts: &[&str], held: &str) -> Answer<String> {
+        tag::repository(&self.host, &self.path, parts, held)
             .map_err(|words| Not::refused(&self.source, Why::Said, Some(words)))
     }
 
@@ -595,7 +596,10 @@ impl Registry {
     fn place(&self, name: &Name) -> Answer<Place> {
         if let Some((ecosystem, artifact, version)) = name.as_artifact() {
             return Ok(Place {
-                repository: self.under(&[ARTIFACT_SPACE, ecosystem.as_str(), artifact.as_str()])?,
+                repository: self.under(
+                    &[ARTIFACT_SPACE, ecosystem.as_str(), artifact.as_str()],
+                    &format!("the name {name}"),
+                )?,
                 tag: self.tag(&Name::new(version.as_str()))?,
                 space: Space::Artifact,
             });
@@ -630,7 +634,7 @@ impl Registry {
         };
         if let Some((component, tag)) = component {
             return Ok(Place {
-                repository: self.under(&[component.as_str()])?,
+                repository: self.under(&[component.as_str()], &format!("the name {name}"))?,
                 tag: self.tag(&Name::new(tag))?,
                 space: Space::Component,
             });
@@ -648,7 +652,12 @@ impl Registry {
     fn cache_repository(&self) -> Answer<Option<String>> {
         self.build
             .as_deref()
-            .map(|build| self.under(&[CACHE_SPACE, build]))
+            .map(|build| {
+                self.under(
+                    &[CACHE_SPACE, build],
+                    &format!("the cache of the build profile {build}"),
+                )
+            })
             .transpose()
     }
 
@@ -1038,7 +1047,10 @@ impl Store for Registry {
         // repository too, from the publish that puts it (design D10).
         if let Manifest::Index(index) = manifest {
             if index.component().as_str() != REPOSITORY_COMPONENT {
-                let repository = self.under(&[index.component().as_str()])?;
+                let repository = self.under(
+                    &[index.component().as_str()],
+                    &format!("the index of the component {}", index.component()),
+                )?;
                 self.hold(&repository, &digest)?;
             }
         }
@@ -1190,7 +1202,10 @@ impl Store for Registry {
             #[serde(default)]
             tags: Option<Vec<String>>,
         }
-        let repository = self.under(&[ARTIFACT_SPACE, ecosystem.as_str(), name.as_str()])?;
+        let repository = self.under(
+            &[ARTIFACT_SPACE, ecosystem.as_str(), name.as_str()],
+            &format!("the {ecosystem} name {name}"),
+        )?;
         let mut url = self.url_in(&repository, "tags/list");
         let mut versions = Vec::new();
         let mut first = true;
@@ -1985,12 +2000,25 @@ mod tests {
         let store = Registry::new(&stub.repository("acme/store")).unwrap();
         let version = published(&store, "web", &[("eco", "site")]);
         let before = stub.asked().len();
-        let long = named("eco", &"n".repeat(240), "1.3.0");
+        let written = format!("@acme/{}", "n".repeat(230));
+        let long = named("npm", &written, "1.3.0");
+        let path = format!(
+            "{}/artifact/npm/0_40acme_2f{}",
+            stub.repository("acme/store"),
+            "n".repeat(230)
+        );
         match store.name(&long, &version.index, None) {
             Err(Not::Refused(r)) => {
                 let said = r.said.unwrap();
-                assert!(said.contains(&"n".repeat(240)), "{said}");
-                assert!(said.contains("characters"), "{said}");
+                assert!(
+                    said.starts_with(&format!("the name artifact/npm/{written}@1.3.0 ")),
+                    "{said}"
+                );
+                assert!(said.contains(&path), "{said}");
+                assert!(
+                    said.contains(&format!("{} characters", path.len())),
+                    "{said}"
+                );
             }
             other => panic!("a path past 255 characters answered {other:?}"),
         }
