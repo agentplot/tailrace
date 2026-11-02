@@ -11,6 +11,7 @@ pub mod gate;
 pub mod recorder;
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
@@ -139,6 +140,27 @@ pub fn on_path(name: &str) -> PathBuf {
         .unwrap_or_else(|| {
             panic!("{name} is not on PATH: the tools layer runs in the devenv shell, which pins it")
         })
+}
+
+/// A script at `dir/bin/cargo` running the shell's cargo with `CARGO_HOME`
+/// and `HOME` under `dir`, so nothing of the host's home is read.
+pub fn sealed_cargo(dir: &Path) -> PathBuf {
+    let home = dir.join("home");
+    fs::create_dir_all(home.join("cargo")).unwrap();
+    let bin = dir.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("cargo");
+    fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nCARGO_HOME='{home}/cargo' HOME='{home}' exec '{cargo}' \"$@\"\n",
+            home = home.display(),
+            cargo = on_path("cargo").display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    script
 }
 
 /// The pinned tool the devenv shell names in `variable`; panics naming it
