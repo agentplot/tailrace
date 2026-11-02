@@ -82,20 +82,22 @@ impl CargoProjection {
 }
 
 impl Projection for CargoProjection {
-    /// 84, 87: the crate `cargo package` makes of the output's package at
-    /// `version`, named by the package's name and the version, packing
-    /// the same again (design D3).
+    /// 84, 87, 110: the crate `cargo package` makes of the package the
+    /// output's crate file names, at the component's version with its
+    /// siblings at it and another component's crates at the requirements
+    /// the manifests write, named by the package's name and the version,
+    /// packing the same again (design D1 to D4).
     fn pack(&self, output: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let source = CargoProjection::source();
-        let Some(&PackAt { version, .. }) = version else {
+        let Some(at) = version else {
             return Err(no_cache_entries(&source));
         };
-        let manifest = self.package_manifest(output)?;
-        let (name, bytes) = self.packed(&manifest, version)?;
+        let found = self.crate_of(output)?;
+        let bytes = self.packed(&found, at)?;
         let meta = ArtifactMeta::new(
             Ecosystem::new(ECOSYSTEM),
-            EcosystemName::new(name),
-            version.clone(),
+            EcosystemName::new(found.name),
+            at.version.clone(),
         )
         .map_err(|bad| Not::refused(&source, Why::Said, Some(bad.to_string())))?;
         Ok(Packed {
