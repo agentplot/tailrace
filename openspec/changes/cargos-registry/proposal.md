@@ -275,6 +275,7 @@ crates/tailrace/src/profiles/projection/**
 crates/tailrace/src/bindings/mod.rs
 crates/tailrace/src/bindings/tests.rs
 crates/tailrace/src/commands/serve/host.rs
+crates/tailrace/src/commands/serve/mod.rs
 crates/tailrace/src/commands/sync.rs
 crates/tailrace/tests/**
 crates/tailrace/moon.yml
