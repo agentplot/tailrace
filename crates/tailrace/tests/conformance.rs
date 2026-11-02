@@ -8,7 +8,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 use tailrace::bindings::Teller;
 use tailrace::commands::serve::host::{name, Host};
-use tailrace::commands::serve::respond_with;
+use tailrace::commands::serve::{address, respond_with};
 use tailrace::{run, Binding, Cli};
 use tailrace_conformance::core::surfaces::{self, Question, Surface};
 use tailrace_conformance::not_applicable;
@@ -155,6 +155,7 @@ impl Surface for Page {
             Question::Status | Question::Channels { .. } => {}
         }
         let response = respond_with(
+            address(),
             &self.host,
             &|_, _| Ok(binding(&self.world)),
             "GET",

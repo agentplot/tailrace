@@ -19,7 +19,7 @@ use clap::Parser;
 use scratch::{Scratch, POLICY_FILE};
 use serde_json::Value;
 use tailrace::commands::serve::host::{name, Host};
-use tailrace::commands::serve::respond_with;
+use tailrace::commands::serve::{address, respond_with};
 use tailrace::{run, Cli};
 use tailrace_core::RepositoryName;
 use tailrace_fakes::FakeSigner;
@@ -291,6 +291,7 @@ fn committed(file: &str, served: &Value) {
 /// The JSON body of `target` answered by `host`'s routes, with `status`.
 fn served(host: &Host, target: &str, status: u16) -> Value {
     let response = respond_with(
+        address(),
         host,
         &|checkout, command| host.bind_for(checkout, command),
         "GET",
