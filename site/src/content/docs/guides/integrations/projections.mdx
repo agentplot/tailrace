@@ -46,7 +46,7 @@ revision and the build identity, never the version (24).
 
 | ecosystem | pack | render | serve | status |
 |---|---|---|---|---|
-| npm | the tarball `npm pack` writes, with `package.json` as metadata | a packument and tarballs under a registry read layout | a localhost registry, since npm reads no files | designed |
+| npm | the tarball `npm pack` writes, with `package.json` as metadata | a packument and tarballs under a registry read layout | the host's one process, at `http://127.0.0.1:7420/<owner>/<name>/npm/`, the same on every host (49, 114), since npm reads no files | built |
 | Maven | the jar and its POM | a `maven2` layout with checksums and `maven-metadata.xml` | not needed: a `file://` repository | designed |
 | Python | the wheel and sdist, with their metadata | a simple index per PEP 503 | not needed: `find-links` or a `file://` index | designed |
 | Go | the module zip | the module proxy layout | not needed: `GOPROXY=file://` | designed |
