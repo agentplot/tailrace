@@ -215,6 +215,10 @@ again. Before the first publish to such a registry, make:
   component's `<declared>/<component>`, or one template applying to
   `<declared>/` that covers all three, or each repository by hand.
 
+A template that sets resource tags on the repositories it makes names a
+role that may tag them: on ECR, a template naming tags and no role makes
+no repository, and every push under it is refused.
+
 A credential needs to write only where its job writes:
 
 - a push writes cache entries alone: write on `<declared>/cache/`, and

@@ -81,9 +81,15 @@ pub(super) fn component(text: &str) -> String {
 }
 
 /// The repository path `parts` make under `declared`, each written as one
-/// path component; refused naming the path and its length where it runs,
-/// with `host` before it, past 255 characters (design D12).
-pub(super) fn repository(host: &str, declared: &str, parts: &[&str]) -> Result<String, String> {
+/// path component, for what `held` names as written; refused naming it,
+/// the path and its length where the path runs, with `host` before it,
+/// past 255 characters (design D12).
+pub(super) fn repository(
+    host: &str,
+    declared: &str,
+    parts: &[&str],
+    held: &str,
+) -> Result<String, String> {
     let mut path = declared.to_string();
     for part in parts {
         path.push('/');
@@ -92,7 +98,8 @@ pub(super) fn repository(host: &str, declared: &str, parts: &[&str]) -> Result<S
     let length = host.len() + 1 + path.len();
     if length > LONGEST_PATH {
         return Err(format!(
-            "the repository {host}/{path} is {length} characters, past the {LONGEST_PATH} a repository's path holds"
+            "{held} is held in the repository {host}/{path}, which is {length} characters, past \
+             the {LONGEST_PATH} a repository's path holds"
         ));
     }
     Ok(path)
@@ -274,14 +281,20 @@ mod tests {
     fn a_repository_path_past_255_characters_is_refused_naming_it() {
         let host = "registry.example";
         assert_eq!(
-            repository(host, "acme/tailrace", &["artifact", "npm", "@acme/site"]),
+            repository(
+                host,
+                "acme/tailrace",
+                &["artifact", "npm", "@acme/site"],
+                "the name artifact/npm/@acme/site@1.3.0"
+            ),
             Ok("acme/tailrace/artifact/npm/0_40acme_2fsite".into())
         );
         let long = "a".repeat(255 - host.len() - 1 - "acme/tailrace/".len());
-        let fits = repository(host, "acme/tailrace", &[&long]).unwrap();
+        let fits = repository(host, "acme/tailrace", &[&long], "the component").unwrap();
         assert_eq!(host.len() + 1 + fits.len(), 255);
         let past = format!("{long}b");
-        let words = repository(host, "acme/tailrace", &[&past]).unwrap_err();
+        let words = repository(host, "acme/tailrace", &[&past], "the component").unwrap_err();
+        assert!(words.starts_with("the component is held in "), "{words}");
         assert!(
             words.contains(&format!("{host}/acme/tailrace/{past}")),
             "{words}"

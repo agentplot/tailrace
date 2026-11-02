@@ -6,15 +6,17 @@
 //! 140). It names npm and nothing else, and reaches the store only
 //! through the store seam it is handed (rules core.1, core.2).
 
+use std::collections::BTreeSet;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Miss, Not, Output,
-    PackAt, Packed, Pin, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source,
-    Store, Version,
+    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, EcosystemName, Layout,
+    Miss, Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered, Request, Requirement,
+    Response, Seam, Source, Store, Version,
 };
 
+mod declared;
 mod family;
 #[cfg(test)]
 mod fixture;
@@ -109,17 +111,30 @@ impl Projection for NpmProjection {
     }
 
     /// 137: every package the checkout's `npm-shrinkwrap.json`, else
-    /// its `package-lock.json`, pins, as it spells them, each a
-    /// [`Pin::Version`] (design D7); absent naming the lockfile where it
-    /// holds neither.
+    /// its `package-lock.json`, pins, as it spells them, then each range
+    /// its root `package.json` and its workspaces' declare for a family
+    /// name, of a scope its `.npmrc` sends to the host's serving process,
+    /// that the lockfile pins at no version, as the manifest spells it,
+    /// each name and range once (design D7, D13); absent naming the
+    /// lockfile where it holds no lockfile and no family range.
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
-        match lockfile::find(Path::new(checkout)) {
-            Some(path) => Ok(lockfile::pins(&path)?
-                .into_iter()
-                .map(Pin::Version)
-                .collect()),
-            None => Err(no_lockfile(&NpmProjection::source())),
+        let checkout = Path::new(checkout);
+        let pinned = match lockfile::find(checkout) {
+            Some(path) => Some(lockfile::pins(&path)?),
+            None => None,
+        };
+        let scopes = family::scopes(checkout, &self.origin)?;
+        let declared = declared::declared(checkout, &scopes)?;
+        let held: BTreeSet<&EcosystemName> = pinned.iter().flatten().map(|p| &p.name).collect();
+        let ranges: Vec<Requirement> = declared
+            .into_iter()
+            .filter(|r| !held.contains(&r.name))
+            .collect();
+        if pinned.is_none() && ranges.is_empty() {
+            return Err(no_lockfile(&NpmProjection::source()));
         }
+        let pins = pinned.into_iter().flatten().map(Pin::Version);
+        Ok(pins.chain(ranges.into_iter().map(Pin::Range)).collect())
     }
 
     /// 140: each family package the `package.json` inside `held`'s

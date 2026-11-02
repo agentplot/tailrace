@@ -414,9 +414,6 @@ fn promotion(subject: &Digest) -> Envelope {
     )
 }
 
-/// On a profile whose names take no condition, a move from a place the
-/// name has left is refused only when the check before the put reads
-/// where the name is, so the scenario takes either answer and asks the
 /// 138: an index named by three artifact names, two of one name at two
 /// versions and one of a name sharing its prefix; the versions of the
 /// first are its two and no other, each resolving to the index, and a
@@ -470,6 +467,9 @@ fn a_names_versions_listed(rig: &dyn StoreRig) {
     );
 }
 
+/// On a profile whose names take no condition, a move from a place the
+/// name has left is refused only when the check before the put reads
+/// where the name is, so the scenario takes either answer and asks the
 /// name's safety of the ledger: written before the name moves (33), and
 /// the name repaired from it, wherever the stale move left it (109, C.1).
 fn a_name_moved_from_a_stale_place_repaired_from_the_ledger(rig: &dyn StoreRig) {
