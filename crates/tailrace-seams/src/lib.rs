@@ -128,6 +128,9 @@ mod tests {
         fn read(&self, _: &Digest) -> Answer<Held> {
             nothing(Seam::Store, "read")
         }
+        fn versions(&self, _: &Ecosystem, _: &EcosystemName) -> Answer<Vec<Version>> {
+            nothing(Seam::Store, "versions")
+        }
     }
 
     impl Build for Nowhere {
@@ -271,6 +274,7 @@ mod tests {
             asked(store.name(&Name::new("n"), &d, None)),
             asked(store.resolve(&Name::new("n"))),
             asked(store.read(&d)),
+            asked(store.versions(&Ecosystem::new("eco"), &EcosystemName::new("pkg"))),
             asked(build.ensure(&rev, &[OutputName::new("site")])),
             asked(build.report(&rev, &OutputName::new("site"))),
             asked(landing.landed(&Branch::new("main"), &rev)),
@@ -327,7 +331,8 @@ mod tests {
                 "claims-of",
                 "name",
                 "resolve",
-                "read"
+                "read",
+                "versions"
             ]
         );
         assert_eq!(named(Seam::Build), ["ensure", "report"]);

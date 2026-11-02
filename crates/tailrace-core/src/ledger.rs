@@ -16,8 +16,8 @@
 
 use serde::{Serialize, Serializer};
 use tailrace_seams::{
-    channel_name, Answer, AskedOf, Audience, Branch, Chain, ChannelId, ChannelName, Claim,
-    ClaimKind, ComponentName, DeclaredChannel, Digest, Envelope, Keeper, Moved, Name, NamedSigner,
+    channel_name, version_name, Answer, AskedOf, Audience, Branch, Chain, ChannelId, ChannelName,
+    Claim, ClaimKind, ComponentName, DeclaredChannel, Digest, Envelope, Keeper, Moved, NamedSigner,
     Not, Read, Required, RequiredClaim, Satisfied, Seam, Seams, SignerId, Source, Store, Version,
     Why,
 };
@@ -229,7 +229,7 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
             .ok_or_else(|| Not::absent(&keeper(), format!("a version {channel} moved from")))?,
     };
     let tag = format!("{}{}", component.prefix, version);
-    let index = seams.store.resolve(&Name::new(&tag))?;
+    let index = seams.store.resolve(&version_name(&component.name, &tag))?;
     let revision = history
         .tags(&at_head, &component.prefix)?
         .into_iter()

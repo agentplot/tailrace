@@ -165,7 +165,8 @@ mod tests {
     use tailrace_fakes::{FakeStore, StoreOp};
     use tailrace_seams::{
         Artifact, ArtifactMeta, Claim, ClaimKind, ComponentName, Ecosystem, EcosystemName,
-        Envelope, IndexMeta, Put, Revision, Seam, Signature, SignerId, Version, IN_TOTO,
+        Envelope, IndexMeta, Put, RepositoryName, Revision, Seam, Signature, SignerId, Version,
+        IN_TOTO,
     };
 
     use super::*;
@@ -203,8 +204,8 @@ mod tests {
     }
 
     /// A version of two artifacts, a provenance and a verdict on each and
-    /// an acceptance on the index, published into `store` and named
-    /// `web-v1.3.0`; its index.
+    /// an acceptance on the index naming its revision and repository,
+    /// published into `store` and named `web-v1.3.0`; its index.
     fn published(store: &FakeStore) -> Digest {
         let mut artifacts = Vec::new();
         for name in ["site", "server"] {
@@ -227,7 +228,8 @@ mod tests {
         let index = store
             .put_artifact(&Manifest::Index(
                 IndexMeta::new(ComponentName::new("web"), Version::new("1.3.0"), artifacts)
-                    .unwrap(),
+                    .unwrap()
+                    .published_from(Revision::new("4f2a9c1"), Some(repository())),
             ))
             .unwrap()
             .digest;
@@ -240,6 +242,13 @@ mod tests {
 
     fn version() -> Name {
         Name::new("web-v1.3.0")
+    }
+
+    fn repository() -> RepositoryName {
+        RepositoryName {
+            owner: "acme".into(),
+            name: "site".into(),
+        }
     }
 
     fn copied(from: &dyn Store, to: &dyn Store) -> Answer<Copied> {
@@ -279,6 +288,11 @@ mod tests {
         assert_eq!(target.attached, source.attached);
         assert_eq!(target.names.get(&version()), Some(&index));
         assert_eq!(target.attached.values().flatten().count(), 5);
+        let Some(Held::Manifest(Manifest::Index(meta))) = target.held.get(&index) else {
+            panic!("the copy holds no index at {index}");
+        };
+        assert_eq!(meta.revision(), Some(&Revision::new("4f2a9c1")));
+        assert_eq!(meta.repository(), Some(&repository()));
 
         let ops: Vec<StoreOp> = to.calls().iter().map(|c| c.op).collect();
         let index_put = to
@@ -348,6 +362,13 @@ mod tests {
         }
         fn read(&self, digest: &Digest) -> Answer<Held> {
             self.0.read(digest)
+        }
+        fn versions(
+            &self,
+            ecosystem: &tailrace_seams::Ecosystem,
+            name: &tailrace_seams::EcosystemName,
+        ) -> Answer<Vec<tailrace_seams::Version>> {
+            self.0.versions(ecosystem, name)
         }
     }
 

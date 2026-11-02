@@ -463,6 +463,13 @@ impl Store for LedgerWatched {
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.inner.read(digest)
     }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.inner.versions(ecosystem, name)
+    }
 }
 
 fn a_version_accepted_and_beta_moved(world: &FakeWorld) {
@@ -1296,6 +1303,13 @@ impl Store for Hiding {
     }
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.inner.read(digest)
+    }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.inner.versions(ecosystem, name)
     }
 }
 

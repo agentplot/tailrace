@@ -5,11 +5,14 @@
 //! reached at that moment through the host's Docker configuration and
 //! the helper it names, as `Basic` or as a `Bearer` token asked of the
 //! challenge's realm for the scope it names. What authorizes the next
-//! request is held in memory by the one handle and written nowhere (64,
-//! rule core.21).
+//! request to each repository is held in memory by the one handle and
+//! written nowhere, so a token scoped to one repository is kept beside
+//! another's (64, rule core.21; design D8).
 
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use base64::Engine as _;
 use docker_credential::{CredentialRetrievalError, DockerCredential};
@@ -131,6 +134,19 @@ pub(super) fn encoded(text: &str) -> String {
         .collect()
 }
 
+/// Whether `error` is the connection closing under a request, the far
+/// side gone before the whole answer arrived.
+fn closed(error: &ureq::Error) -> bool {
+    use std::io::ErrorKind;
+    matches!(error, ureq::Error::Io(e) if matches!(
+        e.kind(),
+        ErrorKind::UnexpectedEof
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::BrokenPipe
+    ))
+}
+
 /// A token a realm answers (design D4).
 #[derive(Deserialize)]
 struct Token {
@@ -141,12 +157,13 @@ struct Token {
 }
 
 /// The connection to one registry host: the agent, the host the
-/// credential is the host's for, and what authorizes the next request.
+/// credential is the host's for, and what authorizes the next request
+/// to each repository it has been answered for.
 pub(super) struct Client {
     agent: ureq::Agent,
     host: String,
     source: Source,
-    authorization: RefCell<Option<String>>,
+    authorization: RefCell<BTreeMap<String, String>>,
 }
 
 impl Client {
@@ -158,23 +175,27 @@ impl Client {
             agent: ureq::Agent::new_with_config(config),
             host: host.to_string(),
             source: source.clone(),
-            authorization: RefCell::new(None),
+            authorization: RefCell::new(BTreeMap::new()),
         }
     }
 
-    /// `method` of `url`, with `headers` and `body`, answered as the
-    /// registry answered it; a challenge answered once with the host's
-    /// credential and the request sent once more. Unreadable naming `url`
-    /// in the client's words where no connection is made or the answer
-    /// cannot be read.
+    /// `method` of `url`, a request for `repository`, with `headers` and
+    /// `body`, answered as the registry answered it; a challenge answered
+    /// once with the host's credential and the request sent once more,
+    /// what authorized it kept under `repository` as the caller names it,
+    /// never as read back from `url`, whose path a repository's own may
+    /// hold an operation's word in (design D8). Unreadable naming `url` in
+    /// the client's words where no connection is made or the answer cannot
+    /// be read.
     pub(super) fn send(
         &self,
+        repository: &str,
         method: Method,
         url: &str,
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
     ) -> Answer<Answered> {
-        let held = self.authorization.borrow().clone();
+        let held = self.authorization.borrow().get(repository).cloned();
         let first = self.once(&method, url, headers, body, held.as_deref())?;
         if first.status != StatusCode::UNAUTHORIZED {
             return Ok(first);
@@ -185,10 +206,18 @@ impl Client {
         let Some(authorization) = self.authorize(&challenge)? else {
             return Ok(first);
         };
-        *self.authorization.borrow_mut() = Some(authorization.clone());
+        self.authorization
+            .borrow_mut()
+            .insert(repository.to_string(), authorization.clone());
         self.once(&method, url, headers, body, Some(&authorization))
     }
 
+    /// `method` of `url` sent and its answer read whole. A read, `GET` or
+    /// `HEAD`, whose connection closed before its whole answer arrived,
+    /// as a kept connection the far side closed while it idled does, is
+    /// sent once more on a new connection, the redirect it follows too; a
+    /// write is never sent again. Unreadable naming `url` in the client's
+    /// words otherwise.
     fn once(
         &self,
         method: &Method,
@@ -197,7 +226,27 @@ impl Client {
         body: Option<&[u8]>,
         authorization: Option<&str>,
     ) -> Answer<Answered> {
-        let unreadable = |words: String| Not::unreadable(&self.source, url, Some(words));
+        let read = [Method::GET, Method::HEAD].contains(method);
+        match self.exchange(method, url, headers, body, authorization, false) {
+            Err(e) if read && closed(&e) => {
+                self.exchange(method, url, headers, body, authorization, true)
+            }
+            answered => answered,
+        }
+        .map_err(|e| Not::unreadable(&self.source, url, Some(e.to_string())))
+    }
+
+    /// `method` of `url` sent once and its answer read whole, on a new
+    /// connection where `fresh` rather than one the agent keeps.
+    fn exchange(
+        &self,
+        method: &Method,
+        url: &str,
+        headers: &[(&str, &str)],
+        body: Option<&[u8]>,
+        authorization: Option<&str>,
+        fresh: bool,
+    ) -> Result<Answered, ureq::Error> {
         let mut request = Request::builder().method(method.clone()).uri(url);
         for (name, value) in headers {
             request = request.header(*name, *value);
@@ -205,28 +254,33 @@ impl Client {
         if let Some(authorization) = authorization {
             request = request.header("authorization", authorization);
         }
-        let answered = match body {
-            Some(body) => request
-                .body(body)
-                .map_err(|e| unreadable(e.to_string()))
-                .and_then(|r| self.agent.run(r).map_err(|e| unreadable(e.to_string()))),
-            None => request
-                .body(())
-                .map_err(|e| unreadable(e.to_string()))
-                .and_then(|r| self.agent.run(r).map_err(|e| unreadable(e.to_string()))),
+        let mut response = match body {
+            Some(body) => self.agent.run(self.connected(request.body(body)?, fresh))?,
+            None => self.agent.run(self.connected(request.body(())?, fresh))?,
         };
-        let mut response = answered?;
         let body = response
             .body_mut()
             .with_config()
             .limit(u64::MAX)
-            .read_to_vec()
-            .map_err(|e| unreadable(e.to_string()))?;
+            .read_to_vec()?;
         Ok(Answered {
             status: response.status(),
             headers: response.headers().clone(),
             body,
         })
+    }
+
+    /// `request`, sent on a new connection where `fresh`: no kept
+    /// connection is young enough for it.
+    fn connected<S: ureq::AsSendBody>(&self, request: Request<S>, fresh: bool) -> Request<S> {
+        if fresh {
+            self.agent
+                .configure_request(request)
+                .max_idle_age(Duration::ZERO)
+                .build()
+        } else {
+            request
+        }
     }
 
     /// What authorizes a request `challenge` was answered to: the host's
@@ -382,6 +436,73 @@ mod tests {
     }
 
     #[test]
+    fn a_token_for_one_repository_is_kept_beside_anothers() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, OnceLock};
+        let at: Arc<OnceLock<u16>> = Arc::new(OnceLock::new());
+        let asked = Arc::new(AtomicUsize::new(0));
+        let (port_of, count) = (at.clone(), asked.clone());
+        let port = stub(7, move |head| {
+            count.fetch_add(1, Ordering::SeqCst);
+            let first = head.lines().next().unwrap_or_default().to_string();
+            let reply = |status: &str, headers: &str, body: &str| {
+                format!(
+                    "HTTP/1.1 {status}\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+            };
+            if first.contains("/token") {
+                let scope = if first.contains("one") { "one" } else { "two" };
+                return reply("200 OK", "", &format!(r#"{{"token":"{scope}"}}"#));
+            }
+            let repository = if first.contains("/v2/one/tags/") {
+                "one"
+            } else {
+                "two"
+            };
+            let lower = head.to_lowercase();
+            if lower.contains(&format!("authorization: bearer {repository}")) {
+                return reply("200 OK", "", "{}");
+            }
+            let port = port_of.get().copied().unwrap();
+            reply(
+                "401 Unauthorized",
+                &format!(
+                    "www-authenticate: Bearer realm=\"http://127.0.0.1:{port}/token\",scope=\"repository:{repository}:pull\"\r\n"
+                ),
+                "",
+            )
+        });
+        at.set(port).unwrap();
+        let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
+        let client = Client::new(&format!("127.0.0.1:{port}"), &source);
+        let get = |repository: &str| {
+            let url = format!("http://127.0.0.1:{port}/v2/{repository}/manifests/x");
+            client
+                .send(repository, Method::GET, &url, &[], None)
+                .unwrap()
+                .status
+        };
+        assert_eq!(get("one/tags"), StatusCode::OK);
+        assert_eq!(get("two"), StatusCode::OK);
+        assert_eq!(asked.load(Ordering::SeqCst), 6);
+        assert_eq!(get("one/tags"), StatusCode::OK);
+        assert_eq!(
+            asked.load(Ordering::SeqCst),
+            7,
+            "one's token was thrown away by the request to two"
+        );
+        let held = client.authorization.borrow().clone();
+        assert_eq!(
+            held.into_iter().collect::<Vec<_>>(),
+            [
+                ("one/tags".to_string(), "Bearer one".to_string()),
+                ("two".to_string(), "Bearer two".to_string())
+            ]
+        );
+    }
+
+    #[test]
     fn a_query_value_is_encoded() {
         assert_eq!(
             encoded("repository:acme/tailrace:pull,push"),
@@ -454,6 +575,7 @@ mod tests {
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let answered = client
             .send(
+                "",
                 Method::GET,
                 &format!("http://127.0.0.1:{port}/v2/"),
                 &[],
@@ -464,7 +586,7 @@ mod tests {
         assert_eq!(answered.status, StatusCode::OK, "{}", answered.words());
         assert_eq!(answered.body, b"{}");
         assert_eq!(
-            client.authorization.borrow().as_deref(),
+            client.authorization.borrow().get("").map(String::as_str),
             Some(format!("Basic {basic}").as_str())
         );
         let files: Vec<_> = std::fs::read_dir(dir.path())
@@ -478,6 +600,139 @@ mod tests {
         );
     }
 
+    /// A server on a loopback port that keeps each connection open after
+    /// an answer, answering each request with the last segment of its
+    /// path, and closing a connection without an answer at a request
+    /// `drops` names by the connection's number, the request's number on
+    /// it and its line, as a far side that closed a kept connection while
+    /// the request was on its way does. Every request is kept, with the
+    /// number of the connection it came on.
+    #[allow(clippy::type_complexity)]
+    fn kept(
+        drops: impl Fn(usize, usize, &str) -> bool + Send + Sync + 'static,
+    ) -> (u16, std::sync::Arc<std::sync::Mutex<Vec<(usize, String)>>>) {
+        use std::io::{BufRead, BufReader, Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let asked = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let kept = asked.clone();
+        let drops = std::sync::Arc::new(drops);
+        std::thread::spawn(move || {
+            for (connection, stream) in listener.incoming().enumerate() {
+                let (asked, drops) = (kept.clone(), drops.clone());
+                std::thread::spawn(move || {
+                    let mut stream = stream.unwrap();
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    for at in 0.. {
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+                            return;
+                        }
+                        let line = line.trim_end().to_string();
+                        let mut length = 0;
+                        loop {
+                            let mut header = String::new();
+                            reader.read_line(&mut header).unwrap();
+                            if header == "\r\n" || header.is_empty() {
+                                break;
+                            }
+                            if let Some((name, value)) = header.split_once(':') {
+                                if name.eq_ignore_ascii_case("content-length") {
+                                    length = value.trim().parse().unwrap();
+                                }
+                            }
+                        }
+                        reader.read_exact(&mut vec![0; length]).unwrap();
+                        asked.lock().unwrap().push((connection + 1, line.clone()));
+                        if drops(connection + 1, at, &line) {
+                            return;
+                        }
+                        let path = line.split(' ').nth(1).unwrap_or_default();
+                        let body = path.rsplit('/').next().unwrap_or_default();
+                        let head = if line.starts_with("HEAD ") { "" } else { body };
+                        let answer = format!(
+                            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\n\r\n{head}",
+                            body.len()
+                        );
+                        stream.write_all(answer.as_bytes()).unwrap();
+                    }
+                });
+            }
+        });
+        (port, asked)
+    }
+
+    #[test]
+    fn a_read_on_a_kept_connection_the_far_side_closed_is_sent_once_more_on_a_new_one() {
+        let (port, asked) = kept(|_, at, _| at > 0);
+        let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
+        let client = Client::new(&format!("127.0.0.1:{port}"), &source);
+        let url = |blob: &str| format!("http://127.0.0.1:{port}/v2/acme/blobs/{blob}");
+        for (method, blob) in [(Method::GET, "one"), (Method::GET, "two")] {
+            let answered = client.send("acme", method, &url(blob), &[], None).unwrap();
+            assert_eq!(answered.status, StatusCode::OK, "{}", answered.words());
+            assert_eq!(answered.body, blob.as_bytes());
+        }
+        let answered = client
+            .send("acme", Method::HEAD, &url("three"), &[], None)
+            .unwrap();
+        assert_eq!(answered.header("content-length"), Some("5"));
+        assert_eq!(
+            *asked.lock().unwrap(),
+            [
+                (1, "GET /v2/acme/blobs/one HTTP/1.1".to_string()),
+                (1, "GET /v2/acme/blobs/two HTTP/1.1".to_string()),
+                (2, "GET /v2/acme/blobs/two HTTP/1.1".to_string()),
+                (2, "HEAD /v2/acme/blobs/three HTTP/1.1".to_string()),
+                (3, "HEAD /v2/acme/blobs/three HTTP/1.1".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_write_on_a_kept_connection_the_far_side_closed_is_unreadable_and_not_sent_again() {
+        let (port, asked) = kept(|_, at, _| at > 0);
+        let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
+        let client = Client::new(&format!("127.0.0.1:{port}"), &source);
+        let blob = format!("http://127.0.0.1:{port}/v2/acme/blobs/one");
+        client.send("acme", Method::GET, &blob, &[], None).unwrap();
+        let tag = format!("http://127.0.0.1:{port}/v2/acme/manifests/v1");
+        match client.send("acme", Method::PUT, &tag, &[], Some(b"{}")) {
+            Err(Not::Unreadable(u)) => assert_eq!(u.what, tag),
+            other => panic!("a put whose connection closed answered {other:?}"),
+        }
+        assert_eq!(
+            *asked.lock().unwrap(),
+            [
+                (1, "GET /v2/acme/blobs/one HTTP/1.1".to_string()),
+                (1, "PUT /v2/acme/manifests/v1 HTTP/1.1".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_read_whose_new_connection_closes_too_is_unreadable_in_the_clients_words() {
+        let (port, asked) = kept(|_, _, line| line.contains("/gone"));
+        let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
+        let client = Client::new(&format!("127.0.0.1:{port}"), &source);
+        let url = format!("http://127.0.0.1:{port}/v2/acme/blobs/gone");
+        match client.send("acme", Method::GET, &url, &[], None) {
+            Err(Not::Unreadable(u)) => {
+                assert_eq!(u.source, source);
+                assert_eq!(u.what, url);
+                assert!(u.said.is_some_and(|w| w.starts_with("io: ")));
+            }
+            other => panic!("a read the far side closed twice answered {other:?}"),
+        }
+        assert_eq!(
+            *asked.lock().unwrap(),
+            [
+                (1, "GET /v2/acme/blobs/gone HTTP/1.1".to_string()),
+                (2, "GET /v2/acme/blobs/gone HTTP/1.1".to_string()),
+            ]
+        );
+    }
+
     #[test]
     fn a_connection_refused_is_unreadable_in_the_clients_words() {
         let port = std::net::TcpListener::bind("127.0.0.1:0")
@@ -488,7 +743,7 @@ mod tests {
         let source = Source::new(tailrace_seams::Seam::Store, "OCI registry test");
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let url = format!("http://127.0.0.1:{port}/v2/");
-        match client.send(Method::GET, &url, &[], None) {
+        match client.send("", Method::GET, &url, &[], None) {
             Err(Not::Unreadable(u)) => {
                 assert_eq!(u.source, source);
                 assert_eq!(u.what, url);
@@ -497,6 +752,6 @@ mod tests {
             }
             other => panic!("a port nothing listens on answered {other:?}"),
         }
-        assert!(client.authorization.borrow().is_none());
+        assert!(client.authorization.borrow().is_empty());
     }
 }

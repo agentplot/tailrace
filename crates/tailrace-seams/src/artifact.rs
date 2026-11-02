@@ -29,6 +29,19 @@ text! {
 /// (123), so every profile and the core name it alike.
 pub const REPOSITORY_COMPONENT: &str = "repository";
 
+/// 22, 123, C.1: the name a version takes in the store, its tag as the
+/// authors spell it where the repository declares no component, and
+/// `<component>:<tag>` where it declares one, so every store can tell
+/// whose version it is. No git tag holds a `:`, so the one is never the
+/// other (design D18).
+pub fn version_name(component: &ComponentName, tag: &str) -> Name {
+    if component.as_str() == REPOSITORY_COMPONENT {
+        Name::new(tag)
+    } else {
+        Name::new(format!("{component}:{tag}"))
+    }
+}
+
 /// The outputs the authors declare to take one version together, the
 /// paths whose changes version it, and the prefix its tags carry (123).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,6 +99,57 @@ text! {
     /// name's or a channel's, each a pointer to a digest and never the
     /// other way (3, 70).
     Name
+}
+
+/// What every name of a version's index by ecosystem, name and version
+/// begins with (138).
+pub const ARTIFACT: &str = "artifact/";
+
+/// 138: the store's name for the index of `version` of `name` in
+/// `ecosystem`, spelled from the three alone, so it names no host, store,
+/// component, prefix or repository (49, rule core.18; design D1).
+pub fn artifact_name(ecosystem: &Ecosystem, name: &EcosystemName, version: &Version) -> Name {
+    Name::new(format!("{ARTIFACT}{ecosystem}/{name}@{version}"))
+}
+
+impl Name {
+    /// 138: [`artifact_name`] read back: after [`ARTIFACT`], the
+    /// ecosystem up to the first `/`, the version after the last `@` and
+    /// the name between; none for a name outside the space or with a part
+    /// empty (design D1).
+    pub fn as_artifact(&self) -> Option<(Ecosystem, EcosystemName, Version)> {
+        let rest = self.as_str().strip_prefix(ARTIFACT)?;
+        let (ecosystem, rest) = rest.split_once('/')?;
+        let (name, version) = rest.rsplit_once('@')?;
+        if ecosystem.is_empty() || name.is_empty() || version.is_empty() {
+            return None;
+        }
+        Some((
+            Ecosystem::new(ecosystem),
+            EcosystemName::new(name),
+            Version::new(version),
+        ))
+    }
+
+    /// C.1: [`version_name`] read back for a declared component: for a
+    /// name outside the artifact, cache and channel spaces holding a `:`,
+    /// the component before the first `:` and the tag after it; none for
+    /// any other name, the undeclared component's bare tag among them,
+    /// and none where either part is empty (design D18).
+    pub fn as_version(&self) -> Option<(ComponentName, String)> {
+        let text = self.as_str();
+        if [ARTIFACT, "cache/", "channel/"]
+            .iter()
+            .any(|space| text.starts_with(space))
+        {
+            return None;
+        }
+        let (component, tag) = text.split_once(':')?;
+        if component.is_empty() || tag.is_empty() {
+            return None;
+        }
+        Some((ComponentName::new(component), tag.to_string()))
+    }
 }
 
 text! {
@@ -215,15 +279,80 @@ pub struct Artifact {
     pub meta: ArtifactMeta,
 }
 
+/// 114, 138: a repository by its owner and name, the last two parts of
+/// the path of its landing's remote, whatever host holds it, as the
+/// serving process's path and an index name it (49).
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct RepositoryName {
+    pub owner: String,
+    pub name: String,
+}
+
+impl RepositoryName {
+    /// The owner and name of the remote at `url`, the last two parts of
+    /// its path without a trailing `/` or `.git`: of
+    /// `scheme://[user@]host[:port]/<path>`, or of `[user@]host:<path>`;
+    /// `None` for a local path, a path of fewer than two parts, or one
+    /// whose last two parts are not both named.
+    pub fn from_remote(url: &str) -> Option<RepositoryName> {
+        let path = match url.split_once("://") {
+            Some((_, rest)) => {
+                let (host, path) = rest.split_once('/')?;
+                if host.is_empty() {
+                    return None;
+                }
+                path
+            }
+            None => {
+                let (host, path) = url.split_once(':')?;
+                if host.is_empty() || host.contains('/') {
+                    return None;
+                }
+                path
+            }
+        };
+        let path = path.strip_suffix('/').unwrap_or(path);
+        let path = path.strip_suffix(".git").unwrap_or(path);
+        let mut parts = path.rsplit('/');
+        let name = parts.next()?;
+        let owner = parts.next()?;
+        if owner.is_empty() || name.is_empty() {
+            return None;
+        }
+        Some(RepositoryName {
+            owner: owner.to_string(),
+            name: name.to_string(),
+        })
+    }
+
+    /// The repository's path on the serving process, `/owner/name`.
+    pub fn path(&self) -> String {
+        format!("/{}/{}", self.owner, self.name)
+    }
+}
+
+impl fmt::Display for RepositoryName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.owner, self.name)
+    }
+}
+
 /// 6, 110: an index's metadata: one component, one version, and every
 /// artifact of the component at that version by digest and metadata,
-/// each carrying the index's version.
+/// each carrying the index's version; and, where it has them, the
+/// revision it was published from and the publishing repository (13,
+/// 138). An index put before it named either still reads, naming
+/// neither, and is written in the same form (design D4).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "RawIndexMeta")]
 pub struct IndexMeta {
     component: ComponentName,
     version: Version,
     artifacts: Vec<Artifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    revision: Option<Revision>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repository: Option<RepositoryName>,
 }
 
 #[derive(Deserialize)]
@@ -231,13 +360,18 @@ struct RawIndexMeta {
     component: ComponentName,
     version: Version,
     artifacts: Vec<Artifact>,
+    #[serde(default)]
+    revision: Option<Revision>,
+    #[serde(default)]
+    repository: Option<RepositoryName>,
 }
 
 impl TryFrom<RawIndexMeta> for IndexMeta {
     type Error = BadMeta;
 
     fn try_from(raw: RawIndexMeta) -> Result<Self, BadMeta> {
-        IndexMeta::new(raw.component, raw.version, raw.artifacts)
+        Ok(IndexMeta::new(raw.component, raw.version, raw.artifacts)?
+            .with(raw.revision, raw.repository))
     }
 }
 
@@ -266,7 +400,25 @@ impl IndexMeta {
             component,
             version,
             artifacts,
+            revision: None,
+            repository: None,
         })
+    }
+
+    /// 13, 138: the index naming the revision a publish put it from and
+    /// the publishing repository, where its remote gives one.
+    pub fn published_from(self, revision: Revision, repository: Option<RepositoryName>) -> Self {
+        self.with(Some(revision), repository)
+    }
+
+    /// The index naming `revision` and `repository` as they are, none
+    /// for either it does not name: as read, or as a copy keeps them.
+    pub fn with(self, revision: Option<Revision>, repository: Option<RepositoryName>) -> Self {
+        IndexMeta {
+            revision,
+            repository,
+            ..self
+        }
     }
 
     pub fn component(&self) -> &ComponentName {
@@ -279,6 +431,19 @@ impl IndexMeta {
 
     pub fn artifacts(&self) -> &[Artifact] {
         &self.artifacts
+    }
+
+    /// The revision the index was published from, none for an index put
+    /// before indexes named it.
+    pub fn revision(&self) -> Option<&Revision> {
+        self.revision.as_ref()
+    }
+
+    /// The publishing repository by its remote's owner and name, none
+    /// where its remote gave none or the index was put before indexes
+    /// named it.
+    pub fn repository(&self) -> Option<&RepositoryName> {
+        self.repository.as_ref()
     }
 }
 
@@ -431,6 +596,49 @@ mod tests {
     }
 
     #[test]
+    fn an_index_names_where_it_came_from() {
+        let index = IndexMeta::new(
+            ComponentName::new("web"),
+            Version::new("1.0.0"),
+            vec![artifact(b"a", "1.0.0")],
+        )
+        .unwrap()
+        .published_from(
+            Revision::new("4f2a9c1"),
+            Some(RepositoryName {
+                owner: "acme".into(),
+                name: "site".into(),
+            }),
+        );
+        assert_eq!(index.revision(), Some(&Revision::new("4f2a9c1")));
+        assert_eq!(
+            index.repository().map(ToString::to_string).as_deref(),
+            Some("acme/site")
+        );
+        let json = serde_json::to_value(&index).unwrap();
+        assert_eq!(json["revision"], "4f2a9c1");
+        assert_eq!(
+            json["repository"],
+            serde_json::json!({ "owner": "acme", "name": "site" })
+        );
+        round_trip(index);
+    }
+
+    #[test]
+    fn an_index_written_before_it_named_where_it_came_from_reads_and_writes_the_same() {
+        let before = concat!(
+            r#"{"component":"web","version":"1.0.0","artifacts":[{"digest":"#,
+            r#""sha256:ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb","#,
+            r#""meta":{"ecosystem":"eco","name":"pkg","version":"1.0.0"}}]}"#
+        );
+        let index: IndexMeta = serde_json::from_str(before).unwrap();
+        assert_eq!(index.revision(), None);
+        assert_eq!(index.repository(), None);
+        assert_eq!(index.artifacts(), &[artifact(b"a", "1.0.0")]);
+        assert_eq!(serde_json::to_string(&index).unwrap(), before);
+    }
+
+    #[test]
     fn an_index_rejects_an_artifact_of_another_version() {
         let a = artifact(b"a", "1.0.0");
         let b = artifact(b"b", "0.9.0");
@@ -506,6 +714,111 @@ mod tests {
         round_trip(Held::Manifest(Manifest::Index(index)));
         round_trip(Name::new("web-v1.0.0"));
         round_trip(ChannelName::new("beta"));
+    }
+
+    #[test]
+    fn an_artifact_name_reads_back_to_what_spelled_it() {
+        for (e, n, v, spelled) in [
+            ("eco", "site", "1.3.0", "artifact/eco/site@1.3.0"),
+            (
+                "npm",
+                "@acme/site",
+                "1.3.0+b.1",
+                "artifact/npm/@acme/site@1.3.0+b.1",
+            ),
+            (
+                "cargo",
+                "site",
+                "1.0.0+build.1",
+                "artifact/cargo/site@1.0.0+build.1",
+            ),
+        ] {
+            let parts = (Ecosystem::new(e), EcosystemName::new(n), Version::new(v));
+            let name = artifact_name(&parts.0, &parts.1, &parts.2);
+            assert_eq!(name.as_str(), spelled);
+            assert_eq!(name.as_artifact(), Some(parts), "{spelled}");
+        }
+    }
+
+    #[test]
+    fn a_declared_components_version_is_named_with_it_and_read_back() {
+        let name = version_name(&ComponentName::new("lib"), "lib-v1.2.0");
+        assert_eq!(name.as_str(), "lib:lib-v1.2.0");
+        assert_eq!(
+            name.as_version(),
+            Some((ComponentName::new("lib"), "lib-v1.2.0".to_string()))
+        );
+    }
+
+    #[test]
+    fn the_undeclared_components_version_is_its_bare_tag_and_reads_back_as_none() {
+        let name = version_name(&ComponentName::new(REPOSITORY_COMPONENT), "v1.2.0");
+        assert_eq!(name.as_str(), "v1.2.0");
+        assert_eq!(name.as_version(), None);
+    }
+
+    #[test]
+    fn a_name_holding_a_colon_elsewhere_reads_back_as_no_version() {
+        for name in [
+            "cache/sha256:ab",
+            "artifact/eco/site@1:2",
+            "channel/lib:x/beta",
+            ":v1",
+            "lib:",
+        ] {
+            assert_eq!(Name::new(name).as_version(), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_name_outside_the_artifact_space_reads_back_as_none() {
+        for name in [
+            "cache/b7e1",
+            "cache/x",
+            "artifact/npm",
+            "artifact/npm/site@",
+            "artifact/npm/site",
+            "artifact//site@1.0.0",
+            "artifact/npm/@1.0.0",
+            "web-v1.0.0",
+            "channel/beta",
+        ] {
+            assert_eq!(Name::new(name).as_artifact(), None, "{name}");
+        }
+    }
+
+    fn named(url: &str) -> Option<String> {
+        RepositoryName::from_remote(url).map(|r| r.to_string())
+    }
+
+    #[test]
+    fn a_remote_of_every_form_names_its_last_two_parts() {
+        for url in [
+            "https://example.com/agentplot/tailrace.git",
+            "ssh://git@example.com:22/agentplot/tailrace",
+            "git@example.com:agentplot/tailrace",
+            "https://example.com/group/agentplot/tailrace/",
+        ] {
+            assert_eq!(named(url).as_deref(), Some("agentplot/tailrace"), "{url}");
+        }
+    }
+
+    #[test]
+    fn a_local_path_or_a_path_of_one_part_names_none() {
+        for url in [
+            "/srv/tailrace.git",
+            "file:///srv/tailrace.git",
+            "https://example.com/tailrace",
+            "https://example.com//tailrace",
+        ] {
+            assert_eq!(named(url), None, "{url}");
+        }
+    }
+
+    #[test]
+    fn the_path_is_the_owner_then_the_name() {
+        let name = RepositoryName::from_remote("https://example.com/o/r.git").unwrap();
+        assert_eq!(name.path(), "/o/r");
     }
 
     #[test]

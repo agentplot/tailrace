@@ -118,7 +118,9 @@ fn a_landing_that_touches_one_component(world: &FakeWorld) {
     );
     let store = world.fakes.store.contents();
     assert_eq!(
-        store.names.get(&tailrace_seams::Name::new("lib-v0.2.0")),
+        store
+            .names
+            .get(&tailrace_seams::Name::new("lib:lib-v0.2.0")),
         Some(index)
     );
 

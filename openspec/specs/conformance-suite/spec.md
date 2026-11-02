@@ -116,7 +116,8 @@ clauses its operations keep: the same bytes put twice are held once
 under their own digest (1, 5); an artifact keeps the metadata that says
 what it is (4); attestations are held beside their digest, all of them,
 none altered (8, 10); a name moves only from where it is expected to be
-(70, 71); bytes read back are the bytes put (73).
+(70, 71); bytes read back are the bytes put (73); and a name's versions
+are listed (138).
 
 #### Scenario: The same bytes put twice
 
@@ -152,6 +153,11 @@ none altered (8, 10); a name moves only from where it is expected to be
 
 - **WHEN** the rig makes the store unreachable and bytes are read
 - **THEN** the answer is unreadable, carrying the store's own words unchanged, and never empty or not held
+
+#### Scenario: A name's versions listed
+
+- **WHEN** an index is put and named `artifact/eco/@acme/site@1.0.0` and `artifact/eco/@acme/site@1.1.0+b.1`, another `artifact/eco/@acme/site-cli@1.0.0`, and the versions of `eco` `@acme/site` and of a name never named are asked
+- **THEN** the first answer is 1.0.0 and 1.1.0+b.1 and no other, each resolving to the index, and the second is the empty list, neither absent nor refused
 
 ### Requirement: The build's contract
 
@@ -442,7 +448,7 @@ verdict naming their build is published.
 #### Scenario: S1, a landed revision published
 
 - **WHEN** a revision landed with a verdict naming its build is published, its two outputs read from the build and packed
-- **THEN** both artifacts carry the version history derives, the index is put after both artifacts, the notes and their claims, each output's artifact has one provenance in the host's identity naming the revision and build identity with the landing's verdict carried unchanged, the index names the notes as an artifact of ecosystem `notes` at the version with one provenance in the host's identity naming the revision and no build, the version's name is made at the index, the answer names every digest and where each claim is attached, and nothing else moved: no other name, no keeper append and no target call
+- **THEN** both artifacts carry the version history derives, the index is put after both artifacts and their claims and names the revision, each artifact has one provenance in the host's identity naming the revision and build identity with the landing's verdict carried unchanged, each artifact's name by its ecosystem, name and version is made at the index before the version's name is, the answer names every digest and where each claim is attached, and nothing else moved: no other name, no keeper append and no target call
 
 ### Requirement: S2 over the fakes
 
@@ -1021,3 +1027,20 @@ commit that cites it (core.33).
 
 - **WHEN** the coverage check runs
 - **THEN** 130 is cited by the gate's group and is not in the register
+
+### Requirement: Store naming over the fakes
+A store-naming group SHALL hold the core to 138 over the fakes, below
+its marker: what a publish names is found by a consumer by ecosystem,
+name and version alone, on the index the publish answered, with the
+claims a layout reads beside it. 138 SHALL leave the register in the
+commit whose scenario first cites it, and the parts of 137 about a
+range and the closure SHALL be named in the register as
+cargos-registry's.
+
+#### Scenario: A pin found through what a publish wrote
+- **WHEN** a component whose two outputs pack as `eco` `site` and `cli` is published at 1.0.0 under a policy for layouts, and a checkout pinning `site` 1.0.0 is synced
+- **THEN** the layout holds `site` 1.0.0 from the index the publish answered, rendered under the layout-policy claim read from that index, and nothing in the checkout's ask or the answer names a component, a tag prefix or a repository
+
+#### Scenario: The register after store naming
+- **WHEN** the coverage check runs after this group's scenarios are added
+- **THEN** 138 is cited and not in the register, and the parts of 137 about a range and the closure are pending naming cargos-registry

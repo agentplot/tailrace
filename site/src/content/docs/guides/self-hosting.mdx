@@ -144,8 +144,9 @@ empty file is no file.
   component's index.
 - `[store] registry` names one repository of a registry, such as
   `123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace` or
-  `localhost:5000/tailrace`, which holds everything the store holds. No
-  binding makes the repository. The credential is never the file's: it
+  `localhost:5000/tailrace`, the declared repository the store's spaces
+  hang under (see [a registry's repositories](#a-registrys-repositories)).
+  No binding makes a repository. The credential is never the file's: it
   is the host's Docker configuration and the credential helper it names
   for the registry, ECR's `ecr-login` among them, reached when the
   registry asks for one and kept nowhere (64).
@@ -185,6 +186,69 @@ empty file is no file.
   host's: moon is the build, and the policy file names each output's task
   and the projection that packs it. A `[build]` or `[projections]` table
   is refused, naming it.
+
+### A registry's repositories
+
+The declared repository holds every blob, artifact, index and claim.
+Under it, the store keeps three spaces of repositories, so a credential
+can be scoped to each apart (C.1, 135; ADR 0023): each declared
+component's own, `<declared>/<component>`, holding its versions' tags,
+its channels' names and its indexes; one per artifact name,
+`<declared>/artifact/<ecosystem>/<name>`, the version its tag; and one
+per build profile's cache entries, `<declared>/cache/moon`, the build
+identity its tag. A repository that declares no component keeps its
+versions and channels as tags of the declared repository, as before.
+
+A registry that makes a repository on its first push, zot, the
+reference distribution and GitHub's registry among them, makes each of
+these as tailrace first writes into it. One that makes repositories only
+by a creation template, Amazon ECR among them, refuses a push into a
+repository nobody made, and tailrace answers that refusal in the
+registry's words, naming the repository it was for, and asks nothing
+again. Before the first publish to such a registry, make:
+
+- the declared repository;
+- and repository creation templates applying on push to
+  `<declared>/artifact/`, `<declared>/cache/` and each declared
+  component's `<declared>/<component>`, or one template applying to
+  `<declared>/` that covers all three, or each repository by hand.
+
+A template that sets resource tags on the repositories it makes names a
+role that may tag them: on ECR, a template naming tags and no role makes
+no repository, and every push under it is refused.
+
+A credential needs to write only where its job writes:
+
+- a push writes cache entries alone: write on `<declared>/cache/`, and
+  nothing on the declared repository;
+- a publish writes the declared repository, its component's repository
+  and `<declared>/artifact/`;
+- a promotion writes the channel's component's repository, for the
+  channel's tag, and the declared one, for its claim.
+
+So a credential scoped to one component's repository makes that
+component's versions and moves its channels and no other component's.
+
+After upgrading to a tailrace that keeps these spaces, a store holding a
+declared component's versions from before:
+
+- **Carry each channel.** A declared component's channel tags written
+  before, `channel_2flib_2fbeta` in the declared repository, are read by
+  nothing now: put each, by hand, as the channel's tag of its
+  component's repository, `beta` in `<declared>/lib`, at the digest it
+  names, before the first promotion after upgrading. Until then the
+  channel, and its chain where the ledger is held in the store, reads as
+  empty.
+- **Publish each held version once again.** A declared component's
+  version is named `<component>:<tag>` now, so one held under its bare
+  tag is absent to the gate, a promotion, the record and verify. The next
+  publish of its revision finds the bare tag, names the version
+  `<component>:<tag>` at the same index and each artifact by its
+  ecosystem, name and version, and writes nothing else; do it before the
+  version is accepted or promoted.
+
+Cache entries a push wrote into the declared repository before are read
+by nothing and may be removed; an entry gone is a build again (54).
 
 ## The host's serving process
 

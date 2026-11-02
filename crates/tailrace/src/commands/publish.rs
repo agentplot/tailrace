@@ -292,10 +292,11 @@ fn text(out: &mut dyn Write, answer: &Answer<Offered>) -> io::Result<()> {
                 for artifact in artifacts {
                     writeln!(
                         out,
-                        "  {} {} {}, from {} by build {}",
+                        "  {} {} {}, named {}, from {} by build {}",
                         artifact.ecosystem,
                         artifact.name,
                         artifact.digest,
+                        artifact.store_name,
                         artifact.output,
                         artifact.build
                     )?;

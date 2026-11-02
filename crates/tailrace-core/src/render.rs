@@ -59,22 +59,16 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents,
-    Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Pinned,
-    Policy, Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
+    Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, NamedSigner, Not, Pinned, Policy,
+    Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
 use crate::{answer_json, policy_at, sync, Filled, History, Landed, Provenance, SyncAsk, BOUND};
 
-/// What every name of a version's index by ecosystem, name and version
-/// begins with (138).
-pub const ARTIFACT: &str = "artifact/";
-
-/// 138: the store's name for the index of `version` of `name` in
-/// `ecosystem`.
-pub fn artifact_name(ecosystem: &Ecosystem, name: &EcosystemName, version: &Version) -> Name {
-    Name::new(format!("{ARTIFACT}{ecosystem}/{name}@{version}"))
-}
+/// 138: the artifact space, spelled once in the seams and read back
+/// there (design D1).
+pub use tailrace_seams::{artifact_name, ARTIFACT};
 
 /// A pin's own answer inside the answer of the reads it took. A read its
 /// source answered unreadable or refused is the outer answer, and leaves

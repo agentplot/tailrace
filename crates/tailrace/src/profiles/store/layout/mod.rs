@@ -18,7 +18,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use tailrace_seams::{
-    canonical, Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store, Why,
+    canonical, Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, Not, Put,
+    Seam, Source, Store, Version, Why,
 };
 
 mod blobs;
@@ -294,6 +295,20 @@ impl Store for Layout {
         };
         Ok(Held::Manifest(manifest))
     }
+
+    /// 138: the version of every ref name of `index.json` that reads back
+    /// as an artifact's of `ecosystem` and `name`, in the order of
+    /// `index.json`; nothing is written.
+    fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>> {
+        self.opened()?;
+        Ok(self
+            .read_index()?
+            .names()
+            .filter_map(|n| Name::new(n).as_artifact())
+            .filter(|(e, n, _)| e == ecosystem && n == name)
+            .map(|(_, _, v)| v)
+            .collect())
+    }
 }
 
 fn path_text(path: &Path) -> String {
@@ -463,6 +478,71 @@ pub(super) mod tests {
             IndexMeta::new(ComponentName::new("acme"), Version::new("1.3.0"), artifacts).unwrap(),
         );
         let put = layout.put_artifact(&index).unwrap();
+        assert_eq!(layout.read(&put.digest), Ok(Held::Manifest(index)));
+    }
+
+    /// An index of one artifact, `site`, put into `layout`.
+    fn site_index(layout: &Layout) -> IndexMeta {
+        let layer = layout.put_bytes(b"site").unwrap().digest;
+        let manifest = Manifest::Artifact {
+            meta: meta("site"),
+            layers: vec![layer],
+        };
+        let artifact = Artifact {
+            digest: layout.put_artifact(&manifest).unwrap().digest,
+            meta: meta("site"),
+        };
+        IndexMeta::new(
+            ComponentName::new("acme"),
+            Version::new("1.3.0"),
+            vec![artifact],
+        )
+        .unwrap()
+    }
+
+    /// The annotations of the image index `digest` holds.
+    fn annotations_of(layout: &Layout, digest: &Digest) -> serde_json::Value {
+        let bytes = layout.read_blob(digest).unwrap();
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["annotations"].clone()
+    }
+
+    #[test]
+    fn an_index_reads_back_naming_its_revision_and_repository() {
+        let (_dir, layout) = fresh();
+        let index = Manifest::Index(site_index(&layout).published_from(
+            tailrace_seams::Revision::new("4f2a9c1"),
+            Some(tailrace_seams::RepositoryName {
+                owner: "acme".into(),
+                name: "site".into(),
+            }),
+        ));
+        let put = layout.put_artifact(&index).unwrap();
+        assert_eq!(layout.read(&put.digest), Ok(Held::Manifest(index)));
+        let annotations = annotations_of(&layout, &put.digest);
+        assert_eq!(annotations["org.opencontainers.image.revision"], "4f2a9c1");
+        assert_eq!(
+            annotations["io.github.agentplot.tailrace.repository"],
+            "acme/site"
+        );
+    }
+
+    #[test]
+    fn an_index_naming_neither_keeps_the_digest_it_had_before_indexes_named_them() {
+        let (_dir, layout) = fresh();
+        let index = Manifest::Index(site_index(&layout));
+        let put = layout.put_artifact(&index).unwrap();
+        assert_eq!(
+            put.digest.as_str(),
+            "sha256:2606d28b2ffb25dd56a6c847b158460514360f4babf6cd5e77ab7e2884352354"
+        );
+        let annotations = annotations_of(&layout, &put.digest);
+        assert_eq!(
+            annotations.as_object().unwrap().keys().collect::<Vec<_>>(),
+            [
+                "io.github.agentplot.tailrace.component",
+                "org.opencontainers.image.version"
+            ]
+        );
         assert_eq!(layout.read(&put.digest), Ok(Held::Manifest(index)));
     }
 
@@ -656,6 +736,38 @@ pub(super) mod tests {
             Err(Not::absent(layout.source(), missing.to_string()))
         );
         assert_eq!(layout.resolve(&name), Ok(at));
+    }
+
+    #[test]
+    fn a_names_versions_are_listed_from_the_index_names() {
+        let (_dir, layout) = fresh();
+        let index = layout.put_bytes(b"an index").unwrap().digest;
+        let npm = Ecosystem::new("npm");
+        for (name, version) in [
+            ("@acme/site", "1.0.0"),
+            ("@acme/site", "1.1.0+b.1"),
+            ("@acme/site-cli", "1.0.0"),
+        ] {
+            let name = tailrace_seams::artifact_name(
+                &npm,
+                &EcosystemName::new(name),
+                &Version::new(version),
+            );
+            layout.name(&name, &index, None).unwrap();
+        }
+        layout
+            .name(&Name::new("site-v1.0.0"), &index, None)
+            .unwrap();
+        let before = held(&layout);
+        assert_eq!(
+            layout.versions(&npm, &EcosystemName::new("@acme/site")),
+            Ok(vec![Version::new("1.0.0"), Version::new("1.1.0+b.1")])
+        );
+        assert_eq!(
+            layout.versions(&npm, &EcosystemName::new("@acme/web")),
+            Ok(vec![])
+        );
+        assert_eq!(held(&layout), before, "the listing wrote");
     }
 
     #[test]
