@@ -8,13 +8,16 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use tailrace_core::{answer_json, publish, Provenance, Publish, Published, CACHE, NOTES};
+use tailrace_core::{
+    answer_json, layout_policy_body, publish, Provenance, Publish, Published, CACHE, NOTES,
+};
 use tailrace_fakes::{FakeBuild, FakeStore, PROFILE};
 use tailrace_seams::{
-    Answer, Artifact, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
-    Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Miss, Name, Not, Outcome,
-    Output, OutputName, Packed, Pin, Projection, Put, Range, Rendered, Request, Required,
-    Requirement, Response, Revision, Seam, Source, Store, Verdict, Version, Why,
+    Answer, Artifact, AskedOf, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind,
+    Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Miss, Name,
+    NamedSigner, Not, Outcome, Output, OutputName, Packed, Pin, Projection, Put, Range, Rendered,
+    Request, Required, RequiredClaim, Requirement, Response, Revision, Seam, Source, Store,
+    Verdict, Version, Why,
 };
 
 use crate::fixture::DATE;
@@ -28,7 +31,7 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         Scenario {
             name: "a landed revision published",
             plays: Some("S1"),
-            cites: &[6, 7, 11, 12, 13, 17, 19, 20, 21, 22, 110, 134],
+            cites: &[6, 7, 11, 12, 13, 17, 19, 20, 21, 22, 110, 134, 138],
             run: a_landed_revision_published,
         },
         Scenario {
@@ -205,6 +208,28 @@ fn nothing_offered(world: &FakeWorld, case: &str) {
 
 fn a_landed_revision_published(world: &FakeWorld) {
     let verdicts = passing(world, &world.head);
+    // The file writes a policy for layouts, which the index carries before
+    // anything names it (113, 138).
+    let required = vec![RequiredClaim {
+        kind: ClaimKind::Provenance,
+        check: None,
+        signers: vec![NamedSigner {
+            id: world.host.clone(),
+            verified_by: "the host's key".into(),
+            kinds: vec![ClaimKind::Provenance],
+            checks: vec![],
+        }],
+        asked_of: AskedOf::Every,
+    }];
+    world.fakes.policy.require_at(
+        &world.head,
+        Audience::Layout,
+        Required::Layout {
+            claims: required.clone(),
+            given: false,
+            signers: vec![],
+        },
+    );
     let published = ok(one(world.publish(&world.ask(&world.head))), "the publish");
     let Published::Version {
         component,
@@ -234,6 +259,12 @@ fn a_landed_revision_published(world: &FakeWorld) {
         panic!("{index} holds no index")
     };
     assert_eq!((meta.component(), meta.version()), (component, version));
+    // 13, 138: the index names the revision it was published from.
+    assert_eq!(
+        meta.revision(),
+        Some(&world.head),
+        "the index names no revision"
+    );
     let named: Vec<&Digest> = meta.artifacts().iter().map(|a| &a.digest).collect();
     let answered: Vec<&Digest> = artifacts
         .iter()
@@ -286,8 +317,9 @@ fn a_landed_revision_published(world: &FakeWorld) {
         "the notes are not the commits the version is derived from"
     );
 
-    // 17: every artifact and its claims before the index, the index
-    // before the names: each artifact's, then the version's.
+    // 17, 138: every artifact and its claims before the index, then the
+    // layout policy on it, then the names: each artifact's by its
+    // ecosystem, name and version, then the version's.
     let writes = world.writes();
     let indexes: Vec<usize> = (0..writes.len())
         .filter(|i| writes[*i].is_index())
@@ -313,9 +345,29 @@ fn a_landed_revision_published(world: &FakeWorld) {
             .all(|w| !matches!(w, Write::Name { .. })),
         "a name was moved before the index was put: {writes:?}"
     );
+    let Some(Write::Attach { subject, envelope }) = writes.get(at + 1) else {
+        panic!("the layout policy was not attached next to the index: {writes:?}")
+    };
+    let policy = Claim::from_envelope(envelope).expect("a claim of tailrace's form");
+    assert_eq!(
+        (subject, policy.kind, &policy.body),
+        (
+            index,
+            ClaimKind::LayoutPolicy,
+            &layout_policy_body(&required)
+        ),
+        "another claim was attached next to the index"
+    );
     let made: Vec<Write> = artifacts
         .iter()
-        .map(|a| a.store_name.clone())
+        .map(|a| {
+            assert_eq!(
+                a.store_name,
+                tailrace_seams::artifact_name(&a.ecosystem, &a.name, version),
+                "an artifact's name is spelled otherwise"
+            );
+            a.store_name.clone()
+        })
         .chain(std::iter::once(Name::new(TAG)))
         .map(|name| Write::Name {
             name,
@@ -324,9 +376,9 @@ fn a_landed_revision_published(world: &FakeWorld) {
         })
         .collect();
     assert_eq!(
-        &writes[at + 1..],
+        &writes[at + 2..],
         made,
-        "after the index, each artifact's name and then the version's were not made from nothing at it, alone"
+        "after the layout policy, each artifact's name and then the version's were not made from nothing at the index, alone"
     );
 
     // 7, 11 to 13: one provenance per artifact, in the host's identity,
@@ -385,9 +437,10 @@ fn a_landed_revision_published(world: &FakeWorld) {
     assert_eq!(notes.claims.len(), 1);
     assert_eq!(notes.claims[0].envelope, held[0].digest());
     for call in world.fakes.signer.calls() {
-        assert_eq!(
-            call.given["claim"]["kind"], "provenance",
-            "the host signed a claim not its own to make"
+        let kind = &call.given["claim"]["kind"];
+        assert!(
+            kind == "provenance" || kind == "layout_policy",
+            "the host signed a claim not its own to make: {kind}"
         );
     }
 

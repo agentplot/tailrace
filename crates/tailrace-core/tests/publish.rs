@@ -2205,3 +2205,43 @@ fn a_version_published_before_notes_is_published_again_with_none_added() {
         .collect::<Vec<_>>();
     assert_eq!(now, record);
 }
+
+// End to end: what a publish names is found by a pin of its name and
+// version alone (138).
+
+#[test]
+fn each_artifact_a_publish_offers_is_found_by_its_name_and_version_alone() {
+    let world = World::new();
+    let claims = vec![required(ClaimKind::Provenance, HOST)];
+    layout(&world, claims.clone(), false);
+    let published = world.publish_one(&world.ask_for("lib")).unwrap();
+    let Published::Version {
+        index, artifacts, ..
+    } = &published
+    else {
+        unreachable!()
+    };
+    assert_eq!(artifacts.len(), 2);
+    for artifact in artifacts {
+        let pin = Pinned {
+            name: artifact.name.clone(),
+            version: Version::new("0.2.0"),
+        };
+        let found = tailrace_core::locate(&world.fakes.store, &artifact.ecosystem, &pin)
+            .unwrap()
+            .unwrap_or_else(|not| {
+                panic!("{} {} was not found: {not:?}", artifact.ecosystem, pin.name)
+            });
+        assert_eq!(&found.index, index);
+        assert_eq!(found.artifact.digest, artifact.digest);
+        let listed = world
+            .fakes
+            .store
+            .versions(&artifact.ecosystem, &artifact.name)
+            .unwrap();
+        assert_eq!(listed, [Version::new("0.2.0")]);
+    }
+    let [(_, claim)] = <[_; 1]>::try_from(layout_policies(&world, &published)).unwrap();
+    assert_eq!(claim.subject, *index);
+    assert_eq!(claim.body, layout_policy_body(&claims));
+}

@@ -20,6 +20,7 @@ mod tag;
 #[cfg(test)]
 pub(crate) mod stub;
 
+use std::cell::RefCell;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -67,6 +68,7 @@ pub struct Registry {
     bound: Duration,
     build: Option<String>,
     push: bool,
+    mounts: RefCell<Vec<(String, bool)>>,
 }
 
 /// The space of repositories under the declared one an artifact's names
@@ -152,6 +154,7 @@ impl Registry {
             bound: BOUND,
             build: None,
             push: false,
+            mounts: RefCell::new(Vec::new()),
         })
     }
 
@@ -186,6 +189,14 @@ impl Registry {
     #[doc(hidden)]
     pub fn between_put_and_read_back(&mut self, hook: impl Fn(&str) + 'static) {
         self.hook = Some(Box::new(hook));
+    }
+
+    /// Each mount this store asked, by the repository it was into, and
+    /// whether the registry took it, so a run against a registry reports
+    /// whether it takes a cross-repository mount (design D8, ADR 0023).
+    #[doc(hidden)]
+    pub fn mounts(&self) -> Vec<(String, bool)> {
+        self.mounts.borrow().clone()
     }
 
     /// How long a tag may answer a place it was at after a move, before
@@ -661,6 +672,12 @@ impl Registry {
             ),
         );
         let answered = self.send(Method::POST, &url, &[], Some(&[]))?;
+        if matches!(answered.status, StatusCode::CREATED | StatusCode::ACCEPTED) {
+            self.mounts.borrow_mut().push((
+                repository.to_string(),
+                answered.status == StatusCode::CREATED,
+            ));
+        }
         match answered.status {
             StatusCode::CREATED => Ok(()),
             StatusCode::ACCEPTED => {
@@ -1726,6 +1743,17 @@ mod tests {
         assert_eq!(store.resolve(&name), Ok(version.index.clone()));
 
         let repository = "acme/store/artifact/eco/site";
+        let into: Vec<bool> = store
+            .mounts()
+            .into_iter()
+            .filter(|(r, _)| r == repository)
+            .map(|(_, taken)| taken)
+            .collect();
+        assert_eq!(
+            into,
+            vec![false; version.blobs.len()],
+            "a declined mount was taken"
+        );
         let writes: Vec<String> = stub.asked()[before..]
             .iter()
             .filter(|a| {
