@@ -9,7 +9,9 @@ decision-makers:
 
 # The key service signer takes a P-256 key by its ARN and reads its standing from its state
 
-Status: accepted by the user on 2026-10-27, on their card.
+Status: accepted by the user on 2026-10-27, on their card; amended on 2026-11-02 to follow C.7 as amended at `agentplot/blueprints` 67f95da, as the amendment below says.
+
+Amendment (2026-11-02, following C.7 as amended at `agentplot/blueprints` 67f95da): the policy that names a key-service signer carries the key's public half beside the key's name, and a verifier reads it there, from the policy at the revision that counted the claim (107), so a claim stays checkable after its key is disabled or deleted (117); the key service is asked for the public half only where the policy carries none. A key pending deletion or deleted whose public half the policy carries is answered as any lapsed standing is, made and expired, its claim counting where it counted at acceptance (81, 117, core.39); unreadable, naming the key and carrying KMS's words, stays the answer only where the policy carries no public half. The name, what is signed, the key's material and the credentials stand as decided. Verify as built reads the public half from KMS at each call and stands against C.7 until the change that reads it from the policy (`docs/architecture/_open.md`).
 
 Deciders: proposed by the-signer-in-a-key-service unit of phase 1's bolt 4, which binds the signer seam to a key in AWS KMS used through the host's own role (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4), after the operator ruled that the offering signer on a build fleet is a key in a key service (rulings, 2026-10-24), for the user to accept with the change.
 Sources: statement clauses 11, 58, 59, 64, 79, 80, 81, 117, B.4, C.7; ADRs 0005, 0013; rules core.1, core.7, core.8, core.19, core.21, core.38; AWS KMS's API reference for Sign, GetPublicKey and DescribeKey, and its table of key states, read 2026-10-25; the change's design, D1 to D4 and D7.
