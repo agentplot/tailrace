@@ -1,0 +1,19 @@
+id = "agentplot.tailrace"
+name = "tailrace"
+version = "0.1.0"
+min_herdr_version = "0.9.3"
+description = "tailrace beside your agents: every repository this host knows, each channel's version and the environments, and one repository whole, read from the host's one serving process."
+platforms = ["linux", "macos"]
+
+[[actions]]
+id = "status"
+title = "tailrace: every repository on this host"
+contexts = ["global", "pane"]
+command = ["sh", "bin/open.sh", "status"]
+
+# A split beside the focused pane, which stays while the agents run.
+[[panes]]
+id = "status"
+title = "tailrace"
+placement = "split"
+command = ["sh", "bin/status.sh"]

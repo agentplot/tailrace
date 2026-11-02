@@ -1,0 +1,8 @@
+tailrace · 2 repositories · as of 2026-10-26T07:35:00Z
+
+  unreadable — the host (/scratch/gadget/repo) could not read the checkout of agentplot/gadget at /scratch/gadget/repo
+      failed to resolve path '/scratch/gadget/repo': No such file or directory
+  [1] agentplot/widget  repository beta 0.2.0 · repository stable empty
+      environments: unreadable — the target (unread) could not read the environments: what each environment should run and runs is read from a target, and no target is read
+
+↑↓ choose · enter open · r ask again · q close

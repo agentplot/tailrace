@@ -167,9 +167,7 @@ impl Sluice {
                 return self.as_fetched(failed);
             }
         }
-        let copy = self.copy();
-        let old: Vec<String> = copy.held(SLUICE)?.into_keys().collect();
-        copy.remake(&old.iter().map(String::as_str).collect::<Vec<_>>(), &listed)?;
+        self.copy().remake(SLUICE, &listed)?;
         Ok(Opened {
             listed,
             read: Read::Source,

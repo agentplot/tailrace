@@ -7,6 +7,7 @@
 mod scratch;
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 
 use scratch::{git_fails, Scratch, MAIN};
 use tailrace::profiles::landing::branch::PlainBranch;
@@ -303,6 +304,63 @@ fn each_read_remakes_the_copy_and_writes_no_other_ref() {
     assert!(
         !scratch.repo.path.join(".git/FETCH_HEAD").exists(),
         "the read wrote FETCH_HEAD"
+    );
+}
+
+/// Two reads of one checkout at once, as two panes' status from one
+/// serving process: a read that deleted the last ref under a directory
+/// of the copy pruned the directory while the other read locked its copy
+/// there, and that read answered unreadable. So a read never deletes a
+/// copy the remote still lists, which a hook the scratch git runs after
+/// each ref transaction records, and a read that finds the branch where
+/// the last one did still says the copy was fetched now.
+#[test]
+fn a_read_never_deletes_the_copy_the_remote_lists() {
+    let scratch = Scratch::new();
+    let landing = PlainBranch::new(&scratch.repo.path, Some("origin".into()));
+    let head = Revision::new(scratch.repo.head());
+    let deleted = scratch.repo.path.join(".git/deleted");
+    let hooks = scratch.repo.path.join(".git/hooks");
+    fs::create_dir_all(&hooks).unwrap();
+    let hook = hooks.join("reference-transaction");
+    fs::write(
+        &hook,
+        format!(
+            "#!/bin/sh\n\
+             [ \"$1\" = committed ] || exit 0\n\
+             while read -r old new ref; do\n\
+             \x20 case \"$new\" in *[!0]*) ;; *) echo \"$ref\" >> '{}' ;; esac\n\
+             done\n",
+            deleted.display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(landing.landed(&main_branch(), &head).unwrap().landed);
+    let (first, _) = copied_at(&scratch.repo);
+
+    std::thread::sleep(std::time::Duration::from_millis(1_100));
+    assert_eq!(
+        landing.landed(&main_branch(), &head),
+        Ok(IsLanded {
+            landed: true,
+            read: Read::Source
+        })
+    );
+    assert_eq!(
+        scratch.repo.git(&["rev-parse", COPY_OF_MAIN]),
+        head.as_str()
+    );
+    let (second, entries) = copied_at(&scratch.repo);
+    assert!(second > first, "the copy's time stayed at {first}");
+    assert_eq!(
+        entries, 1,
+        "the copy's reflog holds more than its last fetch"
+    );
+    assert_eq!(
+        fs::read_to_string(&deleted).unwrap_or_default(),
+        "",
+        "a read deleted a copy the remote lists"
     );
 }
 

@@ -1,0 +1,23 @@
+tailrace · 6 repositories · as of 2026-10-26T07:35:00Z
+
+  [1] agentplot/alpha  app beta 1.2.0 · app stable refused · app edge empty · app nightly absent · app canary unreadable
+      app stable: refused — the keeper (git ref, origin) refused: fork: predecessor sha256:bbbbbbbbbbbb, claims sha256:cccccccccccc, sha256:dddddddddddd
+        error: two claims name one predecessor
+         see the ledger's [31mlog[0m
+      app nightly: absent — the keeper (git ref, origin) holds no chain of app/nightly
+      app canary: unreadable — the keeper (git ref, origin) could not read chain of app/canary
+        fatal: unable to access 'origin': Could not resolve host
+      environments: 3 running what they should · 1 behind · 1 waiting on a person · 0 cannot be read
+  [2] agentplot/beta   refused — the landing (branch, origin) refused: not landed as fetched: branch main, revision eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee, fetched 2026-10-26T07:34:10Z
+        ssh: connect to host example.com port 22: Connection refused
+      environments: absent — the target (unread) holds no environment of agentplot/beta
+  [3] agentplot/gamma  no channel declared
+      environments: unreadable — the target (kubernetes, prod) could not read the environments of agentplot/gamma
+        Unauthorized
+  absent — the host (/home/a/.local/state/tailrace/repositories) holds no repository agentplot/delta: no command run in a checkout of it on this host has named it
+  refused — the policy (file) refused: it refused
+      the policy file names a seam this host does not bind
+  unreadable — the host (/srv/epsilon) could not read the checkout of agentplot/epsilon at /srv/epsilon
+      failed to resolve path '/srv/epsilon': No such file or directory
+
+↑↓ choose · enter open · r ask again · q close
