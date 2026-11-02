@@ -135,13 +135,19 @@ A publish SHALL end with an answer readable by a program that names, for
 each component, the version, the tag, the revision, the index's digest,
 each artifact's digest, ecosystem, name and store name, whether its
 projection promises the same bytes again, and each claim with its kind,
-its signer, its envelope's digest and the digest it is attached to (19,
-57, 138).
+its signer, its envelope's digest and the digest it is attached to; and,
+where the index names notes, the notes' digest, their bytes' digest,
+their claim and their text (19, 57, 134, 138).
 
 #### Scenario: The answer names every digest
 
 - **WHEN** a component with two outputs is published and its answer is read as JSON
 - **THEN** it names the index's digest, the version, both artifacts' digests, ecosystem names and store names, and for each artifact the provenance claim's envelope digest and the artifact digest it is attached to, each equal to what the fake store holds
+
+#### Scenario: The answer shows the notes
+
+- **WHEN** a version is published and its answer is read as JSON and as text
+- **THEN** the JSON names the notes' digest, their claim's envelope digest and their text equal to the bytes the fake store holds, and the text answer prints the notes beneath the version's line
 
 ### Requirement: A publish offers and does nothing more
 
@@ -171,3 +177,11 @@ that claim SHALL attach nothing more.
 #### Scenario: A publish with no layout line
 - **WHEN** a revision whose policy file names a gate signer and no `[layout]` is published
 - **THEN** the index carries no layout-policy claim, and the given is left for a consumer to lay beneath itself
+
+#### Scenario: A publish with no policy file
+- **WHEN** a revision whose tree holds no policy file is published
+- **THEN** the index carries no layout-policy claim, and the given is left for a consumer to lay beneath itself, and the publish answers as before
+
+#### Scenario: A repeat publish
+- **WHEN** the same revision is published again and ends at the same index
+- **THEN** the index still carries one layout-policy claim
