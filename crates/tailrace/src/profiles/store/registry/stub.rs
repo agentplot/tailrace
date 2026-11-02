@@ -21,13 +21,17 @@ pub(crate) struct Asked {
 
 impl Asked {
     /// The repository the request is for, the path between `/v2/` and
-    /// the operation.
+    /// the operation, the operation read from the path's end, as a
+    /// registry's routes match it: what follows the operation's word holds
+    /// no `/` but an upload's, so a repository whose own path holds the
+    /// word is read whole.
     pub(crate) fn repository(&self) -> Option<&str> {
         let rest = self.path.strip_prefix("/v2/")?;
+        let bare = rest.split('?').next().unwrap_or(rest);
         ["/blobs/", "/manifests/", "/tags/", "/referrers/"]
             .iter()
-            .filter_map(|op| rest.find(op))
-            .min()
+            .filter_map(|op| bare.rfind(op))
+            .max()
             .map(|at| &rest[..at])
     }
 }

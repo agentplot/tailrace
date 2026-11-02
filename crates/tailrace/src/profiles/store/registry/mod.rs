@@ -34,7 +34,7 @@ use ureq::http::{Method, StatusCode};
 use super::oci::{
     self, Descriptor, Referrers, EMPTY_JSON, ENVELOPE, IMAGE_INDEX, IMAGE_MANIFEST, OCTETS,
 };
-use client::{encoded, repository_of, Answered, Client};
+use client::{encoded, Answered, Client};
 
 /// What a cache entry's name begins with, and the space of repositories
 /// under the declared one its entries are held in, one per build profile
@@ -244,21 +244,30 @@ impl Registry {
         }
     }
 
+    /// `method` of `url`, a request for `repository`, as the client
+    /// sends it (design D8).
     fn send(
         &self,
+        repository: &str,
         method: Method,
         url: &str,
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
     ) -> Answer<Answered> {
-        self.client.send(method, url, headers, body)
+        self.client.send(repository, method, url, headers, body)
     }
 
-    /// What a `HEAD` the operation does not take is: what a `GET` of
-    /// the same URL answers, which carries the registry's words where the
-    /// `HEAD` carried none.
-    fn other_head(&self, url: &str, accept: &[(&str, &str)], head: &Answered) -> Not {
-        match self.send(Method::GET, url, accept, None) {
+    /// What a `HEAD` of `repository` the operation does not take is: what
+    /// a `GET` of the same URL answers, which carries the registry's words
+    /// where the `HEAD` carried none.
+    fn other_head(
+        &self,
+        repository: &str,
+        url: &str,
+        accept: &[(&str, &str)],
+        head: &Answered,
+    ) -> Not {
+        match self.send(repository, Method::GET, url, accept, None) {
             Ok(got) if !got.status.is_success() => self.other(url, &got),
             Ok(_) => self.other(url, head),
             Err(not) => not,
@@ -275,14 +284,14 @@ impl Registry {
         }
     }
 
-    /// What a write the registry did not take is: as
+    /// What a write to `repository` the registry did not take is: as
     /// [`Registry::other`] answers it, and, where the registry answers
     /// it 404, holding no such repository, as one that makes repositories
     /// only by a creation template does where none applies, refused
     /// naming the repository the write was for beside the registry's own
     /// words, so an operator reads which one to make; nothing is asked
     /// again (58, 59, C.1; design D13).
-    fn other_put(&self, url: &str, answered: &Answered) -> Not {
+    fn other_put(&self, repository: &str, url: &str, answered: &Answered) -> Not {
         if answered.status != StatusCode::NOT_FOUND {
             return self.other(url, answered);
         }
@@ -290,9 +299,8 @@ impl Registry {
             &self.source,
             Why::Said,
             Some(format!(
-                "the registry holds no repository {}/{}, which the write was for: {}",
+                "the registry holds no repository {}/{repository}, which the write was for: {}",
                 self.host,
-                repository_of(url),
                 answered.words()
             )),
         )
@@ -337,11 +345,11 @@ impl Registry {
     /// The size of the blob held under `digest`; none when it is not.
     fn blob_size(&self, repository: &str, digest: &Digest) -> Answer<Option<u64>> {
         let url = self.url_in(repository, &format!("blobs/{digest}"));
-        let answered = self.send(Method::HEAD, &url, &[], None)?;
+        let answered = self.send(repository, Method::HEAD, &url, &[], None)?;
         match answered.status {
             StatusCode::OK => self.length(&url, &answered).map(Some),
             StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(self.other_head(&url, &[], &answered)),
+            _ => Err(self.other_head(repository, &url, &[], &answered)),
         }
     }
 
@@ -354,7 +362,7 @@ impl Registry {
     ) -> Answer<Option<(String, u64, Option<Digest>)>> {
         let url = self.url_in(repository, &format!("manifests/{reference}"));
         let accept = [("accept", MANIFESTS)];
-        let answered = self.send(Method::HEAD, &url, &accept, None)?;
+        let answered = self.send(repository, Method::HEAD, &url, &accept, None)?;
         match answered.status {
             StatusCode::OK => {
                 let size = self.length(&url, &answered)?;
@@ -368,7 +376,7 @@ impl Registry {
                 Ok(Some((media_type, size, digest)))
             }
             StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(self.other_head(&url, &accept, &answered)),
+            _ => Err(self.other_head(repository, &url, &accept, &answered)),
         }
     }
 
@@ -389,9 +397,9 @@ impl Registry {
     /// upload is opened (design D5).
     fn upload(&self, repository: &str, digest: &Digest, bytes: &[u8]) -> Answer<()> {
         let url = self.url_in(repository, "blobs/uploads/");
-        let opened = self.send(Method::POST, &url, &[], Some(&[]))?;
+        let opened = self.send(repository, Method::POST, &url, &[], Some(&[]))?;
         if opened.status != StatusCode::ACCEPTED {
-            return Err(self.other_put(&url, &opened));
+            return Err(self.other_put(repository, &url, &opened));
         }
         let location = opened.header("location").ok_or_else(|| {
             Not::unreadable(
@@ -400,18 +408,31 @@ impl Registry {
                 Some("the registry opened an upload and answered no Location".into()),
             )
         })?;
-        self.upload_to(location, digest, bytes)
+        self.upload_to(repository, location, digest, bytes)
     }
 
-    /// `bytes` put as the blob `digest` through the upload the registry
-    /// opened at `location`, in one request (design D5).
-    fn upload_to(&self, location: &str, digest: &Digest, bytes: &[u8]) -> Answer<()> {
+    /// `bytes` put as the blob `digest` of `repository` through the
+    /// upload the registry opened at `location`, in one request (design
+    /// D5).
+    fn upload_to(
+        &self,
+        repository: &str,
+        location: &str,
+        digest: &Digest,
+        bytes: &[u8],
+    ) -> Answer<()> {
         let location = self.absolute(location);
         let sep = if location.contains('?') { '&' } else { '?' };
         let url = format!("{location}{sep}digest={}", encoded(digest.as_str()));
-        let put = self.send(Method::PUT, &url, &[("content-type", OCTETS)], Some(bytes))?;
+        let put = self.send(
+            repository,
+            Method::PUT,
+            &url,
+            &[("content-type", OCTETS)],
+            Some(bytes),
+        )?;
         if !put.status.is_success() {
-            return Err(self.other_put(&url, &put));
+            return Err(self.other_put(repository, &url, &put));
         }
         self.named(digest, &put)
     }
@@ -427,13 +448,14 @@ impl Registry {
     ) -> Answer<Answered> {
         let url = self.url_in(repository, &format!("manifests/{reference}"));
         let put = self.send(
+            repository,
             Method::PUT,
             &url,
             &[("content-type", media_type)],
             Some(bytes),
         )?;
         if !put.status.is_success() {
-            return Err(self.other_put(&url, &put));
+            return Err(self.other_put(repository, &url, &put));
         }
         self.named(&Digest::of(bytes), &put)?;
         Ok(put)
@@ -445,7 +467,7 @@ impl Registry {
     /// D3).
     fn blob(&self, repository: &str, digest: &Digest) -> Answer<Option<Vec<u8>>> {
         let url = self.url_in(repository, &format!("blobs/{digest}"));
-        let answered = self.send(Method::GET, &url, &[], None)?;
+        let answered = self.send(repository, Method::GET, &url, &[], None)?;
         match answered.status {
             StatusCode::OK => {
                 self.same(digest, &answered.body)?;
@@ -460,7 +482,13 @@ impl Registry {
     /// once they are found to be its; none when it is not held.
     fn manifest(&self, repository: &str, digest: &Digest) -> Answer<Option<(Vec<u8>, Typed)>> {
         let url = self.url_in(repository, &format!("manifests/{digest}"));
-        let answered = self.send(Method::GET, &url, &[("accept", MANIFESTS)], None)?;
+        let answered = self.send(
+            repository,
+            Method::GET,
+            &url,
+            &[("accept", MANIFESTS)],
+            None,
+        )?;
         match answered.status {
             StatusCode::OK => {
                 self.same(digest, &answered.body)?;
@@ -490,7 +518,13 @@ impl Registry {
     /// the digest of the manifest's bytes where it names none.
     fn tag_at(&self, repository: &str, tag: &str) -> Answer<Option<Digest>> {
         let url = self.url_in(repository, &format!("manifests/{tag}"));
-        let answered = self.send(Method::GET, &url, &[("accept", MANIFESTS)], None)?;
+        let answered = self.send(
+            repository,
+            Method::GET,
+            &url,
+            &[("accept", MANIFESTS)],
+            None,
+        )?;
         match answered.status {
             StatusCode::OK => {}
             StatusCode::NOT_FOUND => return Ok(None),
@@ -671,7 +705,7 @@ impl Registry {
                 encoded(from)
             ),
         );
-        let answered = self.send(Method::POST, &url, &[], Some(&[]))?;
+        let answered = self.send(repository, Method::POST, &url, &[], Some(&[]))?;
         if matches!(answered.status, StatusCode::CREATED | StatusCode::ACCEPTED) {
             self.mounts.borrow_mut().push((
                 repository.to_string(),
@@ -691,9 +725,9 @@ impl Registry {
                         Some("the registry declined the mount and answered no Location".into()),
                     )
                 })?;
-                self.upload_to(location, digest, &bytes)
+                self.upload_to(repository, location, digest, &bytes)
             }
-            _ => Err(self.other_put(&url, &answered)),
+            _ => Err(self.other_put(repository, &url, &answered)),
         }
     }
 
@@ -818,7 +852,13 @@ impl Registry {
     /// index (design D6).
     fn referrers_tag(&self, tag: &str) -> Answer<Option<Referrers>> {
         let url = self.url(&format!("manifests/{tag}"));
-        let answered = self.send(Method::GET, &url, &[("accept", IMAGE_INDEX)], None)?;
+        let answered = self.send(
+            &self.path,
+            Method::GET,
+            &url,
+            &[("accept", IMAGE_INDEX)],
+            None,
+        )?;
         match answered.status {
             StatusCode::OK => Referrers::parse(&answered.body).map(Some).map_err(|words| {
                 Not::refused(
@@ -845,7 +885,13 @@ impl Registry {
         let mut listed: Vec<Descriptor> = Vec::new();
         let mut first = true;
         loop {
-            let answered = self.send(Method::GET, &url, &[("accept", IMAGE_INDEX)], None)?;
+            let answered = self.send(
+                &self.path,
+                Method::GET,
+                &url,
+                &[("accept", IMAGE_INDEX)],
+                None,
+            )?;
             match answered.status {
                 StatusCode::OK => {}
                 StatusCode::NOT_FOUND if first => return Ok(None),
@@ -1147,7 +1193,7 @@ impl Store for Registry {
         let mut url = self.url_in(&repository, "tags/list");
         let mut versions = Vec::new();
         loop {
-            let answered = self.send(Method::GET, &url, &[], None)?;
+            let answered = self.send(&repository, Method::GET, &url, &[], None)?;
             match answered.status {
                 StatusCode::OK => {}
                 StatusCode::NOT_FOUND => return Ok(versions),
@@ -1681,6 +1727,54 @@ mod tests {
             store.versions(&Ecosystem::new("npm"), &EcosystemName::new("never-named")),
             Ok(vec![])
         );
+    }
+
+    #[test]
+    fn a_name_whose_repository_holds_an_operations_word_is_held_and_refused_as_its_own() {
+        for word in ["tags", "blobs", "manifests", "referrers", "uploads"] {
+            let stub = Stub::start(
+                Behaviour {
+                    page: 1,
+                    ..Behaviour::default()
+                },
+                &[],
+            );
+            let store = Registry::new(&stub.repository("acme/store")).unwrap();
+            let version = published(&store, REPOSITORY_COMPONENT, &[("npm", word)]);
+            let repository = format!("acme/store/artifact/npm/{word}");
+            for v in ["1.0.0", "1.1.0"] {
+                let name = named("npm", word, v);
+                store.name(&name, &version.index, None).unwrap();
+                assert_eq!(store.resolve(&name), Ok(version.index.clone()), "{word}");
+            }
+            let held = stub.held(&repository).unwrap();
+            assert_eq!(held.tags.get("1.0.0"), Some(&version.index), "{word}");
+            assert!(held.manifests.contains_key(&version.index), "{word}");
+            let mut listed = store
+                .versions(&Ecosystem::new("npm"), &EcosystemName::new(word))
+                .unwrap();
+            listed.sort();
+            assert_eq!(
+                listed,
+                [Version::new("1.0.0"), Version::new("1.1.0")],
+                "{word}"
+            );
+
+            let refusing = Stub::start(
+                Behaviour {
+                    makes_on_push: false,
+                    ..Behaviour::default()
+                },
+                &["acme/store"],
+            );
+            let store = Registry::new(&refusing.repository("acme/store")).unwrap();
+            let version = published(&store, REPOSITORY_COMPONENT, &[("npm", word)]);
+            refused_naming(
+                &refusing,
+                store.name(&named("npm", word, "1.0.0"), &version.index, None),
+                &repository,
+            );
+        }
     }
 
     #[test]

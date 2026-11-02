@@ -166,19 +166,6 @@ pub(super) struct Client {
     authorization: RefCell<BTreeMap<String, String>>,
 }
 
-/// The repository a request of `url` is for: the path between `/v2/` and
-/// the operation, none for the API's root (design D8).
-pub(super) fn repository_of(url: &str) -> String {
-    let Some((_, rest)) = url.split_once("/v2/") else {
-        return String::new();
-    };
-    ["/blobs/", "/manifests/", "/tags/", "/referrers/"]
-        .iter()
-        .filter_map(|op| rest.find(op))
-        .min()
-        .map_or_else(String::new, |at| rest[..at].to_string())
-}
-
 impl Client {
     pub(super) fn new(host: &str, source: &Source) -> Client {
         let config = ureq::Agent::config_builder()
@@ -192,20 +179,23 @@ impl Client {
         }
     }
 
-    /// `method` of `url`, with `headers` and `body`, answered as the
-    /// registry answered it; a challenge answered once with the host's
-    /// credential and the request sent once more. Unreadable naming `url`
-    /// in the client's words where no connection is made or the answer
-    /// cannot be read.
+    /// `method` of `url`, a request for `repository`, with `headers` and
+    /// `body`, answered as the registry answered it; a challenge answered
+    /// once with the host's credential and the request sent once more,
+    /// what authorized it kept under `repository` as the caller names it,
+    /// never as read back from `url`, whose path a repository's own may
+    /// hold an operation's word in (design D8). Unreadable naming `url` in
+    /// the client's words where no connection is made or the answer cannot
+    /// be read.
     pub(super) fn send(
         &self,
+        repository: &str,
         method: Method,
         url: &str,
         headers: &[(&str, &str)],
         body: Option<&[u8]>,
     ) -> Answer<Answered> {
-        let repository = repository_of(url);
-        let held = self.authorization.borrow().get(&repository).cloned();
+        let held = self.authorization.borrow().get(repository).cloned();
         let first = self.once(&method, url, headers, body, held.as_deref())?;
         if first.status != StatusCode::UNAUTHORIZED {
             return Ok(first);
@@ -218,7 +208,7 @@ impl Client {
         };
         self.authorization
             .borrow_mut()
-            .insert(repository, authorization.clone());
+            .insert(repository.to_string(), authorization.clone());
         self.once(&method, url, headers, body, Some(&authorization))
     }
 
@@ -446,25 +436,6 @@ mod tests {
     }
 
     #[test]
-    fn a_request_is_for_the_repository_its_path_names() {
-        for (url, repository) in [
-            ("http://h/v2/acme/tailrace/blobs/sha256:00", "acme/tailrace"),
-            (
-                "http://h/v2/acme/tailrace/artifact/npm/site/manifests/1.0.0",
-                "acme/tailrace/artifact/npm/site",
-            ),
-            (
-                "http://h/v2/acme/tailrace/cache/moon/blobs/uploads/?mount=x&from=acme/tailrace",
-                "acme/tailrace/cache/moon",
-            ),
-            ("http://h/v2/a/tags/list", "a"),
-            ("http://h/v2/", ""),
-        ] {
-            assert_eq!(repository_of(url), repository, "{url}");
-        }
-    }
-
-    #[test]
     fn a_token_for_one_repository_is_kept_beside_anothers() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::{Arc, OnceLock};
@@ -484,7 +455,7 @@ mod tests {
                 let scope = if first.contains("one") { "one" } else { "two" };
                 return reply("200 OK", "", &format!(r#"{{"token":"{scope}"}}"#));
             }
-            let repository = if first.contains("/v2/one/") {
+            let repository = if first.contains("/v2/one/tags/") {
                 "one"
             } else {
                 "two"
@@ -507,12 +478,15 @@ mod tests {
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let get = |repository: &str| {
             let url = format!("http://127.0.0.1:{port}/v2/{repository}/manifests/x");
-            client.send(Method::GET, &url, &[], None).unwrap().status
+            client
+                .send(repository, Method::GET, &url, &[], None)
+                .unwrap()
+                .status
         };
-        assert_eq!(get("one"), StatusCode::OK);
+        assert_eq!(get("one/tags"), StatusCode::OK);
         assert_eq!(get("two"), StatusCode::OK);
         assert_eq!(asked.load(Ordering::SeqCst), 6);
-        assert_eq!(get("one"), StatusCode::OK);
+        assert_eq!(get("one/tags"), StatusCode::OK);
         assert_eq!(
             asked.load(Ordering::SeqCst),
             7,
@@ -522,7 +496,7 @@ mod tests {
         assert_eq!(
             held.into_iter().collect::<Vec<_>>(),
             [
-                ("one".to_string(), "Bearer one".to_string()),
+                ("one/tags".to_string(), "Bearer one".to_string()),
                 ("two".to_string(), "Bearer two".to_string())
             ]
         );
@@ -601,6 +575,7 @@ mod tests {
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let answered = client
             .send(
+                "",
                 Method::GET,
                 &format!("http://127.0.0.1:{port}/v2/"),
                 &[],
@@ -694,11 +669,13 @@ mod tests {
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let url = |blob: &str| format!("http://127.0.0.1:{port}/v2/acme/blobs/{blob}");
         for (method, blob) in [(Method::GET, "one"), (Method::GET, "two")] {
-            let answered = client.send(method, &url(blob), &[], None).unwrap();
+            let answered = client.send("acme", method, &url(blob), &[], None).unwrap();
             assert_eq!(answered.status, StatusCode::OK, "{}", answered.words());
             assert_eq!(answered.body, blob.as_bytes());
         }
-        let answered = client.send(Method::HEAD, &url("three"), &[], None).unwrap();
+        let answered = client
+            .send("acme", Method::HEAD, &url("three"), &[], None)
+            .unwrap();
         assert_eq!(answered.header("content-length"), Some("5"));
         assert_eq!(
             *asked.lock().unwrap(),
@@ -718,9 +695,9 @@ mod tests {
         let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let blob = format!("http://127.0.0.1:{port}/v2/acme/blobs/one");
-        client.send(Method::GET, &blob, &[], None).unwrap();
+        client.send("acme", Method::GET, &blob, &[], None).unwrap();
         let tag = format!("http://127.0.0.1:{port}/v2/acme/manifests/v1");
-        match client.send(Method::PUT, &tag, &[], Some(b"{}")) {
+        match client.send("acme", Method::PUT, &tag, &[], Some(b"{}")) {
             Err(Not::Unreadable(u)) => assert_eq!(u.what, tag),
             other => panic!("a put whose connection closed answered {other:?}"),
         }
@@ -739,7 +716,7 @@ mod tests {
         let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let url = format!("http://127.0.0.1:{port}/v2/acme/blobs/gone");
-        match client.send(Method::GET, &url, &[], None) {
+        match client.send("acme", Method::GET, &url, &[], None) {
             Err(Not::Unreadable(u)) => {
                 assert_eq!(u.source, source);
                 assert_eq!(u.what, url);
@@ -766,7 +743,7 @@ mod tests {
         let source = Source::new(tailrace_seams::Seam::Store, "OCI registry test");
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let url = format!("http://127.0.0.1:{port}/v2/");
-        match client.send(Method::GET, &url, &[], None) {
+        match client.send("", Method::GET, &url, &[], None) {
             Err(Not::Unreadable(u)) => {
                 assert_eq!(u.source, source);
                 assert_eq!(u.what, url);
