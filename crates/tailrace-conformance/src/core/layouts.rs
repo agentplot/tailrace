@@ -6,18 +6,23 @@
 //! policy admits, S4 among them; a refusal answered naming the claim
 //! found wanting, a layout that cannot be refreshed answering what it
 //! holds, and the host's record of each layout, rebuilt when deleted (47,
-//! 50, 51, 61 to 63, 99, 113, 118; design D10).
+//! 50, 51, 61 to 63, 99, 113, 118; design D10); and a manifest's range
+//! held at the newest admitted version within it, and what each held
+//! version requires held through every level (137; cargos-registry design
+//! D7, D11).
 
 use std::fs;
 use std::path::Path;
 
 use serde_json::{json, Value};
 use tailrace_core::render::{Kept, Refreshed};
-use tailrace_core::{layout_policy_body, CheckoutSynced, PinAnswer, PolicyOf, Refresh, Under};
+use tailrace_core::{
+    layout_policy_body, CheckoutSynced, PinAnswer, PolicyOf, RangeAnswer, Refresh, Under,
+};
 use tailrace_fakes::{Fault, StoreOp, Times};
 use tailrace_seams::{
-    Artifact, AskedOf, Audience, ClaimKind, Digest, Ecosystem, NamedSigner, Not, Required,
-    RequiredClaim, Revision, SignerId, Store, Why,
+    Artifact, AskedOf, Audience, ClaimKind, Digest, Ecosystem, EcosystemName, NamedSigner, Not,
+    Pinned, Range, Required, RequiredClaim, Requirement, Revision, SignerId, Store, Version, Why,
 };
 
 use crate::world::{FakeWorld, FILE, HOST};
@@ -105,6 +110,18 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             plays: None,
             cites: &[47, 113, 118],
             run: a_claim_the_file_names_no_signer_for_read_through_the_hosts_trust,
+        },
+        Scenario {
+            name: "the newest admitted within a range",
+            plays: None,
+            cites: &[137],
+            run: the_newest_admitted_within_a_range,
+        },
+        Scenario {
+            name: "a pinned version's dependencies, two levels down",
+            plays: None,
+            cites: &[137],
+            run: a_pinned_versions_dependencies_two_levels_down,
         },
     ]
 }
@@ -802,5 +819,131 @@ fn a_claim_the_file_names_no_signer_for_read_through_the_hosts_trust(world: &Fak
         Some(PolicyOf::Given {
             revision: Some(revision)
         })
+    );
+}
+
+/// `name` by `range`, as a manifest declares it and a held version's
+/// manifest requires it.
+fn requirement(name: &str, range: &str) -> Requirement {
+    Requirement {
+        name: EcosystemName::new(name),
+        range: Range::new(range),
+    }
+}
+
+/// `version` of `name` held in the store under its `artifact/` name, the
+/// gate's acceptance attached to its index where `accepted`.
+fn family(world: &FakeWorld, name: &str, version: &str, accepted: bool) -> (Digest, Artifact) {
+    let (index, artifact) = world.artifact(FILE, name, version);
+    if accepted {
+        world.attach(&index, ClaimKind::Acceptance, Value::Null, GATE);
+    }
+    (index, artifact)
+}
+
+/// 137: the clone's manifest declares `ranges` for names no lockfile pins,
+/// so the file projection's pinned answers them.
+fn declares(world: &FakeWorld, ranges: &[Requirement]) {
+    world.fakes.projections[&Ecosystem::new(FILE)]
+        .ranges(&world.repo().path.display().to_string(), ranges);
+}
+
+/// 137, 138, 99: a range is held at the newest version within it the
+/// policy admits, the store's listing read and the projection answering
+/// which of it is within the range, newest first; a newer version within
+/// it the policy refuses is answered with its claim, and a version
+/// outside it is never judged.
+fn the_newest_admitted_within_a_range(world: &FakeWorld) {
+    let revision = landed(world, Some(vec![acceptance()]));
+    site(world, "1.0.0", true);
+    let (_, held) = site(world, "1.1.0", true);
+    site(world, "1.2.0", false);
+    let outside = site(world, "2.0.0", true);
+    declares(world, &[requirement("site", "1")]);
+    let since = world.fakes.store.calls().len();
+    let synced = synced(world, &revision, 1, &[]);
+
+    let layout = refreshed(&synced);
+    assert_eq!(
+        renders(world).last(),
+        Some(&vec![held.digest.clone()]),
+        "the layout holds other versions than the newest admitted within the range"
+    );
+    assert_eq!(
+        layout.ranges,
+        [RangeAnswer {
+            range: requirement("site", "1"),
+            by: None,
+            answer: Ok(Some(Version::new("1.1.0"))),
+        }],
+        "the answer names the range otherwise than held at 1.1.0 from the manifest"
+    );
+    let refused = layout
+        .asked
+        .iter()
+        .find(|a| a.pin.version.as_str() == "1.2.0")
+        .unwrap_or_else(|| panic!("the answer names no 1.2.0 judged: {layout:?}"));
+    assert_eq!(wanting(refused).0, acceptance());
+    let asked: String = world.fakes.store.calls()[since..]
+        .iter()
+        .map(|c| c.given.to_string())
+        .collect();
+    for about in ["site@2.0.0", outside.0.as_str(), outside.1.digest.as_str()] {
+        assert!(
+            !asked.contains(about),
+            "the version outside the range was judged: {about}"
+        );
+    }
+    assert!(
+        !layout
+            .asked
+            .iter()
+            .any(|a| a.pin.version.as_str() == "2.0.0"),
+        "the answer names the version outside the range as judged"
+    );
+}
+
+/// 137, 140: what a pinned version requires is held by the same rule,
+/// and what that one requires in turn, each range answered with the
+/// held version that required it.
+fn a_pinned_versions_dependencies_two_levels_down(world: &FakeWorld) {
+    let revision = landed(world, Some(vec![acceptance()]));
+    let projection = &world.fakes.projections[&Ecosystem::new(FILE)];
+    let (_, app) = family(world, "app", "1.0.0", true);
+    family(world, "lib", "1.0.0", true);
+    let (_, lib) = family(world, "lib", "1.1.0", true);
+    let (_, base) = family(world, "base", "0.3.0", true);
+    projection.manifest(&app.digest, &[requirement("lib", "^1")]);
+    projection.manifest(&lib.digest, &[requirement("base", "0.3")]);
+    world.lockfile(FILE, &[("app", "1.0.0")]);
+    let synced = synced(world, &revision, 1, &[]);
+
+    let layout = refreshed(&synced);
+    assert_eq!(
+        renders(world).last(),
+        Some(&vec![app.digest, lib.digest, base.digest]),
+        "the layout holds other versions than the pin and what it requires, two levels down"
+    );
+    let by = |name: &str, version: &str| {
+        Some(Pinned {
+            name: EcosystemName::new(name),
+            version: Version::new(version),
+        })
+    };
+    assert_eq!(
+        layout.ranges,
+        [
+            RangeAnswer {
+                range: requirement("lib", "^1"),
+                by: by("app", "1.0.0"),
+                answer: Ok(Some(Version::new("1.1.0"))),
+            },
+            RangeAnswer {
+                range: requirement("base", "0.3"),
+                by: by("lib", "1.1.0"),
+                answer: Ok(Some(Version::new("0.3.0"))),
+            },
+        ],
+        "the answer names a range otherwise than with the version that required it"
     );
 }
