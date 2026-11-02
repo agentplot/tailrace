@@ -181,6 +181,14 @@ impl ProjectionRig for NpmRig {
         true
     }
 
+    /// npm's request for a version's tarball, by the path its packument
+    /// names.
+    fn request(&self, meta: &ArtifactMeta) -> String {
+        let name = meta.name().as_str();
+        let base = name.rsplit_once('/').map_or(name, |(_, base)| base);
+        format!("{name}/-/{base}-{}.tgz", meta.version())
+    }
+
     fn caches(&self) -> bool {
         false
     }

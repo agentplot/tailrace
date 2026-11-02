@@ -24,7 +24,6 @@ pub struct Pending {
     pub why: &'static str,
 }
 
-const SERVED: &str = "bolt 5 · the first served projection";
 const CARGO: &str = "bolt 5 · Cargo's registry";
 const NAMED: &str = "bolt 5 · the store names an artifact by ecosystem name and version";
 const DRIVER: &str = "bolt 5 · the driver and the pool run publish";
@@ -36,10 +35,6 @@ const PHASE_2: &str = "phase 2";
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 46, unit: SERVED, why: "A consumer reads in its ecosystem's own form, which the first served projection serves." },
-    Pending { clause: 49, unit: SERVED, why: "A client's recorded address names no host, which a served layout keeps." },
-    Pending { clause: 114, unit: SERVED, why: "A served layout is reached at the core's address, which bolt 5's first served projection serves and cites; the process is status-on-any-machine's, proven in the command line's tests." },
-    Pending { clause: 115, unit: SERVED, why: "The host runs a served layout for as long as a client needs it, and bolt 1 serves none." },
     Pending { clause: 138, unit: NAMED, why: "A publish names each artifact by its ecosystem, name and version and the store lists a name's versions, and no publish names one yet." },
     Pending { clause: 135, unit: DRIVER, why: "A check job pushes what its run left before the landing and a publish takes its outputs from the store, and no publish reads the store for them yet." },
     Pending { clause: 139, unit: DRIVER, why: "The build answers what a checkout's run left, and the build seam has no such operation yet." },
