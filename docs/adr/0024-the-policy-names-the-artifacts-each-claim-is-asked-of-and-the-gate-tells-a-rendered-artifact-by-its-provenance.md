@@ -1,5 +1,5 @@
 ---
-number: 22
+number: 24
 title: The policy names the artifacts each claim is asked of and the gate tells a rendered artifact by its provenance
 status: proposed
 date: 2026-10-27
