@@ -1181,8 +1181,9 @@ impl Store for Registry {
     /// name's repository read back, every page of its tag list followed;
     /// the empty list where the registry holds no such repository or it
     /// holds no tag, and unreadable naming the repository and a tag that
-    /// does not read back as one the store wrote, never leaving it out
-    /// (rule core.19; design D11).
+    /// does not read back as one the store wrote, never leaving it out,
+    /// or naming a page after the first that is not found, never a part
+    /// of the list answered as the whole (rule core.19; design D11).
     fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>> {
         #[derive(Deserialize)]
         struct Tags {
@@ -1192,11 +1193,24 @@ impl Store for Registry {
         let repository = self.under(&[ARTIFACT_SPACE, ecosystem.as_str(), name.as_str()])?;
         let mut url = self.url_in(&repository, "tags/list");
         let mut versions = Vec::new();
+        let mut first = true;
         loop {
             let answered = self.send(&repository, Method::GET, &url, &[], None)?;
             match answered.status {
                 StatusCode::OK => {}
-                StatusCode::NOT_FOUND => return Ok(versions),
+                StatusCode::NOT_FOUND if first => return Ok(versions),
+                StatusCode::NOT_FOUND => {
+                    return Err(Not::unreadable(
+                        &self.source,
+                        &url,
+                        Some(format!(
+                            "{}/{repository} answered a page of its tag list and then not the \
+                             next, so its versions were not all read: {}",
+                            self.host,
+                            answered.words()
+                        )),
+                    ))
+                }
                 _ => return Err(self.other(&url, &answered)),
             }
             let page: Tags = serde_json::from_slice(&answered.body)
@@ -1219,6 +1233,7 @@ impl Store for Registry {
                 Some(link) => url = self.absolute(&link),
                 None => return Ok(versions),
             }
+            first = false;
         }
     }
 }
@@ -1726,6 +1741,42 @@ mod tests {
         assert_eq!(
             store.versions(&Ecosystem::new("npm"), &EcosystemName::new("never-named")),
             Ok(vec![])
+        );
+    }
+
+    #[test]
+    fn a_tag_list_page_after_the_first_not_found_is_unreadable_never_a_part_of_the_list() {
+        let stub = Stub::start(
+            Behaviour {
+                page: 2,
+                loses_later_pages: true,
+                ..Behaviour::default()
+            },
+            &[],
+        );
+        let store = Registry::new(&stub.repository("acme/store")).unwrap();
+        let version = published(&store, REPOSITORY_COMPONENT, &[("eco", "site")]);
+        for v in ["1.0.0", "1.1.0", "1.2.0"] {
+            store
+                .name(&named("eco", "site", v), &version.index, None)
+                .unwrap();
+        }
+        match store.versions(&Ecosystem::new("eco"), &EcosystemName::new("site")) {
+            Err(Not::Unreadable(u)) => {
+                assert!(u.what.contains("/tags/list?"), "{}", u.what);
+                let said = u.said.unwrap();
+                assert!(said.contains(super::stub::NAME_UNKNOWN), "{said}");
+                assert!(
+                    said.contains(&stub.repository("acme/store/artifact/eco/site")),
+                    "{said}"
+                );
+            }
+            other => panic!("a lost second page answered {other:?}"),
+        }
+        assert_eq!(
+            store.versions(&Ecosystem::new("eco"), &EcosystemName::new("never-named")),
+            Ok(vec![]),
+            "a repository not found at its first page did not answer the empty list"
         );
     }
 

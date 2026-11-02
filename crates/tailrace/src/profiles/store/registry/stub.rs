@@ -63,6 +63,10 @@ pub(crate) struct Behaviour {
     pub declines_mounts: bool,
     /// The most tags one page of a tag list names.
     pub page: usize,
+    /// It answers a tag list's every page after the first
+    /// `NAME_UNKNOWN`, as a registry whose repository was deleted between
+    /// pages does.
+    pub loses_later_pages: bool,
 }
 
 impl Default for Behaviour {
@@ -71,6 +75,7 @@ impl Default for Behaviour {
             makes_on_push: true,
             declines_mounts: false,
             page: 100,
+            loses_later_pages: false,
         }
     }
 }
@@ -435,6 +440,9 @@ fn handle(
     if bare == "/tags/list" {
         let held = &state.repositories[&repository];
         let last = query(path, "last");
+        if last.is_some() && behaviour.loses_later_pages {
+            return Reply::error(404, "NAME_UNKNOWN", "");
+        }
         let tags: Vec<&String> = held
             .tags
             .keys()
