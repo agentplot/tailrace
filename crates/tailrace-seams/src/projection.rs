@@ -1,9 +1,10 @@
 //! B.6 A projection: an artifact, or a cache entry, in one ecosystem's
-//! own form, as that ecosystem's clients read it, the versions a
-//! checkout's lockfile pins in it and the ranges its manifest declares
-//! for names no lockfile pins yet (84 to 87, 137), and what a held
-//! version's manifest requires and which versions satisfy a range, by
-//! the ecosystem's own rules (140).
+//! own form, as that ecosystem's clients read it, one request of those
+//! clients answered from a served layout, the versions a checkout's
+//! lockfile pins in it and the ranges its manifest declares for names no
+//! lockfile pins yet (84 to 87, 115, 137), and what a held version's
+//! manifest requires and which versions satisfy a range, by the
+//! ecosystem's own rules (140).
 
 use serde::{Deserialize, Serialize};
 
@@ -82,10 +83,53 @@ pub struct Rendered {
     pub holds: Holds,
 }
 
-/// 86: where the ecosystem's own clients read a served layout.
+/// 86: one request of the ecosystem's own client of a served layout: its
+/// method; its path below the layout's prefix, the query dropped; and
+/// `base`, the absolute address of that prefix as the client reached it,
+/// with no trailing `/`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Serving {
-    pub address: String,
+pub struct Request {
+    pub method: String,
+    pub path: String,
+    pub base: String,
+}
+
+/// 86, 99: the answer to a request in the client's own protocol: its
+/// status, the type of its body, and the body's bytes, written in its
+/// machine-readable form as base64.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Response {
+    pub status: u16,
+    pub content_type: String,
+    #[serde(with = "base64_body")]
+    pub body: Vec<u8>,
+}
+
+mod base64_body {
+    use base64::engine::general_purpose::STANDARD;
+    use base64::Engine as _;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(body: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&STANDARD.encode(body))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<u8>, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        STANDARD.decode(text).map_err(serde::de::Error::custom)
+    }
+}
+
+/// 115: the core asked for one version a served layout lacks, by its name
+/// in the ecosystem and its version: `Ok(())` where the layout now holds
+/// it, and otherwise absent, refused naming the claim found wanting, or
+/// unreadable, with the source's own words (58, 99).
+pub type Miss<'a> = &'a dyn Fn(&Pinned) -> Answer<()>;
+
+/// 86: what a projection whose ecosystem's clients read files answers
+/// every request with: absent, never refused or unreadable (58).
+pub fn no_serving(source: &Source) -> Not {
+    Not::absent(source, "serving")
 }
 
 /// 137: a version a checkout's lockfile pins, by its name in the
@@ -151,9 +195,18 @@ pub trait Projection {
     /// none.
     fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered>;
 
-    /// 86: `layout` served over the protocol the ecosystem's clients
-    /// read, for an ecosystem whose clients read no files.
-    fn serve(&self, layout: &Layout) -> Answer<Serving>;
+    /// 86, 115: `request`, one request of the ecosystem's own client of
+    /// `layout`, answered in the client's own protocol from the layout
+    /// alone. A version the layout lacks is asked of the core once through
+    /// `miss`, which judges it and renders it into the layout, and is then
+    /// answered from the layout; a refusal, an absence or an unreadable
+    /// answer of the core is answered in a response the client reads,
+    /// carrying the source's own words (99, 59). Every answer the client
+    /// reads is a [`Response`]; a projection whose ecosystem's clients read
+    /// files answers [`no_serving`] for every request and asks the core
+    /// nothing. It reaches no store, policy or claim: the judgment is the
+    /// core's (rule core.2).
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response>;
 
     /// 137: the versions the lockfile of the ecosystem in the checkout at
     /// `checkout` pins, as the lockfile spells them, and for each name
@@ -164,11 +217,14 @@ pub trait Projection {
     /// version's claims are the core's (rule core.2).
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>>;
 
-    /// 140: every name of the ecosystem the manifest of `held`, an
-    /// artifact a layout holds, requires, with the range it requires of
-    /// it, as the manifest spells them, in the order it gives them.
-    /// Which of those names the family publishes is the store's listing
-    /// to say, not the projection's. A projection with a manifest reads
+    /// 140: every name the manifest of `held`, an artifact a layout
+    /// holds, requires that the layout serves, with the range it requires
+    /// of it, as the manifest spells them, in the order it gives them. A
+    /// name the layout serves is one the consuming checkout's own
+    /// configuration of the ecosystem routes to the served address, as
+    /// the ecosystem spells that routing; every other name is the public
+    /// registry's and no concern of the layout's (section 8). A
+    /// projection with a manifest reads
     /// the artifact's bytes through the store seam it was bound with,
     /// never from a layout (48, rule core.2). An ecosystem with no
     /// manifest answers none, an empty list, reading nothing, and never
@@ -230,9 +286,39 @@ mod tests {
             layout,
             holds: Holds::BuildIds(vec![BuildId::new("b7e1"), BuildId::new("c3d4")]),
         });
-        round_trip(Serving {
-            address: "serve://eco/repo".into(),
+    }
+
+    #[test]
+    fn a_request_and_a_response_round_trip_bytes_and_all() {
+        round_trip(Request {
+            method: "GET".into(),
+            path: "@scope/pkg/-/pkg-1.0.0.tgz".into(),
+            base: "http://127.0.0.1:7420/o/r/eco".into(),
         });
+        let response = Response {
+            status: 403,
+            content_type: "application/octet-stream".into(),
+            body: vec![0, 1, 127, 128, 255, b'"'],
+        };
+        round_trip(response.clone());
+        let json = serde_json::to_value(&response).unwrap();
+        assert_eq!(json["body"], "AAF/gP8i", "{json}");
+        round_trip(Response {
+            body: vec![],
+            ..response
+        });
+    }
+
+    #[test]
+    fn a_projection_that_serves_none_answers_absent_naming_serving() {
+        let source = Source::new(Seam::Projection, "file");
+        match no_serving(&source) {
+            Not::Absent(a) => {
+                assert_eq!(a.source, source);
+                assert_eq!(a.what, "serving");
+            }
+            other => panic!("answered {other:?}"),
+        }
     }
 
     #[test]

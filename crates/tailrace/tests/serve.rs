@@ -19,16 +19,22 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use scratch::{Repo, Scratch, MAIN, POLICY_FILE};
 use serde_json::Value;
+use tailrace::bindings::{For, Teller};
 use tailrace::commands::serve::host::{checkout_of, find_or_start, name, Host, SERVING};
 use tailrace::commands::serve::page::escape;
-use tailrace::commands::serve::{serve_on, Served};
+use tailrace::commands::serve::{respond_with, serve_on, serve_with, Binder, Response, Served};
 use tailrace::commands::status::page;
-use tailrace::{run, Cli, REVISION};
-use tailrace_core::{answer_json, Entry, History, Kept, Noted, OverviewAsk, RepositoryName};
-use tailrace_fakes::FakeSigner;
+use tailrace::{run, Binding, Cli, REVISION};
+use tailrace_core::{
+    answer_json, artifact_name, place, sync_checkout, CheckoutAsk, Entry, History, Kept, Layouts,
+    Noted, OverviewAsk, RepositoryName,
+};
+use tailrace_fakes::{FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
-    Answer, Branch, ChannelId, ChannelName, ComponentName, Digest, Moved, Not, Promotion, Revision,
-    Satisfied, Seam, Signer, SignerId, Source, Version,
+    Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, ChannelId, ChannelName, Claim,
+    ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, IndexMeta, Manifest, Moved,
+    NamedSigner, Not, Pinned, Promotion, Request, Required, RequiredClaim, Revision, Satisfied,
+    Seam, Signer, SignerId, Source, Store, Version,
 };
 
 /// The host the tests serve: a state directory, a bindings file, a home
@@ -587,13 +593,7 @@ fn another_path_is_404_and_another_method_405() {
     let world = World::new();
     world.named();
     let (address, _) = serving(&world.host, Duration::from_secs(60));
-    for path in [
-        "/nothing",
-        "/o/r",
-        "/o/r/other",
-        "/o/r/status/more",
-        "//r/status",
-    ] {
+    for path in ["/nothing", "/o/r", "//r/status", "/o//npm/x"] {
         assert_eq!(get(address, path).0, 404, "{path}");
     }
     assert_eq!(ask(address, "POST", "/serving.json").0, 405);
@@ -862,4 +862,477 @@ fn an_idle_process_ends_and_lets_the_lock_go() {
         Ok(())
     });
     assert_eq!(found.map(|s| s.pid), Ok(std::process::id()));
+}
+
+// Requirement: The process serves each served layout under its repository's path
+
+const ECO: &str = "eco";
+
+fn eco() -> Ecosystem {
+    Ecosystem::new(ECO)
+}
+
+fn pinned(version: &str) -> Pinned {
+    Pinned {
+        name: EcosystemName::new("pkg"),
+        version: Version::new(version),
+    }
+}
+
+/// Acceptance by the gate's signer, `gate`.
+fn accepted_by_the_gate() -> RequiredClaim {
+    RequiredClaim {
+        kind: ClaimKind::Acceptance,
+        check: None,
+        signers: vec![NamedSigner {
+            id: SignerId::new("gate"),
+            verified_by: "gate's key".into(),
+            kinds: vec![ClaimKind::Acceptance],
+            checks: vec![],
+        }],
+        asked_of: AskedOf::Every,
+    }
+}
+
+/// `version` of `pkg` published to `store` with its index named where a
+/// pin resolves, accepted by the gate where `accepted`.
+fn publish(store: &FakeStore, version: &str, accepted: bool) {
+    let meta = ArtifactMeta::new(eco(), EcosystemName::new("pkg"), Version::new(version)).unwrap();
+    let layer = store
+        .put_bytes(format!("pkg {version}").as_bytes())
+        .unwrap();
+    let artifact = Artifact {
+        digest: store
+            .put_artifact(&Manifest::Artifact {
+                meta: meta.clone(),
+                layers: vec![layer.digest],
+            })
+            .unwrap()
+            .digest,
+        meta,
+    };
+    let index = IndexMeta::new(
+        ComponentName::new("pkg"),
+        Version::new(version),
+        vec![artifact],
+    )
+    .unwrap();
+    let index = store.put_artifact(&Manifest::Index(index)).unwrap().digest;
+    let name = artifact_name(&eco(), &EcosystemName::new("pkg"), &Version::new(version));
+    store.name(&name, &index, None).unwrap();
+    if accepted {
+        let gate = SignerId::new("gate");
+        let signer = FakeSigner::new();
+        signer.hold(&gate);
+        let claim = Claim {
+            subject: index.clone(),
+            kind: ClaimKind::Acceptance,
+            revision: Revision::new("p1b11s4"),
+            build: None,
+            body: Value::Null,
+        };
+        store
+            .attach(&index, &signer.sign(&claim, &gate).unwrap())
+            .unwrap();
+    }
+}
+
+/// A checkout of `agentplot/consumer` named to the host, over fakes
+/// binding the ecosystem's fake projection: its head landed on `main`,
+/// whose policy for layouts requires acceptance; `pkg 1.2.0` and `1.1.0`
+/// published and accepted and `1.0.0` published unaccepted; the layout
+/// synced from a lockfile pinning `1.2.0`.
+struct Consumer {
+    world: World,
+    fakes: Fakes,
+    projection: FakeProjection,
+    tree: PathBuf,
+}
+
+impl Consumer {
+    fn new() -> Consumer {
+        let world = World::new();
+        world.named_as("agentplot", "consumer");
+        let mut fakes = Fakes::new();
+        let projection = fakes.projection(&eco());
+        let main = Branch::new(MAIN);
+        fakes.landing.land(&main, &world.head);
+        fakes.policy.require_at(
+            &world.head,
+            Audience::Layout,
+            Required::Layout {
+                claims: vec![accepted_by_the_gate()],
+                given: false,
+                signers: vec![],
+            },
+        );
+        publish(&fakes.store, "1.2.0", true);
+        publish(&fakes.store, "1.1.0", true);
+        publish(&fakes.store, "1.0.0", false);
+        let history = History::open(&world.repo().path).unwrap();
+        let tree = history.workdir().unwrap();
+        projection.lockfile(&tree.display().to_string(), &[pinned("1.2.0")]);
+        let synced = sync_checkout(
+            &fakes.seams(),
+            &Layouts::at(&history),
+            &CheckoutAsk {
+                branch: main,
+                revision: world.head.clone(),
+                tree: tree.clone(),
+                when: now(),
+                trusted: vec![],
+                repository: Ok(RepositoryName {
+                    owner: "agentplot".into(),
+                    name: "consumer".into(),
+                }),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            synced.served.get(&eco()),
+            Some(&Ok(
+                "http://127.0.0.1:7420/agentplot/consumer/eco/".to_string()
+            ))
+        );
+        Consumer {
+            world,
+            fakes,
+            projection,
+            tree,
+        }
+    }
+
+    /// The fakes as the one binding a checkout is bound to, for sync.
+    fn binding(&self) -> Binding {
+        Binding {
+            seams: self.fakes.seams(),
+            store: Source::new(Seam::Store, "fake"),
+            signer: None,
+            gate: Teller::Job("the gate's job".into()),
+            trust: vec![],
+        }
+    }
+
+    /// `GET` of `path` asked of the process's own handling of a request,
+    /// each checkout bound to the fakes, for sync alone.
+    fn get(&self, path: &str) -> Response {
+        self.ask(path, "GET")
+    }
+
+    /// `method` of `path`, asked as [`Consumer::get`] asks.
+    fn ask(&self, path: &str, method: &str) -> Response {
+        respond_with(
+            &self.world.host,
+            &|checkout, command| {
+                assert_eq!(command, For::Sync, "a served layout bound for another");
+                assert_eq!(checkout, self.world.repo().path, "another checkout bound");
+                Ok(self.binding())
+            },
+            method,
+            path,
+        )
+    }
+
+    /// The versions the layout's record holds.
+    fn held(&self) -> Vec<String> {
+        let history = History::open(&self.world.repo().path).unwrap();
+        Layouts::at(&history)
+            .read(&eco())
+            .unwrap()
+            .held
+            .iter()
+            .map(|h| h.version.to_string())
+            .collect()
+    }
+}
+
+fn text(response: &Response) -> String {
+    String::from_utf8(response.body.clone()).unwrap()
+}
+
+#[test]
+fn a_served_layout_is_its_projections_response_from_the_checkout_that_named_it() {
+    let consumer = Consumer::new();
+    let response = consumer.get("/agentplot/consumer/eco/pkg/1.2.0");
+    assert_eq!(response.status, 200, "{}", text(&response));
+    assert_eq!(response.content_type, "application/json");
+    let served: Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(served["name"], "pkg", "{served}");
+    assert_eq!(served["version"], "1.2.0", "{served}");
+    assert_eq!(
+        consumer.projection.requests(),
+        [
+            Request {
+                method: "GET".into(),
+                path: String::new(),
+                base: "http://127.0.0.1:7420/agentplot/consumer/eco".into(),
+            },
+            Request {
+                method: "GET".into(),
+                path: "pkg/1.2.0".into(),
+                base: "http://127.0.0.1:7420/agentplot/consumer/eco".into(),
+            }
+        ],
+        "sync's probe, then the request below the layout's prefix at its base"
+    );
+    assert_eq!(consumer.projection.misses(), []);
+    let rendered: Vec<String> = consumer
+        .projection
+        .renders()
+        .into_iter()
+        .map(|(at, _)| at)
+        .collect();
+    assert_eq!(
+        rendered,
+        [place(&consumer.tree, &eco()).display().to_string()],
+        "served from a layout the checkout's sync did not render"
+    );
+}
+
+#[test]
+fn a_version_the_layout_lacks_is_rendered_into_it_by_the_core_on_the_request() {
+    let consumer = Consumer::new();
+    let response = consumer.get("/agentplot/consumer/eco/pkg/1.1.0");
+    assert_eq!(response.status, 200, "{}", text(&response));
+    assert_eq!(consumer.projection.misses(), [pinned("1.1.0")]);
+    assert_eq!(consumer.held(), ["1.2.0", "1.1.0"]);
+    let renders: Vec<Vec<String>> = consumer
+        .projection
+        .renders()
+        .into_iter()
+        .map(|(at, artifacts)| {
+            assert_eq!(at, place(&consumer.tree, &eco()).display().to_string());
+            artifacts
+                .iter()
+                .map(|a| a.meta.version().to_string())
+                .collect()
+        })
+        .collect();
+    assert_eq!(renders, [vec!["1.2.0"], vec!["1.2.0", "1.1.0"]]);
+}
+
+#[test]
+fn a_version_the_policy_refuses_is_the_projections_refusal_and_the_layout_is_unchanged() {
+    let consumer = Consumer::new();
+    let response = consumer.get("/agentplot/consumer/eco/pkg/1.0.0");
+    assert_eq!(response.status, 403, "{}", text(&response));
+    let words = text(&response);
+    assert!(words.contains("pkg 1.0.0"), "{words}");
+    assert!(words.contains("acceptance"), "{words}");
+    assert_eq!(consumer.held(), ["1.2.0"]);
+    assert_eq!(consumer.projection.renders().len(), 1, "rendered again");
+}
+
+#[test]
+fn a_served_layouts_method_is_its_projections_to_answer() {
+    let consumer = Consumer::new();
+    let response = consumer.ask("/agentplot/consumer/eco/pkg/1.2.0", "HEAD");
+    assert_eq!(response.status, 200, "{}", text(&response));
+    let asked = consumer.projection.requests();
+    assert_eq!(asked.last().map(|r| r.method.as_str()), Some("HEAD"));
+    let mut written = Vec::new();
+    response.write_head(&mut written).unwrap();
+    let head = String::from_utf8(written).unwrap();
+    assert!(
+        head.ends_with("\r\n\r\n")
+            && head.contains(&format!("\r\nContent-Length: {}\r\n", response.body.len())),
+        "{head}"
+    );
+    let posted = consumer.ask("/agentplot/consumer/eco/pkg/1.2.0", "POST");
+    assert_eq!(
+        consumer
+            .projection
+            .requests()
+            .last()
+            .map(|r| r.method.clone()),
+        Some("POST".to_string()),
+        "the process answered {} itself",
+        posted.status
+    );
+}
+
+#[test]
+fn a_response_is_written_with_its_bytes_exactly_and_their_length() {
+    let response = Response {
+        status: 200,
+        content_type: "application/octet-stream".into(),
+        body: (0..=255).collect(),
+    };
+    let mut written = Vec::new();
+    response.write(&mut written).unwrap();
+    let blank = written
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .expect("a head");
+    let head = String::from_utf8(written[..blank].to_vec()).unwrap();
+    assert!(head.starts_with("HTTP/1.1 200 OK\r\n"), "{head}");
+    assert!(head.contains("\r\nContent-Length: 256\r\n"), "{head}");
+    assert!(
+        head.contains("\r\nContent-Type: application/octet-stream\r\n"),
+        "{head}"
+    );
+    assert_eq!(&written[blank + 4..], response.body.as_slice());
+    for (status, reason) in [(403, "Forbidden"), (502, "Bad Gateway")] {
+        let mut written = Vec::new();
+        Response {
+            status,
+            ..response.clone()
+        }
+        .write(&mut written)
+        .unwrap();
+        let line = format!("HTTP/1.1 {status} {reason}\r\n");
+        assert!(written.starts_with(line.as_bytes()), "{status}");
+    }
+}
+
+#[test]
+fn an_ecosystem_nothing_serves_is_404_naming_it_and_nothing_is_rendered() {
+    let mut consumer = Consumer::new();
+    let file = consumer.fakes.projection(&Ecosystem::new("file"));
+    file.serves_none();
+    let response = consumer.get("/agentplot/consumer/file/notes.txt");
+    assert_eq!(response.status, 404, "{}", text(&response));
+    assert!(text(&response).contains("file"), "{}", text(&response));
+    assert!(file.renders().is_empty());
+    let response = consumer.get("/agentplot/consumer/other/x");
+    assert_eq!(response.status, 404);
+    assert!(text(&response).contains("other"), "{}", text(&response));
+    assert_eq!(consumer.projection.misses(), []);
+}
+
+#[test]
+fn a_repository_none_named_and_a_checkout_that_cannot_be_bound_are_their_own_answers() {
+    let consumer = Consumer::new();
+    let response = consumer.get("/agentplot/tailrace/eco/pkg/1.2.0");
+    assert_eq!(response.status, 404);
+    assert!(
+        text(&response).contains("has named it"),
+        "{}",
+        text(&response)
+    );
+    let unbound = Not::unreadable(
+        &Source::new(Seam::Host, "bindings"),
+        "the bindings file",
+        Some("expected `=`".into()),
+    );
+    let response = respond_with(
+        &consumer.world.host,
+        &|_, _| Err(unbound.clone()),
+        "GET",
+        "/agentplot/consumer/eco/pkg/1.2.0",
+    );
+    assert_eq!(response.status, 500);
+    assert_eq!(text(&response), format!("{unbound}\n"));
+    assert!(consumer.projection.requests().len() == 1, "served unbound");
+}
+
+// Requirement: The first asker that finds none starts it, and one lock keeps it one
+
+/// A binding over fakes made anew on each call, on any thread: the
+/// ecosystem's fake projection, serving or scripted to serve none.
+fn fresh(serving: bool) -> Binder {
+    Arc::new(move |_, _| {
+        let mut fakes = Fakes::new();
+        let projection = fakes.projection(&eco());
+        if !serving {
+            projection.serves_none();
+        }
+        Ok(Binding {
+            seams: fakes.seams(),
+            store: Source::new(Seam::Store, "fake"),
+            signer: None,
+            gate: Teller::Job("the gate's job".into()),
+            trust: vec![],
+        })
+    })
+}
+
+/// An idle of moments, which the tests wait out several times over.
+const MOMENTS: Duration = Duration::from_millis(200);
+
+/// The consumer's layout rendered: its place made, as a projection that
+/// writes files makes it, beside the record the sync wrote.
+fn rendered(consumer: &Consumer) -> PathBuf {
+    let at = place(&consumer.tree, &eco());
+    fs::create_dir_all(&at).unwrap();
+    at
+}
+
+/// `serve_with` over `host` at a port of the test's own, each checkout
+/// bound by `bind`, in a thread, once it answers.
+fn serving_with(host: &Host, bind: Binder) -> (SocketAddr, JoinHandle<Answer<Served>>) {
+    let address = free();
+    let host = host.clone();
+    let server = thread::spawn(move || serve_with(address, &host, MOMENTS, bind));
+    find_or_start(address, || Ok(())).expect("the process answers");
+    (address, server)
+}
+
+/// The process's answer once it ends within a few seconds.
+fn ends(server: JoinHandle<Answer<Served>>) -> Answer<Served> {
+    let asked = Instant::now();
+    while !server.is_finished() {
+        assert!(
+            asked.elapsed() < Duration::from_secs(5),
+            "the process did not end"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    server.join().unwrap()
+}
+
+#[test]
+fn a_process_stays_past_its_idle_time_while_a_layout_is_served() {
+    let consumer = Consumer::new();
+    rendered(&consumer);
+    let (address, server) = serving_with(&consumer.world.host, fresh(true));
+    let (_, first) = json(address, "/serving.json");
+    thread::sleep(MOMENTS * 5);
+    assert!(
+        !server.is_finished(),
+        "the process ended while a layout is served"
+    );
+    let (status, body) = get(address, "/agentplot/consumer/eco/pkg/1.2.0");
+    assert_eq!(status, 200, "{body}");
+    let (_, again) = json(address, "/serving.json");
+    assert_eq!(again["pid"], first["pid"]);
+    assert!(!server.is_finished());
+}
+
+#[test]
+fn a_process_ends_at_its_next_idle_once_the_served_layout_is_removed() {
+    let consumer = Consumer::new();
+    let at = rendered(&consumer);
+    let (_, server) = serving_with(&consumer.world.host, fresh(true));
+    thread::sleep(MOMENTS * 3);
+    assert!(
+        !server.is_finished(),
+        "the process ended while a layout is served"
+    );
+    fs::remove_dir_all(&at).unwrap();
+    assert_eq!(ends(server), Ok(Served::Idle));
+    let lock = fs::File::open(consumer.world.host.state.join(SERVING)).unwrap();
+    lock.try_lock().expect("the lock was let go");
+}
+
+#[test]
+fn a_process_ends_at_its_next_idle_once_the_checkout_holding_it_is_removed() {
+    let consumer = Consumer::new();
+    rendered(&consumer);
+    let (_, server) = serving_with(&consumer.world.host, fresh(true));
+    thread::sleep(MOMENTS * 3);
+    assert!(
+        !server.is_finished(),
+        "the process ended while a layout is served"
+    );
+    fs::remove_dir_all(&consumer.world.repo().path).unwrap();
+    assert_eq!(ends(server), Ok(Served::Idle));
+}
+
+#[test]
+fn a_process_ends_at_its_idle_where_the_only_layout_is_of_a_projection_serving_none() {
+    let consumer = Consumer::new();
+    rendered(&consumer);
+    let (_, server) = serving_with(&consumer.world.host, fresh(false));
+    assert_eq!(ends(server), Ok(Served::Idle));
 }

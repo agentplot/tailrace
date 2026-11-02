@@ -7,8 +7,9 @@
 //! scenarios, whose lockfile one is not applicable, since neither
 //! ecosystem has a lockfile, and the manifest scenarios, whose two of a
 //! manifest are not applicable beside it, since neither ecosystem has a
-//! manifest either. Neither projection renders or serves yet, so
-//! the render and serve scenarios are not run over them:
+//! manifest either; and the serve scenarios, each not applicable, since
+//! both ecosystems' clients read files. Neither projection renders yet,
+//! so the render scenarios are not run over them:
 //! a departure from core.33, which asks every profile to pass the one
 //! suite, stated in design D7. It ends with the unit that builds their
 //! render (bolt 5's render under a policy, phase 2's layouts).
@@ -29,9 +30,9 @@ use tailrace_seams::{
 use tempfile::TempDir;
 
 /// The scenarios of pack, the only operation these projections build,
-/// of a projection that packs no cache entries, of pinned, and of
-/// requires and satisfying.
-const PACK: [&str; 8] = [
+/// of a projection that packs no cache entries, of pinned, of requires
+/// and satisfying, and of serve.
+const PACK: [&str; 12] = [
     "packed the same again",
     "a projection that cannot be reached",
     "a projection that packs no cache entries",
@@ -40,11 +41,16 @@ const PACK: [&str; 8] = [
     "required as the manifest spells it",
     "satisfied by the ecosystem's own ordering",
     "no manifest, none",
+    "a version held, served",
+    "a version lacked, asked of the core",
+    "a refusal in the response",
+    "one base, two places",
 ];
 
 /// What the group's report names not applicable over a projection whose
-/// ecosystem has no lockfile and no manifest.
-const NO_LOCKFILE_OR_MANIFEST: [(&str, &str); 3] = [
+/// ecosystem has no lockfile and no manifest, and whose clients read
+/// files.
+const NO_LOCKFILE_OR_MANIFEST: [(&str, &str); 7] = [
     (
         "pinned as the lockfile spells it",
         "the ecosystem has no lockfile",
@@ -57,6 +63,19 @@ const NO_LOCKFILE_OR_MANIFEST: [(&str, &str); 3] = [
         "satisfied by the ecosystem's own ordering",
         "the ecosystem has no manifest",
     ),
+    (
+        "a version held, served",
+        "the ecosystem's clients read files",
+    ),
+    (
+        "a version lacked, asked of the core",
+        "the ecosystem's clients read files",
+    ),
+    (
+        "a refusal in the response",
+        "the ecosystem's clients read files",
+    ),
+    ("one base, two places", "the ecosystem's clients read files"),
 ];
 
 fn pack_scenarios() -> Vec<Scenario<dyn ProjectionRig>> {

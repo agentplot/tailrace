@@ -18,7 +18,8 @@
 //! artifacts answer absent naming artifacts and read nothing (53). It
 //! reaches the store only through the store seam it is handed (rule
 //! core.2), and serves nothing, since moon reads its outputs directory
-//! before any remote. Moon's cache has no lockfile: pinned answers
+//! before any remote: serve answers absent naming serving for every
+//! request and asks the core nothing (86). Moon's cache has no lockfile: pinned answers
 //! absent naming the lockfile for every checkout and reads nothing, and
 //! sync fills the cache from the landing's verdicts, never from a pin
 //! (137). Nor has it a manifest: requires and satisfying answer none, an
@@ -29,9 +30,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_lockfile, Answer, Artifact, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not,
-    Output, PackAt, Packed, Pin, Projection, Range, Rendered, Requirement, Seam, Serving, Source,
-    Store, Version, Why,
+    no_lockfile, no_serving, Answer, Artifact, BuildId, CacheEntry, Contents, Digest, Held, Holds,
+    Layout, Miss, Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered, Request,
+    Requirement, Response, Seam, Source, Store, Version, Why,
 };
 
 /// The ecosystem this projection packs in, as the bindings bind it.
@@ -202,11 +203,10 @@ impl Projection for MoonCache {
         })
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
-        Err(Not::absent(
-            &MoonCache::source(),
-            "serve of the moon-cache projection, whose outputs directory moon reads itself",
-        ))
+    /// 86: absent naming serving for every request, since moon reads its
+    /// outputs directory itself; the core is asked nothing.
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
+        Err(no_serving(&MoonCache::source()))
     }
 
     /// 137: absent naming the lockfile for every checkout, since moon's

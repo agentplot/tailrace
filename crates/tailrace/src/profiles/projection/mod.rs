@@ -8,11 +8,13 @@ pub mod cargo;
 pub mod file;
 pub mod image;
 pub mod moon_cache;
+pub mod npm;
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+use tailrace_core::origin;
 use tailrace_seams::{
     Answer, ArtifactMeta, Ecosystem, EcosystemName, Not, Output, Projection, Source, Store,
     Version, Why,
@@ -22,14 +24,18 @@ use cargo::CargoProjection;
 use file::FileProjection;
 use image::ImageProjection;
 use moon_cache::MoonCache;
+use npm::NpmProjection;
 
 /// Every projection built, by the ecosystem it packs in (92, C.10,
 /// C.11): the moon cache of the checkout at `checkout`, reading cache
-/// entries through `store` (design D6), and Cargo's, reading crates
-/// through `crates`, a store of its own, since a store is not shared.
+/// entries through `store` (design D6); Cargo's, reading crates through
+/// `crates`, and npm's, reading tarballs through `packages`, each a store
+/// of its own, since a store is not shared, npm's family the scopes the
+/// checkout sends to the host's serving process.
 pub fn bound(
     store: Box<dyn Store>,
     crates: Box<dyn Store>,
+    packages: Box<dyn Store>,
     checkout: &Path,
 ) -> BTreeMap<Ecosystem, Box<dyn Projection>> {
     BTreeMap::from([
@@ -42,6 +48,10 @@ pub fn bound(
         (
             Ecosystem::new(moon_cache::ECOSYSTEM),
             Box::new(MoonCache::new(checkout, store)),
+        ),
+        (
+            Ecosystem::new(npm::ECOSYSTEM),
+            Box::new(NpmProjection::new(checkout, packages, origin())),
         ),
     ])
 }

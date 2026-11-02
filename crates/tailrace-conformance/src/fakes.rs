@@ -516,6 +516,12 @@ impl ProjectionRig for FakeProjectionRig {
         true
     }
 
+    /// The fake projection's own request for a version,
+    /// `<name>/<version>`.
+    fn request(&self, meta: &ArtifactMeta) -> String {
+        format!("{}/{}", meta.name(), meta.version())
+    }
+
     fn caches(&self) -> bool {
         self.projection.caches()
     }

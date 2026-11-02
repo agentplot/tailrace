@@ -639,11 +639,12 @@ pub fn bind(
         let bound = profiles::store::bind_for(store, make, build, push)?;
         let cache = profiles::store::bind_for(store, make, build, push)?;
         let crates = profiles::store::bind_for(store, make, build, push)?;
+        let packages = profiles::store::bind_for(store, make, build, push)?;
         let keeper = ledger(store)?;
         (
             bound,
             keeper,
-            profiles::projection::bound(cache, crates, repository),
+            profiles::projection::bound(cache, crates, packages, repository),
         )
     };
     Ok(Binding {

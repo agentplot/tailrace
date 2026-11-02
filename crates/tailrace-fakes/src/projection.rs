@@ -1,26 +1,29 @@
 //! The fake projection (B.6): its ecosystem, the name each output takes,
-//! whether it packs cache entries, the build identities it holds no
-//! archive for, the pins of each checkout's lockfile and the ranges its
-//! manifest declares, what the manifest of each artifact, by digest,
-//! requires, and the versions a test says satisfy a range. A pack is the
-//! canonical JSON of what it was given, read from no disk; a render
-//! writes nothing and keeps the place and the artifacts it was given;
-//! pinned reads no checkout and requires no bytes. satisfying answers,
-//! for a range a test set, those of the versions asked that the test
-//! named, in the order it named them, newest first; for any other range
-//! it keeps the versions the range matches and orders them newest first
-//! by Semantic Versioning, so a test can list versions out of order and
-//! get the newest that fits (140, 23; design D7).
+//! whether it packs cache entries, whether it serves, the build
+//! identities it holds no archive for, the pins of each checkout's
+//! lockfile and the ranges its manifest declares, what the manifest of
+//! each artifact, by digest, requires, and the versions a test says
+//! satisfy a range. A pack is the canonical JSON of what it was given,
+//! read from no disk; a render writes nothing and keeps the place and the
+//! artifacts it was given; serve answers a request `<name>@<version>`
+//! from the last render at the layout's place, asking the core for a
+//! version it lacks (86, 115); pinned reads no checkout and requires no
+//! bytes. satisfying answers, for a range a test set, those of the
+//! versions asked that the test named, in the order it named them,
+//! newest first; for any other range it keeps the versions the range
+//! matches and orders them newest first by Semantic Versioning, so a test
+//! can list versions out of order and get the newest that fits (140, 23;
+//! design D7).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::slice;
 
 use serde_json::json;
 use tailrace_seams::{
-    canonical, no_cache_entries, no_lockfile, Answer, Artifact, ArtifactMeta, BuildId, Component,
-    ComponentName, Contents, Digest, Ecosystem, EcosystemName, Holds, Layout, Not, Output,
-    OutputName, PackAt, Packed, Pin, Pinned, Projection, Range, Rendered, Requirement, Seam,
-    Serving, Version, Why,
+    canonical, no_cache_entries, no_lockfile, no_serving, Answer, Artifact, ArtifactMeta, BuildId,
+    Component, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Holds, Layout, Miss, Not,
+    Output, OutputName, PackAt, Packed, Pin, Pinned, Projection, Range, Rendered, Request,
+    Requirement, Response, Seam, Version, Why,
 };
 
 use crate::Fake;
@@ -37,17 +40,19 @@ pub enum ProjectionOp {
 }
 
 /// The projection's ecosystem, the names outputs take in it, whether its
-/// packing is the same twice, whether it packs cache entries, the build
-/// identities it holds no archive for, the pins of each checkout holding
-/// a lockfile and the ranges of each checkout's manifest, what each
-/// artifact's manifest requires, by its digest, the versions satisfying
-/// each range a test set, newest first, and each render of artifacts.
+/// packing is the same twice, whether it packs cache entries, whether it
+/// serves, the build identities it holds no archive for, the pins of each
+/// checkout holding a lockfile and the ranges of each checkout's
+/// manifest, what each artifact's manifest requires, by its digest, the
+/// versions satisfying each range a test set, newest first, each render
+/// of artifacts, each request served and each version asked of the core.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProjectionState {
     ecosystem: Ecosystem,
     names: BTreeMap<OutputName, EcosystemName>,
     unsteady: bool,
     caches: bool,
+    serves: bool,
     no_archive: BTreeSet<BuildId>,
     packs: u64,
     lockfiles: BTreeMap<String, Vec<Pinned>>,
@@ -56,6 +61,41 @@ pub struct ProjectionState {
     satisfied: BTreeMap<Range, Vec<Version>>,
     probes: Vec<String>,
     renders: Vec<(String, Vec<Artifact>)>,
+    requests: Vec<Request>,
+    misses: Vec<Pinned>,
+}
+
+impl ProjectionState {
+    /// The metadata of `pin`'s artifact in the last render at `at`, none
+    /// where that render holds no such version or nothing was rendered
+    /// there.
+    fn held(&self, at: &str, pin: &Pinned) -> Option<ArtifactMeta> {
+        let (_, artifacts) = self.renders.iter().rev().find(|(place, _)| place == at)?;
+        artifacts
+            .iter()
+            .find(|a| a.meta.name() == &pin.name && a.meta.version() == &pin.version)
+            .map(|a| a.meta.clone())
+    }
+}
+
+/// The version a served request's path names, `<name>/<version>`, split
+/// at its last `/`, so a scoped name keeps its own; none where it names
+/// none.
+fn named_in(path: &str) -> Option<Pinned> {
+    let (name, version) = path.rsplit_once('/')?;
+    (!name.is_empty() && !version.is_empty()).then(|| Pinned {
+        name: EcosystemName::new(name),
+        version: Version::new(version),
+    })
+}
+
+/// A response whose body is `words`, with `status`.
+fn words(status: u16, words: String) -> Response {
+    Response {
+        status,
+        content_type: "text/plain; charset=utf-8".into(),
+        body: words.into_bytes(),
+    }
 }
 
 /// A projection in memory.
@@ -73,6 +113,7 @@ impl FakeProjection {
                 names: BTreeMap::new(),
                 unsteady: false,
                 caches: true,
+                serves: true,
                 no_archive: BTreeSet::new(),
                 packs: 0,
                 lockfiles: BTreeMap::new(),
@@ -81,6 +122,8 @@ impl FakeProjection {
                 satisfied: BTreeMap::new(),
                 probes: Vec::new(),
                 renders: Vec::new(),
+                requests: Vec::new(),
+                misses: Vec::new(),
             },
         )
     }
@@ -100,6 +143,23 @@ impl FakeProjection {
     /// pack with no version and render of cache entries answer absent.
     pub fn packs_no_cache_entries(&self) {
         self.state().caches = false;
+    }
+
+    /// 86: from now a projection whose ecosystem's clients read files,
+    /// whose serve answers absent naming serving for every request and
+    /// asks the core nothing.
+    pub fn serves_none(&self) {
+        self.state().serves = false;
+    }
+
+    /// 86: every request asked of serve, in order.
+    pub fn requests(&self) -> Vec<Request> {
+        self.state().requests.clone()
+    }
+
+    /// 115: every version serve asked of the core, in order.
+    pub fn misses(&self) -> Vec<Pinned> {
+        self.state().misses.clone()
     }
 
     /// Whether the projection packs cache entries.
@@ -297,15 +357,48 @@ impl Projection for FakeProjection {
         )
     }
 
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        let given = json!({ "layout": layout });
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        let given = json!({ "layout": layout, "request": request });
+        let asked = named_in(&request.path);
+        // The core is asked with the fake let go, since the core renders
+        // the version it holds into this same fake.
+        let lacked = {
+            let mut s = self.state();
+            s.requests.push(request.clone());
+            let lacked = asked
+                .as_ref()
+                .filter(|pin| s.serves && s.held(&layout.at, pin).is_none())
+                .cloned();
+            s.misses.extend(lacked.clone());
+            lacked
+        };
+        let missed = lacked.map(|pin| miss(&pin));
         self.ask(
             ProjectionOp::Serve,
             given,
             format!("the layout at {}", layout.at),
-            |s, _| {
-                Ok(Serving {
-                    address: format!("fake://{}/{}", s.ecosystem, layout.at),
+            |s, source| {
+                if !s.serves {
+                    return Err(no_serving(source));
+                }
+                let Some(pin) = asked else {
+                    return Ok(words(404, format!("{} names no version", request.path)));
+                };
+                match missed {
+                    Some(Err(not @ Not::Absent(_))) => return Ok(words(404, not.to_string())),
+                    Some(Err(not @ Not::Refused(_))) => return Ok(words(403, not.to_string())),
+                    Some(Err(not)) => return Ok(words(502, not.to_string())),
+                    Some(Ok(())) | None => {}
+                }
+                let meta = match s.held(&layout.at, &pin) {
+                    Some(meta) => meta,
+                    None => ArtifactMeta::new(s.ecosystem.clone(), pin.name, pin.version)
+                        .map_err(|bad| Not::refused(source, Why::Said, Some(bad.to_string())))?,
+                };
+                Ok(Response {
+                    status: 200,
+                    content_type: "application/json".into(),
+                    body: canonical(&meta),
                 })
             },
         )
@@ -551,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn a_render_holds_what_it_was_given_and_is_served() {
+    fn a_render_holds_what_it_was_given() {
         let projection = FakeProjection::new(Ecosystem::new("eco"));
         let meta = artifact_pack(&projection, "1.0.0").meta.unwrap();
         let artifact = Artifact {
@@ -563,10 +656,124 @@ mod tests {
             .unwrap();
         assert_eq!(rendered.layout.at, "layouts/eco");
         assert_eq!(rendered.holds, Holds::Versions(vec![meta]));
-        assert_eq!(
-            projection.serve(&rendered.layout).unwrap().address,
-            "fake://eco/layouts/eco"
+    }
+
+    fn request(path: &str) -> Request {
+        Request {
+            method: "GET".into(),
+            path: path.into(),
+            base: "http://127.0.0.1:7420/o/r/eco".into(),
+        }
+    }
+
+    #[test]
+    fn a_version_held_is_served_and_one_lacked_is_asked_of_the_core() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let meta = artifact_pack(&projection, "1.0.0").meta.unwrap();
+        let artifact = Artifact {
+            digest: Digest::of(b"site"),
+            meta: meta.clone(),
+        };
+        let layout = projection
+            .render(Contents::Artifacts(&[artifact]), "layouts/eco")
+            .unwrap()
+            .layout;
+        let asked = std::cell::RefCell::new(Vec::new());
+        let refusal = Not::refused(
+            &tailrace_seams::Source::new(Seam::Policy, "core"),
+            Why::Said,
+            Some("acceptance wanting".into()),
         );
+        let miss = |pin: &Pinned| {
+            asked.borrow_mut().push(pin.clone());
+            Err(refusal.clone())
+        };
+        let held = projection
+            .serve(&layout, &request("site/1.0.0"), &miss)
+            .unwrap();
+        assert_eq!(held.status, 200);
+        assert_eq!(held.body, canonical(&meta));
+        assert_eq!(*asked.borrow(), [], "a held version asked the core");
+        let lacked = projection
+            .serve(&layout, &request("site/1.1.0"), &miss)
+            .unwrap();
+        assert_eq!(lacked.status, 403);
+        assert_eq!(lacked.body, refusal.to_string().into_bytes());
+        assert!(String::from_utf8(lacked.body)
+            .unwrap()
+            .contains("acceptance wanting"));
+        assert_eq!(*asked.borrow(), [pin("site", "1.1.0")]);
+        assert_eq!(
+            projection.requests(),
+            [request("site/1.0.0"), request("site/1.1.0")]
+        );
+        assert_eq!(projection.misses(), [pin("site", "1.1.0")]);
+    }
+
+    #[test]
+    fn the_cores_answer_for_a_version_lacked_is_its_status_and_words() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        let layout = Layout {
+            at: "layouts/eco".into(),
+        };
+        let source = tailrace_seams::Source::new(Seam::Store, "core");
+        for (status, answer) in [
+            (
+                404,
+                Err(Not::absent(&source, "name artifact/eco/@scope/pkg@2.0.0")),
+            ),
+            (
+                502,
+                Err(Not::unreadable(
+                    &source,
+                    "the store",
+                    Some("connection refused".into()),
+                )),
+            ),
+        ] {
+            let words = answer.clone().unwrap_err().to_string();
+            let response = projection
+                .serve(&layout, &request("@scope/pkg/2.0.0"), &|_| answer.clone())
+                .unwrap();
+            assert_eq!(response.status, status);
+            assert_eq!(response.body, words.into_bytes());
+        }
+        let held = projection
+            .serve(&layout, &request("@scope/pkg/2.0.0"), &|_| Ok(()))
+            .unwrap();
+        assert_eq!(held.status, 200);
+        let meta = ArtifactMeta::new(
+            Ecosystem::new("eco"),
+            EcosystemName::new("@scope/pkg"),
+            Version::new("2.0.0"),
+        )
+        .unwrap();
+        assert_eq!(held.body, canonical(&meta));
+        assert_eq!(projection.misses(), vec![pin("@scope/pkg", "2.0.0"); 3]);
+        let none = projection
+            .serve(&layout, &request(""), &|_| panic!("asked the core"))
+            .unwrap();
+        assert_eq!(none.status, 404);
+    }
+
+    #[test]
+    fn scripted_to_serve_none_it_answers_absent_naming_serving() {
+        let projection = FakeProjection::new(Ecosystem::new("eco"));
+        projection.serves_none();
+        let layout = Layout {
+            at: "layouts/eco".into(),
+        };
+        for path in ["", "site/1.0.0"] {
+            match projection.serve(&layout, &request(path), &|_| panic!("asked the core")) {
+                Err(Not::Absent(a)) => {
+                    assert_eq!(a.source.seam, Seam::Projection);
+                    assert_eq!(a.what, "serving");
+                }
+                other => panic!("a projection serving none answered {other:?}"),
+            }
+        }
+        assert_eq!(projection.misses(), []);
+        assert_eq!(projection.requests().len(), 2);
     }
 
     fn pin(name: &str, version: &str) -> Pinned {
@@ -782,7 +989,9 @@ mod tests {
         projection.manifest(&held("1.0.0").digest, &[requirement("lib", "^1")]);
         assert!(projection.pack(&output(), &b7e1(), None).is_err());
         assert!(projection.render(Contents::Artifacts(&[]), "at").is_err());
-        assert!(projection.serve(&Layout { at: "at".into() }).is_err());
+        assert!(projection
+            .serve(&Layout { at: "at".into() }, &request(""), &|_| Ok(()))
+            .is_err());
         assert!(projection.pinned("checkout").is_err());
         assert!(projection.requires(&held("1.0.0")).is_err());
         assert!(projection

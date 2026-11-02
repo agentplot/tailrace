@@ -11,9 +11,9 @@ use tailrace_core::{publish, Ask, Entry, History, Kept, Publish, Published, NOTE
 use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
     Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest,
-    Ecosystem, Envelope, Held, IndexMeta, Layout, Manifest, Name, Outcome, Output, OutputName,
-    PackAt, Packed, Pin, Projection, Put, Range, Rendered, Report, Requirement, Revision, Seam,
-    Serving, SignerId, Source, Store, Verdict, Version,
+    Ecosystem, Envelope, Held, IndexMeta, Layout, Manifest, Miss, Name, Outcome, Output,
+    OutputName, PackAt, Packed, Pin, Projection, Put, Range, Rendered, Report, Request,
+    Requirement, Response, Revision, Seam, SignerId, Source, Store, Verdict, Version,
 };
 
 use crate::common::{Fixture, Repo, CLIFF_TOML};
@@ -277,8 +277,8 @@ impl<T, F: Fn() -> T> Projection for Watched<T, F> {
         self.inner.render(contents, at)
     }
 
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        self.inner.serve(layout)
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.inner.serve(layout, request, miss)
     }
 
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
