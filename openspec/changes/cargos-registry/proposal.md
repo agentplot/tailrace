@@ -270,6 +270,7 @@ Out of scope, and what each waits on:
 ```
 Cargo.toml
 Cargo.lock
+devenv.nix
 crates/tailrace/Cargo.toml
 crates/tailrace/src/profiles/projection/**
 crates/tailrace/src/bindings/mod.rs
