@@ -318,12 +318,17 @@ impl ProjectionRig for CargoRig {
     }
 }
 
-/// The scenarios a projection that packs no cache entries, and whose
-/// ecosystem has a manifest, is not held to, by the group's own word.
-const CACHE: [&str; 3] = [
+/// The scenarios a projection that packs no cache entries, whose
+/// ecosystem has a manifest and whose clients read files, is not held
+/// to, by the group's own word.
+const CACHE: [&str; 7] = [
     "a cache entry packed with no version",
     "a layout of the build identities given",
     "no manifest, none",
+    "a version held, served",
+    "a version lacked, asked of the core",
+    "a refusal in the response",
+    "one base, two places",
 ];
 
 #[test]
