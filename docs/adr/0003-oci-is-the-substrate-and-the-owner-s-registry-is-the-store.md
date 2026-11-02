@@ -9,6 +9,10 @@ decision-makers:
 
 # OCI is the substrate and the owner's registry is the store
 
+Status: accepted on 2026-10-22; amended on 2026-11-02 to follow C.12 as amended at `agentplot/blueprints` 3d7827b, as the amendment below says.
+
+Amendment (2026-11-02, following C.11 and C.12 as `agentplot/blueprints` 3d7827b leaves them, on the user's word of 2026-10-26): Nix is no projection, and C.11 names none for it; Nix is reached as two of C.12's targets. A Nix fleet is bound by the environment to two profiles (44): first a push, whose apply runs the fleet's own deploy tool against one machine from a host that holds that machine's key and whose report is what the machine answers after, its current the closure the machine runs; then a pull, replacing the push machine by machine, in which each machine on its own timer reads its channel's tag in the store with its own credential, verifies the gate's claim, realises the version's store paths from the cache and switches, its system profile its marker (119) and its report a claim it signs. A Nix binary cache is pushed the version's store paths. How a closure of many digests maps onto artifacts and the cache stays section 10's question. The rest of the record stands as accepted, its projections npm, Maven, PyPI and templates.
+
 Deciders: the user, 2026-10-22 (inception S1, leaning, and S7, raised by the user); the exploration of 2026-10-21, on a friend's reading that a package manager of our own is quaint beside an OCI registry.
 Sources: `agentplot/blueprints:design/tailrace/requirements.md` clauses 1 to 5, 8, 66 to 73, C.1, C.2; the OCI image and distribution specifications 1.1, whose referrers carry attestations with a subject; ECR's referrers support, with aws/containers-roadmap 2306 and 2783 open on 2026-10-21.
 

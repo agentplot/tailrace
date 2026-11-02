@@ -1,13 +1,15 @@
 ---
 number: 15
 title: The registry store checks a tag before and after its put and takes the host's Docker credentials
-status: proposed
+status: accepted
 date: 2026-10-25
 decision-makers:
 - Chuck Swanberg
 ---
 
 # The registry store checks a tag before and after its put and takes the host's Docker credentials
+
+Status: accepted by the user on 2026-10-27, on their card.
 
 Deciders: proposed by the-registry-store unit of phase 1's bolt 3, which binds the store seam to an OCI registry and proves it against zot, the reference distribution and a real ECR repository (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 3), with the read again after a put, what a resolve answers after a move, and what a move from a place the name has left rests on ruled by madswan-design, for the user to accept with the change.
 Sources: statement clauses 22, 33, 36, 54, 59, 61, 64, 70, 71, 87, 105, 109, 120, C.1 as amended at `agentplot/blueprints` 62283d9, b96697a and 8dd5cc8; ADRs 0003, 0014; rules core.4, core.6, core.15, core.19, core.20, core.21, core.38; the OCI distribution specification (main), its sections on pushing manifests and on the referrers API; aws/containers-roadmap issues 2306 and 2783; the change's design, D4, D7, D9, D13 and D15; thirteen runs of the store's conformance group against ECR, three before name read a tag again, three after, three after the group read a moved name until it settled, and four after the suite took a move from a place the name has left as best effort, and reads by hand against the same registry, in us-west-2 on 2026-10-25.

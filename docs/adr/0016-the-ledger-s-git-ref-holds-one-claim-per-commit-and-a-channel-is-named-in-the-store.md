@@ -1,13 +1,19 @@
 ---
 number: 16
 title: The ledger's git ref holds one claim per commit, and a channel is named in the store
-status: proposed
+status: accepted
 date: 2026-10-25
 decision-makers:
 - Chuck Swanberg
 ---
 
 # The ledger's git ref holds one claim per commit, and a channel is named in the store
+
+Status: accepted by the user on 2026-10-27, on their card; its amendment below accepted by the user on 2026-10-27, on their card; amended again on 2026-11-02 to follow 129 as amended at `agentplot/blueprints` 67f95da, as the second amendment below says.
+
+Amendment (accepted by the user on 2026-10-27, on their card): the binding of `[ledger]` this record decided, `tailrace promote` needing `[ledger]` and a file naming none binding a ledger that answers absent, is superseded by record 0021 and clause 118 as amended at `agentplot/blueprints` b64d367, under which a file naming no `[ledger]` binds the git ref on the landing's remote. The ruling that put the component into the ledger ref and the store name was `agentplot/blueprints` 7749369, not 67f95da. The rest of the record stands as accepted.
+
+Amendment (2026-11-02, following 129 as amended at `agentplot/blueprints` 67f95da): where no identity provider stands, a promotion records the host's own signer as its asker and says that the asker names a host and no person, so a reader tells the two apart as 108 lets a reader tell a one-host acceptance; and a promotion the gate makes on a publish (95) records the gate's own signer as the asker and the publish as its cause (129). The body as built names the signer alone and no cause, and stands against 129 until the change that revises it (`docs/architecture/_open.md`). The rest of the record stands as accepted.
 
 Deciders: proposed by the-ledger-and-promotion unit of phase 1's bolt 4, which builds the ledger seam's two profiles and the promotion itself, so a person promotes a version with one command, undoes a wrong move by promoting back, and a second machine reads the move from the ledger alone (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4), with how a chain is read where its source does not answer, and the asker where no identity provider stands, ruled by madswan-design, for the user to accept with the change.
 Sources: statement clauses 9, 31 to 35, 37 to 39, 58 to 61, 64, 83, 101, 105, 106, 109, 120 to 122, 125, 129, C.13, C.14, as amended at `agentplot/blueprints` 673d334 and 67f95da; ADRs 0009, 0013; rules core.1, core.2, core.6, core.7, core.15, core.21, core.34; git 2.54's `push`, `fetch`, `update-ref`, `hash-object`, `mktree` and `reflog`, as run for the change; the change's design, D2, D3, D5, D7 and D9 to D11.

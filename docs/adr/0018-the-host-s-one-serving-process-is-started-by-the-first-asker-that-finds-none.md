@@ -1,13 +1,17 @@
 ---
 number: 18
 title: The host's one serving process is started by the first asker that finds none, and answers the repositories a checkout named
-status: proposed
+status: accepted
 date: 2026-10-25
 decision-makers:
 - Chuck Swanberg
 ---
 
 # The host's one serving process is started by the first asker that finds none, and answers the repositories a checkout named
+
+Status: accepted by the user on 2026-10-27, on their card; amended on 2026-11-02 to follow 114 as amended at `agentplot/blueprints` aa591ce and section 9 as amended at 9057c8f, as the amendment below says.
+
+Amendment (2026-11-02, following 114 as amended at `agentplot/blueprints` aa591ce, and section 9 as amended at 9057c8f): the process ends when nothing has asked it for a while and it serves no layout; while a rendered layout on the host is served (115) it stays, since the ecosystem's client cannot start it, and ends only once the layout is removed (114). The herdr pane reads the served page's own answer and shows one repository or every repository on the host, at the viewer's choice, as sluice's board does (section 9): the two the process answers at a repository's path and at its root (132). The process as built ends after ten minutes idle whatever it serves, and stands against 114 until bolt 5's served layouts (`docs/architecture/_open.md`). The rest of the record stands as accepted.
 
 Deciders: proposed by the status-on-any-machine unit of phase 1's bolt 4, which shows a repository's channels and why each is where it is on any machine, one that never published included, on the command line and as a page (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 4), with the address, the path and how the process learns a repository ruled by madswan-design at `agentplot/blueprints` dbe7ca0, how the process starts and ends ruled on the user's word at 85bbf54, and the root page ruled on the user's word at 157c828, for the user to accept with the change.
 Sources: statement clauses 49, 56 to 63, 98, 114, 115, 118, 132, as amended at `agentplot/blueprints` 85bbf54 and 157c828; sluice clause 129; ADRs 0006, 0013; rules core.1, core.18, core.19, core.20, core.31, core.32, core.36; Rust 1.98's `std::net` and `std::fs::File::try_lock`; the change's design, D4 to D8, D12 and D14.

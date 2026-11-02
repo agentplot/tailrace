@@ -9,6 +9,10 @@ decision-makers:
 
 # The ledger is a signed chain, and where it is held is a seam
 
+Status: accepted on 2026-10-22; amended on 2026-11-02 to follow C.15 as added at `agentplot/blueprints` 7c4c565, on the operator's rulings of 2026-10-24, as the amendment below says.
+
+Amendment (2026-11-02, following C.15 as added at `agentplot/blueprints` 7c4c565): the ledger seam's members are three, the git ref (C.13), the store (C.14) and a database table (C.15). The table holds one partition per chain and takes conditional writes: `append` puts the claim and moves the head in one transaction conditioned on the predecessor, and `chain` is one ordered read; a table whose writes are not conditional is no ledger. A control plane that keeps rows of its own beside the chain writes them in the same transaction and reads them as projections (101). The rest of the record stands as accepted.
+
 Deciders: the user, 2026-10-22, ruling on interview 1 (`agentplot/blueprints:design/tailrace/models/interview-1-answers.md`), with the instruction that the family's habit of keeping records in git is not a reason and that tailrace is designed as a standalone tool whose backend may be anyone's.
 Sources: statement clauses 33 to 39, 41, 97, 101, 105, 106, 108, 109, 120 to 122, C.13, C.14; ADR 0007, whose two open consequences this record settles.
 
