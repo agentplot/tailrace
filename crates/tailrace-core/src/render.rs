@@ -34,11 +34,17 @@
 //! core.7); the first that none satisfies is the refusal, naming it (99;
 //! design D4).
 //!
-//! The pins are the lockfile's alone: a name the checkout's manifest
-//! declares and no lockfile pins is no pin, and the layout holds none of
-//! it. A manifest's range resolved to the newest version the policy
-//! admits (137) waits on the store's listing of a name's versions, which
-//! is the store-naming unit's.
+//! The core closes a layout (137, 140; design D7). Each version the
+//! lockfile pins is judged; then each range the checkout's manifest
+//! declares for a name no lockfile pins, and, level by level, each range
+//! the versions held the level before require, each name and range once.
+//! A range is met by a version of its name the layout holds that the
+//! projection answers is within it; otherwise the store's listing of the
+//! name is given to the projection, and the versions it answers within
+//! the range, newest first, are judged as a pin is until one is held. The
+//! projection answers which versions are within a range, their order and
+//! what a version requires; the core reads no manifest and orders no
+//! version (rule core.1).
 //!
 //! A layout lives at `.tailrace/layouts/<ecosystem>/` under the
 //! checkout's working tree, the same place on every host, and
@@ -49,22 +55,37 @@
 //! layout as it was, answered from the host's record of what it holds
 //! (51; design D5, D6). The record is one file per layout under the
 //! checkout's own git directory, rewritten whole by each render (61 to
-//! 63, rule core.20; design D7).
+//! 63, rule core.20; design D7). One render of a layout runs at a time:
+//! each holds the layout's lock beside its record from its first read to
+//! the record's write, so the record always names what the layout holds
+//! (48, 62).
+//!
+//! A served layout's client may ask for a version the layout lacks: the
+//! core resolves and judges that one version as a pin, under the policy
+//! a sync in the checkout would use, and where the policy admits it,
+//! renders the layout holding what its record holds and it, and records
+//! it (115, 50, 47; design D4). A version refused, absent or unreadable
+//! leaves the layout and its record as they were.
 
-use std::fs;
+use std::collections::BTreeMap;
+use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind, Contents,
-    Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, NamedSigner, Not, Pinned, Policy,
-    Required, RequiredClaim, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
+    no_serving, Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, Check, Claim,
+    ClaimKind, Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest,
+    NamedSigner, Not, Pin, Pinned, Policy, Projection, Request, Required, RequiredClaim,
+    Requirement, Revision, Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
-use crate::{answer_json, policy_at, sync, Filled, History, Landed, Provenance, SyncAsk, BOUND};
+use crate::{
+    answer_json, layout_address, origin, policy_at, sync, Filled, History, Landed, Provenance,
+    RepositoryName, SyncAsk, BOUND,
+};
 
 /// 138: the artifact space, spelled once in the seams and read back
 /// there (design D1).
@@ -541,8 +562,8 @@ impl Under {
     }
 }
 
-/// What render is asked: the layout's ecosystem; the pins its projection
-/// read in the checkout; the consumer's own policy for layouts, its
+/// What render is asked: the layout's ecosystem; the pins and ranges its
+/// projection read in the checkout; the consumer's own policy for layouts, its
 /// layout line or its file's given, none where it has no policy file;
 /// the signers the host trusts, its own and those its bindings name,
 /// through whom the consumer reads every claim its file names no signer
@@ -553,7 +574,7 @@ impl Under {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderAsk {
     pub ecosystem: Ecosystem,
-    pub pins: Vec<Pinned>,
+    pub pins: Vec<Pin>,
     pub own: Option<Own>,
     pub trusted: Vec<NamedSigner>,
     pub tree: PathBuf,
@@ -590,14 +611,38 @@ impl Serialize for PinAnswer {
     }
 }
 
-/// 47, 85: a layout rendered now: where, when, under which policy, and
-/// every pin's answer in the order pinned.
+/// 137, 99: one range's answer: the name and range, the held version
+/// whose manifest requires it, none for the checkout's own manifest, and
+/// the version held for it, none where none within it was admitted, or
+/// the projection's refusal to read it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RangeAnswer {
+    pub range: Requirement,
+    pub by: Option<Pinned>,
+    pub answer: Answer<Option<Version>>,
+}
+
+impl Serialize for RangeAnswer {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut value = answer_json(&self.answer);
+        value["name"] = json!(self.range.name);
+        value["range"] = json!(self.range.range);
+        value["by"] = json!(self.by);
+        value.serialize(serializer)
+    }
+}
+
+/// 47, 85, 137: a layout rendered now: where, when, under which policy,
+/// every pin's answer in the order pinned, every version judged for a
+/// range in the order asked, and every range's answer in the order met.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Refreshed {
     pub at: String,
     pub rendered_at: u64,
     pub policy: Under,
     pub pins: Vec<PinAnswer>,
+    pub asked: Vec<PinAnswer>,
+    pub ranges: Vec<RangeAnswer>,
 }
 
 /// 51, S10: a layout that could not be refreshed, left as it was: where,
@@ -660,6 +705,13 @@ pub struct LayoutRecord {
     pub refused: Vec<RefusedEntry>,
 }
 
+/// 48, 62: a layout held by one render, an exclusive lock on the host's
+/// file beside its record, let go when this is dropped.
+#[derive(Debug)]
+pub struct LayoutLock {
+    _held: fs::File,
+}
+
 /// 61 to 63: what the host keeps of a checkout's layouts, one file per
 /// layout, readable with a file reader and no tailrace process, holding
 /// no credential (64), and rebuilt by the next sync (rule core.20).
@@ -718,6 +770,25 @@ impl Layouts {
             let _ = fs::remove_file(&beside);
             self.cannot(&path, e)
         })
+    }
+
+    /// 48, 62: the layout of `ecosystem` held by one render at a time:
+    /// `<ecosystem>.lock` beside its record, made where it is not there,
+    /// locked exclusively, waiting while another process or thread holds
+    /// it; unreadable naming the file with the system's words where it
+    /// cannot be made or locked. A sync and a render on a miss each hold
+    /// it from their first read to the record's write.
+    pub fn lock(&self, ecosystem: &Ecosystem) -> Answer<LayoutLock> {
+        fs::create_dir_all(&self.dir).map_err(|e| self.cannot(&self.dir, e))?;
+        let path = self.dir.join(format!("{ecosystem}.lock"));
+        let file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(&path)
+            .map_err(|e| self.cannot(&path, e))?;
+        file.lock().map_err(|e| self.cannot(&path, e))?;
+        Ok(LayoutLock { _held: file })
     }
 
     /// The record of the layout of `ecosystem`: absent naming its file
@@ -825,15 +896,20 @@ fn ignored(tree: &Path) -> Answer<()> {
     fs::write(&ignore, "*\n").map_err(|e| written(&ignore, e))
 }
 
-/// 47 to 50, 85, 113: the layout `ask` names, rendered from the pins its
-/// policy admits and no other (design D5, D6). Every pin is resolved,
-/// its claims read and judged before anything is written; a pin is
-/// asked of the store by its own name alone (50, S4). A read its source
-/// answers unreadable or refused is the answer, and nothing is written.
-/// Then `.tailrace/` is made to ignore itself, the bound projection
-/// renders exactly the held versions' artifacts at [`place`], so a
-/// version refused now leaves the layout (47), and the layout's record
-/// is written; a render or a record that fails is the answer.
+/// 47 to 50, 85, 113, 137: the layout `ask` names, rendered from the
+/// pins its policy admits, the version held for each range, and the
+/// versions what is held requires, and no other (design D5 to D7), under
+/// the layout's lock from the first pin's read to the record's write.
+/// Every version is resolved, its claims read and judged before anything
+/// is written, in a fixed order, so the same store under the same policy
+/// holds the same versions (48); a pin is asked of the store by its own
+/// name alone, and a name's versions are listed only for a range nothing
+/// held meets (50, S4). A read its source answers unreadable or refused,
+/// the store's or the projection's, is the answer, and nothing is
+/// written. Then `.tailrace/` is made to ignore itself, the bound
+/// projection renders exactly the held versions' artifacts at [`place`],
+/// so a version refused now leaves the layout (47), and the layout's
+/// record is written; a render or a record that fails is the answer.
 pub fn render(seams: &Seams, layouts: &Layouts, ask: &RenderAsk) -> Answer<Refreshed> {
     let projection = seams.projection(&ask.ecosystem).ok_or_else(|| {
         Not::absent(
@@ -841,38 +917,194 @@ pub fn render(seams: &Seams, layouts: &Layouts, ask: &RenderAsk) -> Answer<Refre
             format!("projection for {}", ask.ecosystem),
         )
     })?;
+    let _held = layouts.lock(&ask.ecosystem)?;
 
-    // 1: every pin read and judged, writing nothing.
-    let mut pins: Vec<PinAnswer> = Vec::new();
-    let mut held: Vec<Artifact> = Vec::new();
+    // 1: every pin, then every range and what is held requires, read and
+    // judged, writing nothing.
+    let mut closing = Closing {
+        seams,
+        projection,
+        ask,
+        pins: Vec::new(),
+        asked: Vec::new(),
+        ranges: Vec::new(),
+        held: Vec::new(),
+    };
+    let mut newly = Vec::new();
     for pin in &ask.pins {
-        if pins.iter().any(|p| p.pin == *pin) {
+        let Pin::Version(pin) = pin else {
+            continue;
+        };
+        if closing.pins.iter().any(|p| p.pin == *pin) {
             continue;
         }
         let (answer, artifact) = judged(seams, ask, pin)?;
-        pins.push(answer);
-        held.extend(artifact);
+        closing.pins.push(answer);
+        if let Some(artifact) = artifact {
+            newly.push(closing.held.len());
+            closing.held.push((pin.clone(), artifact));
+        }
     }
+    let manifest = ask.pins.iter().filter_map(|pin| match pin {
+        Pin::Range(range) => Some((range.clone(), None)),
+        Pin::Version(_) => None,
+    });
+    closing.close(manifest.collect(), newly)?;
 
     // 2: the place, the render of exactly what is held, then the record.
+    let Closing {
+        pins,
+        asked,
+        ranges,
+        held,
+        ..
+    } = closing;
     let at = place(&ask.tree, &ask.ecosystem).display().to_string();
     ignored(&ask.tree)?;
-    projection.render(Contents::Artifacts(&held), &at)?;
+    let artifacts: Vec<Artifact> = held.into_iter().map(|(_, artifact)| artifact).collect();
+    projection.render(Contents::Artifacts(&artifacts), &at)?;
     let policy = Under::of(ask.own.as_ref());
+    let judged = || pins.iter().chain(&asked);
     layouts.write(&LayoutRecord {
         ecosystem: ask.ecosystem.clone(),
         at: at.clone(),
         rendered_at: ask.when,
         policy: policy.clone(),
-        held: pins.iter().filter_map(held_entry).collect(),
-        refused: pins.iter().filter_map(refused_entry).collect(),
+        held: judged().filter_map(held_entry).collect(),
+        refused: judged().filter_map(refused_entry).collect(),
     })?;
     Ok(Refreshed {
         at,
         rendered_at: ask.when,
         policy,
         pins,
+        asked,
+        ranges,
     })
+}
+
+/// A layout being closed (137, 140; design D7): every pin's answer, every
+/// version judged for a range, every range's answer, and the versions
+/// held, each with the artifact the layout takes, in the order held.
+struct Closing<'a> {
+    seams: &'a Seams,
+    projection: &'a dyn Projection,
+    ask: &'a RenderAsk,
+    pins: Vec<PinAnswer>,
+    asked: Vec<PinAnswer>,
+    ranges: Vec<RangeAnswer>,
+    held: Vec<(Pinned, Artifact)>,
+}
+
+impl Closing<'_> {
+    /// `level`'s ranges met, then, level by level, the ranges what each
+    /// level newly held requires, from `newly`, the versions held so far
+    /// that nothing has asked what they require, until a level holds
+    /// nothing new, so nothing held requires a name the layout lacks. A
+    /// version whose projection answers requires absent requires nothing.
+    fn close(
+        &mut self,
+        mut level: Vec<(Requirement, Option<Pinned>)>,
+        mut newly: Vec<usize>,
+    ) -> Answer<()> {
+        loop {
+            for (range, by) in level {
+                newly.extend(self.meet(range, by)?);
+            }
+            level = Vec::new();
+            for at in newly.drain(..) {
+                let (pinned, artifact) = &self.held[at];
+                let required = match self.projection.requires(artifact) {
+                    Ok(required) => required,
+                    Err(Not::Absent(_)) => Vec::new(),
+                    Err(not) => return Err(not),
+                };
+                level.extend(required.into_iter().map(|r| (r, Some(pinned.clone()))));
+            }
+            if level.is_empty() {
+                return Ok(());
+            }
+        }
+    }
+
+    /// `range`, required by `by`, met, each name and range once: by a
+    /// version of its name the layout holds that the projection answers
+    /// is within it; otherwise by the newest of the store's listing of the
+    /// name the projection answers within it that the policy admits,
+    /// judged as a pin, which is held, its place among the held answered;
+    /// held at none where none is. The projection's refusal to read the
+    /// range is the range's answer.
+    fn meet(&mut self, range: Requirement, by: Option<Pinned>) -> Answer<Option<usize>> {
+        if self.ranges.iter().any(|r| r.range == range) {
+            return Ok(None);
+        }
+        let holding: Vec<Version> = self
+            .held
+            .iter()
+            .filter(|(pinned, _)| pinned.name == range.name)
+            .map(|(pinned, _)| pinned.version.clone())
+            .collect();
+        if !holding.is_empty() {
+            match self.within(&range, &holding)? {
+                Ok(within) => {
+                    if let Some(version) = within.into_iter().next() {
+                        return Ok(self.answer(range, by, Ok(Some(version)), None));
+                    }
+                }
+                Err(not) => return Ok(self.answer(range, by, Err(not), None)),
+            }
+        }
+        let ecosystem = &self.ask.ecosystem;
+        let listed = self.seams.store.versions(ecosystem, &range.name)?;
+        let within = match listed.as_slice() {
+            [] => Vec::new(),
+            listed => match self.within(&range, listed)? {
+                Ok(within) => within,
+                Err(not) => return Ok(self.answer(range, by, Err(not), None)),
+            },
+        };
+        for version in within {
+            let pin = Pinned {
+                name: range.name.clone(),
+                version: version.clone(),
+            };
+            if self.pins.iter().chain(&self.asked).any(|p| p.pin == pin) {
+                continue;
+            }
+            let (answer, artifact) = judged(self.seams, self.ask, &pin)?;
+            self.asked.push(answer);
+            if let Some(artifact) = artifact {
+                return Ok(self.answer(range, by, Ok(Some(version)), Some((pin, artifact))));
+            }
+        }
+        Ok(self.answer(range, by, Ok(None), None))
+    }
+
+    /// Those of `versions` the projection answers within `range`, newest
+    /// first; its refusal as the range's own answer, and a read it cannot
+    /// make the outer answer.
+    fn within(&self, range: &Requirement, versions: &[Version]) -> Pinning<Vec<Version>> {
+        match self.projection.satisfying(&range.range, versions) {
+            Ok(within) => Ok(Ok(within)),
+            Err(Not::Unreadable(u)) => Err(Not::Unreadable(u)),
+            Err(not) => Ok(Err(not)),
+        }
+    }
+
+    /// `range`'s answer kept, and `taken` held for it, its place among
+    /// the held answered.
+    fn answer(
+        &mut self,
+        range: Requirement,
+        by: Option<Pinned>,
+        answer: Answer<Option<Version>>,
+        taken: Option<(Pinned, Artifact)>,
+    ) -> Option<usize> {
+        self.ranges.push(RangeAnswer { range, by, answer });
+        let taken = taken?;
+        self.held.push(taken);
+        Some(self.held.len() - 1)
+    }
 }
 
 fn held_entry(pin: &PinAnswer) -> Option<HeldEntry> {
@@ -935,12 +1167,127 @@ pub fn refresh(seams: &Seams, layouts: &Layouts, ask: &RenderAsk) -> Answer<Refr
     }
 }
 
+/// 115: what a render on a miss is asked: the branch and the revision a
+/// sync with no argument takes in the checkout, the layout's ecosystem,
+/// the checkout's working tree, the one version its client asked for and
+/// the layout lacks, the signers the host trusts, its own and those its
+/// bindings name, and when, in seconds since the Unix epoch by the
+/// asker's clock, since the core reads none.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MissAsk {
+    pub branch: Branch,
+    pub revision: Revision,
+    pub ecosystem: Ecosystem,
+    pub tree: PathBuf,
+    pub pin: Pinned,
+    pub trusted: Vec<NamedSigner>,
+    pub when: u64,
+}
+
+/// The artifact a record's entry names, rebuilt from its name, version
+/// and digest; unreadable naming the record where they make no metadata.
+fn rebuilt(layouts: &Layouts, ecosystem: &Ecosystem, entry: &HeldEntry) -> Answer<Artifact> {
+    let meta = ArtifactMeta::new(ecosystem.clone(), entry.name.clone(), entry.version.clone())
+        .map_err(|bad| {
+            Not::unreadable(
+                &layouts.source(),
+                layouts.path(ecosystem).display().to_string(),
+                Some(bad.to_string()),
+            )
+        })?;
+    Ok(Artifact {
+        digest: entry.artifact.clone(),
+        meta,
+    })
+}
+
+/// 115, 50, 47, 99, 113: the one version `ask` names, which a served
+/// layout's client asked for and the layout lacks, rendered into the
+/// layout where the policy admits it (design D4). Under the layout's
+/// lock: a version the record already holds is answered held at once, a
+/// second request having raced the first; otherwise the revision is
+/// checked landed, the consumer's own policy read at it, and the one pin
+/// resolved and judged exactly as [`render`] judges a pin, so it is
+/// judged under the consumer's layout line, else its publisher's, else
+/// the given (C.10). Held, the projection renders the record's held
+/// artifacts and this one, and the record is written with it added and
+/// the rest as they were. Absent, refused naming the claim found wanting,
+/// or unreadable with the source's own words, nothing is written. Only
+/// the one version is read from the store.
+pub fn miss(seams: &Seams, layouts: &Layouts, ask: &MissAsk) -> Answer<HeldPin> {
+    let projection = seams.projection(&ask.ecosystem).ok_or_else(|| {
+        Not::absent(
+            &Source::new(Seam::Host, BOUND),
+            format!("projection for {}", ask.ecosystem),
+        )
+    })?;
+    let _held = layouts.lock(&ask.ecosystem)?;
+    let record = match layouts.read(&ask.ecosystem) {
+        Ok(record) => Some(record),
+        Err(Not::Absent(_)) => None,
+        Err(not) => return Err(not),
+    };
+    let entries = record.as_ref().map_or(&[][..], |r| r.held.as_slice());
+    if let Some(entry) = entries
+        .iter()
+        .find(|e| e.name == ask.pin.name && e.version == ask.pin.version)
+    {
+        return Ok(HeldPin {
+            index: entry.index.clone(),
+            artifact: entry.artifact.clone(),
+            expired: Vec::new(),
+        });
+    }
+
+    let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &ask.revision)?;
+    let own = own_policy(seams.policy.as_ref(), &landed)?;
+    let render_ask = RenderAsk {
+        ecosystem: ask.ecosystem.clone(),
+        pins: vec![Pin::Version(ask.pin.clone())],
+        own,
+        trusted: ask.trusted.clone(),
+        tree: ask.tree.clone(),
+        when: ask.when,
+    };
+    let (answer, artifact) = judged(seams, &render_ask, &ask.pin)?;
+    let held = answer.answer.clone()?;
+    let entry = held_entry(&answer).expect("a pin held was judged under a policy");
+    let artifact = artifact.expect("a pin held names its artifact");
+
+    let mut artifacts = entries
+        .iter()
+        .map(|e| rebuilt(layouts, &ask.ecosystem, e))
+        .collect::<Answer<Vec<Artifact>>>()?;
+    artifacts.push(artifact);
+    let at = place(&ask.tree, &ask.ecosystem).display().to_string();
+    ignored(&ask.tree)?;
+    projection.render(Contents::Artifacts(&artifacts), &at)?;
+    let (policy, mut held_entries, refused) = match record {
+        Some(record) => (record.policy, record.held, record.refused),
+        None => (Under::of(render_ask.own.as_ref()), Vec::new(), Vec::new()),
+    };
+    held_entries.push(entry);
+    layouts.write(&LayoutRecord {
+        ecosystem: ask.ecosystem.clone(),
+        at,
+        rendered_at: ask.when,
+        policy,
+        held: held_entries,
+        refused: refused
+            .into_iter()
+            .filter(|r| r.name != ask.pin.name || r.version != ask.pin.version)
+            .collect(),
+    })?;
+    Ok(held)
+}
+
 /// What sync asks of a checkout: the revision whose verdicts name the
 /// cache entries and whose policy judges the layouts, the branch that
 /// landed it, the checkout's working tree, when, in seconds since the Unix
-/// epoch by the asker's clock, since the core reads none, and the signers
+/// epoch by the asker's clock, since the core reads none, the signers
 /// the host trusts, its own and those its bindings name (C.10, 118;
-/// design D5).
+/// design D5), and the repository the checkout is of, by its landing's
+/// remote, or why the remote names none (114).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckoutAsk {
     pub branch: Branch,
@@ -948,17 +1295,29 @@ pub struct CheckoutAsk {
     pub tree: PathBuf,
     pub when: u64,
     pub trusted: Vec<NamedSigner>,
+    pub repository: Answer<RepositoryName>,
 }
 
 /// 57: what sync answers of a checkout: the cache's entries as the cache
-/// answers them, and each layout of a projection that pins something, in
-/// ecosystem order.
+/// answers them, each layout of a projection that pins something, in
+/// ecosystem order, and, for each of those layouts whose projection
+/// serves it, the address its clients read it at, or why the repository
+/// has none (114, 49).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckoutSynced {
     pub branch: Branch,
     pub revision: Revision,
     pub entries: Vec<(BuildId, Answer<Filled>)>,
     pub layouts: Vec<(Ecosystem, Answer<Refresh>)>,
+    pub served: BTreeMap<Ecosystem, Answer<String>>,
+}
+
+impl CheckoutSynced {
+    /// 114: the address the layout of `ecosystem` is served at, or why
+    /// there is none; `None` where its projection serves none.
+    pub fn served(&self, ecosystem: &Ecosystem) -> Option<&Answer<String>> {
+        self.served.get(ecosystem)
+    }
 }
 
 impl Serialize for CheckoutSynced {
@@ -978,6 +1337,7 @@ impl Serialize for CheckoutSynced {
             .map(|(ecosystem, answer)| {
                 let mut value = answer_json(answer);
                 value["ecosystem"] = json!(ecosystem);
+                value["served"] = self.served(ecosystem).map_or(Value::Null, answer_json);
                 value
             })
             .collect();
@@ -991,9 +1351,9 @@ impl Serialize for CheckoutSynced {
     }
 }
 
-/// 47 to 51, 113: every layout of the checkout `ask` names: each bound
-/// projection asked what the working tree's lockfile pins, one answering
-/// absent passed over, so no layout of it is rendered or recorded (50).
+/// 47 to 51, 113, 137: every layout of the checkout `ask` names: each
+/// bound projection asked what the working tree's lockfile pins and its
+/// manifest's ranges, one answering absent passed over, so no layout of it is rendered or recorded (50).
 /// The consumer's policy is read at `landed` once, and only where
 /// something is pinned, and judges every layout (65, rule core.22). A
 /// layout whose pins or policy cannot be read is left as it was and
@@ -1005,7 +1365,7 @@ pub fn layouts(
     ask: &CheckoutAsk,
 ) -> Vec<(Ecosystem, Answer<Refresh>)> {
     let tree = ask.tree.display().to_string();
-    let mut pinned: Vec<(Ecosystem, Answer<Vec<Pinned>>)> = Vec::new();
+    let mut pinned: Vec<(Ecosystem, Answer<Vec<Pin>>)> = Vec::new();
     for (ecosystem, projection) in &seams.projections {
         match projection.pinned(&tree) {
             Err(Not::Absent(_)) => continue,
@@ -1046,11 +1406,63 @@ pub fn layouts(
         .collect()
 }
 
-/// 52 to 54, 47 to 51: the one question sync asks of a checkout: the
-/// cache filled as the cache fills it, reading no policy (53), then the
-/// checkout's layouts rendered under the policy at the same landed
-/// revision (design D5). A revision its branch has not landed is the
-/// answer, before anything is read (rule core.11).
+/// 86, 114, 49: where the layout of `ecosystem` at `at` is served: its
+/// projection asked once to serve the empty path, whose answer absent
+/// naming serving says it serves none, `None`; otherwise the repository's
+/// address for the ecosystem ([`layout_address`]), or the repository's
+/// own answer where its remote names none (design D10). The probe asks
+/// the core for no version.
+fn served_at(
+    seams: &Seams,
+    ecosystem: &Ecosystem,
+    at: &str,
+    repository: &Answer<RepositoryName>,
+) -> Option<Answer<String>> {
+    let projection = seams.projection(ecosystem)?;
+    let address = repository
+        .as_ref()
+        .map(|repository| layout_address(repository, ecosystem))
+        .map_err(Not::clone);
+    let base = match &address {
+        Ok(address) => address.trim_end_matches('/').to_string(),
+        Err(_) => format!("{}{ecosystem}", origin()),
+    };
+    serves(projection, at, &base).then_some(address)
+}
+
+/// 86: whether `projection` serves the layout at `at`: asked once to
+/// serve the empty path under `base`, whose answer absent naming serving
+/// says it serves none (design D10, D11). The probe asks the core for no
+/// version and reads nothing but what the projection reads to answer it.
+pub fn serves(projection: &dyn Projection, at: &str, base: &str) -> bool {
+    let probe = Request {
+        method: "GET".into(),
+        path: String::new(),
+        base: base.to_string(),
+    };
+    let none = |pin: &Pinned| {
+        Err(Not::absent(
+            &Source::new(Seam::Host, BOUND),
+            format!(
+                "a render of {} {}, which a probe of serving asks for none",
+                pin.name, pin.version
+            ),
+        ))
+    };
+    let layout = Layout { at: at.to_string() };
+    !matches!(
+        projection.serve(&layout, &probe, &none),
+        Err(not) if not == no_serving(not.source())
+    )
+}
+
+/// 52 to 54, 47 to 51, 114: the one question sync asks of a checkout:
+/// the cache filled as the cache fills it, reading no policy (53), then
+/// the checkout's layouts rendered under the policy at the same landed
+/// revision (design D5), and each layout rendered or kept whose
+/// projection serves it answered with its address (design D10). A
+/// revision its branch has not landed is the answer, before anything is
+/// read (rule core.11).
 pub fn sync_checkout(seams: &Seams, record: &Layouts, ask: &CheckoutAsk) -> Answer<CheckoutSynced> {
     let synced = sync(
         seams,
@@ -1061,10 +1473,24 @@ pub fn sync_checkout(seams: &Seams, record: &Layouts, ask: &CheckoutAsk) -> Answ
         },
     )?;
     let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &ask.revision)?;
+    let layouts = layouts(seams, record, &landed, ask);
+    let served = layouts
+        .iter()
+        .filter_map(|(ecosystem, answer)| {
+            let at = match answer {
+                Ok(Refresh::Refreshed(refreshed)) => &refreshed.at,
+                Ok(Refresh::Kept(kept)) => &kept.at,
+                Err(_) => return None,
+            };
+            let served = served_at(seams, ecosystem, at, &ask.repository)?;
+            Some((ecosystem.clone(), served))
+        })
+        .collect();
     Ok(CheckoutSynced {
         branch: synced.branch,
         revision: synced.revision,
         entries: synced.entries,
-        layouts: layouts(seams, record, &landed, ask),
+        layouts,
+        served,
     })
 }

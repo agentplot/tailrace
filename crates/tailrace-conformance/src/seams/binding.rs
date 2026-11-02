@@ -5,8 +5,10 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use serde_json::json;
 use tailrace_seams::{
     BuildId, Claim, ClaimKind, Digest, Ecosystem, EnvironmentName, Output, OutputName, Revision,
-    Seams, SignerId, Version,
+    Seams, SignerId,
 };
+
+use tailrace_fakes::Alone;
 
 use crate::seams::store::{self, StoreRig};
 use crate::{ok, run, Rig, Scenario};
@@ -66,7 +68,11 @@ fn one_of_each_any_number_of_projections_and_targets(rig: &dyn BindingRig) {
             .projection(ecosystem)
             .unwrap_or_else(|| panic!("no projection is bound for {ecosystem}"));
         let packed = ok(
-            projection.pack(&output, &BuildId::new("b7e1"), Some(&Version::new("1.0.0"))),
+            projection.pack(
+                &output,
+                &BuildId::new("b7e1"),
+                Some(&Alone::new(&output, "1.0.0").at()),
+            ),
             &format!("the pack of the projection bound for {ecosystem}"),
         );
         let meta = packed.meta.unwrap_or_else(|| {

@@ -6,7 +6,8 @@
 //! entries run, the pinned scenarios, whose lockfile one is not
 //! applicable, since moon's cache has no lockfile, and the manifest
 //! scenarios, whose two of a manifest are not applicable beside it, since
-//! moon's cache has no manifest either. The group's other
+//! moon's cache has no manifest either, and the serve scenarios, each
+//! not applicable, since moon reads its cache as files. The group's other
 //! scenarios each pack or render at a
 //! version, which the moon cache answers absent naming artifacts, since
 //! it packs no artifact (53), so they are not run over it: a departure
@@ -28,8 +29,8 @@ use tailrace_seams::{
 use tempfile::TempDir;
 
 /// The scenarios of a projection that packs cache entries, of pinned,
-/// and of requires and satisfying.
-const CACHE: [&str; 7] = [
+/// of requires and satisfying, and of serve.
+const CACHE: [&str; 11] = [
     "a cache entry packed with no version",
     "a layout of the build identities given",
     "pinned as the lockfile spells it",
@@ -37,6 +38,10 @@ const CACHE: [&str; 7] = [
     "required as the manifest spells it",
     "satisfied by the ecosystem's own ordering",
     "no manifest, none",
+    "a version held, served",
+    "a version lacked, asked of the core",
+    "a refusal in the response",
+    "one base, two places",
 ];
 
 /// The task hashes the group packs at.
@@ -182,7 +187,20 @@ fn the_cache_entry_scenarios_over_the_moon_cache() {
             (
                 "satisfied by the ecosystem's own ordering",
                 "the ecosystem has no manifest"
-            )
+            ),
+            (
+                "a version held, served",
+                "the ecosystem's clients read files"
+            ),
+            (
+                "a version lacked, asked of the core",
+                "the ecosystem's clients read files"
+            ),
+            (
+                "a refusal in the response",
+                "the ecosystem's clients read files"
+            ),
+            ("one base, two places", "the ecosystem's clients read files"),
         ],
         "{report}"
     );

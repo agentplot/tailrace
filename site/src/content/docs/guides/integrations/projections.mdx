@@ -50,7 +50,7 @@ revision and the build identity, never the version (24).
 | Maven | the jar and its POM | a `maven2` layout with checksums and `maven-metadata.xml` | not needed: a `file://` repository | designed |
 | Python | the wheel and sdist, with their metadata | a simple index per PEP 503 | not needed: `find-links` or a `file://` index | designed |
 | Go | the module zip | the module proxy layout | not needed: `GOPROXY=file://` | designed |
-| Cargo | the crate file | a local registry per lockfile | not needed: source replacement | designed |
+| Cargo | the crate file, `cargo package --no-verify` after the component's version is set on every crate of the component, so a path dependency on a sibling crate is rewritten to that version's requirement as cargo does (110); a crate belongs to the component whose paths hold its manifest (123); a path dependency on a sibling crate the component does not declare as an output is refused naming the crate, since a consumer could resolve nothing for it; and a path dependency on a crate of another component is packed as a dependency on the version requirement the manifest writes for it, refused naming the crate where the store holds no such version (138) | a sparse registry under the served address, `sparse+http://127.0.0.1:7420/<owner>/<name>/cargo/`, the same on every host (49, 114), named `tailrace` in the checkout's cargo configuration | the host's one process, since a sparse index is read over the protocol | built |
 | NuGet | the package file | a folder feed in the v3 layout | not needed | designed |
 | a file | any file, with a declared media type | a directory | not needed | pack built: the output's one file, its own bytes under every version, with no media type yet; render designed |
 | an image | an image as pushed | the OCI layout itself | the layout served as a registry | pack built: an OCI image archive, as `docker save` writes one, its own bytes under every version; render and serve designed |
@@ -83,6 +83,163 @@ The repository binds its projections: the policy file's `[projections]`
 names the ecosystem of the projection that packs each output, such as
 `site = "file"` or `api = "image"` (C.10). A projection not yet built
 answers render and serve absent, naming the operation.
+
+## npm
+
+A publish packs an npm output with npm's own packager. The output's
+shallowest `package.json` names the package; the files the build left
+under it are copied into a scratch directory, the version is set there
+with `npm pkg set version=<version>`, and `npm pack --ignore-scripts`
+makes the tarball, which is the artifact's bytes as npm wrote them,
+named by the package's own `name` (C.11, 84). No script of the package
+runs, `prepack` and `prepare` among them, and the build's own files are
+never edited, since tailrace builds nothing (15). npm promises no same
+tarball across its own versions, so the projection says it cannot
+promise the same bytes again (87).
+
+npm reads no files, so the host's one serving process serves an npm
+layout to it. A consuming repository writes one line in the `.npmrc`
+beside its `package.json`, once, for each scope its family publishes:
+
+```ini
+@family:registry=http://127.0.0.1:7420/agentplot/consumer/npm/
+```
+
+The address is the host's process at its one name and port, with the
+consuming repository's owner and name in the path, the same on every
+host and in every checkout (114). That line is what makes `@family` the
+family's: npm reads a package of the scope from the served layout and
+from nowhere else, and every other package from the registry it reads
+them from now. tailrace reads nothing else of the file, and writes no
+credential into it.
+
+`tailrace sync` then renders the layout at `.tailrace/layouts/npm/`: the
+family versions the checkout's `package-lock.json` (or
+`npm-shrinkwrap.json`) pins; for each family package `package.json`, or
+a workspace's, declares and no lockfile pins yet, the newest version the
+policy admits within the range it declares, so a first install needs no
+lockfile written by hand; and every family package those versions
+require, through every level (137, 140). Each is judged under the policy
+as any version is. sync prints where the layout is served and finds the
+host's process, or starts it where none answers; npm cannot start it, so
+the process stays while a served layout is there, and ends at its next
+idle time once the layout, or its checkout, is gone.
+
+A new family package is declared first and synced, then installed:
+
+```sh
+npm pkg set dependencies.@family/widget='^1.2.0'
+tailrace sync
+npm install
+```
+
+`npm install @family/widget` before the sync answers `404`, saying the
+layout holds no version of the package and that `tailrace sync` holds a
+name `package.json` declares. A tarball the lockfile pins that the layout
+lacks is rendered on npm's request, under the same policy. A version the
+policy refuses is never listed; npm's request for its tarball is
+answered `403`, and npm prints the version and the claim found wanting
+after its status line:
+
+```text
+npm error 403 403 Forbidden - GET http://127.0.0.1:7420/agentplot/consumer/npm/@family/widget/-/widget-1.5.0.tgz - … refused: npm @family/widget 1.5.0 at sha256:… wants a claim of acceptance …
+```
+
+A version the store does not name is answered `404` the same way, and
+one whose source cannot be read `502`, carrying that source's own words
+(99, 58, 59). The lockfile npm writes records each family tarball at the
+served address, `http://127.0.0.1:7420/<owner>/<name>/npm/…`, the same
+on every host and in every checkout, naming no home, checkout or store
+(49).
+
+## Cargo
+
+A family repository declares each crate it publishes as an output of
+its component: the packaging task that leaves the crate's file, such as
+a task running `cargo package --no-verify --registry tailrace -p fam-a`,
+whose output is the `.crate` file it writes (C.11, 84). A publish reads
+the package's name and its place in the repository from that file, sets
+the component's one version on the package and on every crate of the
+same component it reaches by path, and packs the package alone with
+`cargo package --no-verify --exclude-lockfile`, with no lockfile of its
+own, so the same tree and version pack to the same bytes (87, 110).
+Every manifest it edits gets its own bytes back.
+
+A crate belongs to the component whose paths hold its manifest (123). A
+path dependency on a sibling, a crate of the same component, is written
+with a version and the registry, since cargo packages no path
+dependency without them:
+
+```toml
+[dependencies]
+fam-b = { path = "../fam-b", version = "0.0.0", registry = "tailrace" }
+```
+
+The publish gives it the component's version, and the packed crate
+depends on `fam-b` at that version in the registry, with no path, as
+Cargo does for any publish. Every crate of the component a packed crate
+reaches is declared as an output too, since a consumer could resolve
+nothing for one that is not; a pack that reaches one that is not is
+refused naming it and the component.
+
+A path dependency on a crate of another component keeps the requirement
+its manifest writes, such as `base-c = { path = "../../base/base-c",
+version = "0.3", registry = "tailrace" }`, and is packed as a dependency
+on that requirement. No version of it is picked: which one a build uses
+is the consumer's. The publish reads the store's versions of it first,
+and where none is within the requirement it refuses the pack, naming the
+crate, the requirement and the versions the store holds, or that it
+holds none (138).
+
+Cargo reads its registry over the sparse protocol, so the host's one
+serving process serves a Cargo layout. A checkout's
+`.cargo/config.toml`, the publisher's and the consumer's alike, holds
+one line for it, committed once:
+
+```toml
+[registries.tailrace]
+index = "sparse+http://127.0.0.1:7420/agentplot/consumer/cargo/"
+```
+
+The address is the host's process at its one name and port, with the
+repository's owner and name in the path, the same on every host and in
+every checkout (114). tailrace writes no cargo configuration, and no
+credential into one.
+
+A consumer declares a family crate by its requirement, and needs no
+lockfile before its first sync:
+
+```toml
+[dependencies]
+fam-a = { version = "1", registry = "tailrace" }
+```
+
+```sh
+tailrace sync
+cargo build
+```
+
+`tailrace sync` renders the layout at `.tailrace/layouts/cargo/`: the
+family crates the checkout's `Cargo.lock` pins; for each crate a
+member's manifest declares in `tailrace`, by its own table or inherited
+from `workspace.dependencies`, that no lockfile pins yet, the newest
+version the policy admits within its requirement; and every family
+crate a held crate requires, through every level (137, 140). It prints
+each requirement, what required it and the version held for it, and
+the host's process serves the layout: its configuration, an index file
+per crate listing the versions held, and each crate. Cargo then resolves
+within what the layout lists and writes the lockfile, each family crate
+pinned at the served address with its checksum. The address names no
+home, checkout or store, and is the same on every host, so the lockfile
+names no host (49).
+
+A version the policy refuses is left out of its crate's index file, so
+Cargo never selects it, and sync's answer names the version and the
+claim found wanting (99). A request for its crate, from Cargo or anyone,
+is answered `403` carrying the same words, which Cargo prints under
+`body:` after the status it got. A crate the store does not name is
+answered `404`, and one whose source cannot be read `502`, each with
+that source's own words (58, 59).
 
 ## Layouts under a policy
 

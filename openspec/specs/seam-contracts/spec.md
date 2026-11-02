@@ -340,27 +340,44 @@ givens apart from channels (136).
 - **THEN** it is the same value, the held given naming the channel, its component or that the repository declares none, how it would move and its line, apart from the channels in force
 
 ### Requirement: A projection's contract
-A projection SHALL answer pack, given an output at a build identity and
-the version where the bytes are an artifact's, with the ecosystem's own
-bytes, their metadata only where a version was given, and whether the
-same outputs and version, or the same build identity, pack to the same
-bytes (84, 87, 100); render, given artifacts and their metadata or cache
-entries by build identity, with a consumer layout and the versions or
-build identities it holds (85); serve, given a layout, with where
-its clients read it (86); pinned, given a checkout, with the
-ecosystem names and versions its lockfile pins as the lockfile spells
-them, or absent where the checkout holds no lockfile of that ecosystem
-(137); requires, given an artifact of its ecosystem a layout holds, with
-every name of that ecosystem and the range its manifest requires of it,
-as the manifest spells them (140); and satisfying, given a range and
-versions, with those versions that satisfy the range by the ecosystem's
-own rules, newest first by the ecosystem's own ordering, never by
-spelling or by the order given (23, 140). A projection whose ecosystem
-has no manifest SHALL answer requires and satisfying with none, an empty
-list, reading nothing, and never absent (140). The core SHALL learn what
-a manifest requires and how versions order only through these two
-operations, and SHALL never read a manifest or order versions itself
-(140, core.1).
+A projection SHALL answer pack, given an output at a build identity and,
+where the bytes are an artifact's, the version, the component the output
+belongs to, the component's declared outputs as the build left them, and
+a way to ask whether the component's paths hold a path of the
+repository, with the ecosystem's own bytes, their metadata only where a
+version was given, and whether the same outputs and version, or the same
+build identity, pack to the same bytes (84, 87, 100, 110, 123); render,
+given artifacts and their metadata or cache entries by build identity,
+with a consumer layout and the versions or build identities it holds
+(85); serve, given a layout, one request of the ecosystem's own client
+with the base address it reached, and a way to ask the core for a
+version the layout lacks, with the response to that request in the
+client's own protocol, or absent naming serving, for every request, from
+a projection whose ecosystem's clients read files (86, 115); pinned,
+given a checkout, with the ecosystem names and versions its lockfile
+pins as the lockfile spells them, and, for a name its manifest declares
+and no lockfile pins yet, the manifest's range as the manifest spells
+it, or absent where the checkout holds no lockfile of that ecosystem and
+its manifest declares no such range (137); requires, given an artifact
+of its ecosystem a layout holds, with every name its manifest requires
+that the layout serves and the range it requires of it, as the manifest
+spells them, a name the layout serves being one the consuming
+checkout's own configuration of the ecosystem routes to the served
+address (140); and satisfying, given a range and versions, with those
+versions that satisfy the range by the ecosystem's own rules, newest
+first by the ecosystem's own ordering, never by spelling or by the order
+given (23, 140). A projection whose ecosystem has no manifest SHALL
+answer requires and satisfying with none, an empty list, reading
+nothing, and never absent (140). pinned's range and requires' ranges
+SHALL be one type, so the core holds a checkout's range and a held
+version's alike and reads neither. The core SHALL learn what a manifest
+requires and how versions order only through requires and satisfying,
+and SHALL never read a manifest or order versions itself (140, core.1).
+A projection SHALL never reach the store but through the store it is
+handed, nor the policy or a version's claims at all, nor match a
+component's paths itself: a version a served layout lacks is asked of
+the core, which judges it, and whether the component's paths hold a path
+is asked of the core through pack's input (core.2).
 
 #### Scenario: A projection that cannot promise the same bytes
 - **WHEN** pack answers bytes it cannot promise to make again
@@ -383,15 +400,15 @@ operations, and SHALL never read a manifest or order versions itself
 - **THEN** each answer is absent naming cache entries, never refused and never unreadable
 
 #### Scenario: A checkout with no lockfile
-- **WHEN** pinned is asked of a checkout holding no lockfile of the projection's ecosystem
+- **WHEN** pinned is asked of a checkout holding no lockfile of the projection's ecosystem and no manifest declaring a range
 - **THEN** the answer is absent naming the lockfile, never refused and never an empty list of pins
 
 #### Scenario: A pin written and read back
-- **WHEN** a pin, an ecosystem name and a version, is written in its machine-readable form and read back
-- **THEN** it is the same pin
+- **WHEN** a pin, an ecosystem name and a version, and a range, an ecosystem name and a range's text, are each written in its machine-readable form and read back
+- **THEN** each is the same as written
 
 #### Scenario: What a held version requires
-- **WHEN** requires is asked of an artifact whose manifest requires two names of the ecosystem, each with a range
+- **WHEN** requires is asked of an artifact whose manifest requires two names the layout serves, each with a range
 - **THEN** the answer is those two names, each with its range as the manifest spells it
 
 #### Scenario: Versions that satisfy a range, newest first
@@ -401,6 +418,10 @@ operations, and SHALL never read a manifest or order versions itself
 #### Scenario: An ecosystem with no manifest
 - **WHEN** a projection whose ecosystem has no manifest is asked requires of an artifact, or satisfying of a range
 - **THEN** each answer is none, an empty list, never absent, refused or unreadable
+
+#### Scenario: An output packed with its component
+- **WHEN** pack is given an output with the version, the component the output belongs to, the component's declared outputs and a way to ask whether the component's paths hold a path
+- **THEN** the file, image and moon cache projections each answer the same bytes and metadata they answer given that version alone
 
 ### Requirement: A target's contract
 

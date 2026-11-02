@@ -16,9 +16,9 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName,
     Contents, Digest, EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Landing, Layout,
-    Manifest, Name, NamedSigner, Not, Outcome, Output, Packed, Pinned, Projection, Put, Range,
-    Rendered, Required, RequiredClaim, Requirement, Seam, Serving, SignerId, Source, Store,
-    Version, Why,
+    Manifest, Miss, Name, NamedSigner, Not, Outcome, Output, PackAt, Packed, Pin, Pinned,
+    Projection, Put, Range, Rendered, Request, Required, RequiredClaim, Requirement, Response,
+    Seam, SignerId, Source, Store, Version, Why,
 };
 use world::{
     build_of, build_ops, by_host, eco, output, published_before_notes, version_of, Watched, World,
@@ -370,6 +370,54 @@ fn every_output_is_ensured_in_one_asking_then_reported_before_any_pack() {
     );
 }
 
+// Requirement: Pack is given the output's component
+
+#[test]
+fn each_pack_is_given_its_component_its_outputs_as_built_and_its_paths_match() {
+    let world = World::new();
+    world.fakes.projections[&eco("eco-a")].probe(&[
+        "crates/lib/Cargo.toml",
+        "crates/lib/src/lib.rs",
+        "crates/library/Cargo.toml",
+        "site/index.html",
+    ]);
+    world.publish_one(&world.ask_for("lib")).unwrap();
+    let packs: Vec<_> = world.fakes.projections[&eco("eco-a")]
+        .calls()
+        .into_iter()
+        .filter(|c| c.op == tailrace_fakes::ProjectionOp::Pack)
+        .collect();
+    let [pack] = packs.as_slice() else {
+        panic!("eco-a was asked {} packs", packs.len());
+    };
+    assert_eq!(pack.given["version"], "0.2.0");
+    assert_eq!(
+        pack.given["component"],
+        serde_json::json!({
+            "name": "lib",
+            "outputs": ["lib-pack", "lib-docs"],
+            "paths": ["crates/lib/**"],
+            "prefix": "lib-v",
+        })
+    );
+    assert_eq!(
+        pack.given["outputs"],
+        serde_json::json!([
+            { "name": "lib-pack", "files": ["dist/lib-pack.tar"] },
+            { "name": "lib-docs", "files": ["dist/lib-docs.tar"] },
+        ])
+    );
+    assert_eq!(
+        pack.given["holds"],
+        serde_json::json!({
+            "crates/lib/Cargo.toml": true,
+            "crates/lib/src/lib.rs": true,
+            "crates/library/Cargo.toml": false,
+            "site/index.html": false,
+        })
+    );
+}
+
 #[test]
 fn an_output_the_build_could_not_make_refuses_the_version() {
     let world = World::with_policy(
@@ -626,7 +674,7 @@ fn a_store_that_names_bytes_wrongly_is_refused_naming_both() {
 struct Metaless(FakeProjection);
 
 impl Projection for Metaless {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let packed = self.0.pack(output, at, version)?;
         Ok(Packed {
             meta: None,
@@ -636,10 +684,10 @@ impl Projection for Metaless {
     fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
         self.0.render(contents, at)
     }
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        self.0.serve(layout)
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.0.serve(layout, request, miss)
     }
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.0.pinned(checkout)
     }
     fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {

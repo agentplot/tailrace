@@ -4,10 +4,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tailrace_fakes::{FakeStore, StoreOp};
+use tailrace_fakes::{Alone, FakeStore, StoreOp};
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Ecosystem, EcosystemName, Holds,
-    Manifest, Not, Output, OutputName, Seam, Store, Version, Why,
+    Manifest, Not, Output, OutputName, Pinned, Seam, Store, Version, Why,
 };
 use tempfile::TempDir;
 
@@ -184,7 +184,7 @@ fn a_pack_at_a_version_and_a_render_of_artifacts_are_absent_and_read_nothing() {
     absent_naming_artifacts(projection.pack(
         &site(),
         &BuildId::new(B7E1),
-        Some(&Version::new("1.0.0")),
+        Some(&Alone::new(&site(), "1.0.0").at()),
     ));
     let meta = ArtifactMeta::new(
         Ecosystem::new("file"),
@@ -382,12 +382,27 @@ fn a_build_identity_with_a_path_in_it_refuses_the_render_and_nothing_is_written(
 }
 
 #[test]
-fn serve_is_absent() {
+fn serve_is_absent_naming_serving_and_asks_the_core_nothing() {
     let rig = Rig::new();
-    assert!(matches!(
-        rig.projection().serve(&Layout { at: "at".into() }),
-        Err(Not::Absent(_))
-    ));
+    let asked = std::cell::Cell::new(0);
+    for path in ["", "b7e1", "b7e1@1.4.0"] {
+        let request = Request {
+            method: "GET".into(),
+            path: path.into(),
+            base: "http://127.0.0.1:7420/o/r/moon-cache".into(),
+        };
+        let miss = |_: &Pinned| {
+            asked.set(asked.get() + 1);
+            Ok(())
+        };
+        assert_eq!(
+            rig.projection()
+                .serve(&Layout { at: "at".into() }, &request, &miss),
+            Err(Not::absent(&MoonCache::source(), "serving")),
+            "{path}"
+        );
+    }
+    assert_eq!(asked.get(), 0, "the core was asked for a version");
 }
 
 #[test]

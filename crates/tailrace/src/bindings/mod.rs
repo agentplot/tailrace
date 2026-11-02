@@ -78,8 +78,8 @@
 //! repository the command runs in the
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
-//! through a second binding of the store, opened and never made (design
-//! D6). What tells the gate is bound for every command; no target is
+//! through a second binding of the store, and Cargo's projection crates
+//! through a third, each opened and never made (design D6). What tells the gate is bound for every command; no target is
 //! bound yet. Only a publish and a push make the layout, the given one
 //! with its parents, at the first operation asked of the store and never
 //! in binding it, so a publish refused before it asks the store anything
@@ -638,11 +638,13 @@ pub fn bind(
         let (build, push) = (Some(profiles::build::name()), command == For::Push);
         let bound = profiles::store::bind_for(store, make, build, push)?;
         let cache = profiles::store::bind_for(store, make, build, push)?;
+        let crates = profiles::store::bind_for(store, make, build, push)?;
+        let packages = profiles::store::bind_for(store, make, build, push)?;
         let keeper = ledger(store)?;
         (
             bound,
             keeper,
-            profiles::projection::bound(cache, repository),
+            profiles::projection::bound(cache, crates, packages, repository),
         )
     };
     Ok(Binding {

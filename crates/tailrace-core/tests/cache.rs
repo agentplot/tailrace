@@ -11,9 +11,9 @@ use tailrace_core::{answer_json, cache_name, sync, write, Filled, SyncAsk, Synce
 use tailrace_fakes::{Call, FakeSigner, Fakes, Fault, LandingOp, ProjectionOp, StoreOp, Times};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Branch, BuildId, Check, Claim, ClaimKind, Contents, Digest,
-    Ecosystem, EcosystemName, Held, Layout, Name, Not, Outcome, Output, OutputName, Packed, Pinned,
-    Projection, Range, Rendered, Requirement, Revision, Seam, Serving, Signer, SignerId, Store,
-    Verdict, Version, Why,
+    Ecosystem, EcosystemName, Held, Layout, Miss, Name, Not, Outcome, Output, OutputName, PackAt,
+    Packed, Pin, Projection, Range, Rendered, Request, Requirement, Response, Revision, Seam,
+    Signer, SignerId, Store, Verdict, Version, Why,
 };
 
 fn site() -> Output {
@@ -111,7 +111,7 @@ fn with_no_projection_that_packs_cache_entries_nothing_is_written() {
 struct Offering;
 
 impl Projection for Offering {
-    fn pack(&self, output: &Output, _: &BuildId, _: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, _: &BuildId, _: Option<&PackAt<'_>>) -> Answer<Packed> {
         Ok(Packed {
             bytes: output.name.as_str().as_bytes().to_vec(),
             meta: Some(
@@ -130,11 +130,11 @@ impl Projection for Offering {
         unreachable!("a write renders nothing")
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
         unreachable!("a write serves nothing")
     }
 
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
         unreachable!("a write reads no lockfile")
     }
 

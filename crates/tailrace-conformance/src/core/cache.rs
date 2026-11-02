@@ -12,9 +12,9 @@ use tailrace_core::{
 use tailrace_fakes::{PolicyOp, ProjectionOp};
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, CacheEntry, ClaimKind, ComponentName,
-    Contents, Digest, Ecosystem, Held, Layout, Name, NamedSigner, Not, Outcome, Output, OutputName,
-    Packed, Pinned, Projection, Range, Refusal, Rendered, Required, RequiredClaim, Requirement,
-    Revision, Serving, SignerId, Store, Verdict, Version, Why,
+    Contents, Digest, Ecosystem, Held, Layout, Miss, Name, NamedSigner, Not, Outcome, Output,
+    OutputName, PackAt, Packed, Pin, Projection, Range, Refusal, Rendered, Request, Required,
+    RequiredClaim, Requirement, Response, Revision, SignerId, Store, Verdict, Version, Why,
 };
 
 use crate::core::publish::{one, passing, version_of};
@@ -244,7 +244,7 @@ fn an_entry_held_already(world: &FakeWorld) {
 struct Carrying(Vec<u8>);
 
 impl Projection for Carrying {
-    fn pack(&self, _: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, _: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         assert!(version.is_none(), "an entry was packed at a version");
         Ok(Packed {
             bytes: self.0.clone(),
@@ -257,11 +257,11 @@ impl Projection for Carrying {
         unreachable!("a write renders nothing")
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
         unreachable!("a write serves nothing")
     }
 
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
         unreachable!("a write reads no lockfile")
     }
 

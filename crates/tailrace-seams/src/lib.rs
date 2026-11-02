@@ -9,7 +9,7 @@
 //! | the landing | [`Landing`] | B.3, 77, 78 |
 //! | the signer | [`Signer`] | B.4, 79 to 81 |
 //! | the policy | [`Policy`] | B.5, 82, 83, 131 |
-//! | a projection | [`Projection`] | B.6, 84 to 87, 137, 140 |
+//! | a projection | [`Projection`] | B.6, 84 to 87, 115, 137, 140 |
 //! | a target | [`Target`] | B.7, 88 to 91 |
 //! | the ledger | [`Keeper`] | B.8, 120 to 122 |
 //!
@@ -170,16 +170,16 @@ mod tests {
     }
 
     impl Projection for Nowhere {
-        fn pack(&self, _: &Output, _: &BuildId, _: Option<&Version>) -> Answer<Packed> {
+        fn pack(&self, _: &Output, _: &BuildId, _: Option<&PackAt<'_>>) -> Answer<Packed> {
             nothing(Seam::Projection, "pack")
         }
         fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
             nothing(Seam::Projection, "render")
         }
-        fn serve(&self, _: &Layout) -> Answer<Serving> {
+        fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
             nothing(Seam::Projection, "serve")
         }
-        fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+        fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
             nothing(Seam::Projection, "pinned")
         }
         fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
@@ -253,6 +253,16 @@ mod tests {
             build: None,
             body: Value::Null,
         };
+        let site = Output {
+            name: OutputName::new("site"),
+            files: vec![],
+        };
+        let component = Component {
+            name: ComponentName::new("web"),
+            outputs: vec![site.name.clone()],
+            paths: vec!["**".into()],
+            prefix: "web-v".into(),
+        };
 
         let store: Box<dyn Store> = Box::new(Nowhere);
         let build: Box<dyn Build> = Box::new(Nowhere);
@@ -284,12 +294,14 @@ mod tests {
             asked(policy.policy_for(&rev, &Audience::Acceptance)),
             asked(policy.channels(&rev)),
             asked(projection.pack(
-                &Output {
-                    name: OutputName::new("site"),
-                    files: vec![],
-                },
+                &site,
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(&PackAt {
+                    version: &Version::new("1.0.0"),
+                    component: &component,
+                    outputs: std::slice::from_ref(&site),
+                    holds: &|_| true,
+                }),
             )),
             asked(projection.render(
                 Contents::Artifacts(&[Artifact {
@@ -298,7 +310,15 @@ mod tests {
                 }]),
                 "at",
             )),
-            asked(projection.serve(&Layout { at: "at".into() })),
+            asked(projection.serve(
+                &Layout { at: "at".into() },
+                &Request {
+                    method: "GET".into(),
+                    path: String::new(),
+                    base: "http://127.0.0.1:7420/o/r/eco".into(),
+                },
+                &|_| nothing(Seam::Projection, "miss"),
+            )),
             asked(projection.pinned("checkout")),
             asked(projection.requires(&Artifact {
                 digest: d.clone(),
