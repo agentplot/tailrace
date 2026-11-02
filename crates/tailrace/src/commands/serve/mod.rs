@@ -14,7 +14,8 @@
 //! requests and no timer renders one (132). Under
 //! `/<owner>/<name>/<ecosystem>/` it answers that checkout's served
 //! layout of the ecosystem: the request is handed, with the base it was
-//! asked at, to the projection the checkout binds for the ecosystem, which
+//! asked at, the address the process is bound at with that prefix, to the
+//! projection the checkout binds for the ecosystem, which
 //! answers it in its client's own protocol, a version the layout lacks
 //! rendered into it by the core on the request, and the response is
 //! answered as given, bytes and all (86, 114, 115; design D2). The process
@@ -31,8 +32,8 @@ use std::time::{Duration, Instant};
 use clap::Args;
 use serde::Serialize;
 use tailrace_core::{
-    answer_json, layout_address, miss, place, row, History, Layouts, MissAsk, Overview,
-    Repositories, RepositoryName, SERVING_HOST, SERVING_PORT,
+    answer_json, miss, place, row, History, Layouts, MissAsk, Overview, Repositories,
+    RepositoryName, SERVING_HOST, SERVING_PORT,
 };
 use tailrace_seams::{
     no_serving, Answer, Branch, Ecosystem, Layout, Not, Pinned, Request, Seam, Source,
@@ -178,7 +179,7 @@ pub fn serve_with(
                 let asked = Arc::clone(&asked);
                 let bind = Arc::clone(&bind);
                 thread::spawn(move || {
-                    connection(stream, &host, &*bind);
+                    connection(stream, address, &host, &*bind);
                     *asked.lock().expect("the moment asked") = Instant::now();
                 });
             }
@@ -200,14 +201,17 @@ pub fn serve_with(
     }
 }
 
-/// One request on `stream`, answered and the connection closed.
-fn connection(stream: TcpStream, host: &Host, bind: Bind<'_>) {
+/// One request on `stream`, asked of the process bound at `address`,
+/// answered and the connection closed.
+fn connection(stream: TcpStream, address: SocketAddr, host: &Host, bind: Bind<'_>) {
     let mut stream = stream;
     let _ = match request(&stream) {
         Ok((method, target)) if method == "HEAD" => {
-            respond_with(host, bind, &method, &target).write_head(&mut stream)
+            respond_with(address, host, bind, &method, &target).write_head(&mut stream)
         }
-        Ok((method, target)) => respond_with(host, bind, &method, &target).write(&mut stream),
+        Ok((method, target)) => {
+            respond_with(address, host, bind, &method, &target).write(&mut stream)
+        }
         Err(said) => {
             Response::text(400, format!("a request it cannot read: {said}\n")).write(&mut stream)
         }
@@ -327,10 +331,11 @@ fn status_of<T>(answer: &Answer<T>) -> u16 {
 /// or, in a test, over fakes.
 pub type Bind<'a> = &'a dyn Fn(&Path, For) -> Answer<Binding>;
 
-/// `method` of `target` asked of `host`'s process, each checkout bound
-/// as `host` binds it.
+/// `method` of `target` asked of `host`'s process at the core's address,
+/// each checkout bound as `host` binds it.
 pub fn respond(host: &Host, method: &str, target: &str) -> Response {
     respond_with(
+        address(),
         host,
         &|checkout, command| host.bind_for(checkout, command),
         method,
@@ -338,14 +343,20 @@ pub fn respond(host: &Host, method: &str, target: &str) -> Response {
     )
 }
 
-/// `method` of `target` asked of `host`'s process, each checkout bound by
-/// `bind`, status's binding for its routes and sync's for a served layout:
-/// the routes of design D6, `GET` alone, and the served layout's of
-/// design D2, whose method its projection answers.
-pub fn respond_with(host: &Host, bind: Bind<'_>, method: &str, target: &str) -> Response {
+/// `method` of `target` asked of `host`'s process bound at `address`,
+/// each checkout bound by `bind`, status's binding for its routes and
+/// sync's for a served layout: the routes of design D6, `GET` alone, and
+/// the served layout's of design D2, whose method its projection answers.
+pub fn respond_with(
+    address: SocketAddr,
+    host: &Host,
+    bind: Bind<'_>,
+    method: &str,
+    target: &str,
+) -> Response {
     let path = target.split_once('?').map_or(target, |(path, _)| path);
     if let Some((repository, ecosystem, rest)) = served_layout(path) {
-        return layout(host, bind, &repository, &ecosystem, method, rest);
+        return layout(address, host, bind, &repository, &ecosystem, method, rest);
     }
     if method != "GET" {
         return Response::text(405, format!("{method} is not answered; only GET is\n"));
@@ -415,15 +426,19 @@ fn served_layout(path: &str) -> Option<(RepositoryName, Ecosystem, &str)> {
 
 /// 86, 114, 115: `method` of `rest` below the served layout of
 /// `ecosystem` in the checkout that last named `repository`, bound for
-/// sync: handed to the projection bound for the ecosystem with the base
-/// the layout is served at, which answers the method as its client's
-/// protocol does, and its response answered as given (design D2). A version
-/// the layout lacks is rendered into it by the core on the request, under
-/// the policy a sync with no argument would use there (design D4). A
+/// sync: handed to the projection bound for the ecosystem with the base it
+/// was asked at, `http://<address>/<owner>/<name>/<ecosystem>`, `address`
+/// the one the process is bound at, which on a host is the core's, since
+/// nothing else binds it (114, rule core.36), and in a test the test's
+/// own. The projection answers the method as its client's protocol does,
+/// and its response is answered as given (design D2). A version the
+/// layout lacks is rendered into it by the core on the request, under the
+/// policy a sync with no argument would use there (design D4). A
 /// repository none named is its absent answer and a checkout that cannot
 /// be bound its binding's, each in text; an ecosystem the checkout binds
 /// no projection for, or whose projection serves none, `404` naming it.
 fn layout(
+    address: SocketAddr,
     host: &Host,
     bind: Bind<'_>,
     repository: &RepositoryName,
@@ -471,9 +486,10 @@ fn layout(
     let request = Request {
         method: method.to_string(),
         path: rest.to_string(),
-        base: layout_address(repository, ecosystem)
-            .trim_end_matches('/')
-            .to_string(),
+        base: format!(
+            "http://{address}/{}/{}/{ecosystem}",
+            repository.owner, repository.name
+        ),
     };
     let at = Layout {
         at: place(&tree, ecosystem).display().to_string(),
