@@ -33,10 +33,20 @@ its policy was read at, and then, for each channel the policy declares
 (131), its component, the channel it is bound to where it is one, and
 the version it is at or that it is empty (31). Below each version is
 the chain of promotions that put it there, newest first: the version it
-moved from, who asked, when, and the claim (33). The channels are read
-from the ledger alone, so every machine asking one ledger is answered
-one version per channel; a chain the ledger could only answer as this
-host last fetched it says when, with the remote's own words (36, 61).
+moved from, who asked, when, and the claim (33). Beneath each promotion
+are the notes of the version it moved to, so the chain reads as the
+channel's changelog (134). They are rendered again from the
+repository's own history, on any machine: the version's tag, the
+commits the version rule derives at its landed revision and the
+template that revision holds, the same notes the version carries. One
+version's notes that cannot be read, because the local history no
+longer holds its tag or a commit they are rendered from, are answered
+unreadable with the history's own words, and the channel's version, its
+chain and every other version's notes are shown as they are (58). The
+channels are read from the ledger alone, so every machine asking one
+ledger is answered one version per channel; a chain the ledger could
+only answer as this host last fetched it says when, with the remote's
+own words (36, 61).
 
 Beside the channels are two parts of their own. The environments are
 answered unreadable, saying what each should run and runs is read from
@@ -57,8 +67,10 @@ repository the host knows together, one row each: every channel's head
 version, and how many of its environments run what they should, are
 behind, wait on a person or cannot be read; `/status.json` is the same
 answer for a program. `http://127.0.0.1:7420/<owner>/<name>/status`
-shows one repository whole, its channels and their chains, its
-environments and what this host published, and
+shows one repository whole: its channels and their chains, each
+promotion with who asked and the notes of the version it moved to, the
+same changelog the command line prints; its environments; and what this
+host published, each version's notes beneath its row (132). And
 `/<owner>/<name>/status.json` is exactly what `tailrace status --json`
 prints in its checkout. The owner and name are the last two parts of
 the address of the repository's landing's remote (49). Each page is

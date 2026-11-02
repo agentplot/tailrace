@@ -224,6 +224,15 @@ pub enum Why {
         second: ComponentName,
         what: String,
     },
+    /// 138, C.1: the component `component` declares `what`, its prefix or
+    /// its name and the text, which would enter `space`, a space of the
+    /// store's own or another component's, so its names would not be its
+    /// own.
+    Reserved {
+        component: ComponentName,
+        what: String,
+        space: String,
+    },
     /// 22: the version's name `name` is held by `other`, not by
     /// `revision`, where it was claimed.
     NameHeld {
@@ -396,6 +405,14 @@ impl fmt::Display for Why {
                 second,
                 what,
             } => write!(f, "the components {first} and {second} declare one {what}"),
+            Why::Reserved {
+                component,
+                what,
+                space,
+            } => write!(
+                f,
+                "the component {component} declares the {what}, which enters {space}, and no component's names may"
+            ),
             Why::NameHeld {
                 name,
                 revision,
@@ -655,6 +672,15 @@ mod tests {
                     what: "prefix \"v\"".into(),
                 },
                 "lib and web declare one prefix \"v\"".into(),
+            ),
+            (
+                Why::Reserved {
+                    component: ComponentName::new("web"),
+                    what: "prefix \"artifact/web-v\"".into(),
+                    space: "artifact/".into(),
+                },
+                "the component web declares the prefix \"artifact/web-v\", which enters artifact/"
+                    .into(),
             ),
             (
                 Why::NameHeld {

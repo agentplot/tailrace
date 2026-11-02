@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tailrace_seams::{
     canonical, Answer, Artifact, ArtifactMeta, ComponentName, Digest, Ecosystem, EcosystemName,
-    Envelope, IndexMeta, Manifest, Not, Source, Version, Why, IN_TOTO,
+    Envelope, IndexMeta, Manifest, Not, RepositoryName, Revision, Source, Version, Why, IN_TOTO,
 };
 
 pub(super) const IMAGE_MANIFEST: &str = "application/vnd.oci.image.manifest.v1+json";
@@ -50,6 +50,12 @@ const VERSION: &str = "org.opencontainers.image.version";
 const COMPONENT: &str = "io.github.agentplot.tailrace.component";
 const ECOSYSTEM: &str = "io.github.agentplot.tailrace.ecosystem";
 const NAME: &str = "io.github.agentplot.tailrace.name";
+/// An index's revision, the key the OCI image specification defines for
+/// a source control revision (13, 138; design D6).
+const REVISION: &str = "org.opencontainers.image.revision";
+/// An index's publishing repository, `owner/name`; never the image
+/// source key, which is a URL and names a host (49, 138; design D6).
+const REPOSITORY: &str = "io.github.agentplot.tailrace.repository";
 /// A referrer's annotation: the predicate type of the in-toto statement
 /// its envelope holds, which no media type can carry (design D5).
 pub(super) const PREDICATE_TYPE: &str = "in-toto.io/predicate-type";
@@ -221,15 +227,22 @@ pub(super) fn write(
                     })
                 })
                 .collect::<Answer<Vec<_>>>()?;
+            let mut annotations = BTreeMap::from([
+                (COMPONENT.into(), index.component().to_string()),
+                (VERSION.into(), index.version().to_string()),
+            ]);
+            if let Some(revision) = index.revision() {
+                annotations.insert(REVISION.into(), revision.to_string());
+            }
+            if let Some(repository) = index.repository() {
+                annotations.insert(REPOSITORY.into(), repository.to_string());
+            }
             let bytes = canonical(&ImageIndex {
                 schema_version: 2,
                 media_type: IMAGE_INDEX.into(),
                 artifact_type: INDEX_TYPE.into(),
                 manifests,
-                annotations: BTreeMap::from([
-                    (COMPONENT.into(), index.component().to_string()),
-                    (VERSION.into(), index.version().to_string()),
-                ]),
+                annotations,
             });
             Ok(Written {
                 media_type: IMAGE_INDEX,
@@ -279,12 +292,18 @@ pub(super) fn read(media_type: &str, bytes: &[u8]) -> Result<Read, String> {
                     })
                 })
                 .collect::<Result<Vec<_>, String>>()?;
+            let revision = index.annotations.get(REVISION).cloned().map(Revision::new);
+            let repository = index
+                .annotations
+                .get(REPOSITORY)
+                .map(|r| repository(r.as_str()))
+                .transpose()?;
             IndexMeta::new(
                 ComponentName::new(annotation(&index.annotations, COMPONENT)?),
                 Version::new(annotation(&index.annotations, VERSION)?),
                 artifacts,
             )
-            .map(Read::Index)
+            .map(|meta| Read::Index(meta.with(revision, repository)))
             .map_err(|e| e.to_string())
         }
         other => Err(format!("{other} is no manifest's media type")),
@@ -505,9 +524,52 @@ impl Referrers {
     }
 }
 
+/// The digests a manifest's `bytes` name, each with whether it is a
+/// manifest: an index's manifests, or an image manifest's config and
+/// layers; the parser's words when they hold no JSON (design D8).
+pub(super) fn named(bytes: &[u8]) -> Result<Vec<(bool, Digest)>, String> {
+    #[derive(Deserialize)]
+    struct Naming {
+        #[serde(default)]
+        manifests: Vec<Descriptor>,
+        #[serde(default)]
+        config: Option<Descriptor>,
+        #[serde(default)]
+        layers: Vec<Descriptor>,
+    }
+    let naming: Naming = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    Ok(naming
+        .manifests
+        .into_iter()
+        .map(|d| (true, d.digest))
+        .chain(
+            naming
+                .config
+                .into_iter()
+                .chain(naming.layers)
+                .map(|d| (false, d.digest)),
+        )
+        .collect())
+}
+
 /// An artifact's metadata, from its config's bytes.
 pub(super) fn meta(config: &[u8]) -> Result<ArtifactMeta, String> {
     serde_json::from_slice(config).map_err(|e| e.to_string())
+}
+
+/// The repository an index's annotation names, `owner/name` split at its
+/// first `/`; tailrace's words for one with no `/` or a part empty
+/// (design D6).
+fn repository(written: &str) -> Result<RepositoryName, String> {
+    match written.split_once('/') {
+        Some((owner, name)) if !owner.is_empty() && !name.is_empty() => Ok(RepositoryName {
+            owner: owner.into(),
+            name: name.into(),
+        }),
+        _ => Err(format!(
+            "its annotation {REPOSITORY} is \"{written}\", and a repository is written owner/name"
+        )),
+    }
 }
 
 fn annotation(annotations: &BTreeMap<String, String>, key: &str) -> Result<String, String> {
@@ -629,6 +691,40 @@ mod tests {
             "application/vnd.agentplot.tailrace.artifact.oci"
         );
         assert_eq!(json["manifests"][1]["annotations"][NAME], "acme/site");
+    }
+
+    #[test]
+    fn an_index_round_trips_naming_its_revision_and_repository() {
+        let Manifest::Index(meta) = index() else {
+            unreachable!()
+        };
+        let published = Manifest::Index(meta.published_from(
+            Revision::new("4f2a9c1"),
+            Some(RepositoryName {
+                owner: "acme".into(),
+                name: "site".into(),
+            }),
+        ));
+        let (written, back) = round_trip(&published);
+        assert_eq!(back, published);
+        let json: Value = serde_json::from_slice(&written.bytes).unwrap();
+        assert_eq!(json["annotations"][REVISION], "4f2a9c1");
+        assert_eq!(json["annotations"][REPOSITORY], "acme/site");
+        let plain = write(&index(), &source(), &size).unwrap();
+        let json: Value = serde_json::from_slice(&plain.bytes).unwrap();
+        assert!(json["annotations"].get(REVISION).is_none());
+        assert!(json["annotations"].get(REPOSITORY).is_none());
+    }
+
+    #[test]
+    fn a_malformed_repository_annotation_is_read_as_none_in_words() {
+        let written = write(&index(), &source(), &size).unwrap();
+        for bad in ["acme", "/site", "acme/"] {
+            let mut json: Value = serde_json::from_slice(&written.bytes).unwrap();
+            json["annotations"][REPOSITORY] = json!(bad);
+            let words = read(IMAGE_INDEX, &serde_json::to_vec(&json).unwrap()).unwrap_err();
+            assert!(words.contains(REPOSITORY) && words.contains(bad), "{words}");
+        }
     }
 
     #[test]
@@ -785,6 +881,26 @@ mod tests {
         other["artifactType"] = json!("application/vnd.dev.cosign.artifact.sig.v1+json");
         let words = referred(&serde_json::to_vec(&other).unwrap()).unwrap_err();
         assert!(words.contains("cosign"), "{words}");
+    }
+
+    #[test]
+    fn a_manifest_names_its_manifests_or_its_config_and_layers() {
+        let written = write(&index(), &source(), &size).unwrap();
+        assert_eq!(
+            named(&written.bytes).unwrap(),
+            [(true, Digest::of(b"site")), (true, Digest::of(b"image"))]
+        );
+        let written = write(&artifact(), &source(), &size).unwrap();
+        let config = Digest::of(&written.config.unwrap());
+        assert_eq!(
+            named(&written.bytes).unwrap(),
+            [
+                (false, config),
+                (false, Digest::of(b"one")),
+                (false, Digest::of(b"two"))
+            ]
+        );
+        assert!(named(b"not json").is_err());
     }
 
     #[test]

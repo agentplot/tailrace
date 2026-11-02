@@ -1,9 +1,11 @@
 //! `tailrace status`: where each channel the policy declares is and the
-//! chain of promotions that put it there, read from the ledger, the
+//! chain of promotions that put it there, read from the ledger, each
+//! promotion with the notes of the version it moved to, the
 //! environments, unreadable while no target is read, and the versions
-//! this host published, from its own record, each with its notes
-//! rendered from the repository's own history; on any machine, one that
-//! never published included (31, 36, 56 to 61, 98, 134). It is bound to
+//! this host published, from its own record, each with its notes; every
+//! version's notes rendered from the repository's own history, on any
+//! machine, one that never published included (31, 33, 36, 56 to 61, 98,
+//! 134). It is bound to
 //! the landing, the policy and the ledger alone, asks no store, signer or
 //! target, and writes nothing (60, rule core.32). It reads the asker's
 //! time from the clock and hands it to the core, which reads none.
@@ -23,7 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Args;
 use tailrace_core::{
     overview, overview_unbound, Channel, ChannelStatus, Channels, EnvironmentCounts, History, Kept,
-    Overview, OverviewAsk, RepositoryName, Status,
+    Logged, Overview, OverviewAsk, RepositoryName, Status,
 };
 use tailrace_seams::{
     Answer, Branch, ComponentName, Digest, Moves, Not, Promotion, Read, Seam, Source,
@@ -259,8 +261,9 @@ fn channels(out: &mut dyn Write, channels: &Channels) -> io::Result<()> {
     Ok(())
 }
 
-/// One channel's line, then its chain newest first, or its own answer
-/// with the source's words on a line of their own (58, 59).
+/// One channel's line, then its chain newest first, each promotion with
+/// the notes of the version it moved to beneath it, or its own answer
+/// with the source's words on a line of their own (58, 59, 134).
 fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Result<()> {
     write!(out, "  {:<width$}  ", channel.name().as_str())?;
     let bound = match &channel.declared.moves {
@@ -292,6 +295,7 @@ fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Re
             let indent = " ".repeat(width + 6);
             for (claim, promotion) in chain.iter().rev() {
                 promoted(out, &indent, claim, promotion)?;
+                logged(out, &format!("{indent}  "), &channel.notes, promotion)?;
             }
             Ok(())
         }
@@ -327,6 +331,34 @@ fn promoted(
         satisfied(promotion.policy.claims.iter().map(Digest::to_string)),
         render::utc(promotion.at)
     )
+}
+
+/// 134: the notes of the version `promotion` moved its channel to, as
+/// `notes` answers them, each line at `indent` with trailing spaces
+/// trimmed, as a published version's notes are printed, or why they
+/// cannot be read (58; design D4).
+fn logged(
+    out: &mut dyn Write,
+    indent: &str,
+    notes: &[Logged],
+    promotion: &Promotion,
+) -> io::Result<()> {
+    let to = &promotion.to;
+    let Some(logged) = notes
+        .iter()
+        .find(|l| l.version == to.version && l.index == to.index)
+    else {
+        return Ok(());
+    };
+    match &logged.notes {
+        Ok(text) => {
+            for line in text.lines() {
+                writeln!(out, "{}", format!("{indent}{line}").trim_end())?;
+            }
+            Ok(())
+        }
+        Err(not) => render::not(out, indent, not),
+    }
 }
 
 /// The claims that satisfied a promotion's policy, or `no claim` where

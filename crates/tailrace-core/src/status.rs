@@ -1,20 +1,23 @@
 //! `tailrace status`: where each channel the policy declares is and the
 //! chain of promotions that put it there, read from the ledger on any
-//! machine, beside which versions of which components this host
-//! published, from which revisions, at which index, answered from the
-//! host's record alone, each with its notes rendered again from the
-//! repository's own history (31, 36, 56 to 61, 101, 125, 131, 132, 134;
-//! design D1, D2, D7).
+//! machine, with the notes of every version the chain moved it to, its
+//! changelog, rendered again from the repository's own history as a
+//! rebuild recovers them; beside which versions of which components this
+//! host published, from which revisions, at which index, answered from
+//! the host's record alone, each with its notes rendered again from the
+//! repository's own history (31, 33, 36, 56 to 61, 63, 101, 125, 131,
+//! 132, 134; design D1, D2, D7).
 //!
 //! Status asks the landing, the policy and the ledger alone, the host's
-//! record, and the local history its notes are rendered from: it reaches
-//! no store, signer, target or projection, and it writes nothing (60,
-//! rule core.32; design D9). Every reader of one ledger is
-//! answered one version per channel as of when it asked, and a chain the
-//! ledger answers as last read says when (36, 61). Each part, and each
-//! channel, carries its own answer, so absent, refused and unreadable are
-//! kept apart at every depth (58, 59), and every surface renders the one
-//! answer made here (57, rule core.31).
+//! record, and the history its notes are rendered from: it reaches no
+//! store, signer, target or projection, and it writes nothing (60, rule
+//! core.32; design D9). Every reader of one ledger and one history is
+//! answered one version per channel, and the same notes for each version
+//! its chain moved it to, as of when it asked, and a chain the ledger
+//! answers as last read says when (36, 61). Each part, each channel and
+//! each version's notes carries its own answer, so absent, refused and
+//! unreadable are kept apart at every depth (58, 59), and every surface
+//! renders the one answer made here (57, rule core.31).
 //!
 //! Beside the channels and the record, the environments are a part of
 //! their own, answered unreadable while no target is read, never empty or
@@ -23,16 +26,18 @@
 //! its status answer alone, so the host's serving process shows every
 //! repository it knows together from the one core (132; design D14).
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::json;
 use tailrace_seams::{
-    Answer, Branch, ChannelName, ComponentName, DeclaredChannel, Digest, Not, Read, Revision, Seam,
-    Seams, Source, Version,
+    Answer, Branch, ChannelName, Component, ComponentName, DeclaredChannel, Digest, Landing, Not,
+    Read, Revision, Seam, Seams, Source, Version,
 };
 
 use crate::{
-    answer_json, channel, channels_at, notes, Channel, Entry, Filter, History, Kept, Landed, Noted,
-    RepositoryName,
+    answer_json, channel, channels_at, notes, Channel, Declared, Entry, Filter, History, Kept,
+    Landed, Noted, RepositoryName, Tag, LOCAL, POLICY_FILE,
 };
 
 /// What status is asked: every version this host published, or those of
@@ -167,14 +172,30 @@ pub struct Channels {
     pub channels: Vec<ChannelStatus>,
 }
 
-/// 31, 101: one channel as the policy declares it, and where its chain
-/// in the ledger puts it, its own answer (58).
+/// 31, 101, 134: one channel as the policy declares it, where its chain
+/// in the ledger puts it, its own answer (58), and its changelog: the
+/// notes of every version its chain moved it to, by version and index,
+/// oldest first as the chain is held, none where the channel is empty or
+/// its chain is not answered (33; design D2).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ChannelStatus {
     #[serde(flatten)]
     pub declared: DeclaredChannel,
     #[serde(serialize_with = "one_answer")]
     pub at: Answer<Channel>,
+    pub notes: Vec<Logged>,
+}
+
+/// 134: the notes of one version a channel's chain moved it to, each
+/// promotion to it shown with them: rendered again from the history, or
+/// why they cannot be, never absent, since the version's index carries
+/// them (58; design D2, D3).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Logged {
+    pub version: Version,
+    pub index: Digest,
+    #[serde(serialize_with = "one_answer")]
+    pub notes: Answer<String>,
 }
 
 impl ChannelStatus {
@@ -198,18 +219,28 @@ fn record_ask(ask: &OverviewAsk) -> StatusAsk {
     }
 }
 
-/// 31, 101, 125, 131: every channel the policy at the branch's landed
-/// head declares, of `ask.component` where it names one, each with its
-/// chain as the ledger answers it. The head not landed is refused before
-/// the policy is read (65, 77), and refused as not landed as last fetched
-/// where the landing read that from its copy; a head landed as last
-/// fetched is answered as one landed on the remote, saying so. A
-/// channel's absent, refused or unreadable chain is that channel's
-/// answer, never the whole one's (58, 105).
+/// 31, 101, 125, 131, 134: every channel the policy at the branch's
+/// landed head declares, of `ask.component` where it names one, each with
+/// its chain as the ledger answers it and the notes of every version the
+/// chain moved it to. The head not landed is refused before the policy
+/// is read (65, 77), and refused as not landed as last fetched where the
+/// landing read that from its copy; a head landed as last fetched is
+/// answered as one landed on the remote, saying so. A channel's absent,
+/// refused or unreadable chain is that channel's answer, never the whole
+/// one's (58, 105), and a version's notes that cannot be rendered are
+/// that version's answer, never the channel's (rule core.19; design D3).
 pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<Channels> {
     let head = history.head(&ask.branch)?;
     let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &head)?;
     let declared = channels_at(seams.policy.as_ref(), &landed)?;
+    let mut changelog = Changelog {
+        landing: seams.landing.as_ref(),
+        history,
+        head: &landed,
+        components: Declared::read(history, &landed).map(|d| d.components),
+        tags: BTreeMap::new(),
+        rendered: BTreeMap::new(),
+    };
     Ok(Channels {
         revision: head,
         landing: landed.read().clone(),
@@ -220,12 +251,157 @@ pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<C
                     .as_ref()
                     .is_none_or(|named| c.channel.component_name() == *named)
             })
-            .map(|declared| ChannelStatus {
-                at: channel(seams.keeper.as_ref(), &declared.channel),
-                declared,
+            .map(|declared| {
+                let at = channel(seams.keeper.as_ref(), &declared.channel);
+                let notes = match &at {
+                    Ok(Channel::At { chain, .. }) => {
+                        let component = declared.channel.component_name();
+                        let mut logged: Vec<Logged> = Vec::new();
+                        for (_, promotion) in chain {
+                            let to = &promotion.to;
+                            if logged
+                                .iter()
+                                .any(|l| l.version == to.version && l.index == to.index)
+                            {
+                                continue;
+                            }
+                            logged.push(Logged {
+                                version: to.version.clone(),
+                                index: to.index.clone(),
+                                notes: changelog.notes(&component, &to.version),
+                            });
+                        }
+                        logged
+                    }
+                    Ok(Channel::Empty { .. }) | Err(_) => Vec::new(),
+                };
+                ChannelStatus {
+                    declared,
+                    at,
+                    notes,
+                }
             })
             .collect(),
     })
+}
+
+/// 134: what one ask of the channels reads toward their notes: the
+/// components the policy file at the landed head declares, read once,
+/// each component's tags that head reaches, read once, and each
+/// component's version's notes, rendered once and shared by every
+/// channel that moved to it (design D1, D2).
+struct Changelog<'a> {
+    landing: &'a dyn Landing,
+    history: &'a History,
+    head: &'a Landed,
+    components: Answer<Vec<Component>>,
+    tags: BTreeMap<ComponentName, Answer<Vec<Tag>>>,
+    rendered: BTreeMap<(ComponentName, Version), Answer<String>>,
+}
+
+impl Changelog<'_> {
+    /// The notes of `component` at `version`, rendered on the first ask
+    /// and the same answer on every ask after; unreadable naming them
+    /// where the policy file at the landed head declares no such
+    /// component, one renamed since, and the file's own answer where it
+    /// cannot be read (design D1).
+    fn notes(&mut self, component: &ComponentName, version: &Version) -> Answer<String> {
+        let key = (component.clone(), version.clone());
+        if let Some(rendered) = self.rendered.get(&key) {
+            return rendered.clone();
+        }
+        let what = format!("the notes of {component} {version}");
+        let rendered = match &self.components {
+            Err(not) => Err(not.clone()),
+            Ok(components) => match components.iter().find(|c| c.name == *component) {
+                None => Err(Not::unreadable(
+                    &Source::history(LOCAL),
+                    &what,
+                    Some(format!(
+                        "{POLICY_FILE} at {} declares no component {component}",
+                        self.head.revision()
+                    )),
+                )),
+                Some(declared) => {
+                    let tags = self
+                        .tags
+                        .entry(component.clone())
+                        .or_insert_with(|| self.history.tags(self.head, &declared.prefix));
+                    tagged(
+                        self.landing,
+                        self.history,
+                        self.head,
+                        tags,
+                        declared,
+                        version,
+                    )
+                }
+            },
+        }
+        .map_err(|not| never_absent(&what, not));
+        self.rendered.insert(key, rendered.clone());
+        rendered
+    }
+}
+
+/// 134: the notes of `component` at `version`, rendered again from git
+/// as a rebuild recovers the commits they were rendered from: its tag
+/// among `tags`, those the landed `head` reaches, its revision landed on
+/// `head`'s branch, the commits the version rule derives there under the
+/// policy file there, rendered by the rule's tool under the template
+/// there (21, 63; design D1). A tag the history does not hold is
+/// unreadable naming it; a revision not landed, a commit the history no
+/// longer holds and the tool's words on the template are as the landing,
+/// [`notes::noted`] and [`notes::render`] answer them (58; design D3).
+fn tagged(
+    landing: &dyn Landing,
+    history: &History,
+    head: &Landed,
+    tags: &Answer<Vec<Tag>>,
+    component: &Component,
+    version: &Version,
+) -> Answer<String> {
+    let name = format!("{}{version}", component.prefix);
+    let tag = tags
+        .as_ref()
+        .map_err(Not::clone)?
+        .iter()
+        .find(|t| t.name == name)
+        .ok_or_else(|| {
+            Not::unreadable(
+                &Source::history(LOCAL),
+                format!("the notes of {} {version}", component.name),
+                Some(format!(
+                    "the history holds no tag {name} reached from {}",
+                    head.revision()
+                )),
+            )
+        })?;
+    let at = Landed::check(landing, head.branch(), &tag.revision)?;
+    let noted = notes::noted(history, &at, &component.name, tag)?;
+    let rendered = notes::render(
+        history,
+        &component.name,
+        version,
+        &tag.name,
+        &tag.revision,
+        &noted,
+    )?;
+    Ok(rendered.text)
+}
+
+/// A version's notes never answered absent: the version is in a chain,
+/// so its index carries them, and only this host's history cannot render
+/// them; an absent answer on the way is unreadable naming the notes,
+/// with what was absent (58; design D3).
+fn never_absent(what: &str, not: Not) -> Not {
+    match not {
+        Not::Absent(a) => {
+            let source = a.source.clone();
+            Not::unreadable(&source, what, Some(Not::Absent(a).to_string()))
+        }
+        not => not,
+    }
 }
 
 /// 36, 60: the whole of status, each part its own answer: the channels

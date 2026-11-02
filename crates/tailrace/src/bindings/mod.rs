@@ -104,8 +104,8 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tailrace_seams::{
-    Answer, Digest, Envelope, Held, Manifest, Name, NamedSigner, Not, Put, Seam, Seams, SignerId,
-    Source, Store,
+    Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not,
+    Put, Seam, Seams, SignerId, Source, Store, Version,
 };
 
 use crate::profiles::signer::Signing;
@@ -526,6 +526,10 @@ impl Store for Unopened {
     fn read(&self, _: &Digest) -> Answer<Held> {
         Err(self.not.clone())
     }
+
+    fn versions(&self, _: &Ecosystem, _: &EcosystemName) -> Answer<Vec<Version>> {
+        Err(self.not.clone())
+    }
 }
 
 /// The binding the bindings file at `file` names for `command`, in the
@@ -629,9 +633,12 @@ pub fn bind(
         };
         (bound, keeper, BTreeMap::new())
     } else {
-        let bound = profiles::store::bind(store, make)?;
-        let cache = profiles::store::bind(store, make)?;
-        let crates = profiles::store::bind(store, make)?;
+        // A push's store writes cache entries alone, into the bound
+        // build profile's cache repository on a registry (135; design D9).
+        let (build, push) = (Some(profiles::build::name()), command == For::Push);
+        let bound = profiles::store::bind_for(store, make, build, push)?;
+        let cache = profiles::store::bind_for(store, make, build, push)?;
+        let crates = profiles::store::bind_for(store, make, build, push)?;
         let keeper = ledger(store)?;
         (
             bound,

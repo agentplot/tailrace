@@ -2,7 +2,7 @@
 //! with the runner and reported as any profile is (93; design D9).
 
 use tailrace_conformance::core::{
-    cache, copy, gate, layouts, ledger, publish, record, status, verify, version,
+    cache, copy, gate, layouts, ledger, naming, publish, record, status, verify, version,
 };
 use tailrace_conformance::fakes::{
     FakeBindingRig, FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig,
@@ -261,6 +261,14 @@ fn the_core_keeps_the_cache_over_the_fakes() {
 #[test]
 fn the_core_renders_layouts_over_the_fakes() {
     run(layouts::GROUP, &layouts::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_core_names_what_a_publish_offers_over_the_fakes() {
+    run(naming::GROUP, &naming::scenarios(), &|| {
         Box::new(FakeWorld::new())
     })
     .assert();

@@ -17,7 +17,11 @@ use git_cliff_core::CONFIG_FILES;
 use tailrace_seams::{Answer, ComponentName, Not, Revision, Source, Version};
 use toml::{Table, Value};
 
-use crate::{History, Noted, LOCAL};
+// `derive` by its module's path: imported through the root's globs,
+// which take in this module's own, the compiler cannot settle the
+// attribute of the same name.
+use crate::version::{derive, Derived};
+use crate::{Declared, History, Landed, Noted, Tag, LOCAL, POLICY_FILE};
 
 /// The ecosystem of a version's notes, reserved: no output is packed in
 /// it (design D3, D9).
@@ -97,6 +101,40 @@ pub fn render(
     Ok(Rendered {
         text: format!("{}\n", text.trim()),
     })
+}
+
+/// 134, 21: the commits `tag`'s notes were rendered from, derived again
+/// at its landed revision under the policy file there, as the publish of
+/// it derived them: what a rebuild keeps, and what status renders a
+/// channel's changelog from (design D1, D8).
+pub(crate) fn noted(
+    history: &History,
+    at: &Landed,
+    component: &ComponentName,
+    tag: &Tag,
+) -> Answer<Noted> {
+    let declared = Declared::read(history, at)?;
+    let found = declared
+        .components
+        .iter()
+        .find(|c| c.name == *component)
+        .ok_or_else(|| {
+            Not::absent(
+                &Source::history(LOCAL),
+                format!("component {component} in {POLICY_FILE} at {}", tag.revision),
+            )
+        })?;
+    match derive(history, at, &declared.rule, found)? {
+        Derived::Versioned(versioned) => Ok(Noted::of(&versioned)),
+        Derived::Unchanged { .. } => Err(Not::unreadable(
+            &Source::history(LOCAL),
+            format!("the commits the notes of {} were rendered from", tag.name),
+            Some(format!(
+                "no version of {component} is derived at {}",
+                tag.revision
+            )),
+        )),
+    }
 }
 
 /// 134: git-cliff's configuration as the repository keeps it at `at`:

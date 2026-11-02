@@ -1,6 +1,6 @@
 //! The status group: what the host published, answered from its own
 //! record with no seam asked and nothing written, each version beside its
-//! notes rendered again from git (58, 60 to 62); and, below the marker,
+//! notes rendered again from git (58, 60 to 62, 134); and, below the marker,
 //! status-on-any-machine's channels read from the ledger beside it, each
 //! channel's answer its own, as last read where the keeper no longer
 //! answers, the same with everything kept deleted, and the environments
@@ -32,7 +32,7 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         Scenario {
             name: "status after a publish",
             plays: None,
-            cites: &[60, 61],
+            cites: &[60, 61, 134],
             run: status_after_a_publish,
         },
         Scenario {

@@ -208,13 +208,18 @@ fn a_verdict_from_a_signer_the_policy_does_not_name(world: &FakeWorld) {
         "the stranger's verdict is no longer kept"
     );
 
-    // Nothing moves: no write since the publish, one name, no append.
+    // Nothing moves: no write since the publish, the publish's names, its
+    // two artifacts' and its version's, and no append.
     assert_eq!(world.writes(), writes, "verify wrote to the store");
     let names: Vec<&Write> = writes
         .iter()
         .filter(|w| matches!(w, Write::Name { .. }))
         .collect();
-    assert_eq!(names.len(), 1, "a name but the version's moved: {names:?}");
+    assert_eq!(
+        names.len(),
+        3,
+        "a name but the artifacts' and the version's moved: {names:?}"
+    );
     assert_eq!(world.keeper_calls(), [], "the keeper was asked");
     assert_eq!(world.target_calls(), [], "a target was asked");
 

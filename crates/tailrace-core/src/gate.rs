@@ -20,9 +20,9 @@
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    channel_name, Answer, Audience, Branch, ChannelId, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, Held, Manifest, Moves, Name, NamedSigner, Not, Outcome, Promotion, Required,
-    RequiredClaim, Revision, Satisfied, Seam, Seams, SignerId, Source, Version,
+    channel_name, version_name, Answer, Audience, Branch, ChannelId, Claim, ClaimKind,
+    ComponentName, Digest, Envelope, Held, Manifest, Moves, NamedSigner, Not, Outcome, Promotion,
+    Required, RequiredClaim, Revision, Satisfied, Seam, Seams, SignerId, Source, Version,
 };
 
 use crate::ledger::{held, may_promote, promotion_of};
@@ -172,7 +172,7 @@ pub fn accept(seams: &Seams, history: &History, ask: &AcceptAsk) -> Answer<Judge
 
     // 2: the name resolved in the store (rule core.4), and the index a
     // publish told the gate of, or nothing is read further (95).
-    let index = seams.store.resolve(&Name::new(&tag))?;
+    let index = seams.store.resolve(&version_name(&component.name, &tag))?;
     if let ToldBy::Publish { index: told } = &ask.told {
         if *told != index {
             return Err(Not::unreadable(

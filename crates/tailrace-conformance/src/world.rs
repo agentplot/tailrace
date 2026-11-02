@@ -232,6 +232,18 @@ impl FakeWorld {
         }
     }
 
+    /// One feature more on the site, committed on the clone after `head`
+    /// and pushed, neither landed nor built: a revision a later version
+    /// is published from.
+    pub fn grow(&self) -> Revision {
+        let revision = self.repo().commit(
+            &[("site/index.html", "<p>the site grows</p>")],
+            "feat: the site grows",
+        );
+        self.repo().push();
+        revision
+    }
+
     /// The clone the host publishes from.
     pub fn repo(&self) -> &Repo {
         &self.fixture.repo
@@ -391,7 +403,9 @@ impl FakeWorld {
                         to: serde_json::from_value(read("to")).ok()?,
                         expected: serde_json::from_value(read("expected")).ok()?,
                     },
-                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read => return None,
+                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read | StoreOp::Versions => {
+                        return None
+                    }
                 })
             })
             .collect()
