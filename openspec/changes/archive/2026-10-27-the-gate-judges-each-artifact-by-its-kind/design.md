@@ -155,7 +155,7 @@ claim.
 
 ### D6. The record
 
-One ADR, 0022 in `docs/adr/`, the next number on this tree, records D1 to
+One ADR, 0024 in `docs/adr/`, the next number on this tree, records D1 to
 D3: the policy names per claim which artifacts it is asked of, the file
 reads it from the kind until C.10 writes a form for it, and the gate
 tells a rendered artifact by its counted provenance naming no build. The
