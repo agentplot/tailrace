@@ -2,8 +2,8 @@
 
 The projection seam (B.6, `crates/tailrace-seams/src/projection.rs`) has
 pack, render, serve, pinned, requires and satisfying. Three units this
-change comes after shape what it implements, and it writes serve's shape
-itself:
+change comes after shape what it implements, and npm's unit, which
+merges after it, wrote the shape its serve answers in:
 
 - **render under a policy** adds pinned (137) and the core's render in
   `crates/tailrace-core/src/render.rs`: `render` reads a checkout's pins,
@@ -19,19 +19,22 @@ itself:
   the version and the claim found wanting (99). pinned's contract there
   says a name the manifest declares and no lockfile pins is no pin until
   ranges resolve.
-- **serve's shape is this change's** (D12 to D15). Cargo is the bolt's
-  first served projection, and the planner's order puts npm, rendered and
-  served after this unit: this change writes the request, the response
-  and the miss every projection serves in, the process's route to a
-  served layout, the served address, the core's render on a miss and the
-  layout's lock, and npm's unit answers npm's clients in them. npm's
-  branch holds a build of the same shape (its commits `1861d1d`,
-  `718688e`, `b1398a6`, `fe73971`, `e13b674` and `e503aa3`, made on the
-  bolt before pinned answered ranges); D12 to D15 keep its types and
-  names, so its profile follows with no change of shape, and the code
-  stage may take those commits as a start where they apply. Sync naming
-  the address and starting the process, and the process staying while a
-  layout is served, stay npm's.
+- **serve's shape is npm's unit's** (D12). npm, rendered and served has
+  built and committed on its branch the one shape in which the host's
+  process answers every ecosystem's client: the seam's `Request`,
+  `Response`, `Miss` and `no_serving` and its one-request `serve`, the
+  fake projection's serve, `served::origin` and `layout_address`,
+  `render::miss` and `Layouts::lock`, the process's route of
+  `/<owner>/<name>/<ecosystem>/…`, sync naming a served layout's address
+  and finding or starting the process, the process staying while a
+  layout is served, and the projection and layouts groups' serve and
+  miss scenarios, with 46, 49, 114 and 115 out of the register. The
+  planner's case for proposal 231, as the user approved it, hands that
+  shape to npm's unit, written once; this change answers Cargo's
+  clients in it and writes none of it. The order stands, npm after this
+  unit, since npm's own range and its miss closing over the loop build
+  on this change's `Pin` and loop; how this branch takes npm's serving
+  code before it merges is the conductor's.
 - **the store names an artifact by ecosystem, name and version** (its
   design, D7, D10) adds the store's listing,
 
@@ -205,16 +208,18 @@ other components' crates told apart by the component's paths, and its
 siblings checked against the component's outputs; a checkout's ranges
 carried by pinned, and the core's render closing a layout over them and
 over what each held crate requires, each version listed by the store and
-judged by the core; one shape in which the host's process answers every
-ecosystem's client, a miss rendered by the core under the policy; a
-consumer with no lockfile proven to `cargo build` against the host's
+judged by the core; Cargo's
+sparse protocol answered in the shape npm's unit wrote; a consumer with no lockfile proven to `cargo build` against the host's
 serving process after `tailrace sync`, Cargo writing the lockfile, and
 `cargo build --locked` after a second sync.
 
 **Non-Goals:** the policy, judging one version, the layout's place and
-its record's form (render under a policy); sync naming a served address
-and starting the process, and the process staying while a layout is
-served (npm, rendered and served); the process's lock and its file of
+its record's form (render under a policy); the request, response and
+miss every served projection answers in, the process's route to a
+served layout, the served address, the render on a miss and the
+layout's lock, sync naming a served address and starting the process,
+the process staying while a layout is served, and their scenarios (npm,
+rendered and served); the process's lock and its file of
 repositories (status across machines); making the
 `artifact/<ecosystem>/<name>@<version>` pointer and the store's listing
 (the store-naming unit); the question on the seam and its fake (the
@@ -495,9 +500,9 @@ its answers to `requires` and `satisfying` from what a test sets, and
 this change adds the pins and ranges a test sets for pinned, its absent
 answer kept where a test sets nothing.
 
-The same loop closes a layout over a miss (D15): once the one version
-asked is held, the versions it requires are held by these steps, from
-the record's held versions, before the projection renders.
+npm's unit closes a miss over the same loop: once the one version asked is held, the versions it requires are
+held by these steps, from the record's held versions, before the
+projection renders.
 
 ### D8. Cargo's requires, satisfying and render
 
@@ -564,8 +569,9 @@ the registry serving the line. The layout names no address:
 
 ### D9. Cargo's serve, and a refusal three ways
 
-Cargo's serve answers in the shape of D12, on the process's route of
-D13. The request's `path`, below `/<owner>/<name>/cargo/`:
+Cargo's serve answers in the seam's one-request shape (D12), on the
+process's route to a served layout. The request's `path`, below
+`/<owner>/<name>/cargo/`:
 
 - `config.json`: `{"dl":"<base>/crates/{crate}/{version}/download"}`,
   `200` `application/json`, with no `api`, since the registry takes no
@@ -588,7 +594,8 @@ refused, `502` unreadable (58, 59, 99); cargo prints it under `body:`.
 Every request is answered with a response, so a probe with an empty
 path, the one npm's unit gives sync, reads the projection as serving;
 `Err` is kept for a layout whose files cannot be read for another reason
-than their absence.
+than their absence. The process's route hands every method to the
+projection, so `GET` and `HEAD` are answered here and the rest `405`.
 
 A refused version so reaches Cargo three ways (99): its line is absent
 from the name's index file, since render is never given it (D7, D8); a
@@ -615,11 +622,10 @@ ranges and versions as text; they run in `check-fast` with no
 cargo needed. The core's render is tested over the fakes in
 `crates/tailrace-core/tests/render.rs`, the fake projection answering
 the pins and ranges a test sets, and `requires` and `satisfying` from
-what a test sets for each artifact and range (D7); the miss and the lock
-are tested there too (D15).
+what a test sets for each artifact and range (D7).
 
 The layouts group of the conformance suite gains, below its marker, two
-scenarios over the fakes citing 137, and the miss's scenarios of D15: a range held at the newest admitted version within
+scenarios over the fakes citing 137: a range held at the newest admitted version within
 it, a newer refused one answered with its claim and one outside the
 range neither held nor asked; and a pinned version's family dependency
 held, and that one's in turn, each answered with the version requiring
@@ -632,7 +638,8 @@ The conformance group and the proofs run cargo, so they sit behind the
 
 - `tests/cargo_projection.rs`: the projection group over a scratch git
   repository holding a workspace of two sibling crates, its rig serving
-  `crates/<name>/<version>/download` as the request for a version; and
+  `crates/<name>/<version>/download` as the request for a version, so
+  the serve scenarios npm's unit added to the group run over Cargo; and
   the components: a workspace of component `fam` (`fam-a`, `fam-b`, each
   a declared output) and component `base` (`base-c`), `fam-a` depending
   by path on `fam-b` and on `base-c` with `version = "0.3"`, a layout
@@ -658,8 +665,9 @@ The conformance group and the proofs run cargo, so they sit behind the
   publish writes them, 1.2.0's index lacking a claim the consumer's
   policy requires. The host's process runs in the test on an address of
   its own, `serve_on` over the test's host state, and the consumer's
-  repository is named to it with `host::name`, as `tailrace sync` will
-  once npm's unit lands its start; the publisher's `.cargo/config.toml`
+  repository is named to it with `host::name`; `tailrace sync` runs over
+  the test's host and that address, so it finds the test's process and
+  starts none at the host's own port; the publisher's `.cargo/config.toml`
   names `tailrace` at the core's served address, so the packed crates
   name their dependencies at a served Cargo address.
   A consumer checkout with no `Cargo.lock`, whose `.cargo/config.toml`
@@ -671,11 +679,24 @@ The conformance group and the proofs run cargo, so they sit behind the
   `fam-b` each list 1.1.0 alone; a `GET` of `fam-a` 1.2.0's download
   answers `403` carrying the same words; `cargo build` succeeds and
   writes a `Cargo.lock` pinning `fam-a` and `fam-b` at 1.1.0 from the
-  served address with the packed crates' checksums, and no path. Then
-  `tailrace sync` again answers both as pins held, and `cargo build
-  --locked` succeeds and leaves the lockfile as Cargo wrote it.
+  address the consumer names with the packed crates' checksums, and no
+  path. Then `tailrace sync` again answers both as pins held, and `cargo
+  build --locked` succeeds and leaves the lockfile as Cargo wrote it.
 
-### D12. serve answers one request, and asks the core for a miss
+  Cargo downloads each crate from `config.json`'s `dl`, which D9 writes
+  under the base the process hands serve, and Cargo takes `dl` as an
+  absolute address. The proof reaches the test's process only where that
+  base is the address the process answers at, the core's fixed address
+  on every host and the test's own address in the test. Where the
+  process hands serve the fixed address whatever address it serves on,
+  the proof cannot download from the test's process, and binding the
+  test to the host's own port would meet the host's real process
+  (core.36); the coder stops through crew rather than changing the
+  process here, since the route is npm's unit's.
+
+### D12. Cargo answers in the shape npm's unit wrote
+
+The seam's serve, as npm's unit wrote it:
 
 ```rust
 pub struct Request { pub method: String, pub path: String, pub base: String }
@@ -685,131 +706,23 @@ pub fn no_serving(source: &Source) -> Not; // absent naming "serving"
 fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response>;
 ```
 
-`path` is the request's path below the layout's prefix, its query
-dropped; `base` the absolute address of that prefix as the client
-reached it, with no trailing `/`. `miss` asks the core to render one
-version into `layout`; `Ok(())` means the layout now holds it. Every
-answer the client should read, a refusal's included, is an
-`Ok(Response)`; `Err` is kept for a projection that serves none,
-`no_serving` for every request, and for a layout the projection cannot
-read at all. `Serving` leaves the seam. `Request` and `Response`
-round-trip through JSON, the body as base64, as every seam type does;
-`tailrace-seams` takes the workspace's `base64` for it. The file, image
-and moon cache projections answer `no_serving` and ask nothing; the
-seams' `Nowhere` does the same.
+Cargo's serve is written to it (D9) and nothing of it is written here:
+not the types, the fake's serve, the process's route, the served
+address, `render::miss` or the layout's lock, nor the projection group's
+serve scenarios or the layouts group's miss scenarios, nor the
+register's lines for 46, 49, 114 and 115. A miss reaches Cargo's serve
+as `Miss` with `Pinned { name, version }`, the type this branch's `Pin`
+already wraps, so the two meet with no change of shape: pinned answers
+`Vec<Pin>` and the miss asks one `Pinned`. Where npm's code arrives on
+this branch with pinned still answering `Vec<Pinned>`, it is made to
+answer `Pin::Version` alone, as every projection that answers no ranges
+does (D6).
 
-The fake projection serves a layout it rendered: a request whose path
-is `<name>/<version>` of a version the layout holds answers `200` with
-that artifact's metadata as JSON; one the layout lacks calls `miss` once
-and answers `200` where it holds, else `404`, `403` or `502` with the
-answer's words; it records each request and each version asked, and a
-test can script it to serve none, answering `no_serving`.
-
-Why: one process per host (114) leaves a projection nothing to bind, so
-an address answers nothing; the client's protocol is the ecosystem's
-(core.1), so the projection words every response, a refusal's too (99);
-and the judgment is the core's (core.2, ADR 0006), so a miss is a call
-back into the core rather than a store read in the profile.
-Alternatives: serve answering "lacks this version" for the process to
-render and ask again, which needs a second operation to word the
-refusal in the client's form; a trait object answering requests, which
-is a second interface for the seam (core.2).
-
-The projection group's scenario "served where the clients read no
-files" sits above the group's marker and asserts an address. It is
-changed to ask serve for the rig's request of a held version and to
-check the response answers it, citing 86 as before: the operation it
-holds changed shape, and this is the first unit that serves. Each rig
-gains `request(&ArtifactMeta) -> String`, the path of its ecosystem's
-request for a version's bytes, since a request's form is the
-ecosystem's. The group's other serve scenarios go below the marker
-(conformance-suite delta).
-
-### D13. The process routes a served layout by its ecosystem's name
-
-`respond_with` gains one route: a path of four or more parts,
-`/<owner>/<name>/<ecosystem>/<rest>`, or exactly
-`/<owner>/<name>/<ecosystem>` with `rest` empty, where `<ecosystem>` is
-any name; the status routes keep exactly three parts and are matched
-first. For it the process:
-
-1. finds the checkout with `host::checkout_of`, absent where none named
-   the repository, as status answers;
-2. binds it for sync, `Host::bind_for(checkout, For::Sync)` beside
-   `bind`, since a layout is sync's;
-3. takes the projection bound under `Ecosystem::new(<ecosystem>)`, `404`
-   naming the ecosystem where none is;
-4. asks `serve(&Layout { at: render::place(tree, ecosystem) },
-   &Request { method, path: rest, base }, &miss)`, `base` being
-   `served::layout_address(repository, ecosystem)` without its trailing
-   `/`, and `miss` calling `render::miss` (D15) in that checkout;
-5. answers the projection's `Response` as given; `Err(absent "serving")`
-   is `404` naming the ecosystem; any other `Err` is the status the
-   process gives every answer (`status_of`) with the words as text.
-
-The route names no ecosystem (core.1). The process's `Response.body`
-becomes `Vec<u8>` and `Content-Length` its byte length; `reason` gains
-`403 Forbidden` and `502 Bad Gateway`. A method other than `GET` stays
-`405` on the status routes; on this route the method is the request's,
-and the projection answers it. `bind_for` is a parameter, as `bind` is,
-so the route's tests run over the fake projection.
-
-Why the checkout that last named the repository: the path names the
-repository alone, since a lockfile in git names it for every checkout
-(49), and the host's file already says which checkout answers for it
-(132). Alternative: a host-wide layout per repository under the state
-directory, which contradicts the layout's place in the checkout that
-render under a policy fixes.
-
-### D14. The served address is the core's
-
-`served.rs` gains `origin() -> String`, `http://127.0.0.1:7420/`, and
-`layout_address(&RepositoryName, &Ecosystem) -> String`,
-`http://127.0.0.1:7420/<owner>/<name>/<ecosystem>/`, both from the
-constants already there. The process's base, Cargo's test of a served
-address (D8) and the tests all take it from there, so the address is
-spelled once (114, 49, core.36).
-
-### D15. A miss renders one version into the layout, one render at a time
-
-`render::miss(seams, &Layouts, &MissAsk { branch, revision, ecosystem,
-tree, pin, trusted, when }) -> Answer<HeldPin>`, beside `render::render`:
-
-1. takes the layout's lock;
-2. reads the record; a pin its `held` names answers held at once (a
-   second request raced the first);
-3. checks the revision landed (`Landed::check`), reads the consumer's
-   own policy with `own_policy`, and resolves and judges the one pin with
-   `judged`, exactly as `render` judges a pin, so 113's order holds for a
-   miss as for a sync; `revision` is what `tailrace sync` with no
-   argument takes, `history.base(main)` in that checkout, and `trusted`
-   the checkout's binding's trust;
-4. where held, closes the layout over it by D7's loop, the record's held
-   versions meeting what ranges they satisfy, then hands the projection's
-   render the record's held artifacts, each rebuilt from its entry's
-   name, version and artifact digest, with this one and those the loop
-   held, writes the record with them added to `held` and its other
-   entries as they were, and answers held; where absent, refused or
-   unreadable, writes nothing and answers that.
-
-It reads the store for the one pin and for the names it requires that
-the layout does not meet: the versions already held were judged when
-they were rendered, and the record names their digests (48, 50). The
-process maps the answer to `Miss`'s `Answer<()>`.
-
-`Layouts` gains `lock(ecosystem) -> Answer<LayoutLock>`, an exclusive
-`std::fs::File::lock` on `<git dir>/tailrace/layouts/<ecosystem>.lock`,
-held by `render` from its first read to the record's write and by
-`miss` from the record's read to its write, let go on drop. A sync waits
-on a miss and the reverse. Why a file lock: the process and a sync are
-two processes; the lock is the host's, as `serve.lock` and
-`repositories.lock` are.
-
-For Cargo a miss is rare: Cargo resolves from index files, which list
-only what sync held, and downloads only what it resolved. It is met when
-a client asks a version's bytes directly, or a layout lost a crate file,
-and the refused version's `403` is one of the three ways a refusal
-reaches Cargo (D9).
+The first code task of this group confirms npm's serving code is on
+the branch before Cargo's serve is written, and stops through crew where
+it is not. Why wait rather than write a stand-in: a second copy of the
+shape is what the amendment removes, and Cargo's serve written to
+anything else would be rewritten when the two meet.
 
 ## Risks / Trade-offs
 
@@ -843,13 +756,14 @@ reaches Cargo (D9).
   its branch into this one once it has committed, resolving `render.rs`
   and `bindings/mod.rs` keeping both intents, and stops through crew
   where its listing is missing.
-- [npm's branch holds its own build of serve's shape] → this change
-  keeps the types and names that build uses (D12 to D15), so npm's unit
-  rebases onto it and drops its own copy rather than reshaping its
-  profile.
+- [npm's serving code is not on this branch when Cargo's serve is
+  written] → the task before Cargo's serve confirms it and stops through
+  crew where it is missing (D12); everything else this change builds
+  needs none of it.
 - [Two changes rewrite the projection's contract] → this change writes
-  the whole contract as 84, 86, 115, 137 and 140 read, so whichever of it
-  and npm's unit archives last keeps both.
+  the whole contract as 84, 86, 115, 137 and 140 read, serve's sentence
+  as npm's unit words it, so whichever of it and npm's unit archives
+  last keeps both.
 
 ## Open Questions
 
