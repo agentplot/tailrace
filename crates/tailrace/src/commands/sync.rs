@@ -24,8 +24,8 @@
 //! the worst among the entries and pins not absent, a version judged for
 //! a range counting only where its range holds none, since a range
 //! holding an older admitted version builds (99), a layout that cannot
-//! be refreshed counting as its cause, and a served layout's address and
-//! the serving process each counting as a layout's answer (57; design D9;
+//! be refreshed counting as its cause, a served layout's address and the
+//! serving process each counting as a layout's answer (57; design D9;
 //! cargos-registry design D7).
 
 use std::io::{self, Write};
@@ -534,7 +534,7 @@ mod tests {
             revision: Revision::new(LANDED),
             entries: vec![],
             layouts: vec![(eco(), Ok(Refresh::Refreshed(refreshed)))],
-            served: std::collections::BTreeMap::new(),
+            served: Default::default(),
         });
         let mut printed = Vec::new();
         text(&mut printed, &answer).unwrap();

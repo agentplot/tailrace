@@ -28,7 +28,7 @@ use npm::NpmProjection;
 
 /// Every projection built, by the ecosystem it packs in (92, C.10,
 /// C.11): the moon cache of the checkout at `checkout`, reading cache
-/// entries through `store` (design D6), Cargo's, reading crates through
+/// entries through `store` (design D6); Cargo's, reading crates through
 /// `crates`, and npm's, reading tarballs through `packages`, each a store
 /// of its own, since a store is not shared, npm's family the scopes the
 /// checkout sends to the host's serving process.

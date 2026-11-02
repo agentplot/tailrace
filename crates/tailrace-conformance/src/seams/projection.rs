@@ -202,6 +202,29 @@ const B7E1: &str = "b7e1";
 /// Another build identity, for a second cache entry.
 const C3D4: &str = "c3d4";
 
+/// `output` packed by the rig's projection at `build` as an artifact at
+/// `version`, given the rig's component, its outputs and its paths'
+/// match as a publish hands them (84, 123).
+fn packed_at(
+    rig: &dyn ProjectionRig,
+    output: &Output,
+    build: &BuildId,
+    version: &Version,
+) -> Answer<Packed> {
+    let (component, outputs) = rig.component();
+    let holds = paths_hold(&component.paths).expect("the rig's component's paths are globs");
+    rig.projection().pack(
+        output,
+        build,
+        Some(&PackAt {
+            version,
+            component: &component,
+            outputs: &outputs,
+            holds: &holds,
+        }),
+    )
+}
+
 /// Where the group renders a second layout of the same artifacts.
 const ELSEWHERE: &str = "layouts/conformance-elsewhere";
 
@@ -296,29 +319,6 @@ fn not_served(rig: &dyn ProjectionRig) {
         "a projection that serves none asked the core"
     );
     not_applicable("the ecosystem's clients read files");
-}
-
-/// `output` packed by the rig's projection at `build` as an artifact at
-/// `version`, given the rig's component, its outputs and its paths'
-/// match as a publish hands them (84, 123).
-fn packed_at(
-    rig: &dyn ProjectionRig,
-    output: &Output,
-    build: &BuildId,
-    version: &Version,
-) -> Answer<Packed> {
-    let (component, outputs) = rig.component();
-    let holds = paths_hold(&component.paths).expect("the rig's component's paths are globs");
-    rig.projection().pack(
-        output,
-        build,
-        Some(&PackAt {
-            version,
-            component: &component,
-            outputs: &outputs,
-            holds: &holds,
-        }),
-    )
 }
 
 fn packed_the_same_again(rig: &dyn ProjectionRig) {

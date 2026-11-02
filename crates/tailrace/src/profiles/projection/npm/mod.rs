@@ -73,16 +73,16 @@ impl NpmProjection {
 }
 
 impl Projection for NpmProjection {
-    /// 84, 87: `output` packed at its component's version by npm's own
+    /// 84, 87: `output` packed at the component's version by npm's own
     /// packager, its bytes the tarball npm wrote and its name the
     /// package's own; npm promises no same bytes across its versions, so
-    /// it answers it cannot promise them (design D6). With no version, absent naming
-    /// cache entries: npm packs none.
+    /// it answers it cannot promise them (design D6). With no version,
+    /// absent naming cache entries: npm packs none.
     fn pack(&self, output: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
-        let Some(&PackAt { version, .. }) = version else {
+        let Some(at) = version else {
             return Err(no_cache_entries(&NpmProjection::source()));
         };
-        pack::pack(self.path.as_deref(), output, version)
+        pack::pack(self.path.as_deref(), output, at.version)
     }
 
     /// 85, 47, 49: a registry read layout at `at` of exactly the
@@ -109,8 +109,9 @@ impl Projection for NpmProjection {
     }
 
     /// 137: every package the checkout's `npm-shrinkwrap.json`, else
-    /// its `package-lock.json`, pins, as it spells them (design D7);
-    /// absent naming the lockfile where it holds neither.
+    /// its `package-lock.json`, pins, as it spells them, each a
+    /// [`Pin::Version`] (design D7); absent naming the lockfile where it
+    /// holds neither.
     fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         match lockfile::find(Path::new(checkout)) {
             Some(path) => Ok(lockfile::pins(&path)?

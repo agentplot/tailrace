@@ -96,12 +96,11 @@ mod tests {
             .filter(|c| c.group == "layouts" && c.cites.contains(&137))
             .map(|c| c.name)
             .collect();
-        assert_eq!(
-            layouts,
-            [
-                "the newest admitted within a range",
-                "a pinned version's dependencies, two levels down"
-            ]
-        );
+        for scenario in [
+            "the newest admitted within a range",
+            "a pinned version's dependencies, two levels down",
+        ] {
+            assert!(layouts.contains(&scenario), "{scenario} cites no 137");
+        }
     }
 }

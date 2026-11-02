@@ -383,6 +383,7 @@ fn unpacked(bytes: &[u8]) -> (Vec<String>, Value) {
 #[cfg(feature = "tools")]
 #[test]
 fn a_package_is_packed_at_its_version_by_npm_running_no_script_and_editing_nothing() {
+    use tailrace_fakes::Alone;
     use tailrace_seams::BuildId;
     scratch::home();
     let marks = TempDir::new().unwrap();
@@ -394,7 +395,7 @@ fn a_package_is_packed_at_its_version_by_npm_running_no_script_and_editing_nothi
         .pack(
             &output,
             &BuildId::new("b7e1"),
-            Some(&tailrace_fakes::Alone::new(&output, "1.4.0").at()),
+            Some(&Alone::new(&output, "1.4.0").at()),
         )
         .unwrap();
     let meta = packed.meta.expect("a pack at a version names its metadata");

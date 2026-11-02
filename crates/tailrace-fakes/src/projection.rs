@@ -4,16 +4,16 @@
 //! lockfile and the ranges its manifest declares, what the manifest of
 //! each artifact, by digest, requires, and the versions a test says
 //! satisfy a range. A pack is the canonical JSON of what it was given,
-//! read from no disk; a render writes nothing and keeps the place and
-//! the artifacts it was given; serve answers a request
-//! `<name>@<version>` from the last render at the layout's place, asking
-//! the core for a version it lacks (86, 115); pinned reads no checkout
-//! and requires no bytes. satisfying answers, for a range a test set,
-//! those of the versions asked that the test named, in the order it
-//! named them, newest first; for any other range it keeps the versions
-//! the range matches and orders them newest first by Semantic
-//! Versioning, so a test can list versions out of order and get the
-//! newest that fits (140, 23; design D7).
+//! read from no disk; a render writes nothing and keeps the place and the
+//! artifacts it was given; serve answers a request `<name>@<version>`
+//! from the last render at the layout's place, asking the core for a
+//! version it lacks (86, 115); pinned reads no checkout and requires no
+//! bytes. satisfying answers, for a range a test set, those of the
+//! versions asked that the test named, in the order it named them,
+//! newest first; for any other range it keeps the versions the range
+//! matches and orders them newest first by Semantic Versioning, so a test
+//! can list versions out of order and get the newest that fits (140, 23;
+//! design D7).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::slice;

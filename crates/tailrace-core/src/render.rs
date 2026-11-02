@@ -899,9 +899,9 @@ fn ignored(tree: &Path) -> Answer<()> {
 /// 47 to 50, 85, 113, 137: the layout `ask` names, rendered from the
 /// pins its policy admits, the version held for each range, and the
 /// versions what is held requires, and no other (design D5 to D7), under
-/// the layout's lock from the first read to the record's write. Every
-/// version is resolved, its claims read and judged before anything is
-/// written, in a fixed order, so the same store under the same policy
+/// the layout's lock from the first pin's read to the record's write.
+/// Every version is resolved, its claims read and judged before anything
+/// is written, in a fixed order, so the same store under the same policy
 /// holds the same versions (48); a pin is asked of the store by its own
 /// name alone, and a name's versions are listed only for a range nothing
 /// held meets (50, S4). A read its source answers unreadable or refused,

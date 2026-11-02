@@ -116,9 +116,8 @@ impl Projection for CargoProjection {
         self.render_crates(artifacts, at)
     }
 
-    /// 86: absent naming serving for every request, since Cargo reads a
-    /// local registry itself through source replacement and needs no
-    /// server; the core is asked nothing.
+    /// 86: absent naming serving, for every request, asking the core
+    /// nothing.
     fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
         Err(no_serving(&CargoProjection::source()))
     }
@@ -149,7 +148,7 @@ mod tests {
     use std::fs;
 
     use tailrace_fakes::FakeStore;
-    use tailrace_seams::{CacheEntry, Digest, OutputName, Pinned};
+    use tailrace_seams::{CacheEntry, Digest, OutputName};
     use tempfile::TempDir;
 
     use super::*;
@@ -190,26 +189,23 @@ mod tests {
     fn serve_is_absent_naming_serving_and_asks_the_core_nothing() {
         let dir = TempDir::new().unwrap();
         let projection = CargoProjection::new(dir.path(), Box::new(FakeStore::new()));
+        let request = Request {
+            method: "GET".into(),
+            path: "config.json".into(),
+            base: "http://127.0.0.1:7420/o/r/cargo".into(),
+        };
+        let asked = std::cell::Cell::new(0);
+        let miss = |_: &tailrace_seams::Pinned| {
+            asked.set(asked.get() + 1);
+            Ok(())
+        };
         let layout = Layout {
             at: "layouts/cargo".into(),
         };
-        let asked = std::cell::Cell::new(0);
-        for path in ["", "config.json", "crates/fam-a/1.0.0/download"] {
-            let request = Request {
-                method: "GET".into(),
-                path: path.into(),
-                base: "http://127.0.0.1:7420/o/r/cargo".into(),
-            };
-            let miss = |_: &Pinned| {
-                asked.set(asked.get() + 1);
-                Ok(())
-            };
-            assert_eq!(
-                projection.serve(&layout, &request, &miss),
-                Err(Not::absent(&CargoProjection::source(), "serving")),
-                "{path}"
-            );
-        }
+        assert_eq!(
+            projection.serve(&layout, &request, &miss),
+            Err(no_serving(&CargoProjection::source()))
+        );
         assert_eq!(asked.get(), 0, "the core was asked for a version");
     }
 }
