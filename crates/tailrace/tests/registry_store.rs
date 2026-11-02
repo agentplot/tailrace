@@ -426,6 +426,17 @@ fn cache_entries_are_tags_of_the_build_profiles_cache_repository(kind: Kind) {
         sync.read(&resolved),
         Ok(Held::Bytes(b"a pushed entry".to_vec()))
     );
+
+    let attested = index_of(&publish, "repository", "site", b"an attested entry");
+    let layer = Digest::of(b"an attested entry");
+    publish
+        .name(&Name::new("cache/c4d2"), &layer, None)
+        .unwrap();
+    assert_eq!(
+        tags_of(&publish, "cache/moon"),
+        Some(vec!["b7e1".into(), "c4d2".into()])
+    );
+    no_attestation_under(&publish, kind, "cache/moon", &attested);
 }
 
 fn the_same_bytes_put_twice_are_uploaded_once(kind: Kind) {

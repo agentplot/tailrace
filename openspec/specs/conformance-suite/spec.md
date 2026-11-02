@@ -116,7 +116,8 @@ clauses its operations keep: the same bytes put twice are held once
 under their own digest (1, 5); an artifact keeps the metadata that says
 what it is (4); attestations are held beside their digest, all of them,
 none altered (8, 10); a name moves only from where it is expected to be
-(70, 71); bytes read back are the bytes put (73).
+(70, 71); bytes read back are the bytes put (73); and a name's versions
+are listed (138).
 
 #### Scenario: The same bytes put twice
 
@@ -152,6 +153,11 @@ none altered (8, 10); a name moves only from where it is expected to be
 
 - **WHEN** the rig makes the store unreachable and bytes are read
 - **THEN** the answer is unreadable, carrying the store's own words unchanged, and never empty or not held
+
+#### Scenario: A name's versions listed
+
+- **WHEN** an index is put and named `artifact/eco/@acme/site@1.0.0` and `artifact/eco/@acme/site@1.1.0+b.1`, another `artifact/eco/@acme/site-cli@1.0.0`, and the versions of `eco` `@acme/site` and of a name never named are asked
+- **THEN** the first answer is 1.0.0 and 1.1.0+b.1 and no other, each resolving to the index, and the second is the empty list, neither absent nor refused
 
 ### Requirement: The build's contract
 
@@ -313,7 +319,9 @@ same artifacts is the same layout, and holds the versions it was given
 and no other. It SHALL hold a projection whose rig says it packs cache
 entries to their case of 84, 85 and 87, and one whose rig says it packs
 none to answering absent for one; each case's scenarios are not
-applicable to a projection of the other.
+applicable to a projection of the other. The rig SHALL name its
+ecosystem's request for a version's bytes, since a request's form is
+the ecosystem's.
 
 #### Scenario: Packed the same again
 
@@ -327,8 +335,8 @@ applicable to a projection of the other.
 
 #### Scenario: Served where the clients read no files
 
-- **WHEN** a projection whose clients read no files serves a rendered layout
-- **THEN** it answers an address its clients read
+- **WHEN** a projection whose clients read no files renders a layout and is asked to serve the rig's request for a version it holds
+- **THEN** it answers a response that answers that request, and asks the core nothing
 
 #### Scenario: A cache entry packed with no version
 
@@ -442,7 +450,7 @@ verdict naming their build is published.
 #### Scenario: S1, a landed revision published
 
 - **WHEN** a revision landed with a verdict naming its build is published, its two outputs read from the build and packed
-- **THEN** both artifacts carry the version history derives, the index is put after both artifacts, the notes and their claims, each output's artifact has one provenance in the host's identity naming the revision and build identity with the landing's verdict carried unchanged, the index names the notes as an artifact of ecosystem `notes` at the version with one provenance in the host's identity naming the revision and no build, the version's name is made at the index, the answer names every digest and where each claim is attached, and nothing else moved: no other name, no keeper append and no target call
+- **THEN** both artifacts carry the version history derives, the index is put after both artifacts and their claims and names the revision, each artifact has one provenance in the host's identity naming the revision and build identity with the landing's verdict carried unchanged, each artifact's name by its ecosystem, name and version is made at the index before the version's name is, the answer names every digest and where each claim is attached, and nothing else moved: no other name, no keeper append and no target call
 
 ### Requirement: S2 over the fakes
 
@@ -1021,3 +1029,45 @@ commit that cites it (core.33).
 
 - **WHEN** the coverage check runs
 - **THEN** 130 is cited by the gate's group and is not in the register
+
+### Requirement: Store naming over the fakes
+A store-naming group SHALL hold the core to 138 over the fakes, below
+its marker: what a publish names is found by a consumer by ecosystem,
+name and version alone, on the index the publish answered, with the
+claims a layout reads beside it. 138 SHALL leave the register in the
+commit whose scenario first cites it, and the parts of 137 about a
+range and the closure SHALL be named in the register as
+cargos-registry's.
+
+#### Scenario: A pin found through what a publish wrote
+- **WHEN** a component whose two outputs pack as `eco` `site` and `cli` is published at 1.0.0 under a policy for layouts, and a checkout pinning `site` 1.0.0 is synced
+- **THEN** the layout holds `site` 1.0.0 from the index the publish answered, rendered under the layout-policy claim read from that index, and nothing in the checkout's ask or the answer names a component, a tag prefix or a repository
+
+#### Scenario: The register after store naming
+- **WHEN** the coverage check runs after this group's scenarios are added
+- **THEN** 138 is cited and not in the register, and the parts of 137 about a range and the closure are pending naming cargos-registry
+
+### Requirement: The Cargo projection runs the projection group
+The Cargo projection SHALL run the projection group whole: its render,
+serve, requires, satisfying and unreachable scenarios over crates a test
+makes, and its pack and pinned scenarios with the cargo the tree pins,
+in `check-tools` (93, core.33).
+
+#### Scenario: The group over Cargo
+- **WHEN** the conformance tests of the Cargo projection run
+- **THEN** every scenario of the projection group passes or is not applicable with its reason, and none is left out
+
+### Requirement: The layouts' group holds a range and the closure
+The layouts' group SHALL hold the core, below its marker, over the
+fakes, to holding the newest admitted version within a range by the
+store's listing, and to holding what each held version requires through
+every level (137, 138, 140). 137's range and closure part SHALL leave
+the register in the commit whose scenarios first cite it.
+
+#### Scenario: The newest admitted within a range over the fakes
+- **WHEN** the fake projection answers a range of `site` within which the store lists 1.0.0 and 1.1.0, admitted, and 1.2.0, refused, and lists 2.0.0 outside it
+- **THEN** the projection is asked to render `site` 1.1.0 alone, the answer names 1.2.0 refused with its claim, and 2.0.0 was never judged
+
+#### Scenario: A pinned version's dependencies, two levels down, over the fakes
+- **WHEN** the fake projection pins `app` 1.0.0, which requires `lib`, whose newest admitted version within the range requires `base`
+- **THEN** the projection is asked to render all three, and the answer names each range with the version that required it

@@ -21,13 +21,17 @@ pub(crate) struct Asked {
 
 impl Asked {
     /// The repository the request is for, the path between `/v2/` and
-    /// the operation.
+    /// the operation, the operation read from the path's end, as a
+    /// registry's routes match it: what follows the operation's word holds
+    /// no `/` but an upload's, so a repository whose own path holds the
+    /// word is read whole.
     pub(crate) fn repository(&self) -> Option<&str> {
         let rest = self.path.strip_prefix("/v2/")?;
+        let bare = rest.split('?').next().unwrap_or(rest);
         ["/blobs/", "/manifests/", "/tags/", "/referrers/"]
             .iter()
-            .filter_map(|op| rest.find(op))
-            .min()
+            .filter_map(|op| bare.rfind(op))
+            .max()
             .map(|at| &rest[..at])
     }
 }
@@ -59,6 +63,10 @@ pub(crate) struct Behaviour {
     pub declines_mounts: bool,
     /// The most tags one page of a tag list names.
     pub page: usize,
+    /// It answers a tag list's every page after the first
+    /// `NAME_UNKNOWN`, as a registry whose repository was deleted between
+    /// pages does.
+    pub loses_later_pages: bool,
 }
 
 impl Default for Behaviour {
@@ -67,6 +75,7 @@ impl Default for Behaviour {
             makes_on_push: true,
             declines_mounts: false,
             page: 100,
+            loses_later_pages: false,
         }
     }
 }
@@ -431,6 +440,9 @@ fn handle(
     if bare == "/tags/list" {
         let held = &state.repositories[&repository];
         let last = query(path, "last");
+        if last.is_some() && behaviour.loses_later_pages {
+            return Reply::error(404, "NAME_UNKNOWN", "");
+        }
         let tags: Vec<&String> = held
             .tags
             .keys()
