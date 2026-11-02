@@ -6,8 +6,8 @@
 
 ## 2. What pack is given
 
-- [ ] 2.1 Change the projection seam's pack to take `version: Option<&PackAt<'_>>`, `PackAt` holding the version, the component, its outputs and `holds` (design D2), and make every projection and caller follow: the file, image and moon cache profiles reading `version.version` alone, the fake projection and the fakes' own callers in `tailrace-fakes/src/lib.rs`, the seams' `Nowhere`, the core's cache push, which packs with `None`, and the core's and the conformance crate's test projections and rigs. Verify: `moon run ':#check-fast'` passes, every projection's existing tests unchanged in what they assert
-- [ ] 2.2 Make publish hand each pack a `PackAt` built once the component's outputs are built and reported: the component, each output with its report's files, and `holds` matching the component's `paths` with the patterns the version rule gives git-cliff (design D2). Verify: a publish test over the fakes whose fake projection records the component and outputs it was given and what `holds` answered for a path inside and outside the component's paths
+- [x] 2.1 Change the projection seam's pack to take `version: Option<&PackAt<'_>>`, `PackAt` holding the version, the component, its outputs and `holds` (design D2), and make every projection and caller follow: the file, image and moon cache profiles reading `version.version` alone, the fake projection and the fakes' own callers in `tailrace-fakes/src/lib.rs`, the seams' `Nowhere`, the core's cache push, which packs with `None`, and the core's and the conformance crate's test projections and rigs. Verify: `moon run ':#check-fast'` passes, every projection's existing tests unchanged in what they assert
+- [x] 2.2 Make publish hand each pack a `PackAt` built once the component's outputs are built and reported: the component, each output with its report's files, and `holds` matching the component's `paths` with the patterns the version rule gives git-cliff (design D2). Verify: a publish test over the fakes whose fake projection records the component and outputs it was given and what `holds` answered for a path inside and outside the component's paths
 
 ## 3. Pack
 

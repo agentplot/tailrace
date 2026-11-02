@@ -15,8 +15,8 @@
 //! list, and read nothing (140).
 
 use tailrace_seams::{
-    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Output, Packed,
-    Pin, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Version,
+    no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Output, PackAt,
+    Packed, Pin, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Version,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -44,9 +44,9 @@ impl Projection for FileProjection {
     /// 84, 87: the output's one file's bytes unchanged, named by the
     /// output and the version, packing the same again at every build
     /// identity; absent for a cache entry, which it packs none of.
-    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let source = FileProjection::source();
-        let Some(version) = version else {
+        let Some(&PackAt { version, .. }) = version else {
             return Err(no_cache_entries(&source));
         };
         let file = one_file(output, &source, ECOSYSTEM)?;
@@ -93,6 +93,7 @@ impl Projection for FileProjection {
 mod tests {
     use std::fs;
 
+    use tailrace_fakes::Alone;
     use tailrace_seams::{
         Artifact, ArtifactMeta, CacheEntry, Digest, Ecosystem, EcosystemName, Not, OutputName,
         Seam, Why,
@@ -126,7 +127,7 @@ mod tests {
 
     /// `output` packed at `b7e1` with `version`.
     fn pack(output: &Output, version: &str) -> Answer<Packed> {
-        FileProjection.pack(output, &b7e1(), Some(&Version::new(version)))
+        FileProjection.pack(output, &b7e1(), Some(&Alone::new(output, version).at()))
     }
 
     #[test]

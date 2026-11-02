@@ -31,8 +31,8 @@ use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
     no_cache_entries, Answer, Artifact, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName,
-    Layout, Not, Output, Packed, Pin, Projection, Range, Rendered, Requirement, Seam, Serving,
-    Source, Store, Version, Why,
+    Layout, Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered, Requirement, Seam,
+    Serving, Source, Store, Version, Why,
 };
 
 use crate::profiles::run::Tool;
@@ -85,9 +85,9 @@ impl Projection for CargoProjection {
     /// 84, 87: the crate `cargo package` makes of the output's package at
     /// `version`, named by the package's name and the version, packing
     /// the same again (design D3).
-    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let source = CargoProjection::source();
-        let Some(version) = version else {
+        let Some(&PackAt { version, .. }) = version else {
             return Err(no_cache_entries(&source));
         };
         let manifest = self.package_manifest(output)?;

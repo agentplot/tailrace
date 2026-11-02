@@ -17,7 +17,7 @@ use tailrace::profiles::projection::cargo::{CargoProjection, ECOSYSTEM};
 use tailrace::profiles::store::layout::Layout;
 use tailrace_conformance::seams::projection::{self, ProjectionRig};
 use tailrace_conformance::{run, Rig};
-use tailrace_fakes::FakeStore;
+use tailrace_fakes::{Alone, FakeStore};
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, Ecosystem, EcosystemName, Manifest, Output, OutputName,
     Pinned, Projection, Range, Requirement, Store, Version,
@@ -191,7 +191,11 @@ impl ProjectionRig for CargoRig {
                 let version = Version::new(format!("1.{i}.0"));
                 let packed = self
                     .projection
-                    .pack(&self.output(), &BuildId::new("b7e1"), Some(&version))
+                    .pack(
+                        &self.output(),
+                        &BuildId::new("b7e1"),
+                        Some(&Alone::new(&self.output(), version.as_str()).at()),
+                    )
                     .unwrap();
                 let meta = packed.meta.unwrap();
                 let layer = self.layout.put_bytes(&packed.bytes).unwrap().digest;
@@ -351,7 +355,7 @@ fn a_crate_inheriting_its_version_packs_at_the_version_and_leaves_the_checkout_a
         .pack(
             &workspace.output(),
             &BuildId::new("b7e1"),
-            Some(&Version::new("1.4.0")),
+            Some(&Alone::new(&workspace.output(), "1.4.0").at()),
         )
         .unwrap();
     assert_eq!(
@@ -389,7 +393,7 @@ fn a_version_cargo_refuses_is_unreadable_in_cargos_words_and_the_manifest_is_wri
     let answer = workspace.projection(Box::new(FakeStore::new())).pack(
         &workspace.output(),
         &BuildId::new("b7e1"),
-        Some(&Version::new("not.a.version")),
+        Some(&Alone::new(&workspace.output(), "not.a.version").at()),
     );
     match answer {
         Err(tailrace_seams::Not::Unreadable(u)) => {

@@ -8,8 +8,28 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    Answer, Artifact, ArtifactMeta, BuildId, Digest, EcosystemName, Not, Output, Source, Version,
+    Answer, Artifact, ArtifactMeta, BuildId, Component, Digest, EcosystemName, Not, Output, Source,
+    Version,
 };
+
+/// 84, 110, 123: what an output is packed at as an artifact: its
+/// component's one version, the component it belongs to, the component's
+/// declared outputs as the build left them, and whether the component's
+/// paths hold a path of the repository, so a projection knows which of
+/// what the output reaches is its component's own.
+#[derive(Clone, Copy)]
+pub struct PackAt<'a> {
+    /// The component's one version (110).
+    pub version: &'a Version,
+    /// The component the output belongs to (123).
+    pub component: &'a Component,
+    /// The component's declared outputs, as the build left them, the
+    /// output being packed among them (75).
+    pub outputs: &'a [Output],
+    /// 123: whether the component's paths hold a path of the repository,
+    /// relative to its root, matched as the version rule matches them.
+    pub holds: &'a dyn Fn(&str) -> bool,
+}
 
 /// 84, 87, 100: an output packed: the ecosystem's own bytes, the
 /// metadata that makes them an artifact, present exactly where a version
@@ -116,13 +136,14 @@ pub fn no_lockfile(source: &Source) -> Not {
 
 pub trait Projection {
     /// 84: the ecosystem's own bytes for `output` at the build identity
-    /// `at`. Given a `version`, their metadata (4); given none, a cache
-    /// entry, whose bytes carry no metadata that makes an offer and whose
-    /// answer carries none (100), or [`no_cache_entries`] from a
-    /// projection that packs none. `same_again` false where the projection
-    /// cannot promise the same output and version, or the same build
-    /// identity, pack to the same bytes (87).
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed>;
+    /// `at`. Given what it is packed at as an artifact, `version`, their
+    /// metadata at its version (4); given none, a cache entry, whose bytes
+    /// carry no metadata that makes an offer and whose answer carries none
+    /// (100), or [`no_cache_entries`] from a projection that packs none.
+    /// `same_again` false where the projection cannot promise the same
+    /// output and version, or the same build identity, pack to the same
+    /// bytes (87).
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed>;
 
     /// 85: a consumer layout of `contents` in the ecosystem's own form,
     /// rendered at `at`, and the versions or build identities it holds;

@@ -30,8 +30,8 @@ use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
     no_lockfile, Answer, Artifact, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not,
-    Output, Packed, Pin, Projection, Range, Rendered, Requirement, Seam, Serving, Source, Store,
-    Version, Why,
+    Output, PackAt, Packed, Pin, Projection, Range, Rendered, Requirement, Seam, Serving, Source,
+    Store, Version, Why,
 };
 
 /// The ecosystem this projection packs in, as the bindings bind it.
@@ -161,7 +161,7 @@ impl Projection for MoonCache {
     /// unchanged with no metadata, never promised the same again; absent
     /// naming the archive's path where moon left none. `output` is not
     /// read: the archive holds the task's outputs as moon declared them.
-    fn pack(&self, _: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, _: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         if version.is_some() {
             return Err(no_artifacts());
         }

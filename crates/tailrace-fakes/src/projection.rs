@@ -13,12 +13,14 @@
 //! get the newest that fits (140, 23; design D7).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::slice;
 
 use serde_json::json;
 use tailrace_seams::{
-    canonical, no_cache_entries, no_lockfile, Answer, Artifact, ArtifactMeta, BuildId, Contents,
-    Digest, Ecosystem, EcosystemName, Holds, Layout, Not, Output, OutputName, Packed, Pin, Pinned,
-    Projection, Range, Rendered, Requirement, Seam, Serving, Version, Why,
+    canonical, no_cache_entries, no_lockfile, Answer, Artifact, ArtifactMeta, BuildId, Component,
+    ComponentName, Contents, Digest, Ecosystem, EcosystemName, Holds, Layout, Not, Output,
+    OutputName, PackAt, Packed, Pin, Pinned, Projection, Range, Rendered, Requirement, Seam,
+    Serving, Version, Why,
 };
 
 use crate::Fake;
@@ -52,6 +54,7 @@ pub struct ProjectionState {
     ranges: BTreeMap<String, Vec<Requirement>>,
     manifests: BTreeMap<Digest, Vec<Requirement>>,
     satisfied: BTreeMap<Range, Vec<Version>>,
+    probes: Vec<String>,
     renders: Vec<(String, Vec<Artifact>)>,
 }
 
@@ -76,6 +79,7 @@ impl FakeProjection {
                 ranges: BTreeMap::new(),
                 manifests: BTreeMap::new(),
                 satisfied: BTreeMap::new(),
+                probes: Vec::new(),
                 renders: Vec::new(),
             },
         )
@@ -147,6 +151,13 @@ impl FakeProjection {
             .insert(digest.clone(), requirements.to_vec());
     }
 
+    /// 84, 123: from now each pack given what it is packed at records,
+    /// beside the component and the outputs it was given, what `holds`
+    /// answered for each of `paths`.
+    pub fn probe(&self, paths: &[&str]) {
+        self.state().probes = paths.iter().map(|p| p.to_string()).collect();
+    }
+
     /// 85: each render of artifacts answered, in order: the place it was
     /// asked at and the artifacts it was given.
     pub fn renders(&self) -> Vec<(String, Vec<Artifact>)> {
@@ -154,9 +165,61 @@ impl FakeProjection {
     }
 }
 
+/// 84: what a test packs one output at: a version, and a component of
+/// that output alone, named by it, whose paths hold every path of the
+/// repository.
+pub struct Alone {
+    version: Version,
+    component: Component,
+    output: Output,
+}
+
+impl Alone {
+    pub fn new(output: &Output, version: &str) -> Alone {
+        Alone {
+            version: Version::new(version),
+            component: Component {
+                name: ComponentName::new(output.name.as_str()),
+                outputs: vec![output.name.clone()],
+                paths: vec!["**".into()],
+                prefix: format!("{}-v", output.name),
+            },
+            output: output.clone(),
+        }
+    }
+
+    /// What the output is packed at.
+    pub fn at(&self) -> PackAt<'_> {
+        PackAt {
+            version: &self.version,
+            component: &self.component,
+            outputs: slice::from_ref(&self.output),
+            holds: &every,
+        }
+    }
+}
+
+fn every(_: &str) -> bool {
+    true
+}
+
 impl Projection for FakeProjection {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
-        let given = json!({ "output": output, "build": at, "version": version });
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
+        let probes = self.state().probes.clone();
+        let given = json!({
+            "output": output,
+            "build": at,
+            "version": version.map(|v| v.version),
+            "component": version.map(|v| v.component),
+            "outputs": version.map(|v| v.outputs),
+            "holds": version.map(|v| {
+                probes
+                    .iter()
+                    .map(|p| (p.clone(), (v.holds)(p)))
+                    .collect::<BTreeMap<_, _>>()
+            }),
+        });
+        let version = version.map(|v| v.version);
         self.ask(
             ProjectionOp::Pack,
             given,
@@ -335,7 +398,11 @@ mod tests {
 
     fn artifact_pack(projection: &FakeProjection, version: &str) -> Packed {
         projection
-            .pack(&output(), &b7e1(), Some(&Version::new(version)))
+            .pack(
+                &output(),
+                &b7e1(),
+                Some(&Alone::new(&output(), version).at()),
+            )
             .unwrap()
     }
 
@@ -366,10 +433,12 @@ mod tests {
     #[test]
     fn a_versioned_pack_is_the_same_at_two_build_identities() {
         let projection = FakeProjection::new(Ecosystem::new("eco"));
-        let version = Version::new("1.0.0");
-        let at_b7e1 = projection.pack(&output(), &b7e1(), Some(&version)).unwrap();
+        let alone = Alone::new(&output(), "1.0.0");
+        let at_b7e1 = projection
+            .pack(&output(), &b7e1(), Some(&alone.at()))
+            .unwrap();
         let at_c3d4 = projection
-            .pack(&output(), &BuildId::new("c3d4"), Some(&version))
+            .pack(&output(), &BuildId::new("c3d4"), Some(&alone.at()))
             .unwrap();
         assert_eq!(at_b7e1, at_c3d4);
     }
@@ -396,7 +465,7 @@ mod tests {
     fn a_pack_with_an_empty_version_is_refused_naming_it() {
         let projection = FakeProjection::new(Ecosystem::new("eco"));
         assert!(matches!(
-            projection.pack(&output(), &b7e1(), Some(&Version::new(""))),
+            projection.pack(&output(), &b7e1(), Some(&Alone::new(&output(), "").at())),
             Err(Not::Refused(r)) if r.said.as_deref() == Some("the metadata names no version")
         ));
     }

@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tailrace_fakes::{FakeStore, StoreOp};
+use tailrace_fakes::{Alone, FakeStore, StoreOp};
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Ecosystem, EcosystemName, Holds,
     Manifest, Not, Output, OutputName, Seam, Store, Version, Why,
@@ -184,7 +184,7 @@ fn a_pack_at_a_version_and_a_render_of_artifacts_are_absent_and_read_nothing() {
     absent_naming_artifacts(projection.pack(
         &site(),
         &BuildId::new(B7E1),
-        Some(&Version::new("1.0.0")),
+        Some(&Alone::new(&site(), "1.0.0").at()),
     ));
     let meta = ArtifactMeta::new(
         Ecosystem::new("file"),
