@@ -423,6 +423,22 @@ is asked of the core through pack's input (core.2).
 - **WHEN** pack is given an output with the version, the component the output belongs to, the component's declared outputs and a way to ask whether the component's paths hold a path
 - **THEN** the file, image and moon cache projections each answer the same bytes and metadata they answer given that version alone
 
+#### Scenario: A request served
+- **WHEN** a projection whose clients read no files is asked to serve a request for a version its layout holds
+- **THEN** it answers the response its client reads, and asks the core for nothing
+
+#### Scenario: A request for a version the layout lacks
+- **WHEN** a projection is asked to serve a request for a version its layout lacks
+- **THEN** it asks the core for that one version, by its ecosystem name and version, and answers the core's answer in its client's protocol: the version's response where the core rendered it, and otherwise a response carrying the refusal, the absence or the unreadable answer in the source's own words
+
+#### Scenario: A projection whose clients read files
+- **WHEN** a projection whose ecosystem's clients read files is asked to serve any request
+- **THEN** the answer is absent naming serving, and the core is asked for nothing
+
+#### Scenario: A request and a response written and read back
+- **WHEN** a request and a response are written in their machine-readable form and read back
+- **THEN** each is the same, a response's bytes included
+
 ### Requirement: A target's contract
 
 A target SHALL answer desired with the digest an environment's channel
