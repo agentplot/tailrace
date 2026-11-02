@@ -107,13 +107,37 @@ fn serving(address: SocketAddr) -> Source {
     Source::new(Seam::Host, format!("serve at http://{address}"))
 }
 
-/// 114: the serving process at `address` over `host`, ending once
-/// nothing has asked for `idle`. It takes the host's serving lock before
-/// it binds the address, and answers [`Served::Held`] at once where
-/// another holds it; an address that cannot be bound is unreadable
-/// naming it with the system's words (59). The lock is let go as it
-/// returns.
+/// 114, 115: the serving process at `address` over `host`, each checkout
+/// bound as the host binds it ([`Host::bind_for`]), ending once nothing
+/// has asked for `idle` and no checkout the host's file names holds a
+/// rendered layout its projection serves ([`host::serves_a_layout`]);
+/// while one does, the idle time starts again, since the ecosystem's
+/// client cannot start the process (design D11). It takes the host's
+/// serving lock before it binds the address, and answers
+/// [`Served::Held`] at once where another holds it; an address that
+/// cannot be bound is unreadable naming it with the system's words (59).
+/// The lock is let go as it returns.
 pub fn serve_on(address: SocketAddr, host: &Host, idle: Duration) -> Answer<Served> {
+    let bound = host.clone();
+    serve_with(
+        address,
+        host,
+        idle,
+        Arc::new(move |checkout: &Path, command| bound.bind_for(checkout, command)),
+    )
+}
+
+/// How the process binds a checkout on any of its threads.
+pub type Binder = Arc<dyn Fn(&Path, For) -> Answer<Binding> + Send + Sync>;
+
+/// [`serve_on`] with each checkout bound by `bind`, for its requests and
+/// for whether a layout is served: a test binds over fakes.
+pub fn serve_with(
+    address: SocketAddr,
+    host: &Host,
+    idle: Duration,
+    bind: Binder,
+) -> Answer<Served> {
     let lock = host::serving_lock(host)?;
     let lock_path = host.state.join(host::SERVING);
     // A process spawned at the moment the last holder let go may hold a
@@ -152,13 +176,18 @@ pub fn serve_on(address: SocketAddr, host: &Host, idle: Duration) -> Answer<Serv
                 *asked.lock().expect("the moment asked") = Instant::now();
                 let host = host.clone();
                 let asked = Arc::clone(&asked);
+                let bind = Arc::clone(&bind);
                 thread::spawn(move || {
-                    connection(stream, &host);
+                    connection(stream, &host, &*bind);
                     *asked.lock().expect("the moment asked") = Instant::now();
                 });
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 if asked.lock().expect("the moment asked").elapsed() >= idle {
+                    if host::serves_a_layout(host, &*bind) {
+                        *asked.lock().expect("the moment asked") = Instant::now();
+                        continue;
+                    }
                     drop(listener);
                     drop(lock);
                     return Ok(Served::Idle);
@@ -172,9 +201,9 @@ pub fn serve_on(address: SocketAddr, host: &Host, idle: Duration) -> Answer<Serv
 }
 
 /// One request on `stream`, answered and the connection closed.
-fn connection(stream: TcpStream, host: &Host) {
+fn connection(stream: TcpStream, host: &Host, bind: Bind<'_>) {
     let response = match request(&stream) {
-        Ok((method, target)) => respond(host, &method, &target),
+        Ok((method, target)) => respond_with(host, bind, &method, &target),
         Err(said) => Response::text(400, format!("a request it cannot read: {said}\n")),
     };
     let mut stream = stream;

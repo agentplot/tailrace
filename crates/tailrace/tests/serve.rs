@@ -22,7 +22,7 @@ use serde_json::Value;
 use tailrace::bindings::{For, Teller};
 use tailrace::commands::serve::host::{checkout_of, find_or_start, name, Host, SERVING};
 use tailrace::commands::serve::page::escape;
-use tailrace::commands::serve::{respond_with, serve_on, Response, Served};
+use tailrace::commands::serve::{respond_with, serve_on, serve_with, Binder, Response, Served};
 use tailrace::commands::status::page;
 use tailrace::{run, Binding, Cli, REVISION};
 use tailrace_core::{
@@ -1191,4 +1191,115 @@ fn a_repository_none_named_and_a_checkout_that_cannot_be_bound_are_their_own_ans
     assert_eq!(response.status, 500);
     assert_eq!(text(&response), format!("{unbound}\n"));
     assert!(consumer.projection.requests().len() == 1, "served unbound");
+}
+
+// Requirement: The first asker that finds none starts it, and one lock keeps it one
+
+/// A binding over fakes made anew on each call, on any thread: the
+/// ecosystem's fake projection, serving or scripted to serve none.
+fn fresh(serving: bool) -> Binder {
+    Arc::new(move |_, _| {
+        let mut fakes = Fakes::new();
+        let projection = fakes.projection(&eco());
+        if !serving {
+            projection.serves_none();
+        }
+        Ok(Binding {
+            seams: fakes.seams(),
+            store: Source::new(Seam::Store, "fake"),
+            signer: None,
+            gate: Teller::Job("the gate's job".into()),
+            trust: vec![],
+        })
+    })
+}
+
+/// An idle of moments, which the tests wait out several times over.
+const MOMENTS: Duration = Duration::from_millis(200);
+
+/// The consumer's layout rendered: its place made, as a projection that
+/// writes files makes it, beside the record the sync wrote.
+fn rendered(consumer: &Consumer) -> PathBuf {
+    let at = place(&consumer.tree, &eco());
+    fs::create_dir_all(&at).unwrap();
+    at
+}
+
+/// `serve_with` over `host` at a port of the test's own, each checkout
+/// bound by `bind`, in a thread, once it answers.
+fn serving_with(host: &Host, bind: Binder) -> (SocketAddr, JoinHandle<Answer<Served>>) {
+    let address = free();
+    let host = host.clone();
+    let server = thread::spawn(move || serve_with(address, &host, MOMENTS, bind));
+    find_or_start(address, || Ok(())).expect("the process answers");
+    (address, server)
+}
+
+/// The process's answer once it ends within a few seconds.
+fn ends(server: JoinHandle<Answer<Served>>) -> Answer<Served> {
+    let asked = Instant::now();
+    while !server.is_finished() {
+        assert!(
+            asked.elapsed() < Duration::from_secs(5),
+            "the process did not end"
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    server.join().unwrap()
+}
+
+#[test]
+fn a_process_stays_past_its_idle_time_while_a_layout_is_served() {
+    let consumer = Consumer::new();
+    rendered(&consumer);
+    let (address, server) = serving_with(&consumer.world.host, fresh(true));
+    let (_, first) = json(address, "/serving.json");
+    thread::sleep(MOMENTS * 5);
+    assert!(
+        !server.is_finished(),
+        "the process ended while a layout is served"
+    );
+    let (status, body) = get(address, "/agentplot/consumer/eco/pkg@1.2.0");
+    assert_eq!(status, 200, "{body}");
+    let (_, again) = json(address, "/serving.json");
+    assert_eq!(again["pid"], first["pid"]);
+    assert!(!server.is_finished());
+}
+
+#[test]
+fn a_process_ends_at_its_next_idle_once_the_served_layout_is_removed() {
+    let consumer = Consumer::new();
+    let at = rendered(&consumer);
+    let (_, server) = serving_with(&consumer.world.host, fresh(true));
+    thread::sleep(MOMENTS * 3);
+    assert!(
+        !server.is_finished(),
+        "the process ended while a layout is served"
+    );
+    fs::remove_dir_all(&at).unwrap();
+    assert_eq!(ends(server), Ok(Served::Idle));
+    let lock = fs::File::open(consumer.world.host.state.join(SERVING)).unwrap();
+    lock.try_lock().expect("the lock was let go");
+}
+
+#[test]
+fn a_process_ends_at_its_next_idle_once_the_checkout_holding_it_is_removed() {
+    let consumer = Consumer::new();
+    rendered(&consumer);
+    let (_, server) = serving_with(&consumer.world.host, fresh(true));
+    thread::sleep(MOMENTS * 3);
+    assert!(
+        !server.is_finished(),
+        "the process ended while a layout is served"
+    );
+    fs::remove_dir_all(&consumer.world.repo().path).unwrap();
+    assert_eq!(ends(server), Ok(Served::Idle));
+}
+
+#[test]
+fn a_process_ends_at_its_idle_where_the_only_layout_is_of_a_projection_serving_none() {
+    let consumer = Consumer::new();
+    rendered(&consumer);
+    let (_, server) = serving_with(&consumer.world.host, fresh(false));
+    assert_eq!(ends(server), Ok(Served::Idle));
 }

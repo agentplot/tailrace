@@ -21,9 +21,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tailrace_core::{History, RepositoryName};
+use tailrace_core::{origin, place, serves, History, Layouts, RepositoryName};
 use tailrace_seams::{Answer, Not, Seam, Source};
 
+use super::Bind;
 use crate::bindings::{self, For};
 use crate::Binding;
 
@@ -277,6 +278,44 @@ pub fn checkout_of(host: &Host, repository: &RepositoryName) -> Answer<PathBuf> 
         .get(&repository.to_string())
         .ok_or_else(|| unnamed(&path, repository))?;
     checkout(repository, entry)
+}
+
+/// 114, 115: whether any checkout the host's file names holds a rendered
+/// layout whose projection serves it: each checkout bound for sync by
+/// `bind`, and each projection it binds that serves (the probe of design
+/// D10) asked whether its layout's place is present with its record. A
+/// checkout gone or that cannot be bound, or a file that cannot be read,
+/// holds none, so removing a worktree or its layout lets the process end
+/// (design D11). It reads files and opens no connection (60).
+pub fn serves_a_layout(host: &Host, bind: Bind<'_>) -> bool {
+    let Ok(named) = named(host) else {
+        return false;
+    };
+    named.into_iter().any(|(_, checkout)| {
+        let Ok(checkout) = checkout else {
+            return false;
+        };
+        let (Ok(history), Ok(binding)) = (History::open(&checkout), bind(&checkout, For::Sync))
+        else {
+            return false;
+        };
+        let tree = history.workdir().unwrap_or_else(|| checkout.clone());
+        let layouts = Layouts::at(&history);
+        binding
+            .seams
+            .projections
+            .iter()
+            .any(|(ecosystem, projection)| {
+                let at = place(&tree, ecosystem);
+                at.is_dir()
+                    && layouts.path(ecosystem).is_file()
+                    && serves(
+                        projection.as_ref(),
+                        &at.display().to_string(),
+                        &format!("{}{ecosystem}", origin()),
+                    )
+            })
+    })
 }
 
 /// 132: every repository the file names, ordered by owner and name, each
