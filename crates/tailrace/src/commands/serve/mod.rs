@@ -202,12 +202,16 @@ pub fn serve_with(
 
 /// One request on `stream`, answered and the connection closed.
 fn connection(stream: TcpStream, host: &Host, bind: Bind<'_>) {
-    let response = match request(&stream) {
-        Ok((method, target)) => respond_with(host, bind, &method, &target),
-        Err(said) => Response::text(400, format!("a request it cannot read: {said}\n")),
-    };
     let mut stream = stream;
-    let _ = response.write(&mut stream);
+    let _ = match request(&stream) {
+        Ok((method, target)) if method == "HEAD" => {
+            respond_with(host, bind, &method, &target).write_head(&mut stream)
+        }
+        Ok((method, target)) => respond_with(host, bind, &method, &target).write(&mut stream),
+        Err(said) => {
+            Response::text(400, format!("a request it cannot read: {said}\n")).write(&mut stream)
+        }
+    };
 }
 
 /// The method and target of the request on `stream`, its head read to
@@ -285,6 +289,19 @@ impl Response {
     /// The response as HTTP/1.1, its `Content-Length` its body's length
     /// in bytes, the connection closed after it.
     pub fn write(&self, out: &mut dyn Write) -> io::Result<()> {
+        self.head(out)?;
+        out.write_all(&self.body)?;
+        out.flush()
+    }
+
+    /// The response to a `HEAD`: its head alone, its `Content-Length` the
+    /// length of the body it leaves out.
+    pub fn write_head(&self, out: &mut dyn Write) -> io::Result<()> {
+        self.head(out)?;
+        out.flush()
+    }
+
+    fn head(&self, out: &mut dyn Write) -> io::Result<()> {
         write!(
             out,
             "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -292,9 +309,7 @@ impl Response {
             self.reason(),
             self.content_type,
             self.body.len(),
-        )?;
-        out.write_all(&self.body)?;
-        out.flush()
+        )
     }
 }
 
@@ -325,13 +340,16 @@ pub fn respond(host: &Host, method: &str, target: &str) -> Response {
 
 /// `method` of `target` asked of `host`'s process, each checkout bound by
 /// `bind`, status's binding for its routes and sync's for a served layout:
-/// the routes of design D6 and the served layout's of design D2, `GET`
-/// alone.
+/// the routes of design D6, `GET` alone, and the served layout's of
+/// design D2, whose method its projection answers.
 pub fn respond_with(host: &Host, bind: Bind<'_>, method: &str, target: &str) -> Response {
+    let path = target.split_once('?').map_or(target, |(path, _)| path);
+    if let Some((repository, ecosystem, rest)) = served_layout(path) {
+        return layout(host, bind, &repository, &ecosystem, method, rest);
+    }
     if method != "GET" {
         return Response::text(405, format!("{method} is not answered; only GET is\n"));
     }
-    let path = target.split_once('?').map_or(target, |(path, _)| path);
     if path == "/serving.json" {
         return Response::json(
             200,
@@ -350,40 +368,56 @@ pub fn respond_with(host: &Host, bind: Bind<'_>, method: &str, target: &str) -> 
         let answer = repositories(host, bind);
         return Response::html(status_of(&answer), page::root(&answer));
     }
-    let parts: Vec<&str> = path
-        .strip_prefix('/')
-        .unwrap_or(path)
-        .splitn(4, '/')
-        .collect();
+    let parts: Vec<&str> = path.strip_prefix('/').unwrap_or(path).split('/').collect();
+    match parts[..] {
+        [owner, name, last] if !owner.is_empty() && !name.is_empty() => {
+            let repository = RepositoryName {
+                owner: owner.to_string(),
+                name: name.to_string(),
+            };
+            match last {
+                "status.json" => {
+                    let answer = overview_of(host, bind, &repository);
+                    Response::json(status_of(&answer), &answer_json(&answer))
+                }
+                "status" => {
+                    let answer = overview_of(host, bind, &repository);
+                    Response::html(status_of(&answer), page::repository(&repository, &answer))
+                }
+                _ => not_found(path),
+            }
+        }
+        _ => not_found(path),
+    }
+}
+
+/// The repository, ecosystem and the rest of `path` where it names a
+/// served layout: `/<owner>/<name>/<ecosystem>/<rest>`, or exactly
+/// `/<owner>/<name>/<ecosystem>` with `rest` empty, `<ecosystem>` any
+/// name but the status routes' own three-part paths (design D2).
+fn served_layout(path: &str) -> Option<(RepositoryName, Ecosystem, &str)> {
+    let parts: Vec<&str> = path.strip_prefix('/')?.splitn(4, '/').collect();
     let (owner, name, ecosystem, rest) = match parts[..] {
+        [_, _, "status" | "status.json"] => return None,
         [owner, name, ecosystem] => (owner, name, ecosystem, ""),
         [owner, name, ecosystem, rest] => (owner, name, ecosystem, rest),
-        _ => return not_found(path),
+        _ => return None,
     };
     if owner.is_empty() || name.is_empty() || ecosystem.is_empty() {
-        return not_found(path);
+        return None;
     }
     let repository = RepositoryName {
         owner: owner.to_string(),
         name: name.to_string(),
     };
-    match (ecosystem, parts.len()) {
-        ("status.json", 3) => {
-            let answer = overview_of(host, bind, &repository);
-            Response::json(status_of(&answer), &answer_json(&answer))
-        }
-        ("status", 3) => {
-            let answer = overview_of(host, bind, &repository);
-            Response::html(status_of(&answer), page::repository(&repository, &answer))
-        }
-        _ => layout(host, bind, &repository, &Ecosystem::new(ecosystem), rest),
-    }
+    Some((repository, Ecosystem::new(ecosystem), rest))
 }
 
-/// 86, 114, 115: `GET` of `rest` below the served layout of `ecosystem`
-/// in the checkout that last named `repository`, bound for sync: handed
-/// to the projection bound for the ecosystem with the base the layout is
-/// served at, and its response answered as given (design D2). A version
+/// 86, 114, 115: `method` of `rest` below the served layout of
+/// `ecosystem` in the checkout that last named `repository`, bound for
+/// sync: handed to the projection bound for the ecosystem with the base
+/// the layout is served at, which answers the method as its client's
+/// protocol does, and its response answered as given (design D2). A version
 /// the layout lacks is rendered into it by the core on the request, under
 /// the policy a sync with no argument would use there (design D4). A
 /// repository none named is its absent answer and a checkout that cannot
@@ -394,6 +428,7 @@ fn layout(
     bind: Bind<'_>,
     repository: &RepositoryName,
     ecosystem: &Ecosystem,
+    method: &str,
     rest: &str,
 ) -> Response {
     let words =
@@ -434,7 +469,7 @@ fn layout(
         miss(&binding.seams, &Layouts::at(&history), &ask).map(|_| ())
     };
     let request = Request {
-        method: "GET".into(),
+        method: method.to_string(),
         path: rest.to_string(),
         base: layout_address(repository, ecosystem)
             .trim_end_matches('/')

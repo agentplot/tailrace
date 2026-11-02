@@ -69,11 +69,11 @@ impl ProjectionState {
     }
 }
 
-/// The version a served request's path names, `<name>@<version>`, split
-/// at its last `@`, so a scoped name keeps its own; none where it names
+/// The version a served request's path names, `<name>/<version>`, split
+/// at its last `/`, so a scoped name keeps its own; none where it names
 /// none.
 fn named_in(path: &str) -> Option<Pinned> {
-    let (name, version) = path.rsplit_once('@')?;
+    let (name, version) = path.rsplit_once('/')?;
     (!name.is_empty() && !version.is_empty()).then(|| Pinned {
         name: EcosystemName::new(name),
         version: Version::new(version),
@@ -582,13 +582,13 @@ mod tests {
             Err(refusal.clone())
         };
         let held = projection
-            .serve(&layout, &request("site@1.0.0"), &miss)
+            .serve(&layout, &request("site/1.0.0"), &miss)
             .unwrap();
         assert_eq!(held.status, 200);
         assert_eq!(held.body, canonical(&meta));
         assert_eq!(*asked.borrow(), [], "a held version asked the core");
         let lacked = projection
-            .serve(&layout, &request("site@1.1.0"), &miss)
+            .serve(&layout, &request("site/1.1.0"), &miss)
             .unwrap();
         assert_eq!(lacked.status, 403);
         assert_eq!(lacked.body, refusal.to_string().into_bytes());
@@ -598,7 +598,7 @@ mod tests {
         assert_eq!(*asked.borrow(), [pin("site", "1.1.0")]);
         assert_eq!(
             projection.requests(),
-            [request("site@1.0.0"), request("site@1.1.0")]
+            [request("site/1.0.0"), request("site/1.1.0")]
         );
         assert_eq!(projection.misses(), [pin("site", "1.1.0")]);
     }
@@ -626,13 +626,13 @@ mod tests {
         ] {
             let words = answer.clone().unwrap_err().to_string();
             let response = projection
-                .serve(&layout, &request("@scope/pkg@2.0.0"), &|_| answer.clone())
+                .serve(&layout, &request("@scope/pkg/2.0.0"), &|_| answer.clone())
                 .unwrap();
             assert_eq!(response.status, status);
             assert_eq!(response.body, words.into_bytes());
         }
         let held = projection
-            .serve(&layout, &request("@scope/pkg@2.0.0"), &|_| Ok(()))
+            .serve(&layout, &request("@scope/pkg/2.0.0"), &|_| Ok(()))
             .unwrap();
         assert_eq!(held.status, 200);
         let meta = ArtifactMeta::new(
@@ -656,7 +656,7 @@ mod tests {
         let layout = Layout {
             at: "layouts/eco".into(),
         };
-        for path in ["", "site@1.0.0"] {
+        for path in ["", "site/1.0.0"] {
             match projection.serve(&layout, &request(path), &|_| panic!("asked the core")) {
                 Err(Not::Absent(a)) => {
                     assert_eq!(a.source.seam, Seam::Projection);

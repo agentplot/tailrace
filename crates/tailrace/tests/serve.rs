@@ -1016,6 +1016,11 @@ impl Consumer {
     /// `GET` of `path` asked of the process's own handling of a request,
     /// each checkout bound to the fakes, for sync alone.
     fn get(&self, path: &str) -> Response {
+        self.ask(path, "GET")
+    }
+
+    /// `method` of `path`, asked as [`Consumer::get`] asks.
+    fn ask(&self, path: &str, method: &str) -> Response {
         respond_with(
             &self.world.host,
             &|checkout, command| {
@@ -1023,7 +1028,7 @@ impl Consumer {
                 assert_eq!(checkout, self.world.repo().path, "another checkout bound");
                 Ok(self.binding())
             },
-            "GET",
+            method,
             path,
         )
     }
@@ -1048,7 +1053,7 @@ fn text(response: &Response) -> String {
 #[test]
 fn a_served_layout_is_its_projections_response_from_the_checkout_that_named_it() {
     let consumer = Consumer::new();
-    let response = consumer.get("/agentplot/consumer/eco/pkg@1.2.0");
+    let response = consumer.get("/agentplot/consumer/eco/pkg/1.2.0");
     assert_eq!(response.status, 200, "{}", text(&response));
     assert_eq!(response.content_type, "application/json");
     let served: Value = serde_json::from_slice(&response.body).unwrap();
@@ -1064,7 +1069,7 @@ fn a_served_layout_is_its_projections_response_from_the_checkout_that_named_it()
             },
             Request {
                 method: "GET".into(),
-                path: "pkg@1.2.0".into(),
+                path: "pkg/1.2.0".into(),
                 base: "http://127.0.0.1:7420/agentplot/consumer/eco".into(),
             }
         ],
@@ -1087,7 +1092,7 @@ fn a_served_layout_is_its_projections_response_from_the_checkout_that_named_it()
 #[test]
 fn a_version_the_layout_lacks_is_rendered_into_it_by_the_core_on_the_request() {
     let consumer = Consumer::new();
-    let response = consumer.get("/agentplot/consumer/eco/pkg@1.1.0");
+    let response = consumer.get("/agentplot/consumer/eco/pkg/1.1.0");
     assert_eq!(response.status, 200, "{}", text(&response));
     assert_eq!(consumer.projection.misses(), [pinned("1.1.0")]);
     assert_eq!(consumer.held(), ["1.2.0", "1.1.0"]);
@@ -1109,13 +1114,41 @@ fn a_version_the_layout_lacks_is_rendered_into_it_by_the_core_on_the_request() {
 #[test]
 fn a_version_the_policy_refuses_is_the_projections_refusal_and_the_layout_is_unchanged() {
     let consumer = Consumer::new();
-    let response = consumer.get("/agentplot/consumer/eco/pkg@1.0.0");
+    let response = consumer.get("/agentplot/consumer/eco/pkg/1.0.0");
     assert_eq!(response.status, 403, "{}", text(&response));
     let words = text(&response);
     assert!(words.contains("pkg 1.0.0"), "{words}");
     assert!(words.contains("acceptance"), "{words}");
     assert_eq!(consumer.held(), ["1.2.0"]);
     assert_eq!(consumer.projection.renders().len(), 1, "rendered again");
+}
+
+#[test]
+fn a_served_layouts_method_is_its_projections_to_answer() {
+    let consumer = Consumer::new();
+    let response = consumer.ask("/agentplot/consumer/eco/pkg/1.2.0", "HEAD");
+    assert_eq!(response.status, 200, "{}", text(&response));
+    let asked = consumer.projection.requests();
+    assert_eq!(asked.last().map(|r| r.method.as_str()), Some("HEAD"));
+    let mut written = Vec::new();
+    response.write_head(&mut written).unwrap();
+    let head = String::from_utf8(written).unwrap();
+    assert!(
+        head.ends_with("\r\n\r\n")
+            && head.contains(&format!("\r\nContent-Length: {}\r\n", response.body.len())),
+        "{head}"
+    );
+    let posted = consumer.ask("/agentplot/consumer/eco/pkg/1.2.0", "POST");
+    assert_eq!(
+        consumer
+            .projection
+            .requests()
+            .last()
+            .map(|r| r.method.clone()),
+        Some("POST".to_string()),
+        "the process answered {} itself",
+        posted.status
+    );
 }
 
 #[test]
@@ -1170,7 +1203,7 @@ fn an_ecosystem_nothing_serves_is_404_naming_it_and_nothing_is_rendered() {
 #[test]
 fn a_repository_none_named_and_a_checkout_that_cannot_be_bound_are_their_own_answers() {
     let consumer = Consumer::new();
-    let response = consumer.get("/agentplot/tailrace/eco/pkg@1.2.0");
+    let response = consumer.get("/agentplot/tailrace/eco/pkg/1.2.0");
     assert_eq!(response.status, 404);
     assert!(
         text(&response).contains("has named it"),
@@ -1186,7 +1219,7 @@ fn a_repository_none_named_and_a_checkout_that_cannot_be_bound_are_their_own_ans
         &consumer.world.host,
         &|_, _| Err(unbound.clone()),
         "GET",
-        "/agentplot/consumer/eco/pkg@1.2.0",
+        "/agentplot/consumer/eco/pkg/1.2.0",
     );
     assert_eq!(response.status, 500);
     assert_eq!(text(&response), format!("{unbound}\n"));
@@ -1259,7 +1292,7 @@ fn a_process_stays_past_its_idle_time_while_a_layout_is_served() {
         !server.is_finished(),
         "the process ended while a layout is served"
     );
-    let (status, body) = get(address, "/agentplot/consumer/eco/pkg@1.2.0");
+    let (status, body) = get(address, "/agentplot/consumer/eco/pkg/1.2.0");
     assert_eq!(status, 200, "{body}");
     let (_, again) = json(address, "/serving.json");
     assert_eq!(again["pid"], first["pid"]);
