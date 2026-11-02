@@ -1209,11 +1209,16 @@ fn rebuilt(layouts: &Layouts, ecosystem: &Ecosystem, entry: &HeldEntry) -> Answe
 /// checked landed, the consumer's own policy read at it, and the one pin
 /// resolved and judged exactly as [`render`] judges a pin, so it is
 /// judged under the consumer's layout line, else its publisher's, else
-/// the given (C.10). Held, the projection renders the record's held
-/// artifacts and this one, and the record is written with it added and
-/// the rest as they were. Absent, refused naming the claim found wanting,
-/// or unreadable with the source's own words, nothing is written. Only
-/// the one version is read from the store.
+/// the given (C.10). Held, the layout is closed over it by the loop
+/// [`render`] runs: what it requires, level by level, met by a version the
+/// layout holds or held at the newest admitted version within it, a name
+/// none of whose versions is admitted leaving the pin held and its
+/// refused versions kept as a sync keeps them (137, 140). Then the
+/// projection renders the record's held artifacts, this one and those,
+/// and the record is written with them added and the rest as they were.
+/// Absent, refused naming the claim found wanting, or unreadable with the
+/// source's own words, nothing is written. Only the one version, and the
+/// names it requires that the layout lacks, are read from the store.
 pub fn miss(seams: &Seams, layouts: &Layouts, ask: &MissAsk) -> Answer<HeldPin> {
     let projection = seams.projection(&ask.ecosystem).ok_or_else(|| {
         Not::absent(
@@ -1251,14 +1256,41 @@ pub fn miss(seams: &Seams, layouts: &Layouts, ask: &MissAsk) -> Answer<HeldPin> 
     };
     let (answer, artifact) = judged(seams, &render_ask, &ask.pin)?;
     let held = answer.answer.clone()?;
-    let entry = held_entry(&answer).expect("a pin held was judged under a policy");
     let artifact = artifact.expect("a pin held names its artifact");
 
-    let mut artifacts = entries
+    // Closed over what the layout holds by the loop render runs: what the
+    // version requires, level by level, met by a version the layout holds
+    // or the newest admitted within it (137, 140).
+    let holding = entries
         .iter()
-        .map(|e| rebuilt(layouts, &ask.ecosystem, e))
-        .collect::<Answer<Vec<Artifact>>>()?;
-    artifacts.push(artifact);
+        .map(|e| {
+            let pin = Pinned {
+                name: e.name.clone(),
+                version: e.version.clone(),
+            };
+            Ok((pin, rebuilt(layouts, &ask.ecosystem, e)?))
+        })
+        .collect::<Answer<Vec<(Pinned, Artifact)>>>()?;
+    let mut closing = Closing {
+        seams,
+        projection,
+        ask: &render_ask,
+        pins: vec![answer],
+        asked: Vec::new(),
+        ranges: Vec::new(),
+        held: holding,
+    };
+    closing.held.push((ask.pin.clone(), artifact));
+    let newly = vec![closing.held.len() - 1];
+    closing.close(Vec::new(), newly)?;
+    let Closing {
+        pins,
+        asked,
+        held: holding,
+        ..
+    } = closing;
+
+    let artifacts: Vec<Artifact> = holding.into_iter().map(|(_, artifact)| artifact).collect();
     let at = place(&ask.tree, &ask.ecosystem).display().to_string();
     ignored(&ask.tree)?;
     projection.render(Contents::Artifacts(&artifacts), &at)?;
@@ -1266,17 +1298,20 @@ pub fn miss(seams: &Seams, layouts: &Layouts, ask: &MissAsk) -> Answer<HeldPin> 
         Some(record) => (record.policy, record.held, record.refused),
         None => (Under::of(render_ask.own.as_ref()), Vec::new(), Vec::new()),
     };
-    held_entries.push(entry);
+    let judged = || pins.iter().chain(&asked);
+    held_entries.extend(judged().filter_map(held_entry));
+    let mut refused: Vec<RefusedEntry> = refused
+        .into_iter()
+        .filter(|r| !judged().any(|j| j.pin.name == r.name && j.pin.version == r.version))
+        .collect();
+    refused.extend(judged().filter_map(refused_entry));
     layouts.write(&LayoutRecord {
         ecosystem: ask.ecosystem.clone(),
         at,
         rendered_at: ask.when,
         policy,
         held: held_entries,
-        refused: refused
-            .into_iter()
-            .filter(|r| r.name != ask.pin.name || r.version != ask.pin.version)
-            .collect(),
+        refused,
     })?;
     Ok(held)
 }

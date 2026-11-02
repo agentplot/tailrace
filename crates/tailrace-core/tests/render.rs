@@ -2404,6 +2404,135 @@ fn two_misses_at_once_on_two_threads_leave_both_held() {
     assert_eq!(held, ["1.2.0", "1.3.0"]);
 }
 
+impl Checkout {
+    /// The layout rendered holding `@family/widget 1.4.0`, and
+    /// `@family/widget 1.3.0` published requiring `@family/base` at
+    /// `^2.0.0`, each accepted by the gate.
+    fn widget_requiring_base(&self) {
+        self.publish("@family/widget", "1.4.0", true);
+        let missed = self.publish("@family/widget", "1.3.0", true);
+        self.projection
+            .manifest(&missed.artifact.digest, &[range("@family/base", "^2.0.0")]);
+        self.landed(vec![acceptance()], None);
+        render(
+            &self.fakes.seams(),
+            &self.layouts,
+            &self.ask(&[pin("@family/widget", "1.4.0")], vec![acceptance()], 1),
+        )
+        .unwrap();
+    }
+
+    /// What the layout's record holds and refuses, each by name and
+    /// version, held in the order held.
+    fn recorded(&self) -> (Vec<String>, Vec<String>) {
+        let record = self.layouts.read(&eco()).unwrap();
+        let held = record
+            .held
+            .iter()
+            .map(|h| format!("{} {}", h.name, h.version))
+            .collect();
+        let refused = record
+            .refused
+            .iter()
+            .map(|r| format!("{} {}", r.name, r.version))
+            .collect();
+        (held, refused)
+    }
+}
+
+#[test]
+fn a_miss_that_requires_a_name_the_layout_lacks_holds_the_newest_admitted_within_it() {
+    let checkout = Checkout::new();
+    checkout.widget_requiring_base();
+    checkout.publish("@family/base", "2.0.0", true);
+    checkout.publish("@family/base", "2.2.0", true);
+    let (since, asked) = (
+        checkout.fakes.store.calls().len(),
+        checkout.store_asked().len(),
+    );
+    miss(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.miss_ask(pin("@family/widget", "1.3.0"), 2, vec![]),
+    )
+    .unwrap();
+
+    let widgets_and_base = vec![
+        "@family/widget 1.4.0".to_string(),
+        "@family/widget 1.3.0".to_string(),
+        "@family/base 2.2.0".to_string(),
+    ];
+    assert_eq!(
+        checkout.renders().last(),
+        Some(&widgets_and_base),
+        "the layout holds another"
+    );
+    assert_eq!(checkout.recorded(), (widgets_and_base, vec![]));
+    assert_eq!(
+        checkout.store_asked()[asked..],
+        [
+            "artifact/eco/@family/widget@1.3.0",
+            "versions of \"@family/base\"",
+            "artifact/eco/@family/base@2.2.0",
+        ],
+        "the store was asked about another"
+    );
+    for call in &checkout.fakes.store.calls()[since..] {
+        let given = call.given.to_string();
+        assert!(
+            !given.contains("widget@1.4.0") && !given.contains("base@2.0.0"),
+            "the store was asked about a version the miss needs not: {:?} {given}",
+            call.op
+        );
+    }
+}
+
+#[test]
+fn a_miss_requiring_a_name_none_of_whose_versions_is_admitted_is_held_as_a_sync_holds_it() {
+    let checkout = Checkout::new();
+    checkout.widget_requiring_base();
+    checkout.publish("@family/base", "2.0.0", false);
+    let held = miss(
+        &checkout.fakes.seams(),
+        &checkout.layouts,
+        &checkout.miss_ask(pin("@family/widget", "1.3.0"), 2, vec![]),
+    )
+    .unwrap();
+
+    let record = checkout.layouts.read(&eco()).unwrap();
+    assert_eq!(held.artifact, record.held[1].artifact);
+    let widgets = vec![
+        "@family/widget 1.4.0".to_string(),
+        "@family/widget 1.3.0".to_string(),
+    ];
+    assert_eq!(checkout.renders().last(), Some(&widgets));
+    assert_eq!(
+        checkout.recorded(),
+        (widgets, vec!["@family/base 2.0.0".to_string()]),
+        "the record does not keep the refused version as a sync keeps it"
+    );
+    assert_eq!(record.refused[0].wanting, acceptance());
+
+    // A sync of the same pin and range answers the range as held at none,
+    // the version it refused named so.
+    let synced = checkout
+        .render(&[Pin::Version(pin("@family/widget", "1.3.0"))])
+        .unwrap();
+    assert_eq!(
+        synced.ranges,
+        [tailrace_core::RangeAnswer {
+            range: range("@family/base", "^2.0.0"),
+            by: Some(pin("@family/widget", "1.3.0")),
+            answer: Ok(None),
+        }]
+    );
+    assert_eq!(
+        checkout.recorded().1,
+        ["@family/base 2.0.0"],
+        "the sync keeps another"
+    );
+}
+
 #[test]
 fn a_layout_whose_projection_serves_none_names_no_address() {
     let checkout = Checkout::new();
