@@ -4,24 +4,28 @@
 //! recorded, answered (14 to 22, rules core.10 to core.13; design D1).
 //! Where the repository's file writes a policy for layouts at the landed
 //! revision, the index carries it as the publisher's layout-policy claim,
-//! attached before the version is named (113, 8); the given is never
-//! carried, and a consumer lays it beneath itself (C.10).
+//! attached before anything is named (113, 8); the given is never
+//! carried, and a consumer lays it beneath itself (C.10). Each artifact
+//! is then named by its ecosystem, its name and its version at the
+//! index, and the version last, so a version the store names is always
+//! found by what a lockfile pins (138; design D2).
 //! A publish offers and does nothing more: it never accepts, promotes,
 //! moves a channel or reaches a target (20, rule core.10).
 
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim, ClaimKind, Component,
-    ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Name, Not, Outcome,
-    Output, OutputName, Projection, Report, Required, Revision, Seam, Seams, SignerId, Source,
-    Verdict, Version, Why,
+    artifact_name, version_name, Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, Claim,
+    ClaimKind, Component, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
+    Manifest, Name, Not, Outcome, Output, OutputName, PackAt, Projection, Report, RepositoryName,
+    Required, Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
 };
 
 use crate::notes::{self, Rendered};
 use crate::{
-    claim, derive, layout_policy_body, policy_at, touched, Carried, Declared, Derived, Entry,
-    History, Kept, Landed, Noted, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
+    claim, derive, layout_policy_body, paths_hold, policy_at, touched, Carried, Declared, Derived,
+    Entry, History, Kept, Landed, Noted, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
+    REPOSITORY,
 };
 
 /// What a publish is asked: the revision, the branch that landed it, the
@@ -74,7 +78,8 @@ pub enum Published {
 }
 
 /// An artifact a publish offered: its digest, its bytes' digest, its
-/// ecosystem and name there, the output and the build identity it came
+/// ecosystem and name there, the name the store holds it under by those
+/// and its version (138), the output and the build identity it came
 /// from, whether its projection promises the same bytes again (87), and
 /// every claim this publish attached to it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -83,6 +88,7 @@ pub struct PublishedArtifact {
     pub bytes: Digest,
     pub ecosystem: Ecosystem,
     pub name: EcosystemName,
+    pub store_name: Name,
     pub output: OutputName,
     pub build: BuildId,
     pub same_again: bool,
@@ -177,6 +183,7 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
         declared: &declared,
         verdicts: None,
         layout: None,
+        repository: None,
     };
     let components = versions
         .into_iter()
@@ -198,8 +205,9 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
 }
 
 /// One publish's state across its components: the landing's verdicts,
-/// read once for the revision (78), and the policy for layouts, read once
-/// at it where an index is put (113).
+/// read once for the revision (78), the policy for layouts, read once at
+/// it where an index is put (113), and the publishing repository, read
+/// once before the first pack (13, 138).
 struct Run<'a> {
     seams: &'a Seams,
     history: &'a History,
@@ -209,6 +217,7 @@ struct Run<'a> {
     declared: &'a Declared,
     verdicts: Option<Answer<Vec<Verdict>>>,
     layout: Option<Answer<Required>>,
+    repository: Option<Answer<Option<RepositoryName>>>,
 }
 
 /// An output with what the build reported of it, the ecosystem and
@@ -235,6 +244,27 @@ impl<'a> Run<'a> {
         let revision = self.landed.revision();
         self.verdicts
             .get_or_insert_with(|| seams.landing.verdicts_of(revision).map(|v| v.verdicts))
+            .clone()
+    }
+
+    /// 13, 138: the publishing repository, by the owner and name of its
+    /// landed branch's remote's address as the git configuration writes
+    /// it, whatever a host's `insteadOf` makes of it (49, 114); none where
+    /// the branch names no remote or its address gives no owner and name,
+    /// as a local path does, and the publish goes on (22). A
+    /// configuration that cannot be read is the answer (design D5).
+    fn repository(&mut self) -> Answer<Option<RepositoryName>> {
+        let (history, branch) = (self.history, self.landed.branch());
+        self.repository
+            .get_or_insert_with(|| {
+                let Some(remote) = history.remote(branch)? else {
+                    return Ok(None);
+                };
+                Ok(history
+                    .remote_url(&remote)?
+                    .as_deref()
+                    .and_then(RepositoryName::from_remote))
+            })
             .clone()
     }
 
@@ -338,12 +368,17 @@ impl<'a> Run<'a> {
             output.verdicts = judge(&output.name, &output.report, &verdicts)?;
         }
 
+        // The publishing repository, read before anything is claimed or
+        // packed, so a configuration that cannot be read offers nothing
+        // (design D5).
+        let repository = self.repository()?;
+
         // 7: the name claimed after judging and before any pack (22, rule
         // core.13), then the version's notes rendered from the commits it
         // is derived from, so nothing of them exists before the claim
         // (134; design D5).
         let claimed = claim(self.history, self.landed, versioned)?;
-        let name = Name::new(&versioned.name);
+        let name = version_name(&component.name, &versioned.name);
         let rendered = notes::render(
             self.history,
             &component.name,
@@ -353,26 +388,48 @@ impl<'a> Run<'a> {
             &Noted::of(versioned),
         )?;
 
-        // 8: a name already held makes this a repeat (18).
-        let held = match self.seams.store.resolve(&name) {
-            Ok(index) => Some(self.held(&index)?),
-            Err(Not::Absent(_)) => None,
+        // 8: a name already held makes this a repeat (18); so does a
+        // declared component's bare tag, as a publish before version
+        // names carried their component named it, which this one names
+        // the new way at the same index (C.1; design D3, D18).
+        let (held, unnamed) = match self.seams.store.resolve(&name) {
+            Ok(index) => (Some(self.held(&index)?), false),
+            Err(Not::Absent(_)) if component.name.as_str() != REPOSITORY => {
+                let bare = version_name(&ComponentName::new(REPOSITORY), &versioned.name);
+                match self.seams.store.resolve(&bare) {
+                    Ok(index) => (Some(self.held(&index)?), true),
+                    Err(Not::Absent(_)) => (None, false),
+                    Err(not) => return Err(not),
+                }
+            }
+            Err(Not::Absent(_)) => (None, false),
             Err(not) => return Err(not),
         };
 
         // 9: each output packed at its build identity with the version,
-        // and a pack that names no metadata refused before anything is
-        // offered (84, rule core.12).
-        let mut packed = Vec::new();
-        for output in &outputs {
-            let files = Output {
+        // its component, the component's outputs as the build left them
+        // and its paths' match, the version rule's own, and a pack that
+        // names no metadata refused before anything is offered (84, 123,
+        // rule core.12).
+        let built: Vec<Output> = outputs
+            .iter()
+            .map(|output| Output {
                 name: output.name.clone(),
                 files: output.report.files.clone(),
-            };
-            let answer =
-                output
-                    .projection
-                    .pack(&files, &output.report.build, Some(&versioned.version))?;
+            })
+            .collect();
+        let holds = paths_hold(&component.paths)?;
+        let at = PackAt {
+            version: &versioned.version,
+            component,
+            outputs: &built,
+            holds: &holds,
+        };
+        let mut packed = Vec::new();
+        for (output, files) in outputs.iter().zip(&built) {
+            let answer = output
+                .projection
+                .pack(files, &output.report.build, Some(&at))?;
             let Some(meta) = answer.meta else {
                 return Err(Not::refused(
                     &Source::new(Seam::Projection, output.ecosystem.as_str()),
@@ -394,6 +451,11 @@ impl<'a> Run<'a> {
             Some((index, artifacts)) => {
                 let (artifacts, notes) =
                     self.again(versioned, &outputs, &packed, &rendered, &artifacts)?;
+                self.layout_policy(&index)?;
+                self.name_artifacts(&index, &packed)?;
+                if unnamed {
+                    self.seams.store.name(&name, &index, None)?;
+                }
                 return self.record(
                     versioned,
                     component,
@@ -418,13 +480,15 @@ impl<'a> Run<'a> {
                 .chain(std::iter::once(notes))
                 .collect(),
         )
-        .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))?;
+        .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))?
+        .published_from(claimed.revision.clone(), repository);
         let index = self
             .seams
             .store
             .put_artifact(&Manifest::Index(meta))?
             .digest;
         self.layout_policy(&index)?;
+        self.name_artifacts(&index, &packed)?;
         self.seams.store.name(&name, &index, None)?;
         let artifacts = artifacts.into_iter().map(|(_, a)| a).collect();
         self.record(
@@ -435,6 +499,42 @@ impl<'a> Run<'a> {
             artifacts,
             Some(answered),
         )
+    }
+
+    /// 138: each packed artifact named `artifact/<ecosystem>/<name>@<version>`
+    /// at `index`. Every name is resolved before any is made: one at this
+    /// index is left as it is, one at another digest refuses the version
+    /// naming the name, the digest it is at and this index, and nothing
+    /// is made; then each absent one is made from nothing, a refusal from
+    /// the store answered as it gave it and never asked again (70, 109,
+    /// rules core.4, core.6; design D2, D3).
+    fn name_artifacts(&self, index: &Digest, packed: &[PackedArtifact]) -> Answer<()> {
+        let store = &self.seams.store;
+        let mut absent = Vec::new();
+        for packed in packed {
+            let meta = &packed.meta;
+            let name = artifact_name(meta.ecosystem(), meta.name(), meta.version());
+            match store.resolve(&name) {
+                Ok(at) if at == *index => {}
+                Ok(other) => {
+                    return Err(Not::refused(
+                        &self.ask.store,
+                        Why::NameAt {
+                            at: Some(other.clone()),
+                        },
+                        Some(format!(
+                            "{name} names {other}, and this publish's index is {index}"
+                        )),
+                    ))
+                }
+                Err(Not::Absent(_)) => absent.push(name),
+                Err(not) => return Err(not),
+            }
+        }
+        for name in absent {
+            store.name(&name, index, None)?;
+        }
+        Ok(())
     }
 
     /// The index a held name names and each artifact it names, with the
@@ -765,6 +865,7 @@ fn answered(
         bytes,
         ecosystem: meta.ecosystem().clone(),
         name: meta.name().clone(),
+        store_name: artifact_name(meta.ecosystem(), meta.name(), meta.version()),
         output: output.name.clone(),
         build: output.report.build.clone(),
         same_again: packed.same_again,

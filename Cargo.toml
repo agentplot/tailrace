@@ -55,6 +55,7 @@ tempfile = "3"
 tokio = { version = "1", features = ["rt", "net", "time"] }
 toml = "0.9"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
+toml_edit = "0.25"
 
 [workspace.lints.clippy]
 too_many_arguments = "allow"

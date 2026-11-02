@@ -33,9 +33,9 @@ use tailrace_fakes::{FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
     Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, IndexMeta, Layout,
-    Manifest, Miss, Moved, NamedSigner, Not, Output, Packed, Pinned, Projection, Promotion, Range,
-    Rendered, Request, Required, RequiredClaim, Requirement, Revision, Satisfied, Seam, Signer,
-    SignerId, Source, Store, Version,
+    Manifest, Miss, Moved, NamedSigner, Not, Output, PackAt, Packed, Pin, Pinned, Projection,
+    Promotion, Range, Rendered, Request, Required, RequiredClaim, Requirement, Revision, Satisfied,
+    Seam, Signer, SignerId, Source, Store, Version,
 };
 
 /// The host the tests serve: a state directory, a bindings file, a home
@@ -1297,7 +1297,7 @@ fn ends(server: JoinHandle<Answer<Served>>) -> Answer<Served> {
 struct Based(FakeProjection);
 
 impl Projection for Based {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         self.0.pack(output, at, version)
     }
 
@@ -1318,7 +1318,7 @@ impl Projection for Based {
         })
     }
 
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.0.pinned(checkout)
     }
 

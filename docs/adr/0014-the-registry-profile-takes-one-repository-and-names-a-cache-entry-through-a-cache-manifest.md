@@ -11,6 +11,8 @@ decision-makers:
 
 Status: accepted by the user on 2026-10-24, on their card ("Approved").
 
+Amended in part by ADR 0023: the declared repository still holds every blob, manifest and claim, and under it a declared component's versions, channels and indexes, each artifact's name and each build profile's cache entries are held in repositories of their own.
+
 Deciders: madswan-design, ruling on three questions batch 9's review raised from the-registry-store and moons-cache-namespace (phase 1, bolts 2 and 3), for the user to accept on this record's card.
 Sources: statement clauses 1, 52, 53, 61, 66, 70, 71, 72, 73, 100, C.1, C.2, and Part C's opening line, "Parts A and B do not change to admit a profile"; rules core.2, core.6, core.20, core.30; the-registry-store's design, D2 and D6; moons-cache-namespace's design, D1.
 

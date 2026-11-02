@@ -22,8 +22,8 @@ use tailrace_fakes::{FakeProjection, Fakes, Fault, PolicyOp, ProjectionOp, Store
 use tailrace_seams::{
     Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, Check, Claim, ClaimKind,
     ComponentName, Digest, Ecosystem, EcosystemName, Envelope, IndexMeta, Manifest, Name,
-    NamedSigner, Not, Outcome, OutputName, Pinned, Required, RequiredClaim, Revision, Seam, Signer,
-    SignerId, Store, Verdict, Version, Why,
+    NamedSigner, Not, Outcome, OutputName, Pin, Pinned, Range, Required, RequiredClaim,
+    Requirement, Revision, Seam, Signer, SignerId, Store, Verdict, Version, Why,
 };
 use tempfile::TempDir;
 
@@ -1126,6 +1126,13 @@ impl Checkout {
     /// The layout of `pins` asked under the consumer's own policy
     /// requiring `claims`, at `when`.
     fn ask(&self, pins: &[Pinned], claims: Vec<RequiredClaim>, when: u64) -> RenderAsk {
+        let pins: Vec<Pin> = pins.iter().cloned().map(Pin::Version).collect();
+        self.ask_for(&pins, claims, when)
+    }
+
+    /// The layout of `pins`, versions and ranges, asked under the
+    /// consumer's own policy requiring `claims`, at `when`.
+    fn ask_for(&self, pins: &[Pin], claims: Vec<RequiredClaim>, when: u64) -> RenderAsk {
         RenderAsk {
             ecosystem: eco(),
             pins: pins.to_vec(),
@@ -1744,6 +1751,319 @@ fn a_revision_not_landed_is_refused_before_a_lockfile_is_read() {
     );
 }
 
+// Requirement: A layout holds the lockfile's versions and no other; a
+// range is held at the newest admitted version within it; what a held
+// version requires is held through every level (137, 140; design D7)
+
+impl Checkout {
+    /// `version` of `name` published, accepted by the gate where
+    /// `accepted`.
+    fn publish(&self, name: &str, version: &str, accepted: bool) -> Located {
+        let located = published(&self.fakes.store, name, version);
+        if accepted {
+            let gates = signed(&located.index, ClaimKind::Acceptance, json!(null), GATE);
+            self.fakes.store.attach(&located.index, &gates).unwrap();
+        }
+        located
+    }
+
+    /// The layout of `pins` rendered under acceptance by the gate.
+    fn render(&self, pins: &[Pin]) -> Result<tailrace_core::Refreshed, Not> {
+        render(
+            &self.fakes.seams(),
+            &self.layouts,
+            &self.ask_for(pins, vec![acceptance()], 1),
+        )
+    }
+
+    /// Each version the store was asked to resolve, and each name whose
+    /// versions it was asked to list, in the order asked.
+    fn store_asked(&self) -> Vec<String> {
+        self.fakes
+            .store
+            .calls()
+            .into_iter()
+            .filter_map(|c| match c.op {
+                StoreOp::Resolve => Some(c.given["name"].as_str().unwrap().to_string()),
+                StoreOp::Versions => Some(format!("versions of {}", c.given["name"])),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+fn range(name: &str, range: &str) -> Requirement {
+    Requirement {
+        name: EcosystemName::new(name),
+        range: Range::new(range),
+    }
+}
+
+/// Whether `answer` is refused naming acceptance as the claim wanting.
+fn wanting_acceptance(answer: &Result<HeldPin, Not>) -> bool {
+    matches!(answer, Err(Not::Refused(r))
+        if matches!(&r.why, Why::VersionWanting { wanting, .. } if *wanting == acceptance()))
+}
+
+#[test]
+fn s4_a_lockfiles_versions_and_no_other_and_the_store_asked_nothing_of_a_third() {
+    let checkout = Checkout::new();
+    checkout.publish("lib", "1.0.0", true);
+    checkout.publish("lib", "1.2.0", true);
+    let since = checkout.fakes.store.calls().len();
+    let refreshed = checkout
+        .render(&[
+            Pin::Version(pin("pkg", "1.1.0")),
+            Pin::Version(pin("lib", "1.0.0")),
+        ])
+        .unwrap();
+    assert_eq!(
+        checkout.renders(),
+        [vec!["pkg 1.1.0".to_string(), "lib 1.0.0".to_string()]]
+    );
+    assert_eq!((refreshed.asked, refreshed.ranges), (vec![], vec![]));
+    let asked = checkout.store_asked();
+    assert!(
+        checkout.fakes.store.calls()[since..].iter().all(|c| !c
+            .given
+            .to_string()
+            .contains("1.2.0")
+            && c.op != StoreOp::Versions),
+        "the store was asked of the third version: {asked:?}"
+    );
+    assert_eq!(
+        refreshed.at,
+        checkout
+            .tree
+            .join(".tailrace/layouts/eco")
+            .display()
+            .to_string()
+    );
+}
+
+#[test]
+fn a_range_is_held_at_the_newest_version_within_it_the_policy_admits() {
+    let checkout = Checkout::new();
+    checkout.publish("site", "1.0.0", true);
+    let held = checkout.publish("site", "1.1.0", true);
+    checkout.publish("site", "1.2.0", false);
+    checkout.publish("site", "2.0.0", true);
+    let refreshed = checkout.render(&[Pin::Range(range("site", "1"))]).unwrap();
+
+    assert_eq!(checkout.renders(), [vec!["site 1.1.0".to_string()]]);
+    assert_eq!(
+        refreshed.ranges,
+        [tailrace_core::RangeAnswer {
+            range: range("site", "1"),
+            by: None,
+            answer: Ok(Some(Version::new("1.1.0"))),
+        }]
+    );
+    let asked: Vec<(String, bool)> = refreshed
+        .asked
+        .iter()
+        .map(|a| (a.pin.version.to_string(), a.answer.is_ok()))
+        .collect();
+    assert_eq!(asked, [("1.2.0".into(), false), ("1.1.0".into(), true)]);
+    assert!(
+        wanting_acceptance(&refreshed.asked[0].answer),
+        "{refreshed:?}"
+    );
+    assert_eq!(
+        refreshed.asked[1].answer.as_ref().unwrap().artifact,
+        held.artifact.digest
+    );
+    assert!(
+        checkout
+            .store_asked()
+            .iter()
+            .all(|asked| !asked.contains("site@2.0.0") && !asked.contains("site@1.0.0")),
+        "a version newer than the one held, or outside the range, was judged: {:?}",
+        checkout.store_asked()
+    );
+
+    let record = checkout.layouts.read(&eco()).unwrap();
+    let held: Vec<String> = record
+        .held
+        .iter()
+        .map(|h| format!("{} {}", h.name, h.version))
+        .collect();
+    let refused: Vec<String> = record
+        .refused
+        .iter()
+        .map(|r| format!("{} {}", r.name, r.version))
+        .collect();
+    assert_eq!(
+        (held, refused),
+        (
+            vec!["site 1.1.0".to_string()],
+            vec!["site 1.2.0".to_string()]
+        )
+    );
+}
+
+#[test]
+fn a_range_the_store_names_nothing_within_is_held_at_none() {
+    let checkout = Checkout::new();
+    let refreshed = checkout.render(&[Pin::Range(range("ghost", "1"))]).unwrap();
+    assert_eq!(checkout.renders(), [Vec::<String>::new()]);
+    assert_eq!(
+        refreshed.ranges,
+        [tailrace_core::RangeAnswer {
+            range: range("ghost", "1"),
+            by: None,
+            answer: Ok(None),
+        }]
+    );
+    assert_eq!(refreshed.asked, []);
+    assert!(
+        checkout
+            .projection
+            .calls()
+            .iter()
+            .all(|c| c.op != ProjectionOp::Satisfying),
+        "the projection was asked to read a range of an empty listing"
+    );
+}
+
+#[test]
+fn a_pinned_versions_dependencies_are_held_two_levels_down() {
+    let checkout = Checkout::new();
+    let app = checkout.publish("app", "1.0.0", true);
+    checkout.publish("lib", "1.0.0", true);
+    let lib = checkout.publish("lib", "1.1.0", true);
+    checkout.publish("base", "0.3.0", true);
+    checkout
+        .projection
+        .manifest(&app.artifact.digest, &[range("lib", "^1")]);
+    checkout
+        .projection
+        .manifest(&lib.artifact.digest, &[range("base", "0.3")]);
+    let refreshed = checkout
+        .render(&[Pin::Version(pin("app", "1.0.0"))])
+        .unwrap();
+    assert_eq!(
+        checkout.renders(),
+        [vec![
+            "app 1.0.0".to_string(),
+            "lib 1.1.0".to_string(),
+            "base 0.3.0".to_string()
+        ]]
+    );
+    assert_eq!(
+        refreshed.ranges,
+        [
+            tailrace_core::RangeAnswer {
+                range: range("lib", "^1"),
+                by: Some(pin("app", "1.0.0")),
+                answer: Ok(Some(Version::new("1.1.0"))),
+            },
+            tailrace_core::RangeAnswer {
+                range: range("base", "0.3"),
+                by: Some(pin("lib", "1.1.0")),
+                answer: Ok(Some(Version::new("0.3.0"))),
+            },
+        ]
+    );
+    let record = checkout.layouts.read(&eco()).unwrap();
+    assert_eq!(record.held.len(), 3, "{record:?}");
+}
+
+#[test]
+fn a_range_met_by_what_the_layout_holds_lists_nothing() {
+    let checkout = Checkout::new();
+    let app = checkout.publish("app", "1.0.0", true);
+    checkout.publish("lib", "1.0.0", true);
+    checkout.publish("lib", "1.1.0", true);
+    checkout
+        .projection
+        .manifest(&app.artifact.digest, &[range("lib", "^1.0")]);
+    let refreshed = checkout
+        .render(&[
+            Pin::Version(pin("app", "1.0.0")),
+            Pin::Version(pin("lib", "1.0.0")),
+        ])
+        .unwrap();
+    assert_eq!(
+        checkout.renders(),
+        [vec!["app 1.0.0".to_string(), "lib 1.0.0".to_string()]]
+    );
+    assert_eq!(
+        refreshed.ranges,
+        [tailrace_core::RangeAnswer {
+            range: range("lib", "^1.0"),
+            by: Some(pin("app", "1.0.0")),
+            answer: Ok(Some(Version::new("1.0.0"))),
+        }]
+    );
+    assert!(
+        checkout
+            .fakes
+            .store
+            .calls()
+            .iter()
+            .all(|c| c.op != StoreOp::Versions),
+        "the store listed a name the layout meets"
+    );
+}
+
+#[test]
+fn a_range_the_projection_refuses_to_read_is_its_own_answer_and_the_rest_is_rendered() {
+    let checkout = Checkout::new();
+    checkout.publish("site", "1.0.0", true);
+    let refreshed = checkout
+        .render(&[
+            Pin::Version(pin("pkg", "1.1.0")),
+            Pin::Range(range("site", "not a range")),
+        ])
+        .unwrap();
+    assert_eq!(checkout.renders(), [vec!["pkg 1.1.0".to_string()]]);
+    let [answer] = refreshed.ranges.as_slice() else {
+        panic!("the ranges answered {:?}", refreshed.ranges)
+    };
+    assert!(matches!(answer.answer, Err(Not::Refused(_))), "{answer:?}");
+}
+
+#[test]
+fn a_held_version_whose_requires_cannot_be_read_writes_nothing() {
+    let checkout = Checkout::new();
+    checkout.projection.fault(
+        ProjectionOp::Requires,
+        Fault::Unreadable("the manifest is gone".into()),
+        Times::Once,
+    );
+    let answer = checkout.render(&[Pin::Version(pin("pkg", "1.1.0"))]);
+    assert!(
+        matches!(&answer, Err(Not::Unreadable(u)) if u.said.as_deref() == Some("the manifest is gone")),
+        "{answer:?}"
+    );
+    assert_eq!(checkout.renders(), Vec::<Vec<String>>::new());
+    assert!(
+        !checkout.layouts.path(&eco()).exists(),
+        "a record was written"
+    );
+}
+
+#[test]
+fn a_listing_the_store_cannot_read_writes_nothing() {
+    let checkout = Checkout::new();
+    checkout.fakes.store.fault(
+        StoreOp::Versions,
+        Fault::Unreadable("connection refused".into()),
+        Times::Once,
+    );
+    let answer = checkout.render(&[Pin::Range(range("site", "1"))]);
+    assert!(
+        matches!(&answer, Err(Not::Unreadable(u)) if u.said.as_deref() == Some("connection refused")),
+        "{answer:?}"
+    );
+    assert_eq!(checkout.renders(), Vec::<Vec<String>>::new());
+    assert!(
+        !checkout.layouts.path(&eco()).exists(),
+        "a record was written"
+    );
+}
+
 #[test]
 fn a_second_lock_of_one_layout_waits_until_the_first_is_dropped() {
     let dir = TempDir::new().unwrap();
@@ -1791,22 +2111,11 @@ impl Checkout {
         }
     }
 
-    /// `version` of `pkg` published to the store, accepted by the gate
-    /// where `accepted`.
-    fn publish(&self, version: &str, accepted: bool) -> Located {
-        let located = published(&self.fakes.store, "pkg", version);
-        if accepted {
-            let gates = signed(&located.index, ClaimKind::Acceptance, json!(null), GATE);
-            self.fakes.store.attach(&located.index, &gates).unwrap();
-        }
-        located
-    }
-
     /// The layout rendered holding `pkg 1.2.0` under the consumer's own
     /// policy requiring acceptance, its record's bytes, and how many
     /// store operations had been asked.
     fn holding_one(&self) -> (Vec<u8>, usize) {
-        self.publish("1.2.0", true);
+        self.publish("pkg", "1.2.0", true);
         self.landed(vec![acceptance()], None);
         render(
             &self.fakes.seams(),
@@ -1917,7 +2226,7 @@ fn a_version_the_record_holds_is_answered_held_and_nothing_is_read() {
 fn a_miss_the_policy_refuses_names_the_claim_and_changes_nothing() {
     let checkout = Checkout::new();
     let (record, _) = checkout.holding_one();
-    checkout.publish("1.3.0", false);
+    checkout.publish("pkg", "1.3.0", false);
     match miss(
         &checkout.fakes.seams(),
         &checkout.layouts,
@@ -1986,7 +2295,7 @@ fn a_miss_is_judged_under_the_publishers_policy_through_a_trusted_signer() {
             signers: vec![],
         },
     );
-    let located = checkout.publish("1.3.0", true);
+    let located = checkout.publish("pkg", "1.3.0", true);
     let policy = publishers(&located.index, &[acceptance(), provenance()], GATE);
     checkout
         .fakes

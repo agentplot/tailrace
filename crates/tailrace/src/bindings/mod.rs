@@ -78,8 +78,8 @@
 //! repository the command runs in the
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
-//! through a second binding of the store, opened and never made (design
-//! D6). What tells the gate is bound for every command; no target is
+//! through a second binding of the store, and Cargo's projection crates
+//! through a third, each opened and never made (design D6). What tells the gate is bound for every command; no target is
 //! bound yet. Only a publish and a push make the layout, the given one
 //! with its parents, at the first operation asked of the store and never
 //! in binding it, so a publish refused before it asks the store anything
@@ -104,8 +104,8 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tailrace_seams::{
-    Answer, Digest, Envelope, Held, Manifest, Name, NamedSigner, Not, Put, Seam, Seams, SignerId,
-    Source, Store,
+    Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not,
+    Put, Seam, Seams, SignerId, Source, Store, Version,
 };
 
 use crate::profiles::signer::Signing;
@@ -526,6 +526,10 @@ impl Store for Unopened {
     fn read(&self, _: &Digest) -> Answer<Held> {
         Err(self.not.clone())
     }
+
+    fn versions(&self, _: &Ecosystem, _: &EcosystemName) -> Answer<Vec<Version>> {
+        Err(self.not.clone())
+    }
 }
 
 /// The binding the bindings file at `file` names for `command`, in the
@@ -629,14 +633,18 @@ pub fn bind(
         };
         (bound, keeper, BTreeMap::new())
     } else {
-        let bound = profiles::store::bind(store, make)?;
-        let cache = profiles::store::bind(store, make)?;
-        let packages = profiles::store::bind(store, make)?;
+        // A push's store writes cache entries alone, into the bound
+        // build profile's cache repository on a registry (135; design D9).
+        let (build, push) = (Some(profiles::build::name()), command == For::Push);
+        let bound = profiles::store::bind_for(store, make, build, push)?;
+        let cache = profiles::store::bind_for(store, make, build, push)?;
+        let crates = profiles::store::bind_for(store, make, build, push)?;
+        let packages = profiles::store::bind_for(store, make, build, push)?;
         let keeper = ledger(store)?;
         (
             bound,
             keeper,
-            profiles::projection::bound(cache, packages, repository),
+            profiles::projection::bound(cache, crates, packages, repository),
         )
     };
     Ok(Binding {

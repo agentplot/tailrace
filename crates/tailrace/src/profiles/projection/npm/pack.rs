@@ -158,6 +158,7 @@ pub(super) fn pack(path: Option<&OsStr>, output: &Output, version: &Version) -> 
 
 #[cfg(test)]
 mod tests {
+    use tailrace_fakes::Alone;
     use tailrace_seams::{BuildId, OutputName, Projection, Seam};
     use tempfile::TempDir;
 
@@ -183,8 +184,11 @@ mod tests {
             name: OutputName::new("widget"),
             files: vec![readme.display().to_string()],
         };
-        let packed =
-            projection(&dir).pack(&output, &BuildId::new("b7e1"), Some(&Version::new("1.4.0")));
+        let packed = projection(&dir).pack(
+            &output,
+            &BuildId::new("b7e1"),
+            Some(&Alone::new(&output, "1.4.0").at()),
+        );
         match packed {
             Err(Not::Refused(r)) => {
                 assert_eq!(r.source.seam, Seam::Projection);
@@ -222,8 +226,11 @@ mod tests {
             name: OutputName::new("widget"),
             files: vec![manifest.display().to_string()],
         };
-        let packed =
-            projection(&dir).pack(&output, &BuildId::new("b7e1"), Some(&Version::new("1.4.0")));
+        let packed = projection(&dir).pack(
+            &output,
+            &BuildId::new("b7e1"),
+            Some(&Alone::new(&output, "1.4.0").at()),
+        );
         match packed {
             Err(Not::Unreadable(u)) => {
                 assert_eq!(u.what, "npm");

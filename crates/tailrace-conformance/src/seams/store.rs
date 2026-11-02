@@ -102,6 +102,12 @@ pub fn scenarios() -> Vec<Scenario<dyn StoreRig>> {
             cites: &[70, 109],
             run: a_name_moved_from_a_stale_place_repaired_from_the_ledger,
         },
+        Scenario {
+            name: "a name's versions listed",
+            plays: None,
+            cites: &[138],
+            run: a_names_versions_listed,
+        },
     ]
 }
 
@@ -411,6 +417,59 @@ fn promotion(subject: &Digest) -> Envelope {
 /// On a profile whose names take no condition, a move from a place the
 /// name has left is refused only when the check before the put reads
 /// where the name is, so the scenario takes either answer and asks the
+/// 138: an index named by three artifact names, two of one name at two
+/// versions and one of a name sharing its prefix; the versions of the
+/// first are its two and no other, each resolving to the index, and a
+/// name never named lists none, neither absent nor refused.
+fn a_names_versions_listed(rig: &dyn StoreRig) {
+    let store = rig.store();
+    let eco = Ecosystem::new("eco");
+    let artifact = artifact(store, "1.0.0");
+    let index = tailrace_seams::IndexMeta::new(
+        tailrace_seams::ComponentName::new(tailrace_seams::REPOSITORY_COMPONENT),
+        Version::new("1.0.0"),
+        vec![tailrace_seams::Artifact {
+            digest: artifact,
+            meta: meta("1.0.0"),
+        }],
+    )
+    .expect("an index of one artifact at its version");
+    let index = ok(store.put_artifact(&Manifest::Index(index)), "put-artifact").digest;
+    let named = |name: &str, version: &str| {
+        tailrace_seams::artifact_name(&eco, &EcosystemName::new(name), &Version::new(version))
+    };
+    let names = [
+        named("@acme/site", "1.0.0"),
+        named("@acme/site", "1.1.0+b.1"),
+        named("@acme/site-cli", "1.0.0"),
+    ];
+    for name in &names {
+        ok(store.name(name, &index, None), "name");
+    }
+    for name in &names {
+        assert_eq!(
+            settled(store, rig.settles_within(), name, &index, &[None]).as_ref(),
+            Ok(&index),
+            "{name} does not resolve to the index"
+        );
+    }
+    let mut listed = ok(
+        store.versions(&eco, &EcosystemName::new("@acme/site")),
+        "versions",
+    );
+    listed.sort();
+    assert_eq!(
+        listed,
+        [Version::new("1.0.0"), Version::new("1.1.0+b.1")],
+        "the versions of @acme/site are others"
+    );
+    assert_eq!(
+        store.versions(&eco, &EcosystemName::new("never-named")),
+        Ok(vec![]),
+        "a name never named lists something, or is not answered"
+    );
+}
+
 /// name's safety of the ledger: written before the name moves (33), and
 /// the name repaired from it, wherever the stale move left it (109, C.1).
 fn a_name_moved_from_a_stale_place_repaired_from_the_ledger(rig: &dyn StoreRig) {

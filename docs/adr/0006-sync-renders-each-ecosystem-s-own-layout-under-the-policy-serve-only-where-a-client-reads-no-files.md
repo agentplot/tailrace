@@ -28,6 +28,7 @@ Option 2. The statement fixes that a layout holds only what the policy admits (4
 
 ### Consequences
 
-- Maven, Go, Cargo, NuGet and Python need no server; npm does, and images serve the layout as a registry (C.11).
+- Maven, Go, NuGet and Python need no server; npm does, and images serve the layout as a registry (C.11).
+- Cargo is served from the host's one process as a sparse registry, since its lockfile then records one address, the process's, on every host (49, 114; C.11).
 - A consumer layout is never a source of truth and can be deleted (48, 63).
 - Plain pip beside PyPI is the dependency-confusion hole; uv's per-package index closes it, and whether plain pip is a supported client is open.

@@ -7,9 +7,11 @@
 
 use std::cell::RefCell;
 
+use tailrace_core::paths_hold;
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Holds, Layout, Not,
-    Output, Pinned, Projection, Range, Request, Requirement, Response, Seam, Source, Version, Why,
+    Answer, Artifact, ArtifactMeta, BuildId, CacheEntry, Component, ComponentName, Contents,
+    Digest, Holds, Layout, Not, Output, PackAt, Packed, Pin, Pinned, Projection, Range, Request,
+    Requirement, Response, Seam, Source, Version, Why,
 };
 
 use crate::seams::{absent, unreadable};
@@ -23,6 +25,20 @@ pub trait ProjectionRig: Rig {
 
     /// An output a build left, which the projection packs.
     fn output(&self) -> Output;
+
+    /// The component the output belongs to and its declared outputs, as
+    /// the build left them, the output among them (84, 123): by default a
+    /// component of the output alone, whose paths hold every path.
+    fn component(&self) -> (Component, Vec<Output>) {
+        let output = self.output();
+        let component = Component {
+            name: ComponentName::new(output.name.as_str()),
+            outputs: vec![output.name.clone()],
+            paths: vec!["**".into()],
+            prefix: format!("{}-v", output.name),
+        };
+        (component, vec![output])
+    }
 
     /// `n` artifacts in the projection's ecosystem, each of another
     /// version, held where the projection renders from.
@@ -186,6 +202,29 @@ const B7E1: &str = "b7e1";
 /// Another build identity, for a second cache entry.
 const C3D4: &str = "c3d4";
 
+/// `output` packed by the rig's projection at `build` as an artifact at
+/// `version`, given the rig's component, its outputs and its paths'
+/// match as a publish hands them (84, 123).
+fn packed_at(
+    rig: &dyn ProjectionRig,
+    output: &Output,
+    build: &BuildId,
+    version: &Version,
+) -> Answer<Packed> {
+    let (component, outputs) = rig.component();
+    let holds = paths_hold(&component.paths).expect("the rig's component's paths are globs");
+    rig.projection().pack(
+        output,
+        build,
+        Some(&PackAt {
+            version,
+            component: &component,
+            outputs: &outputs,
+            holds: &holds,
+        }),
+    )
+}
+
 /// Where the group renders a second layout of the same artifacts.
 const ELSEWHERE: &str = "layouts/conformance-elsewhere";
 
@@ -283,16 +322,10 @@ fn not_served(rig: &dyn ProjectionRig) {
 }
 
 fn packed_the_same_again(rig: &dyn ProjectionRig) {
-    let (projection, output, version) = (rig.projection(), rig.output(), Version::new("1.4.0"));
+    let (output, version) = (rig.output(), Version::new("1.4.0"));
     let at = BuildId::new(B7E1);
-    let first = ok(
-        projection.pack(&output, &at, Some(&version)),
-        "the first pack",
-    );
-    let second = ok(
-        projection.pack(&output, &at, Some(&version)),
-        "the second pack",
-    );
+    let first = ok(packed_at(rig, &output, &at, &version), "the first pack");
+    let second = ok(packed_at(rig, &output, &at, &version), "the second pack");
     for packed in [&first, &second] {
         let meta = packed
             .meta
@@ -383,8 +416,7 @@ fn a_projection_that_cannot_be_reached(rig: &dyn ProjectionRig) {
     let output = rig.output();
     let words = rig.unreachable();
     unreadable(
-        rig.projection()
-            .pack(&output, &BuildId::new(B7E1), Some(&Version::new("1.4.0"))),
+        packed_at(rig, &output, &BuildId::new(B7E1), &Version::new("1.4.0")),
         Seam::Projection,
         &words,
         "pack",
@@ -488,6 +520,7 @@ fn pinned_as_the_lockfile_spells_it(rig: &dyn ProjectionRig) {
     let (at, pins) = rig.checkout(true);
     assert!(!pins.is_empty(), "the rig's lockfile pins nothing");
     let pinned = ok(rig.projection().pinned(&at), "pinned");
+    let pins: Vec<Pin> = pins.into_iter().map(Pin::Version).collect();
     assert_eq!(
         pinned, pins,
         "pinned answered other names or versions than the lockfile pins"

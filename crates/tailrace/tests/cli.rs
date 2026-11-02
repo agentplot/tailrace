@@ -323,6 +323,15 @@ fn publish_prints_the_notes_beneath_the_versions_line_and_names_them_in_its_json
     let end = at + 2 + shown.len();
     assert_eq!(lines[at + 2..end], shown, "{printed}");
     assert!(lines[end].starts_with("  gate: "), "{printed}");
+
+    let artifact = &json["value"]["components"][0]["value"]["artifacts"][0];
+    let store_name = artifact["store_name"].as_str().expect("the store name");
+    assert_eq!(store_name, "artifact/eco/site@0.1.0");
+    let line = format!(
+        "  eco site {}, named {store_name}, from site by build site-build",
+        artifact["digest"].as_str().unwrap()
+    );
+    assert!(lines.contains(&line.as_str()), "{printed}");
 }
 
 // Requirement: Sync fills the checkout's cache from a landed revision

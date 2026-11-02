@@ -304,6 +304,57 @@ fn a_version_with_every_claim_the_channel_requires_moves_it_naming_the_claims_th
 }
 
 #[test]
+fn a_declared_components_version_is_promoted_by_its_component_and_tag() {
+    let Two { world, second, .. } = two();
+    let before = world.fakes.store.calls().len();
+    let (_, store) = moved(promoted(&world, &ask(to("0.2.0"))));
+    assert!(store.is_ok(), "{store:?}");
+    assert_eq!(
+        world::resolved_since(&world.fakes.store, before)[0],
+        "lib:lib-v0.2.0"
+    );
+    assert_eq!(
+        world.fakes.store.resolve(&channel_name(&stable())),
+        Ok(second)
+    );
+}
+
+#[test]
+fn an_undeclared_components_version_is_promoted_by_its_bare_tag() {
+    let world = World::with_policy(world::UNDECLARED);
+    let published = world.publish_one(&world.ask()).unwrap();
+    let index = index_of(&published, "0.1.0");
+    attach(&world, &index, GATE, ClaimKind::Acceptance, json!({}));
+    let stable = ChannelId::new(None, ChannelName::new("stable"));
+    world.fakes.policy.follows(&stable, false);
+    world.fakes.policy.require(
+        Audience::Channel(stable.clone()),
+        Required::Channel {
+            claims: vec![wanted(ClaimKind::Acceptance, vec![gate()])],
+            bound_to: None,
+            promoted_by: vec![gate()],
+            approvers: vec![],
+        },
+    );
+    world.fakes.signer.hold(&SignerId::new(GATE));
+    let before = world.fakes.store.calls().len();
+    let answer = promoted(
+        &world,
+        &PromoteAsk {
+            component: None,
+            ..ask(to("0.1.0"))
+        },
+    );
+    let (_, store) = moved(answer);
+    assert!(store.is_ok(), "{store:?}");
+    assert_eq!(
+        world::resolved_since(&world.fakes.store, before)[0],
+        "v0.1.0"
+    );
+    assert_eq!(world.fakes.store.resolve(&channel_name(&stable)), Ok(index));
+}
+
+#[test]
 fn the_ledgers_append_comes_before_every_store_write() {
     let Two { world, .. } = two();
     let before = world.fakes.store.calls().len();

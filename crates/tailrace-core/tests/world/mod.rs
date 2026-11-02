@@ -12,8 +12,8 @@ use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
     Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest,
     Ecosystem, Envelope, Held, IndexMeta, Layout, Manifest, Miss, Name, Outcome, Output,
-    OutputName, Packed, Pinned, Projection, Put, Range, Rendered, Report, Request, Requirement,
-    Response, Revision, Seam, SignerId, Source, Store, Verdict, Version,
+    OutputName, PackAt, Packed, Pin, Projection, Put, Range, Rendered, Report, Request,
+    Requirement, Response, Revision, Seam, SignerId, Source, Store, Verdict, Version,
 };
 
 use crate::common::{Fixture, Repo, CLIFF_TOML};
@@ -35,6 +35,10 @@ paths = ["site/**"]
 prefix = "web-v"
 projections = { site = "eco-a" }
 "#;
+
+/// A policy declaring no component: the one component's `site`, packed
+/// in `eco-a`, versioned under the rule's prefix `v` (123).
+pub const UNDECLARED: &str = "outputs = [\"site\"]\n[projections]\nsite = \"eco-a\"\n";
 
 pub const HOST: &str = "host";
 pub const LANDING: &str = "landing";
@@ -264,7 +268,7 @@ pub struct Watched<T, F: Fn() -> T> {
 }
 
 impl<T, F: Fn() -> T> Projection for Watched<T, F> {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         self.seen.borrow_mut().push((self.watch)());
         self.inner.pack(output, at, version)
     }
@@ -277,7 +281,7 @@ impl<T, F: Fn() -> T> Projection for Watched<T, F> {
         self.inner.serve(layout, request, miss)
     }
 
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.inner.pinned(checkout)
     }
 
@@ -288,6 +292,16 @@ impl<T, F: Fn() -> T> Projection for Watched<T, F> {
     fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
         self.inner.satisfying(range, versions)
     }
+}
+
+/// Every name `store` was asked to resolve since its call `since`, in
+/// the order asked.
+pub fn resolved_since(store: &FakeStore, since: usize) -> Vec<String> {
+    store.calls()[since..]
+        .iter()
+        .filter(|c| c.op == tailrace_fakes::StoreOp::Resolve)
+        .map(|c| c.given["name"].as_str().unwrap().to_string())
+        .collect()
 }
 
 /// The calls a fake build recorded, by operation.
@@ -338,6 +352,13 @@ impl Store for BeforeNotes {
     }
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.0.read(digest)
+    }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.0.versions(ecosystem, name)
     }
 }
 

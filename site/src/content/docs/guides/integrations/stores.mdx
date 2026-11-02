@@ -11,7 +11,7 @@ is not a store (73). Exactly one store is written by a publish (92).
 
 ## The contract
 
-The seam is seven operations (66 to 72). **put-bytes** takes bytes and
+The seam is eight operations (66 to 72, 138). **put-bytes** takes bytes and
 their digest and says whether the store held them already; the same
 bytes put twice are held once. **put-artifact** takes an artifact's
 metadata and the digests of its bytes and answers the artifact's digest,
@@ -22,23 +22,79 @@ a name to a digest only from the digest it is expected to be at, and
 otherwise refuses, naming the digest it is at; a name moved from nothing
 is a name made. **resolve** answers the digest a name names, or that it
 names nothing. **read** answers a digest's bytes, or that the digest is
-not held.
+not held. **versions**, given an ecosystem and a name, answers every
+version the store names that name at, the empty list where it names
+none, and unreadable only where the listing cannot be read, never an
+empty list for a read that failed (138).
+
+## Names
+
+A publish names each artifact of a version by its ecosystem, its name
+and its version, `artifact/<ecosystem>/<name>@<version>`, at the
+version's index: after the index is put and the publisher's layout
+policy attached to it, and before the version's own name, so every
+version the store names can be found by what a lockfile pins, and a
+consumer resolving the name finds on the index the claims a layout
+needs (113, 138). The name is built from the artifact alone and names no
+host, store, component, tag prefix or repository, so it is the same in
+every store (49). It is made from nothing and never moved: a publish
+reads every artifact's name first, leaves one already at this index,
+and refuses the version, naming the name and both indexes, where one is
+at another (70). A second publish of a revision makes any name the
+store lacks at its index, so a version published before artifacts were
+named gets its names the next time it is published.
+
+A version's own name is its tag, `v1.2.0`, where the repository declares
+no component, and `<component>:<tag>`, `lib:lib-v1.2.0`, where it
+declares one, so every store can tell whose version it is (125, C.1).
+The index names the revision it was published from and the publishing
+repository by the owner and name of its landed branch's remote, as the
+remote's address is written, in the annotations
+`org.opencontainers.image.revision` and
+`io.github.agentplot.tailrace.repository`; an index whose repository has
+no such remote names none, and one put before indexes named them keeps
+its bytes and its digest (13).
 
 ## Members
 
 | member | profile | how | status |
 |---|---|---|---|
-| Amazon ECR | C.1, an OCI registry | over the distribution protocol, everything in one declared repository; the credential from ECR's helper; proven by hand, outside the gate, by a push on 2026-10-25 | built |
+| Amazon ECR | C.1, an OCI registry | over the distribution protocol, under one declared repository; the credential from ECR's helper; proven by hand, outside the gate, by a push on 2026-10-25 | built |
 | GitHub Container Registry | C.1 | the same, under the owner's packages | designed |
 | Harbor | C.1 | the same, in a project of the operator's | designed |
 | zot | C.1 | the same, on a host or on object storage, attestations listed by its referrers API; proven in the gate | built |
 | the reference distribution | C.1 | the same, the smallest registry, with no referrers API, so attestations are listed by the referrers tag; proven in the gate | built |
 | an OCI layout on disk | C.2, an OCI image layout | a directory, every operation a file write under the digest's path; an artifact is an OCI manifest, an attestation an entry of `index.json` annotated with its subject, and a name an entry with a ref name, moved only from where it is | built |
 
-A registry holds everything in the one repository the host names, such
+A registry holds the store under the one repository the host names, such
 as `<account>.dkr.ecr.<region>.amazonaws.com/tailrace` or
-`localhost:5000/tailrace`, addressed by digest, and the store never makes
-a repository. An artifact is an OCI manifest whose artifact type names
+`localhost:5000/tailrace`, and the store never makes a repository. The
+declared repository holds every blob, artifact, index and attestation,
+addressed by digest, and the tags of a repository that declares no
+component; under it, three spaces a credential can be scoped to apart
+(C.1, 135; ADR 0023):
+
+- **A declared component's own repository**, `<declared>/<component>`:
+  its versions' tags, `lib-v1.2.0` for `lib:lib-v1.2.0`, and its
+  channels' names, `beta` for `channel/lib/beta`, are its tags, and each
+  of its indexes is held there from the publish that puts it.
+- **An artifact's name**, `<declared>/artifact/<ecosystem>/<name>`: the
+  version is its tag, so a name's versions are its tag list; the index
+  and everything it names are mounted into it from the declared
+  repository before the tag is put, or uploaded under their own digests
+  where a registry declines the mount.
+- **Cache entries**, `<declared>/cache/<build>`, one per build profile:
+  the build identity is the tag. A push puts its bytes there and asks
+  nothing of the declared repository, and a read by digest asks the
+  declared repository and then the cache repository.
+
+Each part of a repository's path is lowercased and escaped into one path
+component the distribution protocol allows, `@acme/site` written
+`0_40acme_2fsite`, and a path past 255 characters is refused naming it.
+A registry that makes repositories only by a creation template, ECR
+among them, refuses a put into one nobody made, and the refusal names
+the repository in the registry's own words (see
+[self-hosting](/tailrace/guides/self-hosting/)). An artifact is an OCI manifest whose artifact type names
 the ecosystem, whose layers are the ecosystem's own bytes and whose
 config is its own metadata, in exactly the bytes the layout writes, so
 one artifact has one digest in both (1). An attestation is a DSSE
@@ -48,7 +104,9 @@ layer the envelope, the statement's predicate type in its
 `in-toto.io/predicate-type` annotation. claims-of lists the subject's
 referrers of that type by the referrers API, or, where a registry has
 none, by the referrers tag the distribution specification defines in its
-place. A name is a tag, the name escaped into one. No registry refuses a
+place. A name is a tag, escaped into one where it holds a character a
+tag cannot, `1.0.0+build.1` written `1.0.0_2bbuild.1` and read back as
+written. No registry refuses a
 tag put by the digest it is expected to be at, so name reads the tag
 first and refuses a move from anywhere else as far as that read shows,
 and reads it back after the put, again while the registry still answers
@@ -57,7 +115,8 @@ a lost race, refused naming that digest and never retried (70, 109). A
 read can lag a put, as ECR's do, so nothing rests on the check: a
 channel's name found elsewhere is repaired from the ledger (109). A tag names only a manifest, so a
 cache entry's bytes are named through a cache manifest whose one layer
-is the bytes, and resolve answers the bytes' digest (100); a cache
+is the bytes, held in the cache repository, and resolve answers the
+bytes' digest (100); a cache
 manifest is no artifact, and claims-of never lists it. The credential is
 the host's, from its Docker configuration and the credential helpers it
 names, reached when the registry asks for one and kept nowhere (64).

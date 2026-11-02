@@ -20,8 +20,8 @@
 
 use tailrace_seams::{
     no_cache_entries, no_lockfile, no_serving, Answer, Artifact, BuildId, Contents, Layout, Miss,
-    Not, Output, Packed, Pinned, Projection, Range, Rendered, Request, Requirement, Response, Seam,
-    Source, Version, Why,
+    Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered, Request, Requirement, Response,
+    Seam, Source, Version, Why,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -185,9 +185,9 @@ impl Projection for ImageProjection {
     /// the version, packing the same again at every build identity;
     /// refused naming the output and what the file holds instead; absent
     /// for a cache entry, which it packs none of.
-    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let source = ImageProjection::source();
-        let Some(version) = version else {
+        let Some(&PackAt { version, .. }) = version else {
             return Err(no_cache_entries(&source));
         };
         let file = one_file(output, &source, ECOSYSTEM)?;
@@ -237,7 +237,7 @@ impl Projection for ImageProjection {
 
     /// 137: absent naming the lockfile for every checkout, since an image
     /// has no lockfile.
-    fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
         Err(no_lockfile(&ImageProjection::source()))
     }
 
@@ -259,7 +259,10 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use tailrace_seams::{ArtifactMeta, CacheEntry, Digest, Ecosystem, EcosystemName, OutputName};
+    use tailrace_fakes::Alone;
+    use tailrace_seams::{
+        ArtifactMeta, CacheEntry, Digest, Ecosystem, EcosystemName, OutputName, Pinned,
+    };
     use tempfile::TempDir;
 
     use super::*;
@@ -280,7 +283,7 @@ mod tests {
 
     /// `output` packed at `b7e1` with `version`.
     fn pack(output: &Output, version: &str) -> Answer<Packed> {
-        ImageProjection.pack(output, &b7e1(), Some(&Version::new(version)))
+        ImageProjection.pack(output, &b7e1(), Some(&Alone::new(output, version).at()))
     }
 
     /// The words of a refusal of `output`, once it names this profile.

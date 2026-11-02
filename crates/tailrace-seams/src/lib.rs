@@ -128,6 +128,9 @@ mod tests {
         fn read(&self, _: &Digest) -> Answer<Held> {
             nothing(Seam::Store, "read")
         }
+        fn versions(&self, _: &Ecosystem, _: &EcosystemName) -> Answer<Vec<Version>> {
+            nothing(Seam::Store, "versions")
+        }
     }
 
     impl Build for Nowhere {
@@ -167,7 +170,7 @@ mod tests {
     }
 
     impl Projection for Nowhere {
-        fn pack(&self, _: &Output, _: &BuildId, _: Option<&Version>) -> Answer<Packed> {
+        fn pack(&self, _: &Output, _: &BuildId, _: Option<&PackAt<'_>>) -> Answer<Packed> {
             nothing(Seam::Projection, "pack")
         }
         fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
@@ -176,7 +179,7 @@ mod tests {
         fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
             nothing(Seam::Projection, "serve")
         }
-        fn pinned(&self, _: &str) -> Answer<Vec<Pinned>> {
+        fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
             nothing(Seam::Projection, "pinned")
         }
         fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
@@ -250,6 +253,16 @@ mod tests {
             build: None,
             body: Value::Null,
         };
+        let site = Output {
+            name: OutputName::new("site"),
+            files: vec![],
+        };
+        let component = Component {
+            name: ComponentName::new("web"),
+            outputs: vec![site.name.clone()],
+            paths: vec!["**".into()],
+            prefix: "web-v".into(),
+        };
 
         let store: Box<dyn Store> = Box::new(Nowhere);
         let build: Box<dyn Build> = Box::new(Nowhere);
@@ -271,6 +284,7 @@ mod tests {
             asked(store.name(&Name::new("n"), &d, None)),
             asked(store.resolve(&Name::new("n"))),
             asked(store.read(&d)),
+            asked(store.versions(&Ecosystem::new("eco"), &EcosystemName::new("pkg"))),
             asked(build.ensure(&rev, &[OutputName::new("site")])),
             asked(build.report(&rev, &OutputName::new("site"))),
             asked(landing.landed(&Branch::new("main"), &rev)),
@@ -280,12 +294,14 @@ mod tests {
             asked(policy.policy_for(&rev, &Audience::Acceptance)),
             asked(policy.channels(&rev)),
             asked(projection.pack(
-                &Output {
-                    name: OutputName::new("site"),
-                    files: vec![],
-                },
+                &site,
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(&PackAt {
+                    version: &Version::new("1.0.0"),
+                    component: &component,
+                    outputs: std::slice::from_ref(&site),
+                    holds: &|_| true,
+                }),
             )),
             asked(projection.render(
                 Contents::Artifacts(&[Artifact {
@@ -335,7 +351,8 @@ mod tests {
                 "claims-of",
                 "name",
                 "resolve",
-                "read"
+                "read",
+                "versions"
             ]
         );
         assert_eq!(named(Seam::Build), ["ensure", "report"]);

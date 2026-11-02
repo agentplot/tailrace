@@ -1,9 +1,10 @@
 //! B.1 The store: bytes held by their digest, attestations beside them,
-//! and names moved only from where they are expected (66 to 73).
+//! names moved only from where they are expected, and the versions a
+//! name of an ecosystem is held at (66 to 73, 138).
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Answer, Digest, Envelope, Held, Manifest, Name};
+use crate::{Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, Version};
 
 /// What a put answers: the digest the store holds what it was given
 /// under, and whether it held it already (5, 66).
@@ -47,6 +48,13 @@ pub trait Store {
     /// 72: what `digest` holds, its bytes or its manifest (design D4);
     /// absent when the digest is not held.
     fn read(&self, digest: &Digest) -> Answer<Held>;
+
+    /// 138: the versions the store names `name` of `ecosystem` at, every
+    /// [`artifact_name`](crate::artifact_name) of the two it holds, in no
+    /// order the core relies on (23); the empty list where it holds none,
+    /// and unreadable only where the listing cannot be read, never an
+    /// empty list for a read that failed (rule core.19).
+    fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>>;
 }
 
 #[cfg(test)]

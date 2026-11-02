@@ -53,6 +53,28 @@ pub(crate) enum Pushed {
     Rejected(String),
 }
 
+/// 123: whether a component's `paths` hold a path of the repository,
+/// relative to its root, matched as git-cliff's own path filter matches
+/// a commit's changed files: a pattern ending `/` holding everything
+/// under it and a leading `./` dropped (ADR 0010). Unreadable naming the
+/// pattern with the parser's words where one is no glob.
+pub fn paths_hold(paths: &[String]) -> Answer<impl Fn(&str) -> bool> {
+    let patterns = paths
+        .iter()
+        .map(|path| {
+            let path = match path.strip_suffix('/') {
+                Some(dir) => format!("{dir}/**"),
+                None => path.clone(),
+            };
+            let path = path.strip_prefix("./").unwrap_or(&path);
+            Pattern::new(path).map_err(|e| {
+                Not::unreadable(&local(), format!("the paths {path}"), Some(e.to_string()))
+            })
+        })
+        .collect::<Answer<Vec<Pattern>>>()?;
+    Ok(move |path: &str| patterns.iter().any(|p| p.matches_path(Path::new(path))))
+}
+
 fn local() -> Source {
     Source::history(LOCAL)
 }

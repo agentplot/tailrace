@@ -354,6 +354,35 @@ fn a_registry_binds_a_store_named_by_its_repository() {
 }
 
 #[test]
+fn a_pushs_store_puts_bytes_into_the_cache_repository_and_no_other_commands_does() {
+    use crate::profiles::store::registry::stub::{Behaviour, Stub};
+    let stub = Stub::start(Behaviour::default(), &[]);
+    let host = Host::new();
+    host.write(&format!(
+        "[store]\nregistry = \"{}\"\n\n[landing]\nbranch = {{}}\n",
+        stub.repository("acme/store")
+    ));
+    for (command, repository) in [
+        (For::Push, "acme/store/cache/moon"),
+        (For::Publish, "acme/store"),
+        (For::Sync, "acme/store"),
+    ] {
+        let binding = host.bind(host.dir.path(), command).unwrap();
+        let before = stub.asked().len();
+        let bytes = format!("{command:?}'s bytes");
+        binding.seams.store.put_bytes(bytes.as_bytes()).unwrap();
+        let asked: Vec<_> = stub.asked()[before..]
+            .iter()
+            .map(|a| a.repository().map(str::to_string))
+            .collect();
+        assert!(
+            !asked.is_empty() && asked.iter().all(|r| r.as_deref() == Some(repository)),
+            "{command:?}: {asked:?}"
+        );
+    }
+}
+
+#[test]
 fn a_registry_named_by_what_is_no_repository_is_unreadable_naming_the_key_and_the_value() {
     let host = Host::new();
     for (value, names) in [("\"tailrace\"", "\"tailrace\""), ("5000", "5000")] {
@@ -502,7 +531,7 @@ fn a_file_naming_no_ledger_binds_the_git_ref_in_the_repository() {
         .keys()
         .map(|e| e.as_str())
         .collect();
-    assert_eq!(ecosystems, ["file", "image", "moon-cache", "npm"]);
+    assert_eq!(ecosystems, ["cargo", "file", "image", "moon-cache", "npm"]);
 }
 
 /// A repository in the host's directory, made with git, and its path.

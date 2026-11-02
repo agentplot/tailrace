@@ -23,8 +23,9 @@ use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, ChannelId, ChannelName, Check,
     Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Envelope,
     Environment, EnvironmentName, IndexMeta, Layout, Manifest, Miss, Name, NamedSigner, Outcome,
-    Output, OutputName, Packed, Pinned, Projection, Range, Rendered, Report, Request, Requirement,
-    Response, Revision, Seam, Seams, Signer, SignerId, Source, Store, Verdict, Version,
+    Output, OutputName, PackAt, Packed, Pin, Pinned, Projection, Range, Rendered, Report, Request,
+    Requirement, Response, Revision, Seam, Seams, Signer, SignerId, Source, Store, Verdict,
+    Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -403,7 +404,9 @@ impl FakeWorld {
                         to: serde_json::from_value(read("to")).ok()?,
                         expected: serde_json::from_value(read("expected")).ok()?,
                     },
-                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read => return None,
+                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read | StoreOp::Versions => {
+                        return None
+                    }
                 })
             })
             .collect()
@@ -622,7 +625,7 @@ struct Watched {
 }
 
 impl Projection for Watched {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let packed = self.inner.pack(output, at, version);
         if let (
             Ok(Packed {
@@ -633,7 +636,7 @@ impl Projection for Watched {
         {
             self.packs.borrow_mut().push(Packing {
                 ecosystem: meta.ecosystem().clone(),
-                version: version.clone(),
+                version: version.version.clone(),
                 shared_tags: self.shared.tags(),
             });
         }
@@ -648,7 +651,7 @@ impl Projection for Watched {
         self.inner.serve(layout, request, miss)
     }
 
-    fn pinned(&self, checkout: &str) -> Answer<Vec<Pinned>> {
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
         self.inner.pinned(checkout)
     }
 
