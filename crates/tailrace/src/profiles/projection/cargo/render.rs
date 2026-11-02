@@ -1,5 +1,6 @@
-//! render (85, 48; design D5): a Cargo local registry at the place
-//! given, holding exactly the crates given. Every artifact is checked
+//! render (85, 48; design D8): a Cargo sparse registry at the place
+//! given, holding exactly the crates given, naming no address: the
+//! configuration that names one is the server's (design D9). Every artifact is checked
 //! before anything is written: of the ecosystem `cargo`, its manifest
 //! naming one layer, the layer's bytes of that digest, and the crate's
 //! own manifest naming the artifact's name and version. Then each crate
@@ -20,7 +21,7 @@ use tailrace_seams::{
 use super::crate_file::{self, CrateManifest};
 use super::{index, CargoProjection, ECOSYSTEM};
 
-/// Where a local registry keeps its index, under its root.
+/// Where a registry keeps its index, under its root.
 pub(super) const INDEX: &str = "index";
 
 /// What a crate's file name ends with.
@@ -37,8 +38,8 @@ struct Checked {
 }
 
 impl CargoProjection {
-    /// 85: the local registry of `artifacts` at `at`, and the versions it
-    /// holds, in the order given.
+    /// 85: the registry of `artifacts` at `at`, and the versions it holds,
+    /// in the order given.
     pub(super) fn render_crates(&self, artifacts: &[Artifact], at: &str) -> Answer<Rendered> {
         let mut checked: Vec<Checked> = Vec::new();
         for artifact in artifacts {
@@ -430,7 +431,7 @@ mod tests {
         }
     }
 
-    // Requirement: A local registry rendered from the store
+    // Requirement: A sparse registry rendered from the store
 
     #[test]
     fn the_layout_holds_exactly_the_crates_given_with_lines_in_cargos_order() {

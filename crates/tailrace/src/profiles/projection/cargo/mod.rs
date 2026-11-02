@@ -1,14 +1,22 @@
-//! The projection for Cargo (C.11; ADR 0006): a crate packed by Cargo's
-//! own packager, and a local registry rendered from the store, which a
-//! consumer's Cargo reads through source replacement.
+//! The projection for Cargo (C.11; ADR 0006): a crate packed alone by
+//! Cargo's own packager without its own lockfile, its siblings at the
+//! component's version and another component's crates at the requirement
+//! their manifests write; a checkout's lockfile pins and its manifests'
+//! ranges, answered with or without a lockfile; what a held crate
+//! requires of the family, and which versions a range admits, newest
+//! first, by Cargo's rules; and a sparse registry rendered from the store
+//! and served from the host's one process, in the one shape of request,
+//! response and miss every projection serves in (84 to 87, 115, 137,
+//! 140; design D3, D5, D8, D9).
 //!
 //! | module | what |
 //! |---|---|
-//! | `pack` | the version written into the manifest that holds it, `cargo package`, the manifest written back (84, 87) |
-//! | `render` | a local registry holding exactly the crates given, each checked before anything is written (85, 48) |
+//! | `pack` | the component's version written into the package and its siblings, a crate of another component checked against the store's versions at its requirement, `cargo package` without the crate's lockfile, every manifest written back (84, 87, 110, 123) |
+//! | `render` | a sparse registry holding exactly the crates given, each checked before anything is written (85, 48) |
+//! | `serve` | Cargo's sparse protocol from the layout: its configuration, its index files, and each crate, one it lacks asked of the core (86, 115, 99) |
 //! | `index` | a crate's index line, from its normalized manifest |
 //! | `crate_file` | a crate's normalized manifest, read from its bytes |
-//! | `pinned` | the versions a checkout's `Cargo.lock` pins from a registry, and the ranges its manifests declare in `tailrace` for names it pins none of (137) |
+//! | `pinned` | the versions a checkout's `Cargo.lock` pins from a registry, and the ranges its manifests declare in `tailrace` for names it pins none of, with or without a lockfile (137) |
 //! | `requires` | what a held crate requires of the family, from its normalized manifest (140) |
 //! | `satisfying` | the versions within a range, newest first, by Cargo's rules (140, 23) |
 //!
@@ -108,8 +116,9 @@ impl Projection for CargoProjection {
         })
     }
 
-    /// 85, 48: a local registry at `at` holding exactly `contents`' crates,
-    /// each read through the store and checked before anything is written.
+    /// 85, 48: a sparse registry at `at` holding exactly `contents`'
+    /// crates, each read through the store and checked before anything is
+    /// written, and naming no address (design D8).
     fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
         let Contents::Artifacts(artifacts) = contents else {
             return Err(no_cache_entries(&CargoProjection::source()));
