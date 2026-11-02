@@ -1,0 +1,4 @@
+#!/bin/sh
+# A stand-in git: logs each call and fails; the pane runs none.
+printf '%s\n' "$*" >>"$FAKE/git-calls"
+exit 1

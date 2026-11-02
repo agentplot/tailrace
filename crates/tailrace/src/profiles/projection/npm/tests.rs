@@ -8,8 +8,8 @@ use serde_json::json;
 use sha1::Digest as _;
 use tailrace_fakes::{FakeStore, Fault, StoreOp, Times};
 use tailrace_seams::{
-    Contents, Digest, EcosystemName, Held, Holds, Manifest, Not, Projection, Range, Requirement,
-    Store, Version, Why,
+    Contents, Digest, EcosystemName, Held, Holds, Layout, Manifest, Not, Pinned, Projection, Range,
+    Request, Requirement, Response, Store, Version, Why,
 };
 use tempfile::TempDir;
 
@@ -508,4 +508,221 @@ fn cache_entries_are_absent_and_another_ecosystem_is_refused() {
         Err(Not::Refused(_))
     ));
     assert!(!at.exists(), "a refused render made the layout");
+}
+
+const BASE: &str = "http://127.0.0.1:7420/agentplot/consumer/npm";
+
+fn get(path: &str) -> Request {
+    Request {
+        method: "GET".into(),
+        path: path.into(),
+        base: BASE.into(),
+    }
+}
+
+/// The core asked nothing: a miss that fails the test where it is called.
+fn no_miss(pin: &Pinned) -> tailrace_seams::Answer<()> {
+    panic!("the core was asked for {} {}", pin.name, pin.version)
+}
+
+/// The `error` of a response npm reads as no answer of what it asked.
+fn error_of(response: &Response) -> String {
+    assert_eq!(response.content_type, "application/json");
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    body["error"].as_str().unwrap().to_string()
+}
+
+/// A layout in the rig rendered holding `@family/widget` `1.4.0`, and its
+/// place.
+fn served(rig: &Rig) -> (std::path::PathBuf, tailrace_seams::Artifact) {
+    let at = rig.dir.path().join(".tailrace/layouts/npm");
+    let held = widget(rig, "1.4.0");
+    rig.projection()
+        .render(
+            Contents::Artifacts(std::slice::from_ref(&held)),
+            at.to_str().unwrap(),
+        )
+        .unwrap();
+    (at, held)
+}
+
+fn layout(at: &std::path::Path) -> Layout {
+    Layout {
+        at: at.display().to_string(),
+    }
+}
+
+#[test]
+fn a_scoped_packument_is_asked_as_npm_escapes_it_and_names_absolute_tarballs() {
+    let rig = Rig::new();
+    let (at, _) = served(&rig);
+    for path in ["@family%2fwidget", "%40family%2Fwidget", "@family/widget"] {
+        let response = rig
+            .projection()
+            .serve(&layout(&at), &get(path), &no_miss)
+            .unwrap();
+        assert_eq!(response.status, 200, "{path}");
+        assert_eq!(response.content_type, "application/json");
+        let packument: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(packument["name"], "@family/widget");
+        assert_eq!(
+            packument["versions"]["1.4.0"]["dist"]["tarball"],
+            "http://127.0.0.1:7420/agentplot/consumer/npm/@family/widget/-/widget-1.4.0.tgz"
+        );
+    }
+    assert_eq!(
+        packument(&at, "@family/widget")["versions"]["1.4.0"]["dist"]["tarball"],
+        "@family/widget/-/widget-1.4.0.tgz",
+        "serving wrote its base into the layout"
+    );
+}
+
+#[test]
+fn a_held_tarball_is_its_bytes_and_asks_the_core_nothing() {
+    let rig = Rig::new();
+    let (at, _) = served(&rig);
+    let response = rig
+        .projection()
+        .serve(
+            &layout(&at),
+            &get("@family/widget/-/widget-1.4.0.tgz"),
+            &no_miss,
+        )
+        .unwrap();
+    assert_eq!(response.status, 200);
+    assert_eq!(response.content_type, "application/octet-stream");
+    assert_eq!(
+        response.body,
+        fs::read(at.join("@family/widget/-/widget-1.4.0.tgz")).unwrap()
+    );
+}
+
+#[test]
+fn a_missed_tarball_the_core_admits_is_asked_once_and_answered_from_the_layout() {
+    let rig = Rig::new();
+    let (at, held) = served(&rig);
+    let lacked = widget(&rig, "1.3.0");
+    let projection = rig.projection();
+    let asked = std::cell::RefCell::new(Vec::new());
+    let miss = |pin: &Pinned| {
+        asked.borrow_mut().push(pin.clone());
+        projection
+            .render(
+                Contents::Artifacts(&[held.clone(), lacked.clone()]),
+                at.to_str().unwrap(),
+            )
+            .map(|_| ())
+    };
+    let response = projection
+        .serve(
+            &layout(&at),
+            &get("@family/widget/-/widget-1.3.0.tgz"),
+            &miss,
+        )
+        .unwrap();
+    assert_eq!(
+        asked.into_inner(),
+        [Pinned {
+            name: EcosystemName::new("@family/widget"),
+            version: Version::new("1.3.0"),
+        }]
+    );
+    assert_eq!(response.status, 200);
+    assert_eq!(
+        response.body,
+        fs::read(at.join("@family/widget/-/widget-1.3.0.tgz")).unwrap()
+    );
+}
+
+#[test]
+fn a_missed_tarball_the_core_answers_otherwise_is_its_status_and_words() {
+    let rig = Rig::new();
+    let (at, _) = served(&rig);
+    let source = tailrace_seams::Source::new(tailrace_seams::Seam::Policy, "the policy");
+    let refused = Not::refused(
+        &source,
+        Why::Said,
+        Some("npm @family/widget 1.2.0 wants a claim of acceptance".into()),
+    );
+    let answers = [
+        (refused, 403),
+        (
+            Not::absent(&source, "artifact/npm/@family/widget@1.2.0"),
+            404,
+        ),
+        (
+            Not::unreadable(&source, "the store", Some("connection refused".into())),
+            502,
+        ),
+    ];
+    for (not, status) in answers {
+        let asked = std::cell::Cell::new(0);
+        let miss = |_: &Pinned| {
+            asked.set(asked.get() + 1);
+            Err(not.clone())
+        };
+        let response = rig
+            .projection()
+            .serve(
+                &layout(&at),
+                &get("@family/widget/-/widget-1.2.0.tgz"),
+                &miss,
+            )
+            .unwrap();
+        assert_eq!(asked.get(), 1);
+        assert_eq!(response.status, status, "{not}");
+        assert_eq!(error_of(&response), not.to_string());
+        let packument = rig
+            .projection()
+            .serve(&layout(&at), &get("@family%2fwidget"), &no_miss)
+            .unwrap();
+        let packument: serde_json::Value = serde_json::from_slice(&packument.body).unwrap();
+        let listed: Vec<&String> = packument["versions"].as_object().unwrap().keys().collect();
+        assert_eq!(listed, ["1.4.0"], "after {status}");
+    }
+}
+
+#[test]
+fn a_package_the_layout_holds_no_version_of_is_404_and_asks_the_core_nothing() {
+    let rig = Rig::new();
+    let (at, _) = served(&rig);
+    let response = rig
+        .projection()
+        .serve(&layout(&at), &get("@family%2fnew"), &no_miss)
+        .unwrap();
+    assert_eq!(response.status, 404);
+    let words = error_of(&response);
+    assert!(words.contains("@family/new"), "{words}");
+    assert!(words.contains("holds no version"), "{words}");
+    assert!(words.contains("tailrace sync"), "{words}");
+    assert!(words.contains("package.json"), "{words}");
+}
+
+#[test]
+fn another_method_is_405_and_another_path_404() {
+    let rig = Rig::new();
+    let (at, _) = served(&rig);
+    let post = Request {
+        method: "POST".into(),
+        ..get("@family%2fwidget")
+    };
+    let response = rig
+        .projection()
+        .serve(&layout(&at), &post, &no_miss)
+        .unwrap();
+    assert_eq!(response.status, 405);
+    assert!(error_of(&response).contains("POST"));
+    for path in [
+        "",
+        "-/v1/search",
+        "@family/widget/-/other-1.4.0.tgz",
+        "../x",
+    ] {
+        let response = rig
+            .projection()
+            .serve(&layout(&at), &get(path), &no_miss)
+            .unwrap();
+        assert_eq!(response.status, 404, "{path}");
+        error_of(&response);
+    }
 }

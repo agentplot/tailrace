@@ -72,8 +72,8 @@ use serde_json::{json, Value};
 use tailrace_seams::{
     no_serving, Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, Check, Claim,
     ClaimKind, Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest,
-    NamedSigner, Not, Pin, Pinned, Policy, Request, Required, RequiredClaim, Revision, Seam, Seams,
-    SignerId, Source, Store, Version, Why,
+    NamedSigner, Not, Pin, Pinned, Policy, Projection, Request, Required, RequiredClaim, Revision,
+    Seam, Seams, SignerId, Source, Store, Version, Why,
 };
 
 use crate::verify::{tell, Told};
@@ -1239,10 +1239,18 @@ fn served_at(
         Ok(address) => address.trim_end_matches('/').to_string(),
         Err(_) => format!("{}{ecosystem}", origin()),
     };
+    serves(projection, at, &base).then_some(address)
+}
+
+/// 86: whether `projection` serves the layout at `at`: asked once to
+/// serve the empty path under `base`, whose answer absent naming serving
+/// says it serves none (design D10, D11). The probe asks the core for no
+/// version and reads nothing but what the projection reads to answer it.
+pub fn serves(projection: &dyn Projection, at: &str, base: &str) -> bool {
     let probe = Request {
         method: "GET".into(),
         path: String::new(),
-        base,
+        base: base.to_string(),
     };
     let none = |pin: &Pinned| {
         Err(Not::absent(
@@ -1254,10 +1262,10 @@ fn served_at(
         ))
     };
     let layout = Layout { at: at.to_string() };
-    match projection.serve(&layout, &probe, &none) {
-        Err(not) if not == no_serving(not.source()) => None,
-        _ => Some(address),
-    }
+    !matches!(
+        projection.serve(&layout, &probe, &none),
+        Err(not) if not == no_serving(not.source())
+    )
 }
 
 /// The versions `pins` names, in the order given; a range is held at

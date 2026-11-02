@@ -271,6 +271,10 @@ in
   packages = [
     pkgs.git
     pkgs.jq
+    # The herdr plugin's tests run its scripts under dash, Debian's /bin/sh,
+    # and its pane asks the serving process with curl.
+    pkgs.dash
+    pkgs.curl
     pkgs.git-cliff
     proto
     # The site (site/): bun builds it, and Playwright drives the headless

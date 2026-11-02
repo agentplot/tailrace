@@ -15,14 +15,13 @@ use tailrace_seams::{
     Version,
 };
 
-use super::not_built;
-
 mod family;
 #[cfg(test)]
 mod fixture;
 mod layout;
 mod lockfile;
 mod pack;
+mod serve;
 mod tarball;
 #[cfg(test)]
 mod tests;
@@ -98,8 +97,15 @@ impl Projection for NpmProjection {
         }
     }
 
-    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
-        Err(not_built("serve", ECOSYSTEM, &NpmProjection::source()))
+    /// 86, 46, 115, 99: `request`, one of npm's own, answered from the
+    /// layout in npm's registry protocol: a packument by its name, from
+    /// the layout alone, its tarballs' addresses made absolute under the
+    /// request's base, and a tarball by the path its packument names, one
+    /// the layout lacks asked of the core once through `miss` (design
+    /// D9). Every answer npm reads is a response, a refusal, an absence or
+    /// an unreadable answer one whose `error` carries its words.
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        serve::serve(layout, request, miss)
     }
 
     /// 137: every package the checkout's `npm-shrinkwrap.json`, else

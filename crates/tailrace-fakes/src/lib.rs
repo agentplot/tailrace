@@ -245,7 +245,7 @@ mod tests {
             .is_ok());
         let request = Request {
             method: "GET".into(),
-            path: format!("{}@{}", artifact.meta.name(), artifact.meta.version()),
+            path: format!("{}/{}", artifact.meta.name(), artifact.meta.version()),
             base: "http://127.0.0.1:7420/o/r/eco-b".into(),
         };
         let rendered = projection

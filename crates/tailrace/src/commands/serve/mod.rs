@@ -11,8 +11,15 @@
 //! there, and `/<owner>/<name>/status` its page; `/status.json` is every
 //! repository the host's file names, one row each made by the core from
 //! its status answer, and `/` their page. No row is kept between
-//! requests and no timer renders one (132). Its working directory is the
-//! state directory, never a checkout (114).
+//! requests and no timer renders one (132). Under
+//! `/<owner>/<name>/<ecosystem>/` it answers that checkout's served
+//! layout of the ecosystem: the request is handed, with the base it was
+//! asked at, to the projection the checkout binds for the ecosystem, which
+//! answers it in its client's own protocol, a version the layout lacks
+//! rendered into it by the core on the request, and the response is
+//! answered as given, bytes and all (86, 114, 115; design D2). The process
+//! holds no layout of its own. Its working directory is the state
+//! directory, never a checkout (114).
 
 use std::io::{self, BufRead as _, BufReader, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
@@ -24,10 +31,14 @@ use std::time::{Duration, Instant};
 use clap::Args;
 use serde::Serialize;
 use tailrace_core::{
-    answer_json, row, Overview, Repositories, RepositoryName, SERVING_HOST, SERVING_PORT,
+    answer_json, layout_address, miss, place, row, History, Layouts, MissAsk, Overview,
+    Repositories, RepositoryName, SERVING_HOST, SERVING_PORT,
 };
-use tailrace_seams::{Answer, Not, Seam, Source};
+use tailrace_seams::{
+    no_serving, Answer, Branch, Ecosystem, Layout, Not, Pinned, Request, Seam, Source,
+};
 
+use crate::bindings::For;
 use crate::commands::status::{now, overview_in};
 use crate::{render, Binding, REVISION};
 
@@ -96,13 +107,37 @@ fn serving(address: SocketAddr) -> Source {
     Source::new(Seam::Host, format!("serve at http://{address}"))
 }
 
-/// 114: the serving process at `address` over `host`, ending once
-/// nothing has asked for `idle`. It takes the host's serving lock before
-/// it binds the address, and answers [`Served::Held`] at once where
-/// another holds it; an address that cannot be bound is unreadable
-/// naming it with the system's words (59). The lock is let go as it
-/// returns.
+/// 114, 115: the serving process at `address` over `host`, each checkout
+/// bound as the host binds it ([`Host::bind_for`]), ending once nothing
+/// has asked for `idle` and no checkout the host's file names holds a
+/// rendered layout its projection serves ([`host::serves_a_layout`]);
+/// while one does, the idle time starts again, since the ecosystem's
+/// client cannot start the process (design D11). It takes the host's
+/// serving lock before it binds the address, and answers
+/// [`Served::Held`] at once where another holds it; an address that
+/// cannot be bound is unreadable naming it with the system's words (59).
+/// The lock is let go as it returns.
 pub fn serve_on(address: SocketAddr, host: &Host, idle: Duration) -> Answer<Served> {
+    let bound = host.clone();
+    serve_with(
+        address,
+        host,
+        idle,
+        Arc::new(move |checkout: &Path, command| bound.bind_for(checkout, command)),
+    )
+}
+
+/// How the process binds a checkout on any of its threads.
+pub type Binder = Arc<dyn Fn(&Path, For) -> Answer<Binding> + Send + Sync>;
+
+/// [`serve_on`] with each checkout bound by `bind`, for its requests and
+/// for whether a layout is served: a test binds over fakes.
+pub fn serve_with(
+    address: SocketAddr,
+    host: &Host,
+    idle: Duration,
+    bind: Binder,
+) -> Answer<Served> {
     let lock = host::serving_lock(host)?;
     let lock_path = host.state.join(host::SERVING);
     // A process spawned at the moment the last holder let go may hold a
@@ -141,13 +176,18 @@ pub fn serve_on(address: SocketAddr, host: &Host, idle: Duration) -> Answer<Serv
                 *asked.lock().expect("the moment asked") = Instant::now();
                 let host = host.clone();
                 let asked = Arc::clone(&asked);
+                let bind = Arc::clone(&bind);
                 thread::spawn(move || {
-                    connection(stream, &host);
+                    connection(stream, &host, &*bind);
                     *asked.lock().expect("the moment asked") = Instant::now();
                 });
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 if asked.lock().expect("the moment asked").elapsed() >= idle {
+                    if host::serves_a_layout(host, &*bind) {
+                        *asked.lock().expect("the moment asked") = Instant::now();
+                        continue;
+                    }
                     drop(listener);
                     drop(lock);
                     return Ok(Served::Idle);
@@ -161,13 +201,17 @@ pub fn serve_on(address: SocketAddr, host: &Host, idle: Duration) -> Answer<Serv
 }
 
 /// One request on `stream`, answered and the connection closed.
-fn connection(stream: TcpStream, host: &Host) {
-    let response = match request(&stream) {
-        Ok((method, target)) => respond(host, &method, &target),
-        Err(said) => Response::text(400, format!("a request it cannot read: {said}\n")),
-    };
+fn connection(stream: TcpStream, host: &Host, bind: Bind<'_>) {
     let mut stream = stream;
-    let _ = response.write(&mut stream);
+    let _ = match request(&stream) {
+        Ok((method, target)) if method == "HEAD" => {
+            respond_with(host, bind, &method, &target).write_head(&mut stream)
+        }
+        Ok((method, target)) => respond_with(host, bind, &method, &target).write(&mut stream),
+        Err(said) => {
+            Response::text(400, format!("a request it cannot read: {said}\n")).write(&mut stream)
+        }
+    };
 }
 
 /// The method and target of the request on `stream`, its head read to
@@ -194,20 +238,21 @@ fn request(stream: &TcpStream) -> Result<(String, String), String> {
     }
 }
 
-/// What the process answers a request with.
+/// What the process answers a request with: its status, the type of its
+/// body, and the body's bytes, a projection's as it answered them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Response {
     pub status: u16,
-    pub content_type: &'static str,
-    pub body: String,
+    pub content_type: String,
+    pub body: Vec<u8>,
 }
 
 impl Response {
     fn text(status: u16, body: String) -> Response {
         Response {
             status,
-            content_type: "text/plain; charset=utf-8",
-            body,
+            content_type: "text/plain; charset=utf-8".into(),
+            body: body.into_bytes(),
         }
     }
 
@@ -216,16 +261,16 @@ impl Response {
         body.push('\n');
         Response {
             status,
-            content_type: "application/json",
-            body,
+            content_type: "application/json".into(),
+            body: body.into_bytes(),
         }
     }
 
     fn html(status: u16, body: String) -> Response {
         Response {
             status,
-            content_type: "text/html; charset=utf-8",
-            body,
+            content_type: "text/html; charset=utf-8".into(),
+            body: body.into_bytes(),
         }
     }
 
@@ -233,24 +278,38 @@ impl Response {
         match self.status {
             200 => "OK",
             400 => "Bad Request",
+            403 => "Forbidden",
             404 => "Not Found",
             405 => "Method Not Allowed",
+            502 => "Bad Gateway",
             _ => "Internal Server Error",
         }
     }
 
-    /// The response as HTTP/1.1, the connection closed after it.
+    /// The response as HTTP/1.1, its `Content-Length` its body's length
+    /// in bytes, the connection closed after it.
     pub fn write(&self, out: &mut dyn Write) -> io::Result<()> {
+        self.head(out)?;
+        out.write_all(&self.body)?;
+        out.flush()
+    }
+
+    /// The response to a `HEAD`: its head alone, its `Content-Length` the
+    /// length of the body it leaves out.
+    pub fn write_head(&self, out: &mut dyn Write) -> io::Result<()> {
+        self.head(out)?;
+        out.flush()
+    }
+
+    fn head(&self, out: &mut dyn Write) -> io::Result<()> {
         write!(
             out,
-            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
             self.status,
             self.reason(),
             self.content_type,
             self.body.len(),
-            self.body
-        )?;
-        out.flush()
+        )
     }
 }
 
@@ -264,24 +323,33 @@ fn status_of<T>(answer: &Answer<T>) -> u16 {
     }
 }
 
+/// How the process binds a checkout for a command: as the host binds it,
+/// or, in a test, over fakes.
+pub type Bind<'a> = &'a dyn Fn(&Path, For) -> Answer<Binding>;
+
 /// `method` of `target` asked of `host`'s process, each checkout bound
 /// as `host` binds it.
 pub fn respond(host: &Host, method: &str, target: &str) -> Response {
-    respond_with(host, &|checkout| host.bind(checkout), method, target)
+    respond_with(
+        host,
+        &|checkout, command| host.bind_for(checkout, command),
+        method,
+        target,
+    )
 }
 
 /// `method` of `target` asked of `host`'s process, each checkout bound by
-/// `bind`: the routes of design D6, `GET` alone.
-pub fn respond_with(
-    host: &Host,
-    bind: &dyn Fn(&Path) -> Answer<Binding>,
-    method: &str,
-    target: &str,
-) -> Response {
+/// `bind`, status's binding for its routes and sync's for a served layout:
+/// the routes of design D6, `GET` alone, and the served layout's of
+/// design D2, whose method its projection answers.
+pub fn respond_with(host: &Host, bind: Bind<'_>, method: &str, target: &str) -> Response {
+    let path = target.split_once('?').map_or(target, |(path, _)| path);
+    if let Some((repository, ecosystem, rest)) = served_layout(path) {
+        return layout(host, bind, &repository, &ecosystem, method, rest);
+    }
     if method != "GET" {
         return Response::text(405, format!("{method} is not answered; only GET is\n"));
     }
-    let path = target.split_once('?').map_or(target, |(path, _)| path);
     if path == "/serving.json" {
         return Response::json(
             200,
@@ -323,19 +391,113 @@ pub fn respond_with(
     }
 }
 
+/// The repository, ecosystem and the rest of `path` where it names a
+/// served layout: `/<owner>/<name>/<ecosystem>/<rest>`, or exactly
+/// `/<owner>/<name>/<ecosystem>` with `rest` empty, `<ecosystem>` any
+/// name but the status routes' own three-part paths (design D2).
+fn served_layout(path: &str) -> Option<(RepositoryName, Ecosystem, &str)> {
+    let parts: Vec<&str> = path.strip_prefix('/')?.splitn(4, '/').collect();
+    let (owner, name, ecosystem, rest) = match parts[..] {
+        [_, _, "status" | "status.json"] => return None,
+        [owner, name, ecosystem] => (owner, name, ecosystem, ""),
+        [owner, name, ecosystem, rest] => (owner, name, ecosystem, rest),
+        _ => return None,
+    };
+    if owner.is_empty() || name.is_empty() || ecosystem.is_empty() {
+        return None;
+    }
+    let repository = RepositoryName {
+        owner: owner.to_string(),
+        name: name.to_string(),
+    };
+    Some((repository, Ecosystem::new(ecosystem), rest))
+}
+
+/// 86, 114, 115: `method` of `rest` below the served layout of
+/// `ecosystem` in the checkout that last named `repository`, bound for
+/// sync: handed to the projection bound for the ecosystem with the base
+/// the layout is served at, which answers the method as its client's
+/// protocol does, and its response answered as given (design D2). A version
+/// the layout lacks is rendered into it by the core on the request, under
+/// the policy a sync with no argument would use there (design D4). A
+/// repository none named is its absent answer and a checkout that cannot
+/// be bound its binding's, each in text; an ecosystem the checkout binds
+/// no projection for, or whose projection serves none, `404` naming it.
+fn layout(
+    host: &Host,
+    bind: Bind<'_>,
+    repository: &RepositoryName,
+    ecosystem: &Ecosystem,
+    method: &str,
+    rest: &str,
+) -> Response {
+    let words =
+        |not: Not| Response::text(status_of(&Err::<(), _>(not.clone())), format!("{not}\n"));
+    let checkout = match host::checkout_of(host, repository) {
+        Ok(checkout) => checkout,
+        Err(not) => return words(not),
+    };
+    let binding = match bind(&checkout, For::Sync) {
+        Ok(binding) => binding,
+        Err(not) => return words(not),
+    };
+    let serves_none = || {
+        Response::text(
+            404,
+            format!("the checkout of {repository} serves no {ecosystem} layout\n"),
+        )
+    };
+    let Some(projection) = binding.seams.projection(ecosystem) else {
+        return serves_none();
+    };
+    let history = match History::open(&checkout) {
+        Ok(history) => history,
+        Err(not) => return words(not),
+    };
+    let tree = history.workdir().unwrap_or_else(|| checkout.clone());
+    let main = Branch::new("main");
+    let on_miss = |pin: &Pinned| {
+        let ask = MissAsk {
+            branch: main.clone(),
+            revision: history.base(&main)?,
+            ecosystem: ecosystem.clone(),
+            tree: tree.clone(),
+            pin: pin.clone(),
+            trusted: binding.trust.clone(),
+            when: now(),
+        };
+        miss(&binding.seams, &Layouts::at(&history), &ask).map(|_| ())
+    };
+    let request = Request {
+        method: method.to_string(),
+        path: rest.to_string(),
+        base: layout_address(repository, ecosystem)
+            .trim_end_matches('/')
+            .to_string(),
+    };
+    let at = Layout {
+        at: place(&tree, ecosystem).display().to_string(),
+    };
+    match projection.serve(&at, &request, &on_miss) {
+        Ok(response) => Response {
+            status: response.status,
+            content_type: response.content_type,
+            body: response.body,
+        },
+        Err(not) if not == no_serving(not.source()) => serves_none(),
+        Err(not) => words(not),
+    }
+}
+
 fn not_found(path: &str) -> Response {
     Response::text(404, format!("{path} is not answered here\n"))
 }
 
 /// 57, 132: the status answer in the checkout that last named
 /// `repository`, as `tailrace status --json` makes it there.
-fn overview_of(
-    host: &Host,
-    bind: &dyn Fn(&Path) -> Answer<Binding>,
-    repository: &RepositoryName,
-) -> Answer<Overview> {
+fn overview_of(host: &Host, bind: Bind<'_>, repository: &RepositoryName) -> Answer<Overview> {
     let checkout = host::checkout_of(host, repository)?;
-    overview_in(&bind(&checkout), &checkout, "main", None, None)
+    overview_in(&bind(&checkout, For::Status), &checkout, "main", None, None)
 }
 
 /// 132: every repository the host's file names, in turn, each row made
@@ -343,13 +505,14 @@ fn overview_of(
 /// answer where its checkout is gone or its status cannot be asked; none
 /// where the file is not there, and unreadable with the parser's words
 /// where it cannot be read.
-fn repositories(host: &Host, bind: &dyn Fn(&Path) -> Answer<Binding>) -> Answer<Repositories> {
+fn repositories(host: &Host, bind: Bind<'_>) -> Answer<Repositories> {
     let asked_at = now();
     let repositories = host::named(host)?
         .into_iter()
         .map(|(repository, checkout)| {
             let checkout = checkout?;
-            let overview = overview_in(&bind(&checkout), &checkout, "main", None, None)?;
+            let overview =
+                overview_in(&bind(&checkout, For::Status), &checkout, "main", None, None)?;
             Ok(row(&repository, &overview))
         })
         .collect();

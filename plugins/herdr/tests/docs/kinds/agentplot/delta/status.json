@@ -1,0 +1,10 @@
+{
+  "answer": "absent",
+  "absent": {
+    "source": {
+      "seam": "host",
+      "profile": "/home/a/.local/state/tailrace/repositories"
+    },
+    "what": "repository agentplot/delta: no command run in a checkout of it on this host has named it"
+  }
+}

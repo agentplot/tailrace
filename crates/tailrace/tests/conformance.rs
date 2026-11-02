@@ -156,17 +156,14 @@ impl Surface for Page {
         }
         let response = respond_with(
             &self.host,
-            &|_| Ok(binding(&self.world)),
+            &|_, _| Ok(binding(&self.world)),
             "GET",
             "/o/r/status.json",
         );
-        assert_eq!(response.status, 200, "{}", response.body);
-        let served: Value = serde_json::from_str(&response.body).unwrap_or_else(|e| {
-            panic!(
-                "{question:?} served no JSON document ({e}): {}",
-                response.body
-            )
-        });
+        let body = String::from_utf8_lossy(&response.body);
+        assert_eq!(response.status, 200, "{body}");
+        let served: Value = serde_json::from_str(&body)
+            .unwrap_or_else(|e| panic!("{question:?} served no JSON document ({e}): {body}"));
         match question {
             Question::Status => served["value"]["published"].clone(),
             _ => served,
