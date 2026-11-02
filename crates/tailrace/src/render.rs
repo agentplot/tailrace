@@ -76,3 +76,46 @@ pub fn not(out: &mut dyn Write, indent: &str, not: &Not) -> io::Result<()> {
 pub fn utc(seconds: u64) -> String {
     tailrace_seams::utc(seconds)
 }
+
+#[cfg(test)]
+mod tests {
+    use tailrace_seams::{BuildId, OutputName, Seam, Source, Why};
+
+    use super::*;
+
+    fn printed(n: &Not) -> String {
+        let mut out = Vec::new();
+        not(&mut out, "  ", n).unwrap();
+        String::from_utf8(out).unwrap()
+    }
+
+    #[test]
+    fn an_output_whose_entry_the_store_lacks_is_one_line_naming_both() {
+        let refused = Not::refused(
+            &Source::new(Seam::Store, "bound"),
+            Why::NotInStore {
+                output: OutputName::new("site"),
+                build: BuildId::new("b7e1"),
+            },
+            None,
+        );
+        assert_eq!(
+            printed(&refused),
+            "  the store (bound) refused: site from b7e1: no cache entry in the store\n"
+        );
+        assert_eq!(code(&refused), REFUSED);
+    }
+
+    #[test]
+    fn the_sources_words_follow_on_lines_of_their_own() {
+        let refused = Not::refused(
+            &Source::new(Seam::Store, "bound"),
+            Why::Said,
+            Some("denied".into()),
+        );
+        assert_eq!(
+            printed(&refused),
+            "  the store (bound) refused: it refused\ndenied\n"
+        );
+    }
+}

@@ -13,8 +13,8 @@ use std::time::SystemTime;
 
 use serde_json::{json, Value};
 use tailrace_core::{
-    artifact_name, publish, sync_checkout, verify, Ask, CheckoutAsk, CheckoutSynced, History, Kept,
-    Layouts, Publish, RepositoryName, Verified, VerifyAsk,
+    artifact_name, cache_name, publish, sync_checkout, verify, Ask, CheckoutAsk, CheckoutSynced,
+    History, Kept, Layouts, Publish, RepositoryName, Verified, VerifyAsk,
 };
 use tailrace_fakes::{
     BuildOp, Call, FakeProjection, FakeSigner, Fakes, KeeperOp, StoreOp, TargetOp,
@@ -117,6 +117,9 @@ pub struct FakeWorld {
     /// One commit after `start`, a feature, neither landed nor built.
     pub head: Revision,
     packs: Rc<RefCell<Vec<Packing>>>,
+    /// The store's calls the world asked itself to hold what a check
+    /// job pushed, by their place in its record.
+    seeded: RefCell<Vec<usize>>,
 }
 
 impl Rig for FakeWorld {
@@ -230,6 +233,7 @@ impl FakeWorld {
             start,
             head,
             packs: Rc::new(RefCell::new(Vec::new())),
+            seeded: RefCell::new(Vec::new()),
         }
     }
 
@@ -262,6 +266,52 @@ impl FakeWorld {
         for verdict in verdicts {
             self.fakes.landing.verdict(revision, verdict.clone());
         }
+    }
+
+    /// The cache entry of each build identity a verdict of `verdicts`
+    /// passes on held in the store under `cache/<build identity>`, once
+    /// each, as a check job's push before the landing leaves it (52,
+    /// 135). The store's calls for it are the world's own, which
+    /// [`FakeWorld::writes`] and [`FakeWorld::store_calls`] leave out.
+    pub fn pushed(&self, verdicts: &[Verdict]) {
+        let store = &self.fakes.store;
+        let mut done: Vec<&BuildId> = Vec::new();
+        for verdict in verdicts {
+            if verdict.outcome != Outcome::Pass || done.contains(&&verdict.build) {
+                continue;
+            }
+            done.push(&verdict.build);
+            let from = store.calls().len();
+            let bytes = format!("the archive of {}", verdict.build);
+            let digest = store
+                .put_bytes(bytes.as_bytes())
+                .expect("the fake store holds bytes")
+                .digest;
+            store
+                .name(&cache_name(&verdict.build), &digest, None)
+                .expect("the entry's name is made from nothing");
+            self.seeded.borrow_mut().extend(from..store.calls().len());
+        }
+    }
+
+    /// How many of the store's calls the world asked itself to hold what
+    /// a check job pushed, each of them a write.
+    pub fn seeded(&self) -> usize {
+        self.seeded.borrow().len()
+    }
+
+    /// The store's calls the core asked, in order, leaving out the
+    /// world's own.
+    fn core_store_calls(&self) -> Vec<Call<StoreOp>> {
+        let seeded = self.seeded.borrow();
+        self.fakes
+            .store
+            .calls()
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !seeded.contains(i))
+            .map(|(_, call)| call)
+            .collect()
     }
 
     /// Each of `outputs` left at `revision` by its own build, ending in
@@ -323,6 +373,7 @@ impl FakeWorld {
             component: None,
             signer: self.host.clone(),
             store: self.store(),
+            tree: self.repo().path.display().to_string(),
         }
     }
 
@@ -377,12 +428,10 @@ impl FakeWorld {
         verify(&self.seams(), &self.history(), ask)
     }
 
-    /// Every write the store was asked, in order: puts, attaches and name
-    /// moves.
+    /// Every write the core asked of the store, in order: puts, attaches
+    /// and name moves.
     pub fn writes(&self) -> Vec<Write> {
-        self.fakes
-            .store
-            .calls()
+        self.core_store_calls()
             .into_iter()
             .filter_map(|call| {
                 let given = call.given;
@@ -412,9 +461,9 @@ impl FakeWorld {
             .collect()
     }
 
-    /// Every operation asked of the store, in order.
+    /// Every operation the core asked of the store, in order.
     pub fn store_calls(&self) -> Vec<StoreOp> {
-        changes(self.fakes.store.calls())
+        changes(self.core_store_calls())
     }
 
     pub fn keeper_calls(&self) -> Vec<KeeperOp> {
@@ -473,10 +522,11 @@ impl FakeWorld {
         found
     }
 
-    /// How many operations every fake has been asked, all told.
+    /// How many operations every fake has been asked, all told, leaving
+    /// out the store's calls the world asked itself.
     pub fn asked(&self) -> usize {
         let fakes = &self.fakes;
-        fakes.store.calls().len()
+        self.core_store_calls().len()
             + fakes.build.calls().len()
             + fakes.landing.calls().len()
             + fakes.signer.calls().len()

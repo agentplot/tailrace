@@ -151,6 +151,7 @@ fn a_verdict_from_a_signer_the_policy_does_not_name(world: &FakeWorld) {
     let mut verdicts: Vec<Verdict> = landing.to_vec();
     verdicts.push(stranger.clone());
     world.land(head, &verdicts);
+    world.pushed(&verdicts);
     world.outputs(head, &[("site", Outcome::Pass), ("server", Outcome::Pass)]);
     world
         .fakes

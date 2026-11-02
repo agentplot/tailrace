@@ -14,7 +14,7 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelId, ChannelName, Claim,
     ClaimKind, ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope,
-    Environment, EnvironmentName, HeldChannel, Keeper, Landing, Moves, NamedSigner, Outcome,
+    Environment, EnvironmentName, HeldChannel, Keeper, Landing, Left, Moves, NamedSigner, Outcome,
     Output, OutputName, Pinned, Policy, Projection, Range, Report, Required, Requirement, Revision,
     Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
 };
@@ -132,24 +132,31 @@ impl BuildRig for FakeBuildRig {
         &self.second
     }
 
+    /// Each output made at a new revision, and the checkout it ran in
+    /// scripted as having left each one made, as its report says.
     fn revision(&self, outputs: &[(OutputName, Made)]) -> Revision {
         let at = revision(&self.revisions);
+        let mut lefts = Vec::new();
         for (output, made) in outputs {
             let outcome = match made {
                 Made::Pass => Outcome::Pass,
                 Made::Fail => Outcome::Fail,
                 Made::Unmade => continue,
             };
-            self.fakes.build.made(
-                &at,
-                output,
-                Report {
-                    build: BuildId::new(format!("{output}@{}", &at.as_str()[32..])),
-                    outcome,
-                    files: vec![format!("dist/{output}")],
-                },
-            );
+            let report = Report {
+                build: BuildId::new(format!("{output}@{}", &at.as_str()[32..])),
+                outcome,
+                files: vec![format!("dist/{output}")],
+            };
+            lefts.push(Left {
+                build: report.build.clone(),
+                tasks: vec![format!("{output}:make")],
+                outcome,
+                files: report.files.clone(),
+            });
+            self.fakes.build.made(&at, output, report);
         }
+        self.fakes.build.left_in(&self.ran_in(&at), lefts);
         at
     }
 
@@ -157,8 +164,17 @@ impl BuildRig for FakeBuildRig {
         let build = &self.fakes.build;
         unreachable(
             |op, f, t| build.fault(op, f, t),
-            &[BuildOp::Ensure, BuildOp::Report],
+            &[BuildOp::Ensure, BuildOp::Report, BuildOp::Left],
         )
+    }
+
+    fn ran_in(&self, revision: &Revision) -> String {
+        format!("checkouts/{revision}")
+    }
+
+    /// A checkout no revision is scripted in.
+    fn fresh_checkout(&self) -> String {
+        "checkouts/fresh".into()
     }
 }
 

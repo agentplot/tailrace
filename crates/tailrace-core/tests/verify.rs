@@ -61,6 +61,7 @@ fn published() -> (World, Published) {
         .fakes
         .policy
         .require(Audience::Acceptance, acceptance());
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     (world, published)
 }
@@ -376,6 +377,7 @@ fn a_verdict_from_a_signer_the_policy_names_for_nothing_is_kept_and_not_counted(
         .fakes
         .policy
         .require(Audience::Acceptance, acceptance());
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     let Published::Version { artifacts, .. } = &published else {
         unreachable!()

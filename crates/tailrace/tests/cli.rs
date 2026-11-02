@@ -13,15 +13,15 @@ use tailrace::commands::sync::{run_on as sync_on, SyncArgs};
 use tailrace::profiles::policy::file::PolicyFile;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{
-    accept, answer_json, artifact_name, in_force, promote, publish, push, sync_checkout, write,
-    AcceptAsk, Ask, CheckoutAsk, Entry, History, InForceAsk, Judged, Kept, Layouts, Moved,
-    PromoteAsk, PushAsk, RepositoryName, To, ToldBy,
+    accept, answer_json, artifact_name, in_force, promote, publish, push, push_left, sync_checkout,
+    write, AcceptAsk, Ask, CheckoutAsk, Entry, History, InForceAsk, Judged, Kept, Layouts, LeftAsk,
+    Moved, PromoteAsk, PushAsk, RepositoryName, To, ToldBy,
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
     Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
-    Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
+    Left, Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
     RequiredClaim, Revision, Seam, Signer, SignerId, Source, Store, Verdict, Version,
 };
 use tempfile::TempDir;
@@ -253,6 +253,7 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
             component: None,
             signer: SignerId::new("host"),
             store: store(),
+            tree: history.workdir().unwrap().display().to_string(),
         },
     );
     assert_eq!(printed, answer_json(&core));
@@ -332,6 +333,27 @@ fn publish_prints_the_notes_beneath_the_versions_line_and_names_them_in_its_json
         artifact["digest"].as_str().unwrap()
     );
     assert!(lines.contains(&line.as_str()), "{printed}");
+}
+
+// Requirement: Publish fills the checkout it runs in
+
+#[test]
+fn publish_in_a_repository_with_no_working_tree_is_absent_naming_it_and_asks_the_store_nothing() {
+    let host = Host::new();
+    passed(&host, "site-build");
+    git(&host.repo, &["push", "-q", "origin", "main"]);
+    let bare = host.root().join("shared.git");
+    let cli = Cli::try_parse_from(["tailrace", "publish", "HEAD", "--json"]).unwrap();
+    let mut out = Vec::new();
+    let code = run(&cli, &Ok(host.binding()), &bare, &mut out);
+    let printed: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(printed["answer"], "absent", "{printed}");
+    let what = printed["absent"]["what"].as_str().unwrap();
+    assert!(what.starts_with("working tree at "), "{what}");
+    assert!(what.contains("shared.git"), "{what}");
+    assert_eq!(code, tailrace::render::ABSENT);
+    assert_eq!(host.fakes.store.calls(), [], "the store was asked");
+    assert_eq!(host.fakes.landing.calls(), [], "the core was asked");
 }
 
 // Requirement: Sync fills the checkout's cache from a landed revision
@@ -701,6 +723,95 @@ fn the_built_binary_on_a_host_with_no_bindings_file_pushes_through_the_given_lan
     );
     assert!(!file.exists(), "the push wrote a bindings file");
     assert!(!host.given_key().exists(), "the push made a key");
+}
+
+// Requirement: Push takes what the checkout left with --left
+
+/// The two passing build identities a check job's run in `tree` left.
+fn left_by_a_job(fakes: &Fakes, tree: &Path) {
+    let left = |build: &str, task: &str| Left {
+        build: BuildId::new(build),
+        tasks: vec![task.into()],
+        outcome: Outcome::Pass,
+        files: vec![tree.join(format!("{task}.out")).display().to_string()],
+    };
+    fakes.build.left_in(
+        &tree.display().to_string(),
+        vec![left("b7e1", "web:build"), left("c3d4", "app:test")],
+    );
+}
+
+#[test]
+fn a_check_jobs_push_prints_the_cores_answer_and_asks_no_landing() {
+    let host = Host::new();
+    let tree = host.repo.canonicalize().unwrap();
+    left_by_a_job(&host.fakes, &tree);
+
+    let (code, printed) = host.run(&["push", "--left", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    assert_eq!(printed["value"]["at"], tree.display().to_string());
+    let entries = &printed["value"]["entries"];
+    for (i, build) in ["b7e1", "c3d4"].iter().enumerate() {
+        assert_eq!(entries[i]["build"], *build, "{printed}");
+        assert_eq!(entries[i]["answer"], "ok", "{printed}");
+        assert_eq!(entries[i]["value"]["held_at"], Value::Null);
+        let digest = entries[i]["value"]["entry"]["digest"].as_str().unwrap();
+        assert!(digest.starts_with("sha256:"), "{printed}");
+    }
+    assert_eq!(host.fakes.landing.calls(), [], "the landing was asked");
+
+    let twin = Host::new();
+    left_by_a_job(&twin.fakes, &tree);
+    let core = push_left(
+        &twin.fakes.seams(),
+        &LeftAsk {
+            at: tree.display().to_string(),
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+
+    let (code, printed) = host.run(&["push", "--left"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(
+        lines[0].starts_with("b7e1 held already at sha256:"),
+        "{printed}"
+    );
+    assert!(
+        lines[1].starts_with("c3d4 held already at sha256:"),
+        "{printed}"
+    );
+}
+
+#[test]
+fn a_check_job_whose_run_left_nothing_pushes_nothing_and_exits_0() {
+    let host = Host::new();
+    let (code, printed) = host.run(&["push", "--left"]);
+    assert_eq!(code, 0, "{printed}");
+    assert!(printed.contains("left no build that passed"), "{printed}");
+    assert_eq!(host.fakes.store.calls(), [], "the store was asked");
+}
+
+#[test]
+fn a_revision_or_a_branch_beside_left_is_an_argument_it_cannot_read() {
+    let host = Host::new();
+    for (args, named) in [
+        (&["tailrace", "push", "--left", "HEAD"][..], "REVISION"),
+        (
+            &["tailrace", "push", "--left", "--branch", "main"][..],
+            "--branch",
+        ),
+    ] {
+        let err = Cli::try_parse_from(args).expect_err("push took both");
+        assert_eq!(err.exit_code(), 2);
+        assert!(err.to_string().contains(named), "{err}");
+        let out = host.binary(&args[1..]);
+        assert_eq!(out.status.code(), Some(2));
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(named), "{stderr}");
+    }
+    assert_eq!(host.calls(), 0, "the core was asked");
 }
 
 // Requirement: Rebuild takes a landed revision
@@ -1696,6 +1807,7 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
                 component: None,
                 signer: SignerId::new("host"),
                 store: store(),
+                tree: history.workdir().unwrap().display().to_string(),
             },
         )
         .unwrap();
@@ -1841,6 +1953,7 @@ fn accepted_with(line: &str, subject: &str) -> (Version, Vec<(ChannelId, Answer<
             component: None,
             signer: SignerId::new("host"),
             store: store(),
+            tree: history.workdir().unwrap().display().to_string(),
         },
     )
     .unwrap();

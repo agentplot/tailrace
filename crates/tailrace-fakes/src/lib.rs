@@ -6,7 +6,7 @@
 //! | seam | fake | holds |
 //! |---|---|---|
 //! | the store | [`FakeStore`] | bytes and manifests by digest, attestations, names |
-//! | the build | [`FakeBuild`] | what each revision left of each output |
+//! | the build | [`FakeBuild`] | what each revision left of each output, what each checkout's run left |
 //! | the landing | [`FakeLanding`] | revisions landed per branch, verdicts per revision |
 //! | the signer | [`FakeSigner`] | the identity at hand, the identities expired |
 //! | the policy | [`FakePolicy`] | what each audience requires, per revision, and the channels that follow each publish |

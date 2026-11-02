@@ -133,7 +133,9 @@ empty file is no file.
   where the path is missing or an empty directory, at the first thing
   they ask of the store, so a publish refused before it asks the store
   anything, a revision not landed among them, makes none; push needs no
-  `[signing]`, since it signs nothing.
+  `[signing]`, since it signs nothing, and `push --left` binds no
+  landing where the file names no `[landing]`, since it asks the landing
+  nothing, so a check job's file names `[store]` alone.
   verify, sync and rebuild never make or write one, and answer a layout
   that is not there unreadable, naming its path.
 - The host's record of the versions it published is a file per version
@@ -685,6 +687,198 @@ that has moved since is refused naming where it is (35); a promotion
 another host made between your read and your append is refused naming
 it, never retried. `tailrace promote --back --to stable` moves `stable`
 back to the version it moved from, one more promotion (34).
+
+## After a landing
+
+sluice runs nothing after a landing, and tailrace starts nothing of its
+own: whatever learns that the work landed pushes and publishes it. Which
+of two ways is yours depends on where your checks run.
+
+**You land from your own machines.** sluice runs the checks on hosts you
+keep, and whatever submitted the work waits for it: crew, or `wt submit`
+waiting. Once it learns the work landed, it runs, on the host that ran
+the checks, the push and then the publish:
+
+```sh
+tailrace push <revision>
+tailrace publish <revision>
+```
+
+The push puts the archives of the landing's passing checks in the
+store's cache. The publish then takes the landing's outputs from there:
+it never offers what its own host built in their place, and it refuses
+the version, naming the output and its task hash, when the store holds
+no entry for one. The repository carries nothing for this (118, C.16).
+
+**Your checks run on sluice's Actions pool.** No runner keeps what the
+checks built, so each run job pushes what its own run left before the
+landing is decided, and a workflow of the repository's own publishes
+after it. That takes four pieces.
+
+### The run job's push
+
+Add one step to the run job of the pool's workflow, after the step that
+runs `sluice job run`. It installs `tailrace` from its GitHub release,
+names the registry and nothing else in its bindings file, reaches the
+registry through Docker's credential helper for ECR, and runs `tailrace
+push --left` in the checkout the checks ran in, whether they passed or
+not, since only the tasks that passed are pushed. The run job holds no
+identity token, which sluice's pool keeps out of the job that runs
+checks, so the credential is an access key kept as repository secrets,
+not a role assumed by OIDC.
+
+```yaml
+# In the run job's steps, after the one that runs `sluice job run`.
+- name: Push what the run left
+  if: ${{ !cancelled() }}
+  # The checkout `sluice job run` ran the checks in.
+  working-directory: ${{ github.workspace }}
+  env:
+    AWS_ACCESS_KEY_ID: ${{ secrets.TAILRACE_CACHE_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.TAILRACE_CACHE_SECRET_KEY }}
+    AWS_REGION: us-east-1
+    GH_TOKEN: ${{ github.token }}
+  run: |
+    gh release download --repo agentplot/tailrace \
+      --pattern tailrace-x86_64-linux.tar.gz --output - | tar -xz -C "$RUNNER_TEMP"
+    sudo apt-get install -y amazon-ecr-credential-helper
+    mkdir -p ~/.docker ~/.config/tailrace
+    echo '{"credHelpers":{"123456789012.dkr.ecr.us-east-1.amazonaws.com":"ecr-login"}}' \
+      > ~/.docker/config.json
+    printf '[store]\nregistry = "%s"\n' \
+      123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace > ~/.config/tailrace/config.toml
+    "$RUNNER_TEMP/tailrace" push --left --json
+```
+
+### The cache key's scope
+
+The key belongs to an IAM user whose one policy lets it push to the
+cache entries' repositories and nothing else, so a check that reads the
+key can write cache entries and never offer, accept or move a name (96,
+135):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "arn:aws:ecr:us-east-1:123456789012:repository/tailrace/cache/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+ECR makes a repository on push only through a creation template, so the
+operator makes the repository `tailrace/cache/moon` once, before the
+first push, and the key needs no `ecr:CreateRepository` (C.1).
+
+### The publish workflow
+
+`.github/workflows/tailrace.yml` is the repository's own, and runs once
+for each landing: sluice lands with a GitHub App's push, which starts a
+`push` workflow, as a push made with `GITHUB_TOKEN` would not. It
+publishes one landing at a time and never cancels one. Its store
+credential is a role it assumes by OIDC, since this job runs no check,
+and the publisher's host key is a secret of the GitHub environment
+`tailrace`, which this job alone uses.
+
+```yaml
+name: tailrace
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: tailrace
+  cancel-in-progress: false
+
+permissions:
+  contents: write # the version's tag (22)
+  id-token: write # the store's role, by OIDC
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: tailrace
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin '+refs/sluice/*:refs/sluice/*'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/tailrace-publish
+          aws-region: us-east-1
+      # The repository's own toolchain, so moon runs.
+      - uses: moonrepo/setup-toolchain@v0
+      - name: Publish the landing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNING_KEY: ${{ secrets.TAILRACE_SIGNING_KEY }}
+        run: |
+          gh release download --repo agentplot/tailrace \
+            --pattern tailrace-x86_64-linux.tar.gz --output - | tar -xz -C "$RUNNER_TEMP"
+          sudo apt-get install -y amazon-ecr-credential-helper
+          mkdir -p ~/.docker ~/.config/tailrace
+          echo '{"credHelpers":{"123456789012.dkr.ecr.us-east-1.amazonaws.com":"ecr-login"}}' \
+            > ~/.docker/config.json
+          (umask 077 && printf '%s\n' "$SIGNING_KEY" > ~/.config/tailrace/signing)
+          cat > ~/.config/tailrace/config.toml <<'EOF'
+          [store]
+          registry = "123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace"
+
+          [landing]
+          sluice = { remote = "origin" }
+
+          [signing]
+          signer = "ci"
+          key = "~/.config/tailrace/signing"
+          EOF
+          "$RUNNER_TEMP/tailrace" publish "$GITHUB_SHA" --json
+```
+
+### The publisher in the policy
+
+The policy file names the job's signer by the public half of that key,
+for provenance alone, and names it among the signers of the provenance
+`[acceptance]` requires:
+
+```toml
+[signers.ci]
+ssh = "ssh-ed25519 AAAA… tailrace@ci"
+kinds = ["provenance"]
+
+[acceptance]
+require = [{ kind = "provenance", signers = ["ci"] }]
+```
+
+The gate counts the job's provenance through that line, and from it
+tells the version's notes, which no build made, from its outputs: the
+notes are asked that provenance and never a verdict, which the policy
+file asks of built artifacts alone (134).
+
+A landing one of whose outputs the store holds no entry for is refused,
+naming the output; the pool's next run of that output's check pushes
+it, and the next landing publishes.
+
+One thing this way rests on is still being built: the step needs room
+in the pool's run job and to know where its checkout is, which sluice's
+Actions pool keeps; sluice's template names no tailrace.
 
 ## A team
 

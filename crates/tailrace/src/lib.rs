@@ -76,7 +76,8 @@ pub enum Command {
     /// the versions its lockfiles pin that the policy admits.
     Sync(commands::sync::SyncArgs),
     /// Write the cache entries of a landing's passing builds to the store,
-    /// from what its build left on this host, after the landing.
+    /// from what its build left on this host, after the landing; with
+    /// --left, those this checkout's run left with a pass, before it.
     Push(commands::push::PushArgs),
     /// Rebuild this host's record of the versions it published from the
     /// store and git.

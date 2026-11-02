@@ -383,6 +383,35 @@ pub fn policy_file(repo: &Repo, outputs: &[(&str, &str)], extra: &str) {
     repo.write(POLICY_FILE, &text);
 }
 
+/// moon run over `targets` in `dir` itself in one `moon exec`,
+/// continuing past a task that fails, as a check job runs a candidate's
+/// checks, with none of the `MOON_*` variables of a moon task that may be
+/// running these tests; panics where moon left no run report.
+pub fn moon_exec(dir: &Path, targets: &[&str]) {
+    let mut command = Command::new(on_path("moon"));
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("MOON_") {
+            command.env_remove(&name);
+        }
+    }
+    for name in GIT_REPOSITORY_ENV {
+        command.env_remove(name);
+    }
+    let out = command
+        .arg("exec")
+        .args(targets)
+        .args(["--on-failure", "continue"])
+        .current_dir(dir)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("moon runs");
+    assert!(
+        dir.join(".moon/cache/runReport.json").is_file(),
+        "moon left no run report: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// The hash moon gives `target` when it runs it in `dir` itself, read
 /// from its run report: what the profile's build identity must be. moon
 /// runs with none of the `MOON_*` variables of a moon task that may be

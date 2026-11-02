@@ -1,18 +1,23 @@
 //! The publish group: a landed revision offered as a version with its
-//! notes, S1 and S2, and what publish refuses (2 to 22, 102, 110, 111,
-//! 134);
-//! and, below the marker, a landing read from its copy as last fetched, a
-//! no refused saying when and a yes published as from the remote (14, 59,
-//! 77).
+//! notes, S1 and S2, its outputs read from the store's cache entries
+//! where the landing carries verdicts, and what publish refuses (2 to 22,
+//! 52, 58, 102, 110, 111, 134); and, below the marker, a landing read from
+//! its copy as last fetched, a no refused saying when and a yes published
+//! as from the remote (14, 59, 77).
+
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use tailrace_core::{
-    answer_json, layout_policy_body, publish, Provenance, Publish, Published, NOTES,
+    answer_json, layout_policy_body, publish, Provenance, Publish, Published, CACHE, NOTES,
 };
-use tailrace_fakes::{FakeStore, PROFILE};
+use tailrace_fakes::{FakeBuild, FakeStore, PROFILE};
 use tailrace_seams::{
-    Answer, AskedOf, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Digest,
-    Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not, Outcome, Put,
-    Required, RequiredClaim, Revision, Seam, Source, Store, Verdict, Version, Why,
+    Answer, Artifact, AskedOf, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind,
+    Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Miss, Name,
+    NamedSigner, Not, Outcome, Output, OutputName, PackAt, Packed, Pin, Projection, Put, Range,
+    Rendered, Request, Required, RequiredClaim, Requirement, Response, Revision, Seam, Source,
+    Store, Verdict, Version, Why,
 };
 
 use crate::fixture::DATE;
@@ -85,6 +90,18 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
         Scenario {
+            name: "S1 with the outputs read from the cache",
+            plays: None,
+            cites: &[15, 16, 52],
+            run: s1_with_the_outputs_read_from_the_cache,
+        },
+        Scenario {
+            name: "an entry missing from the store",
+            plays: None,
+            cites: &[15, 16, 58],
+            run: an_entry_missing_from_the_store,
+        },
+        Scenario {
             name: "a revision not landed as last fetched",
             plays: None,
             cites: &[14, 59, 77],
@@ -107,8 +124,18 @@ pub(crate) const VERSION: &str = "0.2.0";
 pub(crate) const TAG: &str = "v0.2.0";
 
 /// `revision` landed with a passing verdict of `test` naming each
-/// output's build, and each output built and passing; the verdicts.
+/// output's build, each output built and passing, and each build's cache
+/// entry pushed before the landing, as a publish of it reads them (135);
+/// the verdicts.
 pub(crate) fn passing(world: &FakeWorld, revision: &Revision) -> Vec<Verdict> {
+    let verdicts = landed(world, revision);
+    world.pushed(&verdicts);
+    verdicts
+}
+
+/// `revision` landed as [`passing`] lands it, with no cache entry pushed;
+/// the verdicts.
+pub(crate) fn landed(world: &FakeWorld, revision: &Revision) -> Vec<Verdict> {
     let verdicts: Vec<Verdict> = OUTPUTS
         .iter()
         .map(|o| {
@@ -515,10 +542,20 @@ fn the_same_revision_again(world: &FakeWorld) {
     );
     assert_eq!(world.record(), record, "the host's record changed");
 
-    // 3: the name resolved first, and every read of the digest it named
-    // or of the digests that index names.
+    // 3: the name resolved first, past the landing's cache entries the
+    // repeat renders again, and every read of the digest it named or of
+    // the digests that index names.
     let (_, index) = version_of(first.components[0].1.as_ref().expect("published"));
-    let calls = &world.fakes.store.calls()[asked..];
+    let calls: Vec<_> = world.fakes.store.calls()[asked..]
+        .iter()
+        .filter(|c| {
+            c.op != tailrace_fakes::StoreOp::Resolve
+                || !c.given["name"]
+                    .as_str()
+                    .is_some_and(|n| n.starts_with(CACHE))
+        })
+        .cloned()
+        .collect();
     assert_eq!(calls[0].op, tailrace_fakes::StoreOp::Resolve, "{calls:?}");
     assert_eq!(calls[0].given["name"], TAG);
     let Ok(Held::Manifest(Manifest::Index(meta))) = world.fakes.store.read(index) else {
@@ -825,6 +862,7 @@ fn a_publish_that_stops_before_its_index(world: &FakeWorld) {
 
 fn a_store_that_names_bytes_wrongly(world: &FakeWorld) {
     passing(world, &world.head);
+    let names = world.fakes.store.contents().names;
     let answer = over(world, Box::new(Misnaming(world.fakes.store.clone())));
     let r = refused(answer, "a publish to a store that names bytes wrongly");
     let Some(Write::Bytes(expected)) = world.writes().into_iter().next() else {
@@ -842,10 +880,7 @@ fn a_store_that_names_bytes_wrongly(world: &FakeWorld) {
         !world.writes().iter().any(Write::is_index),
         "an index was put"
     );
-    assert!(
-        world.fakes.store.contents().names.is_empty(),
-        "a name moved"
-    );
+    assert_eq!(world.fakes.store.contents().names, names, "a name moved");
 }
 
 fn a_repeat_that_packs_differently(world: &FakeWorld) {
@@ -969,6 +1004,134 @@ fn attestations_beside_their_digest(world: &FakeWorld) {
             );
         }
     }
+}
+
+/// A projection over another that, at each render of cache entries,
+/// keeps the build identities rendered and how many operations the build
+/// had been asked by then.
+struct Filling {
+    inner: Box<dyn Projection>,
+    build: FakeBuild,
+    seen: Rc<RefCell<Vec<(Vec<BuildId>, usize)>>>,
+}
+
+impl Projection for Filling {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
+        self.inner.pack(output, at, version)
+    }
+
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        if let Contents::CacheEntries(entries) = contents {
+            let builds = entries.iter().map(|e| e.build.clone()).collect();
+            self.seen
+                .borrow_mut()
+                .push((builds, self.build.calls().len()));
+        }
+        self.inner.render(contents, at)
+    }
+
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.inner.serve(layout, request, miss)
+    }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
+        self.inner.pinned(checkout)
+    }
+
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        self.inner.requires(held)
+    }
+
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        self.inner.satisfying(range, versions)
+    }
+}
+
+fn s1_with_the_outputs_read_from_the_cache(world: &FakeWorld) {
+    passing(world, &world.head);
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let mut seams = world.seams();
+    for ecosystem in world.fakes.projections.keys() {
+        let inner = seams
+            .projections
+            .remove(ecosystem)
+            .expect("the world binds each ecosystem");
+        seams.projections.insert(
+            ecosystem.clone(),
+            Box::new(Filling {
+                inner,
+                build: world.fakes.build.clone(),
+                seen: seen.clone(),
+            }),
+        );
+    }
+    let (history, kept) = (world.history(), world.kept());
+    let published = ok(
+        one(publish(&seams, &history, &kept, &world.ask(&world.head))),
+        "the publish",
+    );
+
+    // 52: every passing verdict's entry rendered by every projection,
+    // each before the build was asked anything.
+    let mut rendered: Vec<BuildId> = Vec::new();
+    for (builds, asked) in seen.borrow().iter() {
+        assert_eq!(
+            *asked, 0,
+            "{builds:?} was rendered after the build was asked"
+        );
+        rendered.extend(builds.iter().cloned());
+    }
+    rendered.sort();
+    let mut expected: Vec<BuildId> = Vec::new();
+    for _ in world.fakes.projections.keys() {
+        expected.extend(OUTPUTS.iter().map(|o| build_of(o, &world.head)));
+    }
+    expected.sort();
+    assert_eq!(
+        rendered, expected,
+        "the entries rendered are not the landing's passing builds, once per projection"
+    );
+
+    // 15, 16, S1: the version offered, and the answer naming every digest.
+    let (version, index) = version_of(&published);
+    assert_eq!(version.as_str(), VERSION);
+    let Published::Version { artifacts, .. } = &published else {
+        unreachable!()
+    };
+    assert_eq!(artifacts.len(), OUTPUTS.len(), "{artifacts:?}");
+    let json = answer_json(&Ok::<_, Not>(published.clone()));
+    assert_eq!(json["value"]["index"], index.as_str());
+    for (i, artifact) in artifacts.iter().enumerate() {
+        assert_eq!(
+            json["value"]["artifacts"][i]["digest"],
+            artifact.digest.as_str()
+        );
+    }
+}
+
+fn an_entry_missing_from_the_store(world: &FakeWorld) {
+    let verdicts = landed(world, &world.head);
+    let site = build_of("site", &world.head);
+    let held: Vec<Verdict> = verdicts
+        .iter()
+        .filter(|v| v.build == site)
+        .cloned()
+        .collect();
+    world.pushed(&held);
+    let r = refused(
+        one(world.publish(&world.ask(&world.head))),
+        "a publish whose entry the store lacks",
+    );
+    assert_eq!(
+        r.why,
+        Why::NotInStore {
+            output: OutputName::new("server"),
+            build: build_of("server", &world.head),
+        },
+        "the refusal names another output or build"
+    );
+    assert_eq!(r.source.seam, Seam::Store);
+    nothing_offered(world, "an entry missing from the store");
 }
 
 /// The landing's remote's words, once the world's landing is cut off.

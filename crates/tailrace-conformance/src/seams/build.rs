@@ -1,4 +1,5 @@
-//! The build's group: 74 to 76 (B.2).
+//! The build's group: 74 to 76 (B.2), and what a checkout's run left
+//! (139, cited as 74 and 75 until the suite's statement list holds it).
 
 use tailrace_seams::{Build, Not, Outcome, OutputName, Revision, Seam, Why};
 
@@ -32,6 +33,12 @@ pub trait BuildRig: Rig {
     /// The build made unreachable, every operation answering unreadable,
     /// and the words it answers with.
     fn unreachable(&self) -> String;
+
+    /// The checkout an ensure of `revision` ran in, as left is given it.
+    fn ran_in(&self, revision: &Revision) -> String;
+
+    /// A checkout in which nothing has run.
+    fn fresh_checkout(&self) -> String;
 }
 
 pub fn scenarios() -> Vec<Scenario<dyn BuildRig>> {
@@ -61,6 +68,18 @@ pub fn scenarios() -> Vec<Scenario<dyn BuildRig>> {
             run: a_build_that_cannot_be_reached,
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
+        Scenario {
+            name: "what an ensure left",
+            plays: None,
+            cites: &[74, 75],
+            run: what_an_ensure_left,
+        },
+        Scenario {
+            name: "a checkout that ran nothing",
+            plays: None,
+            cites: &[74, 75],
+            run: a_checkout_that_ran_nothing,
+        },
     ]
 }
 
@@ -155,4 +174,41 @@ fn a_build_that_cannot_be_reached(rig: &dyn BuildRig) {
         &words,
         "report",
     );
+}
+
+fn what_an_ensure_left(rig: &dyn BuildRig) {
+    let build = rig.build();
+    let outputs = [output("site"), output("server")];
+    let revision = rig.revision(&[
+        (outputs[0].clone(), Made::Pass),
+        (outputs[1].clone(), Made::Pass),
+    ]);
+    ok(
+        build.ensure(&revision, &outputs),
+        "ensure of two outputs made",
+    );
+    let left = ok(
+        build.left(&rig.ran_in(&revision)),
+        "what the ensure's checkout left",
+    );
+    for output in &outputs {
+        let report = ok(
+            build.report(&revision, output),
+            &format!("the report of {output}"),
+        );
+        assert!(
+            left.iter()
+                .any(|l| l.build == report.build && l.outcome == Outcome::Pass),
+            "left names no pass of {output}'s build identity {}: {left:?}",
+            report.build
+        );
+    }
+}
+
+fn a_checkout_that_ran_nothing(rig: &dyn BuildRig) {
+    let left = ok(
+        rig.build().left(&rig.fresh_checkout()),
+        "what a checkout that ran nothing left",
+    );
+    assert!(left.is_empty(), "a checkout that ran nothing left {left:?}");
 }

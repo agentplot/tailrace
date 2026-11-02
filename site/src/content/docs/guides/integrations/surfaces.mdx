@@ -108,7 +108,7 @@ command run in a checkout of it does.
 
 | surface | what it is | status |
 |---|---|---|
-| the command line | `push`, `sync`, `rebuild`, `publish`, `verify`, `status`, `promote` and `serve`, each with a machine-readable answer | built |
+| the command line | `push`, `push --left`, `sync`, `rebuild`, `publish`, `verify`, `status`, `promote` and `serve`, each with a machine-readable answer | built |
 | the pages | every repository the host knows at `http://127.0.0.1:7420/`, and each at `http://127.0.0.1:7420/<owner>/<name>/status`, each with its JSON beside it, served by the host's one `tailrace serve` | built |
 | the command line, to come | `attest`, with a machine-readable answer | designed |
 | Claude Code | a plugin whose skill and command read status and verdicts in a session, and refuse the ecosystem's own publish command where tailrace is bound | designed |

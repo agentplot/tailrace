@@ -154,7 +154,8 @@ fn the_host_the_given_gate(world: &FakeWorld) {
 }
 
 /// `policy` landed, each of `outputs` built and given the landing's
-/// passing `test` at that revision, acceptance requiring `required`, and
+/// passing `test` at that revision, its cache entry pushed (135),
+/// acceptance requiring `required`, and
 /// `channel` following each publish as the policy seam lists it,
 /// requiring the host's acceptance; the revision.
 fn landed(
@@ -178,6 +179,7 @@ fn landed(
         })
         .collect();
     world.land(&revision, &verdicts);
+    world.pushed(&verdicts);
     let built: Vec<_> = outputs.iter().map(|o| (*o, Outcome::Pass)).collect();
     world.outputs(&revision, &built);
     world.fakes.policy.require(Audience::Acceptance, required);

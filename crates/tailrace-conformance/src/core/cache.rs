@@ -1,23 +1,25 @@
 //! The cache's group: cache entries written by one host and rendered on
 //! another, held once, never an artifact, and removable at any time with
 //! nothing accepted or released the worse for it, S14 among them (52 to
-//! 54, 100; design D8); and the push after a landing, which writes the
+//! 54, 100; design D8); the push after a landing, which writes the
 //! entries of a landing's passing builds and offers and keeps nothing
-//! (52 to 54, 77).
+//! (52 to 54, 77); and the push before one, which writes what a
+//! checkout's run left with the landing asked nothing, for a host that
+//! holds none of it to publish (52 to 54).
 
 use tailrace_core::{
-    cache_name, push, sync, write, Entry, Filled, Published, Push, PushAsk, SyncAsk, Synced,
-    Verified,
+    cache_name, push, push_left, sync, write, Entry, Filled, LeftAsk, Published, Push, PushAsk,
+    PushedLeft, SyncAsk, Synced, Verified,
 };
 use tailrace_fakes::{PolicyOp, ProjectionOp};
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, CacheEntry, ClaimKind, ComponentName,
-    Contents, Digest, Ecosystem, Held, Layout, Miss, Name, NamedSigner, Not, Outcome, Output,
+    Contents, Digest, Ecosystem, Held, Layout, Left, Miss, Name, NamedSigner, Not, Outcome, Output,
     OutputName, PackAt, Packed, Pin, Projection, Range, Refusal, Rendered, Request, Required,
     RequiredClaim, Requirement, Response, Revision, SignerId, Store, Verdict, Version, Why,
 };
 
-use crate::core::publish::{one, passing, version_of};
+use crate::core::publish::{landed, one, passing, version_of};
 use crate::world::{build_of, FakeWorld, Write, FILE, HOST, LANDING};
 use crate::{ok, Scenario};
 
@@ -92,6 +94,18 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             cites: &[53],
             run: a_push_offers_and_keeps_nothing,
         },
+        Scenario {
+            name: "pushed before the landing, published elsewhere",
+            plays: None,
+            cites: &[52, 53],
+            run: pushed_before_the_landing_published_elsewhere,
+        },
+        Scenario {
+            name: "a failed build identity left",
+            plays: None,
+            cites: &[52, 54],
+            run: a_failed_build_identity_left,
+        },
     ]
 }
 
@@ -108,7 +122,7 @@ fn output(name: &str, revision: &Revision) -> Output {
 /// `revision` landed with passing verdicts on both outputs, and each
 /// output's cache entry written at its build identity; the entries.
 fn written(world: &FakeWorld, revision: &Revision) -> Vec<CacheEntry> {
-    passing(world, revision);
+    landed(world, revision);
     OUTPUTS
         .iter()
         .map(|o| {
@@ -175,7 +189,7 @@ fn second_host(world: &FakeWorld) -> FakeWorld {
 fn written_on_one_host_read_on_another(world: &FakeWorld) {
     let entries = written(world, &world.start);
     let second = second_host(world);
-    passing(&second, &world.start);
+    landed(&second, &world.start);
     let answer = synced(&second, &world.start);
 
     let expected: Vec<Vec<(String, String)>> = entries
@@ -213,7 +227,7 @@ fn an_entry_held_already(world: &FakeWorld) {
     let entries = written(world, &world.start);
     let names = world.fakes.store.contents().names;
     let second = second_host(world);
-    passing(&second, &world.start);
+    landed(&second, &world.start);
     for projection in second.fakes.projections.values() {
         projection.unsteady();
     }
@@ -450,10 +464,10 @@ fn a_removed_entry_builds_again(world: &FakeWorld) {
     }
 }
 
-/// `revision` landed with the verdicts `passing` records, both passing,
+/// `revision` landed with the verdicts `landed` records, both passing,
 /// and a third failing on a build identity of its own; every verdict.
 fn landed_with_a_failure(world: &FakeWorld, revision: &Revision) -> Vec<Verdict> {
-    let mut verdicts = passing(world, revision);
+    let mut verdicts = landed(world, revision);
     let failed = world.verdict(
         revision,
         "lint",
@@ -539,7 +553,7 @@ fn a_landings_archives_pushed_and_synced_on_another_host(world: &FakeWorld) {
 }
 
 fn a_push_of_a_revision_not_landed(world: &FakeWorld) {
-    passing(world, &world.start);
+    landed(world, &world.start);
     let asked = world.asked();
     let answer = push(&world.seams(), &push_ask(world, &world.head));
     match answer {
@@ -561,7 +575,7 @@ fn a_push_of_a_revision_not_landed(world: &FakeWorld) {
 }
 
 fn a_push_repeated_writes_nothing(world: &FakeWorld) {
-    passing(world, &world.start);
+    landed(world, &world.start);
     let first = pushed(world, &world.start);
     let held = world.fakes.store.contents();
     let second = pushed(world, &world.start);
@@ -588,7 +602,7 @@ fn a_push_repeated_writes_nothing(world: &FakeWorld) {
 }
 
 fn an_archive_not_on_the_pushing_host(world: &FakeWorld) {
-    passing(world, &world.start);
+    landed(world, &world.start);
     let (gone, kept) = (
         build_of("site", &world.start),
         build_of("server", &world.start),
@@ -622,7 +636,7 @@ fn an_archive_not_on_the_pushing_host(world: &FakeWorld) {
 }
 
 fn a_push_offers_and_keeps_nothing(world: &FakeWorld) {
-    passing(world, &world.start);
+    landed(world, &world.start);
     let kept = world.kept();
     ok(
         kept.write(&Entry {
@@ -672,4 +686,144 @@ fn a_push_offers_and_keeps_nothing(world: &FakeWorld) {
         "the policy was asked"
     );
     assert_eq!(world.record(), record, "the push changed the host's record");
+}
+
+/// What the build of `world`'s clone left of `build`: its one task, its
+/// outcome and its file.
+fn left(build: &BuildId, outcome: Outcome) -> Left {
+    Left {
+        build: build.clone(),
+        tasks: vec![format!("{build}:task")],
+        outcome,
+        files: vec![format!("dist/{build}")],
+    }
+}
+
+/// What the clone of `world` left, pushed before any landing.
+fn pushed_left(world: &FakeWorld) -> PushedLeft {
+    let ask = LeftAsk {
+        at: world.repo().path.display().to_string(),
+    };
+    ok(
+        push_left(&world.seams(), &ask),
+        "the push of what the clone left",
+    )
+}
+
+fn pushed_before_the_landing_published_elsewhere(world: &FakeWorld) {
+    let builds: Vec<BuildId> = OUTPUTS.iter().map(|o| build_of(o, &world.head)).collect();
+    world.fakes.build.left_in(
+        &world.repo().path.display().to_string(),
+        builds.iter().map(|b| left(b, Outcome::Pass)).collect(),
+    );
+    let answer = pushed_left(world);
+    let entries: Vec<CacheEntry> = builds
+        .iter()
+        .map(|build| {
+            let (_, written) = answer
+                .entries
+                .iter()
+                .find(|(b, _)| b == build)
+                .unwrap_or_else(|| panic!("the push named no entry for {build}: {answer:?}"));
+            ok(written.clone(), &format!("the push of {build}")).entry
+        })
+        .collect();
+    for write in world.writes() {
+        assert!(
+            matches!(&write, Write::Bytes(_))
+                || matches!(&write, Write::Name { name, .. } if name.as_str().starts_with("cache/")),
+            "the push offered more than an entry: {write:?}"
+        );
+    }
+
+    // A second host holding no archive of either build publishes the
+    // landed revision from the store alone.
+    let second = second_host(world);
+    landed(&second, &second.head);
+    for projection in second.fakes.projections.values() {
+        for build in &builds {
+            projection.no_archive(build);
+        }
+    }
+    let published = ok(
+        one(second.publish(&second.ask(&second.head))),
+        "the second host's publish",
+    );
+    assert!(
+        matches!(published, Published::Version { .. }),
+        "the second host offered no version: {published:?}"
+    );
+    let expected: Vec<Vec<(String, String)>> = entries
+        .iter()
+        .map(|e| vec![(e.build.to_string(), e.digest.to_string())])
+        .collect();
+    for ecosystem in second.fakes.projections.keys() {
+        assert_eq!(
+            renders(&second, ecosystem.as_str()),
+            expected,
+            "the second host's {ecosystem} projection did not render exactly the entries pushed"
+        );
+    }
+    assert_eq!(
+        world.fakes.landing.calls(),
+        [],
+        "the push before the landing asked the landing"
+    );
+}
+
+fn a_failed_build_identity_left(world: &FakeWorld) {
+    let (passed, failed, gone) = (
+        build_of("site", &world.head),
+        failed_build(&world.head),
+        build_of("server", &world.head),
+    );
+    world.fakes.build.left_in(
+        &world.repo().path.display().to_string(),
+        vec![
+            left(&failed, Outcome::Fail),
+            left(&passed, Outcome::Pass),
+            left(&gone, Outcome::Pass),
+        ],
+    );
+    for projection in world.fakes.projections.values() {
+        projection.no_archive(&gone);
+    }
+    let answer = pushed_left(world);
+    let named: Vec<&BuildId> = answer.entries.iter().map(|(b, _)| b).collect();
+    assert_eq!(
+        named,
+        [&passed, &gone],
+        "the push did not answer exactly the passing build identities"
+    );
+    let (_, missing) = &answer.entries[1];
+    assert!(
+        matches!(missing, Err(Not::Absent(_))),
+        "the build whose archive is gone answered {missing:?}"
+    );
+    let (_, written) = &answer.entries[0];
+    let entry = ok(written.clone(), "the passing build's push").entry;
+    let names = world.fakes.store.contents().names;
+    assert_eq!(names.get(&cache_name(&passed)), Some(&entry.digest));
+    for build in [&failed, &gone] {
+        assert!(
+            !names.contains_key(&cache_name(build)),
+            "an entry was written for {build}"
+        );
+    }
+
+    // Pushed again, the entry is held already and nothing is written.
+    let held = world.fakes.store.contents();
+    let again = pushed_left(world);
+    let (_, written) = &again.entries[0];
+    assert_eq!(
+        ok(written.clone(), "the second push").held_at.as_ref(),
+        Some(&entry.digest),
+        "the second push was not answered held at the first's digest"
+    );
+    assert_eq!(
+        world.fakes.store.contents(),
+        held,
+        "the second push wrote to the store"
+    );
+    assert_eq!(world.fakes.landing.calls(), [], "the landing was asked");
 }

@@ -79,13 +79,17 @@
 //! build, the policy and every projection built, which the repository's
 //! policy file picks among (92, C.10); the moon cache reads cache entries
 //! through a second binding of the store, and Cargo's projection crates
-//! through a third, each opened and never made (design D6). What tells the gate is bound for every command; no target is
-//! bound yet. Only a publish and a push make the layout, the given one
-//! with its parents, at the first operation asked of the store and never
-//! in binding it, so a publish refused before it asks the store anything
-//! leaves nothing behind; a push signs nothing (60, rules core.11,
-//! core.32); every other command opens it, and a promote makes nothing
-//! (C.13, C.14).
+//! and npm's tarballs through a third and a fourth, each opened and
+//! never made (design D6). What tells the gate is bound for every
+//! command; no target is bound yet. Only a publish and the two pushes
+//! make the layout, the given one with its parents, at the first
+//! operation asked of the store and never in binding it, so a publish
+//! refused before it asks the store anything leaves nothing behind; a
+//! push signs nothing, and a push before a landing binds no landing
+//! where the file names none, since it asks the landing nothing, so a
+//! check job needs no table of it (60, 139, rules core.11, core.32);
+//! every other command opens it, and a promote makes nothing (C.13,
+//! C.14).
 //!
 //! Status asks the landing, the policy and the ledger alone (60; design
 //! D8): it is bound by the same path, with no signer but every profile
@@ -104,8 +108,8 @@ use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
 use tailrace_seams::{
-    Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, NamedSigner, Not,
-    Put, Seam, Seams, SignerId, Source, Store, Version,
+    Answer, Branch, Digest, Ecosystem, EcosystemName, Envelope, Held, IsLanded, Landing, Manifest,
+    Name, NamedSigner, Not, Put, Revision, Seam, Seams, SignerId, Source, Store, Verdicts, Version,
 };
 
 use crate::profiles::signer::Signing;
@@ -465,17 +469,20 @@ fn trusted(file: &Path, id: &str, value: &toml::Value) -> Answer<NamedSigner> {
     })
 }
 
-/// The command a binding is made for: publish or push, which make the
-/// layout the first time; verify, sync or rebuild, which never make or
-/// write one; promote, which signs and never makes the layout; status,
-/// which asks the landing, the policy and the ledger alone; or policy,
-/// bound as status is with no store.
+/// The command a binding is made for: publish, push or a push before a
+/// landing, which make the layout the first time; verify, sync or
+/// rebuild, which never make or write one; promote, which signs and never
+/// makes the layout; status, which asks the landing, the policy and the
+/// ledger alone; or policy, bound as status is with no store.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
     Verify,
     Sync,
     Push,
+    /// `push --left`, the push before a landing, which binds with no
+    /// `[landing]` (139).
+    Left,
     Rebuild,
     Promote,
     Status,
@@ -532,6 +539,30 @@ impl Store for Unopened {
     }
 }
 
+/// The landing of a push before a landing on a host whose file names no
+/// `[landing]`, as a check job's names none: every operation absent
+/// naming its binding, and the push asks it nothing (139).
+struct NoLanding;
+
+impl NoLanding {
+    fn absent() -> Not {
+        Not::absent(
+            &Source::new(Seam::Landing, "unbound"),
+            "binding of the landing",
+        )
+    }
+}
+
+impl Landing for NoLanding {
+    fn landed(&self, _: &Branch, _: &Revision) -> Answer<IsLanded> {
+        Err(NoLanding::absent())
+    }
+
+    fn verdicts_of(&self, _: &Revision) -> Answer<Verdicts> {
+        Err(NoLanding::absent())
+    }
+}
+
 /// The binding the bindings file at `file` names for `command`, in the
 /// repository at `repository`, its `~/` paths expanded against `home`,
 /// and the given layout placed under `xdg_data_home` or `home` (118;
@@ -541,10 +572,12 @@ impl Store for Unopened {
 /// the landing the repository is set up for over the checkout's remote,
 /// the git ref on the landing's remote, and for a publish or a promote
 /// the given host key under the same data directory, signing as the name
-/// its public half gives (C.2, C.5, C.6, C.8, C.13); every other command
-/// binds both signers verify-only. A sync trusts the host's own signer,
-/// the one `[signing]` names, before the signers `[trust]` names, what
-/// verifies it read before the store is bound.
+/// its public half gives (C.2, C.5, C.6, C.8, C.13); a push before a
+/// landing binds none where the file names no `[landing]`, every
+/// operation of it absent, since it asks the landing nothing (139); every
+/// other command binds both signers verify-only. A sync trusts the host's
+/// own signer, the one `[signing]` names, before the signers `[trust]`
+/// names, what verifies it read before the store is bound.
 /// Every table is read, `[gate]` among them, and nothing is made: a
 /// publish or a push makes the layout at its store's first operation, so
 /// path with `~/` expanded, so the record names a directory a reader
@@ -600,16 +633,17 @@ pub fn bind(
     };
     // The landing's remote, as the file writes it or as the checkout
     // gives it, is where the given ledger is kept (C.13).
-    let (landing, remote) = match &bindings.landing {
+    let (landing, remote): (Box<dyn Landing>, _) = match &bindings.landing {
         Some(landing) => (
             profiles::landing::bind(landing, repository)?,
             profiles::landing::remote(landing)?,
         ),
+        None if command == For::Left => (Box::new(NoLanding), None),
         None => profiles::landing::given(file, repository)?,
     };
     // A publish or a push makes the layout at its store's first
     // operation, through whichever binding of it is asked first.
-    let make = matches!(command, For::Publish | For::Push);
+    let make = matches!(command, For::Publish | For::Push | For::Left);
     let ledger = |store: &Table| match &bindings.ledger {
         Some(ledger) => profiles::ledger::bind(ledger, repository, store, make),
         None => Ok(profiles::ledger::given(repository, remote.clone())),
@@ -633,9 +667,11 @@ pub fn bind(
         };
         (bound, keeper, BTreeMap::new())
     } else {
-        // A push's store writes cache entries alone, into the bound
-        // build profile's cache repository on a registry (135; design D9).
-        let (build, push) = (Some(profiles::build::name()), command == For::Push);
+        // A push's store, after a landing or of what a checkout left,
+        // writes cache entries alone, into the bound build profile's cache
+        // repository on a registry (135; design D9).
+        let build = Some(profiles::build::name());
+        let push = matches!(command, For::Push | For::Left);
         let bound = profiles::store::bind_for(store, make, build, push)?;
         let cache = profiles::store::bind_for(store, make, build, push)?;
         let crates = profiles::store::bind_for(store, make, build, push)?;
