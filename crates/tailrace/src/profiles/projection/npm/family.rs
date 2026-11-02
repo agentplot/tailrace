@@ -142,11 +142,43 @@ impl Bundled {
     }
 }
 
-/// The parts of a `package.json` that ask npm for other packages.
+/// The folders a root manifest names its workspaces by, as globs under
+/// it: an array of them, or an object's `packages`.
+#[derive(Default, Deserialize)]
+#[serde(untagged)]
+pub(super) enum Workspaces {
+    #[default]
+    None,
+    Globs(Vec<String>),
+    Packages {
+        #[serde(default)]
+        packages: Vec<String>,
+    },
+    Other(serde::de::IgnoredAny),
+}
+
+impl Workspaces {
+    /// The globs named, none where the manifest names none.
+    pub(super) fn globs(&self) -> &[String] {
+        match self {
+            Workspaces::Globs(globs) | Workspaces::Packages { packages: globs } => globs,
+            Workspaces::None | Workspaces::Other(_) => &[],
+        }
+    }
+}
+
+/// The parts of a `package.json` that name it and ask npm for other
+/// packages.
 #[derive(Default, Deserialize)]
 pub(super) struct Manifest {
     #[serde(default)]
+    pub(super) name: Option<String>,
+    #[serde(default)]
+    pub(super) workspaces: Workspaces,
+    #[serde(default)]
     dependencies: Ordered,
+    #[serde(default, rename = "devDependencies")]
+    dev: Ordered,
     #[serde(default, rename = "optionalDependencies")]
     optional: Ordered,
     #[serde(default, rename = "peerDependencies")]
@@ -177,30 +209,54 @@ impl Manifest {
     /// that is no range (design D14). A dependency's `devDependencies`
     /// are never installed, and are not read.
     pub(super) fn requires(&self, scopes: &BTreeSet<String>) -> Vec<Requirement> {
-        let mut required: Vec<Requirement> = Vec::new();
         let asked = self
             .dependencies
             .0
             .iter()
             .chain(&self.optional.0)
-            .chain(self.installed_peers());
-        for (name, spec) in asked {
-            if self.bundle.holds(name) || self.bundled.holds(name) {
-                continue;
-            }
-            let Some((name, range)) = spec.as_str().and_then(|spec| ranged(name, spec)) else {
-                continue;
-            };
-            let requirement = Requirement {
-                name: EcosystemName::new(name),
-                range: Range::new(range),
-            };
-            if is_family(requirement.name.as_str(), scopes) && !required.contains(&requirement) {
-                required.push(requirement);
-            }
-        }
-        required
+            .chain(self.installed_peers())
+            .filter(|(name, _)| !self.bundle.holds(name) && !self.bundled.holds(name));
+        family_ranges(asked, scopes)
     }
+
+    /// 137: each family name of `scopes` this manifest, a checkout's own
+    /// or one of its workspaces', declares, with its range as written:
+    /// its `dependencies`, `devDependencies`, `optionalDependencies` and
+    /// the `peerDependencies` npm installs, in that order and each in the
+    /// manifest's, every spec that is no range passed over (design D7).
+    pub(super) fn declares(&self, scopes: &BTreeSet<String>) -> Vec<Requirement> {
+        let asked = self
+            .dependencies
+            .0
+            .iter()
+            .chain(&self.dev.0)
+            .chain(&self.optional.0)
+            .chain(self.installed_peers());
+        family_ranges(asked, scopes)
+    }
+}
+
+/// Each of `asked`, a dependency's name and spec, that is a family name of
+/// `scopes` at a range, by the name and range it asks of a registry, each
+/// once and in the order asked.
+fn family_ranges<'a>(
+    asked: impl Iterator<Item = &'a (String, Value)>,
+    scopes: &BTreeSet<String>,
+) -> Vec<Requirement> {
+    let mut ranges: Vec<Requirement> = Vec::new();
+    for (name, spec) in asked {
+        let Some((name, range)) = spec.as_str().and_then(|spec| ranged(name, spec)) else {
+            continue;
+        };
+        let requirement = Requirement {
+            name: EcosystemName::new(name),
+            range: Range::new(range),
+        };
+        if is_family(requirement.name.as_str(), scopes) && !ranges.contains(&requirement) {
+            ranges.push(requirement);
+        }
+    }
+    ranges
 }
 
 #[cfg(test)]
