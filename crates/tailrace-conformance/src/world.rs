@@ -23,7 +23,7 @@ use tailrace_seams::{
     Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, ChannelId, ChannelName, Check,
     Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Envelope,
     Environment, EnvironmentName, IndexMeta, Layout, Manifest, Miss, Name, NamedSigner, Outcome,
-    Output, OutputName, Packed, Pin, Pinned, Projection, Range, Rendered, Report, Request,
+    Output, OutputName, PackAt, Packed, Pin, Pinned, Projection, Range, Rendered, Report, Request,
     Requirement, Response, Revision, Seam, Seams, Signer, SignerId, Source, Store, Verdict,
     Version,
 };
@@ -675,7 +675,7 @@ struct Watched {
 }
 
 impl Projection for Watched {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let packed = self.inner.pack(output, at, version);
         if let (
             Ok(Packed {
@@ -686,7 +686,7 @@ impl Projection for Watched {
         {
             self.packs.borrow_mut().push(Packing {
                 ecosystem: meta.ecosystem().clone(),
-                version: version.clone(),
+                version: version.version.clone(),
                 shared_tags: self.shared.tags(),
             });
         }

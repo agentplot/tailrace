@@ -168,7 +168,16 @@ mod tests {
                     files: vec![],
                 },
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(
+                    &Alone::new(
+                        &Output {
+                            name: OutputName::new("site"),
+                            files: vec![],
+                        },
+                        "1.0.0",
+                    )
+                    .at(),
+                ),
             )
             .unwrap();
         let meta = packed.meta.expect("a versioned pack names metadata");
@@ -240,7 +249,16 @@ mod tests {
                     files: vec![],
                 },
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(
+                    &Alone::new(
+                        &Output {
+                            name: OutputName::new("cli"),
+                            files: vec![],
+                        },
+                        "1.0.0",
+                    )
+                    .at()
+                ),
             )
             .is_ok());
         let request = Request {
@@ -372,7 +390,16 @@ mod tests {
                     files: vec![],
                 },
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(
+                    &Alone::new(
+                        &Output {
+                            name: OutputName::new("site"),
+                            files: vec![],
+                        },
+                        "1.0.0",
+                    )
+                    .at()
+                ),
             )
             .unwrap()
             .same_again

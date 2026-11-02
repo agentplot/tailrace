@@ -1,8 +1,9 @@
 ## Context
 
 The projection seam (B.6, `crates/tailrace-seams/src/projection.rs`) has
-pack, render, serve and pinned. Four units this change comes after
-shape what it implements:
+pack, render, serve, pinned, requires and satisfying. Three units this
+change comes after shape what it implements, and it writes serve's shape
+itself:
 
 - **render under a policy** adds pinned (137) and the core's render in
   `crates/tailrace-core/src/render.rs`: `render` reads a checkout's pins,
@@ -18,27 +19,19 @@ shape what it implements:
   the version and the claim found wanting (99). pinned's contract there
   says a name the manifest declares and no lockfile pins is no pin until
   ranges resolve.
-- **npm, rendered and served** (its design, D1 to D4, D10, D11) makes
-  serve answer one request:
-
-  ```rust
-  pub struct Request { pub method: String, pub path: String, pub base: String }
-  pub struct Response { pub status: u16, pub content_type: String, pub body: Vec<u8> }
-  pub type Miss<'a> = &'a dyn Fn(&Pinned) -> Answer<()>;
-  fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response>;
-  ```
-
-  `path` is below the layout's prefix, `base` the address of that prefix
-  as the client reached it with no trailing `/`, and `miss` asks the core
-  to render one version into the layout under the policy. The host's one
-  process routes `/<owner>/<name>/<ecosystem>/<rest>` to the projection
-  bound for that ecosystem in the checkout that last named the
-  repository; `tailrace sync` probes each layout's serve with `path`
-  empty and a miss that answers absent, reading `Err(absent "serving")`
-  as serving none, and starts the process where one serves; the process
-  stays while a served layout exists (114).
-  `served::layout_address(repository, ecosystem)` spells
-  `http://127.0.0.1:7420/<owner>/<name>/<ecosystem>/`.
+- **serve's shape is this change's** (D12 to D15). Cargo is the bolt's
+  first served projection, and the planner's order puts npm, rendered and
+  served after this unit: this change writes the request, the response
+  and the miss every projection serves in, the process's route to a
+  served layout, the served address, the core's render on a miss and the
+  layout's lock, and npm's unit answers npm's clients in them. npm's
+  branch holds a build of the same shape (its commits `1861d1d`,
+  `718688e`, `b1398a6`, `fe73971`, `e13b674` and `e503aa3`, made on the
+  bolt before pinned answered ranges); D12 to D15 keep its types and
+  names, so its profile follows with no change of shape, and the code
+  stage may take those commits as a start where they apply. Sync naming
+  the address and starting the process, and the process staying while a
+  layout is served, stay npm's.
 - **the store names an artifact by ecosystem, name and version** (its
   design, D7, D10) adds the store's listing,
 
@@ -54,26 +47,30 @@ shape what it implements:
   this change. It also holds a declared component's indexes and channels
   in a registry repository of the component's own, which this change
   reads nothing of: it reaches a version only by its artifact's name.
-- **the projection answers what an artifact requires** adds 140's one
-  question to the projection seam: given a held version's artifact, the
-  family's names and ranges its own manifest requires, as the manifest
-  spells them, and whether a version satisfies a range and which of two
-  versions is newer, by the ecosystem's own ordering (140, 23). Every
-  profile on the bolt answers it, the file, image and moon cache
-  projections with none, and the fake answers absent. It is not yet
-  constructed, so its exact types are its own: this change implements
-  the question as that unit lands it, for Cargo, and builds the core's
-  loop on it. Below, `requires` names what a held artifact requires,
-  `satisfies` whether a version satisfies a range, `newer` the order of
-  two versions, and `Ranged` the name and range `requires` answers, each
-  standing for whatever that unit calls it.
+- **the projection answers what an artifact requires** (landed) added
+  140's question to the projection seam:
+
+  ```rust
+  fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>>;
+  fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>>;
+  ```
+
+  `Requirement` is a name and a `Range`, each as the manifest spells it;
+  `satisfying` answers those of the versions that satisfy the range,
+  newest first by the ecosystem's own ordering (140, 23). The file,
+  image and moon cache projections answer none, and the fake answers what
+  a test sets, ordering by Semantic Versioning. Its trait comment still
+  says requires answers every name the manifest requires; 140 now says
+  the names the layout serves (blueprints `1ed85bd`), and this change
+  makes the comment say so (D8).
 
 Built here already: the profile, its binding with a store of its own,
-render writing a crate per version and an index file per name, the index
-line, the race check after pack, and the conformance rig.
+pinned's pins and ranges and `Pin` on the seam, the fake's pins and
+ranges, Cargo's `requires` and `satisfying`, render writing a crate per
+version and an index file per name, the index line, the race check after
+pack, and the conformance rig.
 
-The statement, blueprints `f90f5fd` (the clauses below unchanged since
-`4c14235`):
+The statement, blueprints `92afa99`:
 
 - C.11's Cargo row: pack the crate file with `cargo package --no-verify`
   after the component's version is set on every crate of the component,
@@ -101,11 +98,18 @@ The statement, blueprints `f90f5fd` (the clauses below unchanged since
   Cargo: pinned answers the manifest's ranges for every name no lockfile
   pins, a checkout with no `Cargo.lock` among them, and Cargo writes the
   lockfile.
-- 140, requires: given a held version's artifact, the family's names and
-  ranges its manifest requires, as the manifest spells them, and whether
-  one version satisfies a range by the ecosystem's own ordering (23); a
-  projection whose ecosystem has no manifest answers none; the core
-  never reads a manifest itself (core.1).
+- 140, requires: given a held version's artifact, the names and ranges
+  its manifest requires that the layout serves, as the manifest spells
+  them, and whether one version satisfies a range by the ecosystem's own
+  ordering (23); a name the layout serves is one the consuming checkout's
+  own configuration routes to the served address, a registry name in
+  Cargo's, every other name the public registry's; a projection whose
+  ecosystem has no manifest answers none; the core never reads a
+  manifest itself (core.1).
+- 86, 114, 115: serve answers the ecosystem's own clients over their
+  protocol; one process per host at one fixed name and port with the
+  repository in the path; a request for a version the layout lacks is a
+  render from the store under the policy (50).
 - 138: the store lists the versions a name holds, so a range with no pin
   resolves by that listing under the layout's policy; the planner settled
   that the listing is the store-naming unit's, the empty list for a name
@@ -115,7 +119,10 @@ The statement, blueprints `f90f5fd` (the clauses below unchanged since
   need it; the loop that lists, judges, holds and asks again until
   nothing held requires a name the layout lacks is the core's, and this
   change owns it with the closure; npm's projection answers the same
-  question from its own manifest in its own unit.
+  question from its own manifest in its own unit. The planner's order
+  puts npm after this unit, and this unit's intent says it writes the
+  one shape of request, response and miss every projection's serving
+  answers in.
 - 99: a sparse-index client's refusal reaches it by omission from the
   listing, by the bytes' answer and by sync's words.
 
@@ -192,26 +199,28 @@ format, dependency resolution):
 
 ## Goals / Non-Goals
 
-**Goals:** pack, pinned, render and serve for Cargo on the seams the
-units above land, held to the whole projection group; a crate's
-siblings and its other components' crates told apart by the component's
-paths, and its siblings checked against the component's outputs; a
-checkout's ranges carried by pinned, Cargo's answer to what a crate
-requires and whether a version satisfies a range (140), and the core's
-render closing a layout over them, each version listed by the store and
-judged by the core; a consumer with no lockfile proven to `cargo build`
-against the host's serving process after `tailrace sync`, Cargo writing
-the lockfile, and `cargo build --locked` after a second sync.
+**Goals:** pack, pinned, requires, satisfying, render and serve for
+Cargo, held to the whole projection group; a crate's siblings and its
+other components' crates told apart by the component's paths, and its
+siblings checked against the component's outputs; a checkout's ranges
+carried by pinned, and the core's render closing a layout over them and
+over what each held crate requires, each version listed by the store and
+judged by the core; one shape in which the host's process answers every
+ecosystem's client, a miss rendered by the core under the policy; a
+consumer with no lockfile proven to `cargo build` against the host's
+serving process after `tailrace sync`, Cargo writing the lockfile, and
+`cargo build --locked` after a second sync.
 
 **Non-Goals:** the policy, judging one version, the layout's place and
-its record's form (render under a policy); the process, its route and
-its lifetime (npm, rendered and served); making the
+its record's form (render under a policy); sync naming a served address
+and starting the process, and the process staying while a layout is
+served (npm, rendered and served); the process's lock and its file of
+repositories (status across machines); making the
 `artifact/<ecosystem>/<name>@<version>` pointer and the store's listing
-(the store-naming unit); the question on the seam, its fake and the
-answer of a projection with no manifest (the projection answers what an
-artifact requires); npm's ranges and what an npm version requires (npm,
-rendered and served); a copy carrying those pointers; writing a
-checkout's cargo configuration.
+(the store-naming unit); the question on the seam and its fake (the
+projection answers what an artifact requires); npm's pack, pinned,
+requires, render and serve (npm, rendered and served); a copy carrying
+those pointers; writing a checkout's cargo configuration.
 
 ## Decisions
 
@@ -399,25 +408,24 @@ lockfile, and writes nothing.
 ```rust
 /// 137: what pinned answers for a checkout: a version its lockfile pins,
 /// or a range its manifest declares for a name no lockfile pins yet.
-pub enum Pin { Version(Pinned), Range(Ranged) }
+pub enum Pin { Version(Pinned), Range(Requirement) }
 
 fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>>;
 ```
 
-`Ranged` is the name and range the seam's `requires` answers, as the
-projection answers what an artifact requires lands it: a checkout's
+`Requirement` is the name and range the seam's `requires` answers: a checkout's
 manifest and a held version's manifest declare a range the same way, and
 the core treats both alike, reading neither range (core.1). `Pin`
 serializes as the seam's other types, a pin and a range each read back
 as written. render is unchanged: it is given exactly the artifacts the
-core holds. The file, image and moon cache projections, and npm's where
-it is on the branch, answer `Pin::Version` alone where they answer pins.
+core holds. The file, image and moon cache projections answer
+`Pin::Version` alone where they answer pins.
 
 Why the range is pinned's and this change's: 137 gives pinned the
 manifest's range, and no unit before this one carries it; the question
 the unit before lands is 140's alone, what a held version requires and
-whether a version satisfies a range. npm's unit implements its side of
-the range on this type (its proposal says so). Alternative: a second
+whether a version satisfies a range. npm's unit, after this one,
+answers its ranges on this type. Alternative: a second
 operation on the seam for a checkout's ranges; refused because 137 makes
 them pinned's answer, beside the pins.
 
@@ -431,10 +439,11 @@ nothing until the end:
 2. each `Pin::Range`, by name and range, then, level by level, each
    range the held versions of the level before require, by name and
    range, each name and range once. A range is met where the layout
-   already holds a version of its name that `satisfies` it, the version
-   held for it. Otherwise the store's `versions` of the name, the empty
-   list where it names none, are kept where `satisfies` answers yes,
-   ordered newest first by `newer`, and each is judged as a pin is until
+   already holds a version of its name that `satisfying` answers within
+   it, the version held for it. Otherwise the store's `versions` of the
+   name, the empty list where it names none, are given to `satisfying`,
+   and the versions it answers, newest first, are each judged as a pin is
+   until
    one is held; that one is held for the range, or none where none is
    admitted or none is listed within it;
 3. for each version newly held, pinned or taken, `requires` of its
@@ -447,7 +456,7 @@ Then `.tailrace/` ignores itself, the projection renders
 `Contents::Artifacts` of every held version at `place`, and the record
 is written: `held` every held version, `refused` every refused one. A
 read whose source cannot answer, the store's listing, a judgment's
-reads, or the projection's `requires`, `satisfies` or `newer`, is sync's
+reads, or the projection's `requires` or `satisfying`, is sync's
 answer for the layout, and nothing is written; a range the projection
 refuses to read is that range's own answer, held nothing. The fixed
 order makes the same store under the same policy hold the same versions
@@ -463,7 +472,7 @@ checkout's manifest or the held version whose manifest requires it, and
 the version held for it or that none was:
 
 ```rust
-pub struct RangeAnswer { pub range: Ranged, pub by: Option<Pinned>, pub answer: Answer<Option<Version>> }
+pub struct RangeAnswer { pub range: Requirement, pub by: Option<Pinned>, pub answer: Answer<Option<Version>> }
 ```
 
 An absent answer for a version asked, a name the listing names and the
@@ -476,18 +485,21 @@ from the checkout's manifest or from `<name> <version>`, and the version
 held or that none within it was admitted, and each version asked as a
 pin is printed; `--json` carries `asked` and `ranges`.
 
-Why "met" asks `satisfies` of the held version: 137 stops where nothing
+Why "met" asks `satisfying` of the held version: 137 stops where nothing
 held requires a name the layout lacks; a version of the name that does
 not satisfy the range would leave the client's resolution open, so it
 does not meet it, and the range is resolved by the same rule.
 
-The fake projection the unit before lands answers absent. The core's
-tests need it to answer what a test sets: pins and ranges for pinned,
-the ranges each artifact requires, the versions each range is satisfied
-by and their order. This change adds those settings to the fake, its
-absent answer kept where a test sets nothing.
+The core's tests run over the fake projection: the unit before lands
+its answers to `requires` and `satisfying` from what a test sets, and
+this change adds the pins and ranges a test sets for pinned, its absent
+answer kept where a test sets nothing.
 
-### D8. Cargo's requires, satisfies, newer and render
+The same loop closes a layout over a miss (D15): once the one version
+asked is held, the versions it requires are held by these steps, from
+the record's held versions, before the projection renders.
+
+### D8. Cargo's requires, satisfying and render
 
 `requires` reads the artifact's crate through its store as render
 reads it (one layer, bytes of that digest), and its normalized
@@ -504,13 +516,20 @@ answered, since Cargo writes one lockfile for every platform, and a
 feature a consumer turns on needs the crate it enables. A crate that
 does not read is unreadable naming its digest.
 
-`satisfies` reads the range with `VersionReq::parse`, Cargo's own
-parser, refusing one whose text does not parse naming the name, the
-range and the parser's words, and answers yes where the version parses
-as a `semver` version and `matches` it; a version that is not a Cargo
-version satisfies no range. `newer` orders two versions by `semver`'s
-order, Cargo's own; a version that does not parse is refused naming it
-and the parser's words.
+`satisfying` reads the range with `VersionReq::parse`, Cargo's own
+parser, refusing one whose text does not parse naming the range and the
+parser's words, and answers those of the versions that parse as
+`semver` versions and that it `matches`, ordered newest first by
+`semver`'s order, Cargo's own; a version that is not a Cargo version
+satisfies no range.
+
+`requires`' trait comment on the seam is made to read as 140 now does:
+the names the manifest requires that the layout serves, a name the
+layout serves being one the consuming checkout's own configuration of
+the ecosystem routes to the served address. For Cargo that is the
+registry `tailrace`, which a packed crate writes as the served address
+its publisher's configuration names for it, so a served Cargo address
+in a dependency's `registry-index` is the test.
 
 render holds exactly the crates given, checked first (ecosystem `cargo`,
 one layer, bytes of that digest, the crate's manifest naming the
@@ -545,7 +564,8 @@ the registry serving the line. The layout names no address:
 
 ### D9. Cargo's serve, and a refusal three ways
 
-The request's `path`, below `/<owner>/<name>/cargo/`:
+Cargo's serve answers in the shape of D12, on the process's route of
+D13. The request's `path`, below `/<owner>/<name>/cargo/`:
 
 - `config.json`: `{"dl":"<base>/crates/{crate}/{version}/download"}`,
   `200` `application/json`, with no `api`, since the registry takes no
@@ -565,9 +585,10 @@ The request's `path`, below `/<owner>/<name>/cargo/`:
 Every answer that is not the bytes or file asked is `text/plain`, the
 `Not`'s own rendering, the source's words verbatim: `404` absent, `403`
 refused, `502` unreadable (58, 59, 99); cargo prints it under `body:`.
-Every request is answered with a response, so sync's probe reads the
-projection as serving (npm's D10); `Err` is kept for a layout whose
-files cannot be read for another reason than their absence.
+Every request is answered with a response, so a probe with an empty
+path, the one npm's unit gives sync, reads the projection as serving;
+`Err` is kept for a layout whose files cannot be read for another reason
+than their absence.
 
 A refused version so reaches Cargo three ways (99): its line is absent
 from the name's index file, since render is never given it (D7, D8); a
@@ -589,15 +610,16 @@ moon cache, since a `Box<dyn Store>` is not shared (core.2).
 
 Unit tests in the profile build crates in memory with `flate2` and
 `tar` for the index line, `requires`, render and serve, read lockfiles
-and workspaces written as text for pinned, and give `satisfies` and
-`newer` ranges and versions as text; they run in `check-fast` with no
+and workspaces written as text for pinned, and give `satisfying`
+ranges and versions as text; they run in `check-fast` with no
 cargo needed. The core's render is tested over the fakes in
 `crates/tailrace-core/tests/render.rs`, the fake projection answering
-the pins and ranges a test sets, and `requires`, `satisfies` and `newer`
-from what a test sets for each artifact and range (D7).
+the pins and ranges a test sets, and `requires` and `satisfying` from
+what a test sets for each artifact and range (D7); the miss and the lock
+are tested there too (D15).
 
-The layouts group of the conformance suite gains two scenarios over the
-fakes, citing 137: a range held at the newest admitted version within
+The layouts group of the conformance suite gains, below its marker, two
+scenarios over the fakes citing 137, and the miss's scenarios of D15: a range held at the newest admitted version within
 it, a newer refused one answered with its claim and one outside the
 range neither held nor asked; and a pinned version's family dependency
 held, and that one's in turn, each answered with the version requiring
@@ -632,13 +654,18 @@ The conformance group and the proofs run cargo, so they sit behind the
   stood in for by `cargo package --workspace --no-verify --offline
   --registry tailrace`; both packed at 1.0.0, 1.1.0, 1.2.0 and 2.0.0 and
   put in a layout store with their index, claims and
-  `artifact/cargo/<name>@<version>` names as npm's served test puts its
-  package, 1.2.0's index lacking a claim the consumer's policy requires.
+  `artifact/cargo/<name>@<version>` names, as the store-naming unit's
+  publish writes them, 1.2.0's index lacking a claim the consumer's
+  policy requires. The host's process runs in the test on an address of
+  its own, `serve_on` over the test's host state, and the consumer's
+  repository is named to it with `host::name`, as `tailrace sync` will
+  once npm's unit lands its start; the publisher's `.cargo/config.toml`
+  names `tailrace` at the core's served address, so the packed crates
+  name their dependencies at a served Cargo address.
   A consumer checkout with no `Cargo.lock`, whose `.cargo/config.toml`
   names `tailrace` at `sparse+<the test's base>/<owner>/<name>/cargo/`
   and whose manifest declares `fam-a = { version = "1", registry =
-  "tailrace" }`. `tailrace sync`, with the host's process at the test's
-  address, answers the range `fam-a` `1` holding 1.1.0, 1.2.0 refused
+  "tailrace" }`. `tailrace sync` answers the range `fam-a` `1` holding 1.1.0, 1.2.0 refused
   naming the claim found wanting, and the range `fam-b` `1.1.0` from
   `fam-a` 1.1.0 holding 1.1.0, `fam-b` 1.2.0 refused the same way; the served index files of `fam-a` and
   `fam-b` each list 1.1.0 alone; a `GET` of `fam-a` 1.2.0's download
@@ -647,6 +674,142 @@ The conformance group and the proofs run cargo, so they sit behind the
   served address with the packed crates' checksums, and no path. Then
   `tailrace sync` again answers both as pins held, and `cargo build
   --locked` succeeds and leaves the lockfile as Cargo wrote it.
+
+### D12. serve answers one request, and asks the core for a miss
+
+```rust
+pub struct Request { pub method: String, pub path: String, pub base: String }
+pub struct Response { pub status: u16, pub content_type: String, pub body: Vec<u8> }
+pub type Miss<'a> = &'a dyn Fn(&Pinned) -> Answer<()>;
+pub fn no_serving(source: &Source) -> Not; // absent naming "serving"
+fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response>;
+```
+
+`path` is the request's path below the layout's prefix, its query
+dropped; `base` the absolute address of that prefix as the client
+reached it, with no trailing `/`. `miss` asks the core to render one
+version into `layout`; `Ok(())` means the layout now holds it. Every
+answer the client should read, a refusal's included, is an
+`Ok(Response)`; `Err` is kept for a projection that serves none,
+`no_serving` for every request, and for a layout the projection cannot
+read at all. `Serving` leaves the seam. `Request` and `Response`
+round-trip through JSON, the body as base64, as every seam type does;
+`tailrace-seams` takes the workspace's `base64` for it. The file, image
+and moon cache projections answer `no_serving` and ask nothing; the
+seams' `Nowhere` does the same.
+
+The fake projection serves a layout it rendered: a request whose path
+is `<name>/<version>` of a version the layout holds answers `200` with
+that artifact's metadata as JSON; one the layout lacks calls `miss` once
+and answers `200` where it holds, else `404`, `403` or `502` with the
+answer's words; it records each request and each version asked, and a
+test can script it to serve none, answering `no_serving`.
+
+Why: one process per host (114) leaves a projection nothing to bind, so
+an address answers nothing; the client's protocol is the ecosystem's
+(core.1), so the projection words every response, a refusal's too (99);
+and the judgment is the core's (core.2, ADR 0006), so a miss is a call
+back into the core rather than a store read in the profile.
+Alternatives: serve answering "lacks this version" for the process to
+render and ask again, which needs a second operation to word the
+refusal in the client's form; a trait object answering requests, which
+is a second interface for the seam (core.2).
+
+The projection group's scenario "served where the clients read no
+files" sits above the group's marker and asserts an address. It is
+changed to ask serve for the rig's request of a held version and to
+check the response answers it, citing 86 as before: the operation it
+holds changed shape, and this is the first unit that serves. Each rig
+gains `request(&ArtifactMeta) -> String`, the path of its ecosystem's
+request for a version's bytes, since a request's form is the
+ecosystem's. The group's other serve scenarios go below the marker
+(conformance-suite delta).
+
+### D13. The process routes a served layout by its ecosystem's name
+
+`respond_with` gains one route: a path of four or more parts,
+`/<owner>/<name>/<ecosystem>/<rest>`, or exactly
+`/<owner>/<name>/<ecosystem>` with `rest` empty, where `<ecosystem>` is
+any name; the status routes keep exactly three parts and are matched
+first. For it the process:
+
+1. finds the checkout with `host::checkout_of`, absent where none named
+   the repository, as status answers;
+2. binds it for sync, `Host::bind_for(checkout, For::Sync)` beside
+   `bind`, since a layout is sync's;
+3. takes the projection bound under `Ecosystem::new(<ecosystem>)`, `404`
+   naming the ecosystem where none is;
+4. asks `serve(&Layout { at: render::place(tree, ecosystem) },
+   &Request { method, path: rest, base }, &miss)`, `base` being
+   `served::layout_address(repository, ecosystem)` without its trailing
+   `/`, and `miss` calling `render::miss` (D15) in that checkout;
+5. answers the projection's `Response` as given; `Err(absent "serving")`
+   is `404` naming the ecosystem; any other `Err` is the status the
+   process gives every answer (`status_of`) with the words as text.
+
+The route names no ecosystem (core.1). The process's `Response.body`
+becomes `Vec<u8>` and `Content-Length` its byte length; `reason` gains
+`403 Forbidden` and `502 Bad Gateway`. A method other than `GET` stays
+`405` on the status routes; on this route the method is the request's,
+and the projection answers it. `bind_for` is a parameter, as `bind` is,
+so the route's tests run over the fake projection.
+
+Why the checkout that last named the repository: the path names the
+repository alone, since a lockfile in git names it for every checkout
+(49), and the host's file already says which checkout answers for it
+(132). Alternative: a host-wide layout per repository under the state
+directory, which contradicts the layout's place in the checkout that
+render under a policy fixes.
+
+### D14. The served address is the core's
+
+`served.rs` gains `origin() -> String`, `http://127.0.0.1:7420/`, and
+`layout_address(&RepositoryName, &Ecosystem) -> String`,
+`http://127.0.0.1:7420/<owner>/<name>/<ecosystem>/`, both from the
+constants already there. The process's base, Cargo's test of a served
+address (D8) and the tests all take it from there, so the address is
+spelled once (114, 49, core.36).
+
+### D15. A miss renders one version into the layout, one render at a time
+
+`render::miss(seams, &Layouts, &MissAsk { branch, revision, ecosystem,
+tree, pin, trusted, when }) -> Answer<HeldPin>`, beside `render::render`:
+
+1. takes the layout's lock;
+2. reads the record; a pin its `held` names answers held at once (a
+   second request raced the first);
+3. checks the revision landed (`Landed::check`), reads the consumer's
+   own policy with `own_policy`, and resolves and judges the one pin with
+   `judged`, exactly as `render` judges a pin, so 113's order holds for a
+   miss as for a sync; `revision` is what `tailrace sync` with no
+   argument takes, `history.base(main)` in that checkout, and `trusted`
+   the checkout's binding's trust;
+4. where held, closes the layout over it by D7's loop, the record's held
+   versions meeting what ranges they satisfy, then hands the projection's
+   render the record's held artifacts, each rebuilt from its entry's
+   name, version and artifact digest, with this one and those the loop
+   held, writes the record with them added to `held` and its other
+   entries as they were, and answers held; where absent, refused or
+   unreadable, writes nothing and answers that.
+
+It reads the store for the one pin and for the names it requires that
+the layout does not meet: the versions already held were judged when
+they were rendered, and the record names their digests (48, 50). The
+process maps the answer to `Miss`'s `Answer<()>`.
+
+`Layouts` gains `lock(ecosystem) -> Answer<LayoutLock>`, an exclusive
+`std::fs::File::lock` on `<git dir>/tailrace/layouts/<ecosystem>.lock`,
+held by `render` from its first read to the record's write and by
+`miss` from the record's read to its write, let go on drop. A sync waits
+on a miss and the reverse. Why a file lock: the process and a sync are
+two processes; the lock is the host's, as `serve.lock` and
+`repositories.lock` are.
+
+For Cargo a miss is rare: Cargo resolves from index files, which list
+only what sync held, and downloads only what it resolved. It is met when
+a client asks a version's bytes directly, or a layout lost a crate file,
+and the refused version's `403` is one of the three ways a refusal
+reaches Cargo (D9).
 
 ## Risks / Trade-offs
 
@@ -676,17 +839,17 @@ The conformance group and the proofs run cargo, so they sit behind the
   as the family's by name and version alone (138); Cargo still reads it
   only for a dependency naming the registry `tailrace`, and `requires`
   answers only a dependency naming a served address.
-- [Code waits on four units] → the first code task checks their seams
-  are on the branch and stops through crew where any is missing.
-- [The seam's question is named by a unit not yet constructed] → this
-  change names it `requires`, `satisfies` and `newer` and holds the core
-  and Cargo to what 140 asks, not to a signature; the code stage writes
-  them against the trait as that unit lands it, and stops through crew
-  where the trait gives no order of two versions, since the core takes
-  the newest and orders nothing itself (23, core.1).
+- [The store-naming unit is not yet merged] → the first code task takes
+  its branch into this one once it has committed, resolving `render.rs`
+  and `bindings/mod.rs` keeping both intents, and stops through crew
+  where its listing is missing.
+- [npm's branch holds its own build of serve's shape] → this change
+  keeps the types and names that build uses (D12 to D15), so npm's unit
+  rebases onto it and drops its own copy rather than reshaping its
+  profile.
 - [Two changes rewrite the projection's contract] → this change writes
-  the whole contract as 84, 137 and 140 read, so whichever of it and the
-  unit before archives last keeps both.
+  the whole contract as 84, 86, 115, 137 and 140 read, so whichever of it
+  and npm's unit archives last keeps both.
 
 ## Open Questions
 

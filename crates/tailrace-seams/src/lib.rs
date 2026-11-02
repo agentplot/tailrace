@@ -173,7 +173,7 @@ mod tests {
     }
 
     impl Projection for Nowhere {
-        fn pack(&self, _: &Output, _: &BuildId, _: Option<&Version>) -> Answer<Packed> {
+        fn pack(&self, _: &Output, _: &BuildId, _: Option<&PackAt<'_>>) -> Answer<Packed> {
             nothing(Seam::Projection, "pack")
         }
         fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
@@ -256,6 +256,16 @@ mod tests {
             build: None,
             body: Value::Null,
         };
+        let site = Output {
+            name: OutputName::new("site"),
+            files: vec![],
+        };
+        let component = Component {
+            name: ComponentName::new("web"),
+            outputs: vec![site.name.clone()],
+            paths: vec!["**".into()],
+            prefix: "web-v".into(),
+        };
 
         let store: Box<dyn Store> = Box::new(Nowhere);
         let build: Box<dyn Build> = Box::new(Nowhere);
@@ -288,12 +298,14 @@ mod tests {
             asked(policy.policy_for(&rev, &Audience::Acceptance)),
             asked(policy.channels(&rev)),
             asked(projection.pack(
-                &Output {
-                    name: OutputName::new("site"),
-                    files: vec![],
-                },
+                &site,
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(&PackAt {
+                    version: &Version::new("1.0.0"),
+                    component: &component,
+                    outputs: std::slice::from_ref(&site),
+                    holds: &|_| true,
+                }),
             )),
             asked(projection.render(
                 Contents::Artifacts(&[Artifact {

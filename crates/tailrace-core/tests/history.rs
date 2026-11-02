@@ -7,7 +7,7 @@ use std::fs;
 
 use common::{landed, Fixture};
 use semver::Version;
-use tailrace_core::History;
+use tailrace_core::{paths_hold, History};
 use tailrace_seams::{Branch, Not, Revision, Seam};
 
 #[test]
@@ -307,4 +307,29 @@ fn two_worktrees_of_one_repository_answer_two_git_directories() {
         "{} is not under the common directory",
         there.git_dir().display()
     );
+}
+
+#[test]
+fn a_components_paths_hold_a_path_as_git_cliffs_filter_matches_it() {
+    let holds = paths_hold(&["crates/fam/**".into(), "./site/**".into(), "docs/".into()]).unwrap();
+    for path in [
+        "crates/fam/Cargo.toml",
+        "crates/fam/src/lib.rs",
+        "site/index.html",
+        "docs/guide/start.md",
+    ] {
+        assert!(holds(path), "{path}");
+    }
+    for path in [
+        "crates/family/Cargo.toml",
+        "crates/base/Cargo.toml",
+        "Cargo.toml",
+    ] {
+        assert!(!holds(path), "{path}");
+    }
+    let Err(Not::Unreadable(u)) = paths_hold(&["crates/[".into()]) else {
+        panic!("a path that is no glob was read")
+    };
+    assert_eq!(u.source.seam, Seam::History);
+    assert!(u.what.contains("crates/["), "{u:?}");
 }

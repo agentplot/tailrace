@@ -15,7 +15,7 @@ use tailrace_fakes::{PolicyOp, ProjectionOp};
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, CacheEntry, ClaimKind, ComponentName,
     Contents, Digest, Ecosystem, Held, Layout, Left, Miss, Name, NamedSigner, Not, Outcome, Output,
-    OutputName, Packed, Pin, Projection, Range, Refusal, Rendered, Request, Required,
+    OutputName, PackAt, Packed, Pin, Projection, Range, Refusal, Rendered, Request, Required,
     RequiredClaim, Requirement, Response, Revision, SignerId, Store, Verdict, Version, Why,
 };
 
@@ -258,7 +258,7 @@ fn an_entry_held_already(world: &FakeWorld) {
 struct Carrying(Vec<u8>);
 
 impl Projection for Carrying {
-    fn pack(&self, _: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, _: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         assert!(version.is_none(), "an entry was packed at a version");
         Ok(Packed {
             bytes: self.0.clone(),

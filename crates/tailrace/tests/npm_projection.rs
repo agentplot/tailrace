@@ -391,7 +391,11 @@ fn a_package_is_packed_at_its_version_by_npm_running_no_script_and_editing_nothi
     let before = fs::read(&output.files[0]).unwrap();
     let packed = rig
         .projection()
-        .pack(&output, &BuildId::new("b7e1"), Some(&Version::new("1.4.0")))
+        .pack(
+            &output,
+            &BuildId::new("b7e1"),
+            Some(&tailrace_fakes::Alone::new(&output, "1.4.0").at()),
+        )
         .unwrap();
     let meta = packed.meta.expect("a pack at a version names its metadata");
     assert_eq!(

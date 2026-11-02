@@ -26,15 +26,15 @@ use serde_json::{json, Value};
 use tailrace_seams::{
     artifact_name, version_name, Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId,
     CacheEntry, Claim, ClaimKind, Component, ComponentName, Digest, Ecosystem, EcosystemName, Held,
-    IndexMeta, Manifest, Name, Not, Outcome, Output, OutputName, Projection, Report,
+    IndexMeta, Manifest, Name, Not, Outcome, Output, OutputName, PackAt, Projection, Report,
     RepositoryName, Required, Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
 };
 
 use crate::cache::{cache_name, fill};
 use crate::notes::{self, Rendered};
 use crate::{
-    claim, derive, layout_policy_body, policy_at, touched, Carried, Declared, Derived, Entry,
-    History, Kept, Landed, Noted, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
+    claim, derive, layout_policy_body, paths_hold, policy_at, touched, Carried, Declared, Derived,
+    Entry, History, Kept, Landed, Noted, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
     REPOSITORY,
 };
 
@@ -486,18 +486,29 @@ impl<'a> Run<'a> {
         };
 
         // 9: each output packed at its build identity with the version,
-        // and a pack that names no metadata refused before anything is
-        // offered (84, rule core.12).
-        let mut packed = Vec::new();
-        for output in &outputs {
-            let files = Output {
+        // its component, the component's outputs as the build left them
+        // and its paths' match, the version rule's own, and a pack that
+        // names no metadata refused before anything is offered (84, 123,
+        // rule core.12).
+        let built: Vec<Output> = outputs
+            .iter()
+            .map(|output| Output {
                 name: output.name.clone(),
                 files: output.report.files.clone(),
-            };
-            let answer =
-                output
-                    .projection
-                    .pack(&files, &output.report.build, Some(&versioned.version))?;
+            })
+            .collect();
+        let holds = paths_hold(&component.paths)?;
+        let at = PackAt {
+            version: &versioned.version,
+            component,
+            outputs: &built,
+            holds: &holds,
+        };
+        let mut packed = Vec::new();
+        for (output, files) in outputs.iter().zip(&built) {
+            let answer = output
+                .projection
+                .pack(files, &output.report.build, Some(&at))?;
             let Some(meta) = answer.meta else {
                 return Err(Not::refused(
                     &Source::new(Seam::Projection, output.ecosystem.as_str()),

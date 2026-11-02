@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
     no_cache_entries, no_lockfile, Answer, Artifact, BuildId, Contents, Layout, Miss, Not, Output,
-    Packed, Pin, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source, Store,
-    Version,
+    PackAt, Packed, Pin, Projection, Range, Rendered, Request, Requirement, Response, Seam, Source,
+    Store, Version,
 };
 
 mod family;
@@ -73,13 +73,13 @@ impl NpmProjection {
 }
 
 impl Projection for NpmProjection {
-    /// 84, 87: `output` packed at `version` by npm's own packager, its
-    /// bytes the tarball npm wrote and its name the package's own; npm
-    /// promises no same bytes across its versions, so it answers it
-    /// cannot promise them (design D6). With no version, absent naming
+    /// 84, 87: `output` packed at its component's version by npm's own
+    /// packager, its bytes the tarball npm wrote and its name the
+    /// package's own; npm promises no same bytes across its versions, so
+    /// it answers it cannot promise them (design D6). With no version, absent naming
     /// cache entries: npm packs none.
-    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
-        let Some(version) = version else {
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
+        let Some(&PackAt { version, .. }) = version else {
             return Err(no_cache_entries(&NpmProjection::source()));
         };
         pack::pack(self.path.as_deref(), output, version)

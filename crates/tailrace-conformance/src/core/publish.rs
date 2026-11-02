@@ -15,9 +15,9 @@ use tailrace_fakes::{FakeBuild, FakeStore, PROFILE};
 use tailrace_seams::{
     Answer, Artifact, AskedOf, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind,
     Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Miss, Name,
-    NamedSigner, Not, Outcome, Output, OutputName, Packed, Pin, Projection, Put, Range, Rendered,
-    Request, Required, RequiredClaim, Requirement, Response, Revision, Seam, Source, Store,
-    Verdict, Version, Why,
+    NamedSigner, Not, Outcome, Output, OutputName, PackAt, Packed, Pin, Projection, Put, Range,
+    Rendered, Request, Required, RequiredClaim, Requirement, Response, Revision, Seam, Source,
+    Store, Verdict, Version, Why,
 };
 
 use crate::fixture::DATE;
@@ -1016,7 +1016,7 @@ struct Filling {
 }
 
 impl Projection for Filling {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         self.inner.pack(output, at, version)
     }
 

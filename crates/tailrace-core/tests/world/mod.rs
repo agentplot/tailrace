@@ -14,8 +14,8 @@ use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
     Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest,
     Ecosystem, Envelope, Held, IndexMeta, Layout, Manifest, Miss, Name, Outcome, Output,
-    OutputName, Packed, Pin, Projection, Put, Range, Rendered, Report, Request, Requirement,
-    Response, Revision, Seam, SignerId, Source, Store, Verdict, Version,
+    OutputName, PackAt, Packed, Pin, Projection, Put, Range, Rendered, Report, Request,
+    Requirement, Response, Revision, Seam, SignerId, Source, Store, Verdict, Version,
 };
 
 use crate::common::{Fixture, Repo, CLIFF_TOML};
@@ -286,7 +286,7 @@ pub struct Watched<T, F: Fn() -> T> {
 }
 
 impl<T, F: Fn() -> T> Projection for Watched<T, F> {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         self.seen.borrow_mut().push((self.watch)());
         self.inner.pack(output, at, version)
     }
