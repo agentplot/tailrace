@@ -26,13 +26,14 @@ mod pinned;
 mod render;
 mod requires;
 mod satisfying;
+mod serve;
 
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_cache_entries, no_serving, Answer, Artifact, ArtifactMeta, BuildId, Contents, Ecosystem,
-    EcosystemName, Layout, Miss, Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered,
-    Request, Requirement, Response, Seam, Source, Store, Version, Why,
+    no_cache_entries, Answer, Artifact, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName,
+    Layout, Miss, Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered, Request,
+    Requirement, Response, Seam, Source, Store, Version, Why,
 };
 
 use crate::profiles::run::Tool;
@@ -116,10 +117,13 @@ impl Projection for CargoProjection {
         self.render_crates(artifacts, at)
     }
 
-    /// 86: absent naming serving, for every request, asking the core
-    /// nothing.
-    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
-        Err(no_serving(&CargoProjection::source()))
+    /// 86, 115, 99: `request`, one of Cargo's own, answered from the
+    /// layout in Cargo's sparse registry protocol: the configuration
+    /// naming downloads under the request's base, an index file from the
+    /// layout alone, and a crate's bytes, one the layout lacks asked of
+    /// the core once through `miss` (design D9).
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.serve_request(layout, request, miss)
     }
 
     /// 137: the versions the checkout's root `Cargo.lock` pins from a
@@ -183,29 +187,5 @@ mod tests {
             0,
             "the checkout was written"
         );
-    }
-
-    #[test]
-    fn serve_is_absent_naming_serving_and_asks_the_core_nothing() {
-        let dir = TempDir::new().unwrap();
-        let projection = CargoProjection::new(dir.path(), Box::new(FakeStore::new()));
-        let request = Request {
-            method: "GET".into(),
-            path: "config.json".into(),
-            base: "http://127.0.0.1:7420/o/r/cargo".into(),
-        };
-        let asked = std::cell::Cell::new(0);
-        let miss = |_: &tailrace_seams::Pinned| {
-            asked.set(asked.get() + 1);
-            Ok(())
-        };
-        let layout = Layout {
-            at: "layouts/cargo".into(),
-        };
-        assert_eq!(
-            projection.serve(&layout, &request, &miss),
-            Err(no_serving(&CargoProjection::source()))
-        );
-        assert_eq!(asked.get(), 0, "the core was asked for a version");
     }
 }
