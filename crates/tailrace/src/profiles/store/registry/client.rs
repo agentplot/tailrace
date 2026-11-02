@@ -363,8 +363,16 @@ impl Client {
     /// configuration or helper that cannot be read is unreadable naming
     /// the credential, in the reader's words.
     fn credential(&self) -> Answer<Option<DockerCredential>> {
-        let file = std::env::var_os("DOCKER_CONFIG")
-            .filter(|d| !d.is_empty())
+        let named = std::env::var_os("DOCKER_CONFIG").filter(|d| !d.is_empty());
+        // A test that read the host's configuration would ask the helper
+        // it names, the keychain among them, which no gate check may
+        // (rule core.38): each names a configuration of its own.
+        #[cfg(test)]
+        assert!(
+            named.is_some(),
+            "a test reached the host's Docker configuration; run it under_docker_config"
+        );
+        let file = named
             .map(PathBuf::from)
             .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".docker")))
             .map(|dir| dir.join("config.json"));
@@ -476,12 +484,14 @@ mod tests {
         at.set(port).unwrap();
         let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
+        let none = tempfile::TempDir::new().unwrap();
         let get = |repository: &str| {
             let url = format!("http://127.0.0.1:{port}/v2/{repository}/manifests/x");
-            client
-                .send(repository, Method::GET, &url, &[], None)
-                .unwrap()
-                .status
+            under_docker_config(none.path(), || {
+                client.send(repository, Method::GET, &url, &[], None)
+            })
+            .unwrap()
+            .status
         };
         assert_eq!(get("one/tags"), StatusCode::OK);
         assert_eq!(get("two"), StatusCode::OK);
@@ -522,6 +532,23 @@ mod tests {
             "{\"errors\":[{\"code\":\"DENIED\",\"message\":\"tag \\\"v1\\\" is immutable\"}]}\n";
         assert_eq!(answered(400, words.as_bytes()).words(), words);
         assert_eq!(answered(401, b"").words(), "401 Unauthorized");
+    }
+
+    /// What `f` answers with DOCKER_CONFIG at `dir`, the client reading
+    /// that configuration alone and never the host's or the helper it
+    /// names (rule core.38); one test at a time, since the variable is the
+    /// process's, and the variable as it was after.
+    fn under_docker_config<T>(dir: &std::path::Path, f: impl FnOnce() -> T) -> T {
+        static ENVIRONMENT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _environment = ENVIRONMENT.lock().unwrap_or_else(|e| e.into_inner());
+        let before = std::env::var_os("DOCKER_CONFIG");
+        std::env::set_var("DOCKER_CONFIG", dir);
+        let answer = f();
+        match before {
+            Some(before) => std::env::set_var("DOCKER_CONFIG", before),
+            None => std::env::remove_var("DOCKER_CONFIG"),
+        }
+        answer
     }
 
     /// A server on a loopback port answering each request in turn with
@@ -569,20 +596,19 @@ mod tests {
         let dir = tempfile::TempDir::new().unwrap();
         let config = format!(r#"{{"auths":{{"127.0.0.1:{port}":{{"auth":"{basic}"}}}}}}"#);
         std::fs::write(dir.path().join("config.json"), &config).unwrap();
-        std::env::set_var("DOCKER_CONFIG", dir.path());
 
         let source = Source::new(tailrace_seams::Seam::Store, "OCI registry stub");
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
-        let answered = client
-            .send(
+        let answered = under_docker_config(dir.path(), || {
+            client.send(
                 "",
                 Method::GET,
                 &format!("http://127.0.0.1:{port}/v2/"),
                 &[],
                 None,
             )
-            .unwrap();
-        std::env::remove_var("DOCKER_CONFIG");
+        })
+        .unwrap();
         assert_eq!(answered.status, StatusCode::OK, "{}", answered.words());
         assert_eq!(answered.body, b"{}");
         assert_eq!(
