@@ -2,7 +2,9 @@
 //! repository holding a workspace whose family crates inherit their
 //! version and depend on each other by path, each packaging task's crate
 //! file made by cargo itself, cargo run under a `CARGO_HOME` and `HOME` of
-//! each test's own (design D11). Needs cargo, so it is in the tools layer.
+//! each test's own, the projection group run whole over it, its serve
+//! scenarios asking for a version's crate as Cargo downloads one (design
+//! D11). Needs cargo, so it is in the tools layer.
 
 #![cfg(feature = "tools")]
 
@@ -354,8 +356,15 @@ impl ProjectionRig for CargoRig {
             .collect()
     }
 
+    /// Cargo reads its registry from the host's serving process (86).
     fn serves(&self) -> bool {
-        false
+        true
+    }
+
+    /// Cargo's download of the crate `meta` names, as `config.json`'s
+    /// `dl` spells it below the layout's base.
+    fn request(&self, meta: &ArtifactMeta) -> String {
+        format!("crates/{}/{}/download", meta.name(), meta.version())
     }
 
     fn caches(&self) -> bool {
