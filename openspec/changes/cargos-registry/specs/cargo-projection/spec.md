@@ -165,28 +165,29 @@ cannot be read SHALL be unreadable naming its digest.
 - **WHEN** requires is asked of a crate whose only dependencies are of crates.io
 - **THEN** it answers none
 
-### Requirement: Whether a version satisfies a range, by Cargo's rules
+### Requirement: The versions a range admits, by Cargo's rules
 
-The Cargo projection SHALL answer whether a version satisfies a range
-by Cargo's own requirement rules, a version Cargo cannot read
-satisfying no range, and which of two versions is newer by Cargo's
-version order (140, 23). A range Cargo's rules cannot read SHALL be
-refused naming the name, the range and the parser's own words.
+The Cargo projection SHALL answer satisfying, given a range and
+versions, with those versions that satisfy the range by Cargo's own
+requirement rules, newest first by Cargo's version order, a version
+Cargo cannot read satisfying no range (140, 23). A range Cargo's rules
+cannot read SHALL be refused naming the range and the parser's own
+words.
 
 #### Scenario: The versions a range admits
 
-- **WHEN** the projection is asked whether each of 1.2.0, 2.0.0, 1.5.0-rc.1, 1.4.0 and `latest` satisfies the range `1` of `fam-b`
-- **THEN** it answers yes for 1.2.0 and 1.4.0, and no for the rest
+- **WHEN** the projection is asked which of 1.2.0, 2.0.0, 1.5.0-rc.1, 1.4.0 and `latest` satisfy the range `1`
+- **THEN** it answers 1.4.0 then 1.2.0, and no other
 
-#### Scenario: The newer of two versions
+#### Scenario: Newest by Cargo's order
 
-- **WHEN** the projection is asked which of 1.10.0 and 1.9.0 is newer, and which of 1.0.0-rc.1 and 1.0.0
-- **THEN** it answers 1.10.0, and 1.0.0
+- **WHEN** the projection is asked which of 1.9.0, 1.10.0, 1.0.0 and 1.0.0-rc.1 satisfy the range `>=1.0.0-rc.1, <2`
+- **THEN** it answers 1.10.0, 1.9.0, 1.0.0 and 1.0.0-rc.1, in that order
 
 #### Scenario: A range Cargo cannot read
 
-- **WHEN** the projection is asked whether 1.0.0 satisfies the range `not-a-range` of `fam-b`
-- **THEN** it is refused naming `fam-b`, `not-a-range` and the parser's words
+- **WHEN** the projection is asked which of 1.0.0 satisfy the range `not-a-range`
+- **THEN** it is refused naming `not-a-range` and the parser's words
 
 ### Requirement: A sparse registry rendered from the store
 
@@ -236,7 +237,8 @@ answered from the layout alone. A crate the core answers absent, refused
 or unreadable SHALL be answered with a not-found, a forbidden or a
 bad-gateway status, the response carrying the answer's own words
 verbatim (58, 59, 99). Every request SHALL be answered with a response,
-so the projection is read as serving.
+so the projection is read as serving, in the one shape of request,
+response and miss the host's process serves every ecosystem in.
 
 #### Scenario: A crate held, served
 
