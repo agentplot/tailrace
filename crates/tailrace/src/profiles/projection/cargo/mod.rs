@@ -1,14 +1,22 @@
-//! The projection for Cargo (C.11; ADR 0006): a crate packed by Cargo's
-//! own packager, and a local registry rendered from the store, which a
-//! consumer's Cargo reads through source replacement.
+//! The projection for Cargo (C.11; ADR 0006): a crate packed alone by
+//! Cargo's own packager without its own lockfile, its siblings at the
+//! component's version and another component's crates at the requirement
+//! their manifests write; a checkout's lockfile pins and its manifests'
+//! ranges, answered with or without a lockfile; what a held crate
+//! requires of the family, and which versions a range admits, newest
+//! first, by Cargo's rules; and a sparse registry rendered from the store
+//! and served from the host's one process, in the one shape of request,
+//! response and miss every projection serves in (84 to 87, 115, 137,
+//! 140; design D3, D5, D8, D9).
 //!
 //! | module | what |
 //! |---|---|
-//! | `pack` | the version written into the manifest that holds it, `cargo package`, the manifest written back (84, 87) |
-//! | `render` | a local registry holding exactly the crates given, each checked before anything is written (85, 48) |
+//! | `pack` | the component's version written into the package and its siblings, a crate of another component checked against the store's versions at its requirement, `cargo package` without the crate's lockfile, every manifest written back (84, 87, 110, 123) |
+//! | `render` | a sparse registry holding exactly the crates given, each checked before anything is written (85, 48) |
+//! | `serve` | Cargo's sparse protocol from the layout: its configuration, its index files, and each crate, one it lacks asked of the core (86, 115, 99) |
 //! | `index` | a crate's index line, from its normalized manifest |
 //! | `crate_file` | a crate's normalized manifest, read from its bytes |
-//! | `pinned` | the versions a checkout's `Cargo.lock` pins from a registry, and the ranges its manifests declare in `tailrace` for names it pins none of (137) |
+//! | `pinned` | the versions a checkout's `Cargo.lock` pins from a registry, and the ranges its manifests declare in `tailrace` for names it pins none of, with or without a lockfile (137) |
 //! | `requires` | what a held crate requires of the family, from its normalized manifest (140) |
 //! | `satisfying` | the versions within a range, newest first, by Cargo's rules (140, 23) |
 //!
@@ -26,13 +34,14 @@ mod pinned;
 mod render;
 mod requires;
 mod satisfying;
+mod serve;
 
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    no_cache_entries, no_serving, Answer, Artifact, ArtifactMeta, BuildId, Contents, Ecosystem,
-    EcosystemName, Layout, Miss, Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered,
-    Request, Requirement, Response, Seam, Source, Store, Version, Why,
+    no_cache_entries, Answer, Artifact, ArtifactMeta, BuildId, Contents, Ecosystem, EcosystemName,
+    Layout, Miss, Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered, Request,
+    Requirement, Response, Seam, Source, Store, Version, Why,
 };
 
 use crate::profiles::run::Tool;
@@ -107,8 +116,9 @@ impl Projection for CargoProjection {
         })
     }
 
-    /// 85, 48: a local registry at `at` holding exactly `contents`' crates,
-    /// each read through the store and checked before anything is written.
+    /// 85, 48: a sparse registry at `at` holding exactly `contents`'
+    /// crates, each read through the store and checked before anything is
+    /// written, and naming no address (design D8).
     fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
         let Contents::Artifacts(artifacts) = contents else {
             return Err(no_cache_entries(&CargoProjection::source()));
@@ -116,10 +126,13 @@ impl Projection for CargoProjection {
         self.render_crates(artifacts, at)
     }
 
-    /// 86: absent naming serving, for every request, asking the core
-    /// nothing.
-    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
-        Err(no_serving(&CargoProjection::source()))
+    /// 86, 115, 99: `request`, one of Cargo's own, answered from the
+    /// layout in Cargo's sparse registry protocol: the configuration
+    /// naming downloads under the request's base, an index file from the
+    /// layout alone, and a crate's bytes, one the layout lacks asked of
+    /// the core once through `miss` (design D9).
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.serve_request(layout, request, miss)
     }
 
     /// 137: the versions the checkout's root `Cargo.lock` pins from a
@@ -183,29 +196,5 @@ mod tests {
             0,
             "the checkout was written"
         );
-    }
-
-    #[test]
-    fn serve_is_absent_naming_serving_and_asks_the_core_nothing() {
-        let dir = TempDir::new().unwrap();
-        let projection = CargoProjection::new(dir.path(), Box::new(FakeStore::new()));
-        let request = Request {
-            method: "GET".into(),
-            path: "config.json".into(),
-            base: "http://127.0.0.1:7420/o/r/cargo".into(),
-        };
-        let asked = std::cell::Cell::new(0);
-        let miss = |_: &tailrace_seams::Pinned| {
-            asked.set(asked.get() + 1);
-            Ok(())
-        };
-        let layout = Layout {
-            at: "layouts/cargo".into(),
-        };
-        assert_eq!(
-            projection.serve(&layout, &request, &miss),
-            Err(no_serving(&CargoProjection::source()))
-        );
-        assert_eq!(asked.get(), 0, "the core was asked for a version");
     }
 }

@@ -1,5 +1,6 @@
-//! render (85, 48; design D5): a Cargo local registry at the place
-//! given, holding exactly the crates given. Every artifact is checked
+//! render (85, 48; design D8): a Cargo sparse registry at the place
+//! given, holding exactly the crates given, naming no address: the
+//! configuration that names one is the server's (design D9). Every artifact is checked
 //! before anything is written: of the ecosystem `cargo`, its manifest
 //! naming one layer, the layer's bytes of that digest, and the crate's
 //! own manifest naming the artifact's name and version. Then each crate
@@ -20,8 +21,8 @@ use tailrace_seams::{
 use super::crate_file::{self, CrateManifest};
 use super::{index, CargoProjection, ECOSYSTEM};
 
-/// Where a local registry keeps its index, under its root.
-const INDEX: &str = "index";
+/// Where a registry keeps its index, under its root.
+pub(super) const INDEX: &str = "index";
 
 /// What a crate's file name ends with.
 const CRATE: &str = ".crate";
@@ -37,8 +38,8 @@ struct Checked {
 }
 
 impl CargoProjection {
-    /// 85: the local registry of `artifacts` at `at`, and the versions it
-    /// holds, in the order given.
+    /// 85: the registry of `artifacts` at `at`, and the versions it holds,
+    /// in the order given.
     pub(super) fn render_crates(&self, artifacts: &[Artifact], at: &str) -> Answer<Rendered> {
         let mut checked: Vec<Checked> = Vec::new();
         for artifact in artifacts {
@@ -188,7 +189,7 @@ fn refused(said: String) -> Not {
 }
 
 /// Whether `name` is a name Cargo gives a crate, so it names no path.
-fn is_crate_name(name: &str) -> bool {
+pub(super) fn is_crate_name(name: &str) -> bool {
     !name.is_empty()
         && name
             .bytes()
@@ -198,7 +199,7 @@ fn is_crate_name(name: &str) -> bool {
 /// Where Cargo looks for `name`'s index file, under the index: by its
 /// length and its first letters, lower-cased (Cargo's registry index
 /// reference).
-fn index_path(name: &str) -> PathBuf {
+pub(super) fn index_path(name: &str) -> PathBuf {
     let name = name.to_ascii_lowercase();
     let path = match name.len() {
         1 => format!("1/{name}"),
@@ -209,13 +210,19 @@ fn index_path(name: &str) -> PathBuf {
     Path::new(INDEX).join(path)
 }
 
+/// The file the crate of `name` at `version` is held as, under the
+/// registry.
+pub(super) fn crate_file_name(name: &str, version: &str) -> String {
+    format!("{name}-{version}{CRATE}")
+}
+
 /// Every file the registry of `checked` holds, by its path under the
 /// registry, with its bytes.
 fn files(checked: &[Checked]) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut files = BTreeMap::new();
     let mut lines: BTreeMap<PathBuf, Vec<&Checked>> = BTreeMap::new();
     for crate_ in checked {
-        let file = format!("{}-{}{CRATE}", crate_.meta.name(), crate_.meta.version());
+        let file = crate_file_name(crate_.meta.name().as_str(), crate_.meta.version().as_str());
         files.insert(PathBuf::from(file), crate_.bytes.clone());
         lines
             .entry(index_path(crate_.meta.name().as_str()))
@@ -290,7 +297,7 @@ fn prune(dir: &Path, at: &Path, files: &BTreeMap<PathBuf, Vec<u8>>) -> Answer<()
     Ok(())
 }
 
-fn unreadable(path: &Path, e: &io::Error) -> Not {
+pub(super) fn unreadable(path: &Path, e: &io::Error) -> Not {
     Not::unreadable(
         &CargoProjection::source(),
         path.display().to_string(),
@@ -424,7 +431,7 @@ mod tests {
         }
     }
 
-    // Requirement: A local registry rendered from the store
+    // Requirement: A sparse registry rendered from the store
 
     #[test]
     fn the_layout_holds_exactly_the_crates_given_with_lines_in_cargos_order() {
