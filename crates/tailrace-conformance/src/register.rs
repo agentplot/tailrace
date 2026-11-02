@@ -24,7 +24,6 @@ pub struct Pending {
     pub why: &'static str,
 }
 
-const CARGO: &str = "bolt 5 · Cargo's registry";
 const DRIVER: &str = "bolt 5 · the driver and the pool run publish";
 const TARGET: &str = "phase 2 · the first target";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
@@ -66,7 +65,6 @@ pub struct Part {
 // One part per line, as the entries are.
 #[rustfmt::skip]
 pub const PARTS: &[Part] = &[
-    Part { clause: 137, part: "a manifest's range no lockfile pins, held at the newest version the layout's policy admits within it, and the closure over what each held version requires", unit: CARGO, why: "The core holds no version by a range and closes no layout until the store lists a name's versions and a projection answers ranges and what a version requires." },
     Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: TARGET, why: "The pages show environments once a target reports them, and phase 1 leaves every target to phase 2." },
     Part { clause: 134, part: "the notes of every version between what an environment runs and what it should", unit: TARGET, why: "The surfaces show environments once a target reports them, and phase 1 leaves every target to phase 2." },
 ];
@@ -77,19 +75,33 @@ mod tests {
     use crate::citations;
 
     #[test]
-    fn store_naming_leaves_the_register_and_names_137s_range_and_closure_cargos() {
+    fn store_naming_leaves_the_register() {
         assert!(
             !PENDING.iter().any(|p| p.clause == 138),
             "138 is cited, and still in the register"
         );
         assert!(citations().iter().any(|c| c.cites.contains(&138)));
-        let parts: Vec<&Part> = PARTS.iter().filter(|p| p.clause == 137).collect();
-        assert_eq!(parts.len(), 1, "{parts:?}");
-        assert_eq!(parts[0].unit, CARGO);
+    }
+
+    #[test]
+    fn cargos_registry_takes_137s_range_and_closure_out_of_the_register() {
         assert!(
-            parts[0].part.contains("range") && parts[0].part.contains("closure"),
-            "{}",
-            parts[0].part
+            !PENDING.iter().any(|p| p.clause == 137),
+            "137 is cited, and still in the register"
+        );
+        let parts: Vec<&Part> = PARTS.iter().filter(|p| p.clause == 137).collect();
+        assert_eq!(parts, Vec::<&Part>::new(), "137's range and closure wait");
+        let layouts: Vec<&str> = citations()
+            .iter()
+            .filter(|c| c.group == "layouts" && c.cites.contains(&137))
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(
+            layouts,
+            [
+                "the newest admitted within a range",
+                "a pinned version's dependencies, two levels down"
+            ]
         );
     }
 }
