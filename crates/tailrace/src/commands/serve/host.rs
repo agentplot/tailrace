@@ -95,12 +95,20 @@ impl Host {
     /// Status's binding in the checkout at `checkout`, from this host's
     /// bindings file or, where it has none, as 118 binds such a host.
     pub fn bind(&self, checkout: &Path) -> Answer<Binding> {
+        self.bind_for(checkout, For::Status)
+    }
+
+    /// The binding `command` is made in the checkout at `checkout`, from
+    /// this host's bindings file or, where it has none, as 118 binds such
+    /// a host: a served layout's is sync's, whose projections and trust
+    /// render a version the layout lacks as a sync would (design D2).
+    pub fn bind_for(&self, checkout: &Path, command: For) -> Answer<Binding> {
         bindings::bind(
             &self.config,
             self.home.as_deref(),
             self.data.as_deref().map(Path::as_os_str),
             checkout,
-            For::Status,
+            command,
         )
     }
 
