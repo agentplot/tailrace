@@ -277,6 +277,7 @@ crates/tailrace/src/bindings/tests.rs
 crates/tailrace/src/commands/sync.rs
 crates/tailrace/tests/**
 crates/tailrace/moon.yml
+crates/tailrace-seams/Cargo.toml
 crates/tailrace-seams/src/projection.rs
 crates/tailrace-seams/src/lib.rs
 crates/tailrace-core/src/publish.rs
