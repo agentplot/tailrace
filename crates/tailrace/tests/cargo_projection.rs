@@ -1,7 +1,8 @@
 //! Spec cargo-projection: the Cargo projection over a scratch git
-//! repository holding a workspace whose one crate inherits its version,
-//! cargo run under a `CARGO_HOME` and `HOME` of each test's own (design
-//! D7). Needs cargo, so it is in the tools layer.
+//! repository holding a workspace whose family crates inherit their
+//! version and depend on each other by path, each packaging task's crate
+//! file made by cargo itself, cargo run under a `CARGO_HOME` and `HOME` of
+//! each test's own (design D11). Needs cargo, so it is in the tools layer.
 
 #![cfg(feature = "tools")]
 
@@ -11,57 +12,110 @@ use std::fs;
 use std::io::Read;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use scratch::{on_path, Repo, Scratch};
 use tailrace::profiles::projection::cargo::{CargoProjection, ECOSYSTEM};
 use tailrace::profiles::store::layout::Layout;
 use tailrace_conformance::seams::projection::{self, ProjectionRig};
 use tailrace_conformance::{run, Rig};
-use tailrace_fakes::{Alone, FakeStore};
+use tailrace_core::paths_hold;
+use tailrace_fakes::FakeStore;
 use tailrace_seams::{
-    Artifact, ArtifactMeta, BuildId, Ecosystem, EcosystemName, Manifest, Output, OutputName,
-    Pinned, Projection, Range, Requirement, Store, Version,
+    artifact_name, Answer, Artifact, ArtifactMeta, BuildId, Component, ComponentName, Ecosystem,
+    EcosystemName, Manifest, Not, Output, OutputName, PackAt, Packed, Pinned, Projection, Range,
+    Requirement, Store, Version,
 };
 
-/// The family crate the workspace holds.
-const CRATE: &str = "fam-lib";
+/// The family crate packed, which depends by path on its sibling.
+const CRATE: &str = "fam-a";
 
-/// The workspace's manifest, which holds the version its crate inherits.
+/// The served Cargo address of the family repository, which the
+/// workspace's cargo configuration names `tailrace`.
+const SERVED: &str = "sparse+http://127.0.0.1:7420/agentplot/family/cargo/";
+
+/// The workspace's manifest, which holds the version its crates inherit.
 const WORKSPACE: &str = "[workspace]\n\
 resolver = \"2\"\n\
-members = [\"crates/fam\"]\n\
+members = [\"crates/*\", \"base/*\"]\n\
 \n\
 [workspace.package]\n\
 version = \"0.0.0\" # the tag's, written at publish\n\
 edition = \"2021\"\n\
 license = \"MIT\"\n";
 
-const MEMBER: &str = "[package]\n\
-name = \"fam-lib\"\n\
+/// The cargo configuration naming the registry `tailrace`.
+fn config() -> String {
+    format!("[registries.tailrace]\nindex = \"{SERVED}\"\n")
+}
+
+/// `fam-a`, inheriting its version and depending by path on `fam-b`, and
+/// on `base-c` of the component `base` too where `base` is given.
+fn fam_a(base: bool) -> String {
+    let mut manifest = "[package]\n\
+name = \"fam-a\"\n\
+version.workspace = true\n\
+edition.workspace = true\n\
+license.workspace = true\n\
+description = \"a family crate\"\n\
+\n\
+[dependencies]\n\
+fam-b = { path = \"../fam-b\", version = \"0.0.0\", registry = \"tailrace\" }\n"
+        .to_string();
+    if base {
+        manifest.push_str("base-c = { path = \"../../base/base-c\", version = \"0.3\" }\n");
+    }
+    manifest
+}
+
+const FAM_B: &str = "[package]\n\
+name = \"fam-b\"\n\
 version.workspace = true\n\
 edition.workspace = true\n\
 license.workspace = true\n\
 description = \"a family crate\"\n";
 
+const BASE_C: &str = "[package]\n\
+name = \"base-c\"\n\
+version = \"0.3.1\"\n\
+edition = \"2021\"\n\
+license = \"MIT\"\n\
+description = \"a crate of another component\"\n";
+
 const LIB: &str = "pub fn hello() -> &'static str {\n    \"hello\"\n}\n";
 
-/// The workspace committed in a scratch repository, and cargo sealed
-/// under a home of the test's own.
+/// The workspace committed in a scratch repository, each crate's
+/// packaging task's crate file made, and cargo sealed under a home of the
+/// test's own.
 struct Workspace {
     scratch: Scratch,
     cargo: PathBuf,
+    base: bool,
 }
 
 impl Workspace {
-    fn new() -> Workspace {
+    /// The workspace of `fam-a` and `fam-b`, and of `base-c`, on which
+    /// `fam-a` depends where `base`.
+    fn new(base: bool) -> Workspace {
         let scratch = Scratch::new();
         let repo = &scratch.repo;
         repo.write("Cargo.toml", WORKSPACE);
-        repo.write("crates/fam/Cargo.toml", MEMBER);
-        repo.write("crates/fam/src/lib.rs", LIB);
-        repo.commit("feat: the family crate");
+        repo.write(".cargo/config.toml", &config());
+        repo.write("crates/fam-a/Cargo.toml", &fam_a(base));
+        repo.write("crates/fam-a/src/lib.rs", LIB);
+        repo.write("crates/fam-b/Cargo.toml", FAM_B);
+        repo.write("crates/fam-b/src/lib.rs", LIB);
+        repo.write("base/base-c/Cargo.toml", BASE_C);
+        repo.write("base/base-c/src/lib.rs", LIB);
+        repo.commit("feat: the family crates");
         let cargo = sealed(&scratch.path());
-        Workspace { scratch, cargo }
+        let workspace = Workspace {
+            scratch,
+            cargo,
+            base,
+        };
+        workspace.packaging_task();
+        workspace
     }
 
     fn repo(&self) -> &Repo {
@@ -72,14 +126,95 @@ impl Workspace {
         CargoProjection::new(&self.repo().path, store).cargo_program(&self.cargo)
     }
 
-    /// The crate's output: its manifest and its source, as a build names
-    /// the files a task declared.
-    fn output(&self) -> Output {
-        let at = |file: &str| self.repo().path.join(file).display().to_string();
+    /// The build's packaging task, stood in for: every crate of the
+    /// workspace packed by cargo outside the tree, as a family repository's
+    /// task leaves its crate files.
+    fn packaging_task(&self) {
+        let ran = Command::new(&self.cargo)
+            .current_dir(&self.repo().path)
+            .args([
+                "package",
+                "--workspace",
+                "--no-verify",
+                "--offline",
+                "--exclude-lockfile",
+                "--registry",
+                "tailrace",
+                "--target-dir",
+            ])
+            .arg(self.build())
+            .output()
+            .unwrap();
+        assert!(
+            ran.status.success(),
+            "the packaging task failed: {}",
+            String::from_utf8_lossy(&ran.stderr)
+        );
+    }
+
+    /// Where the packaging task builds, outside the tree.
+    fn build(&self) -> PathBuf {
+        self.scratch.path().join("build")
+    }
+
+    /// The output of `name`'s packaging task: the crate file it left.
+    fn output_of(&self, name: &str) -> Output {
+        let file = self.build().join(format!("package/{name}-0.0.0.crate"));
         Output {
-            name: OutputName::new("fam"),
-            files: vec![at("crates/fam/Cargo.toml"), at("crates/fam/src/lib.rs")],
+            name: OutputName::new(name),
+            files: vec![file.display().to_string()],
         }
+    }
+
+    /// The crate packed.
+    fn output(&self) -> Output {
+        self.output_of(CRATE)
+    }
+
+    /// The component `fam`, whose paths hold `crates/`, and the outputs
+    /// it declares, `fam-a`'s and `fam-b`'s, or `fam-a`'s alone where
+    /// `fam_b` is not.
+    fn fam(&self, fam_b: bool) -> (Component, Vec<Output>) {
+        let mut outputs = vec![self.output()];
+        if fam_b {
+            outputs.push(self.output_of("fam-b"));
+        }
+        let component = Component {
+            name: ComponentName::new("fam"),
+            outputs: outputs.iter().map(|o| o.name.clone()).collect(),
+            paths: vec!["crates/".into()],
+            prefix: "fam-v".into(),
+        };
+        (component, outputs)
+    }
+
+    /// `fam-a` packed at `version` by `projection`, as a publish of the
+    /// component `fam` hands it.
+    fn pack(&self, projection: &dyn Projection, version: &str, fam_b: bool) -> Answer<Packed> {
+        let (component, outputs) = self.fam(fam_b);
+        let holds = paths_hold(&component.paths).unwrap();
+        projection.pack(
+            &self.output(),
+            &BuildId::new("b7e1"),
+            Some(&PackAt {
+                version: &Version::new(version),
+                component: &component,
+                outputs: &outputs,
+                holds: &holds,
+            }),
+        )
+    }
+
+    /// Every manifest of the workspace holds its committed bytes, and the
+    /// tree holds nothing else.
+    fn as_it_was(&self) {
+        let repo = self.repo();
+        let read = |file: &str| fs::read_to_string(repo.path.join(file)).unwrap();
+        assert_eq!(read("Cargo.toml"), WORKSPACE);
+        assert_eq!(read("crates/fam-a/Cargo.toml"), fam_a(self.base));
+        assert_eq!(read("crates/fam-b/Cargo.toml"), FAM_B);
+        assert_eq!(read("base/base-c/Cargo.toml"), BASE_C);
+        assert_eq!(repo.git(&["status", "--porcelain", "--ignored"]), "");
     }
 }
 
@@ -119,6 +254,16 @@ fn crate_manifest(bytes: &[u8]) -> String {
     panic!("the crate holds no Cargo.toml")
 }
 
+/// The paths a crate holds.
+fn crate_files(bytes: &[u8]) -> Vec<String> {
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(bytes));
+    archive
+        .entries()
+        .unwrap()
+        .map(|entry| entry.unwrap().path().unwrap().display().to_string())
+        .collect()
+}
+
 /// A crate of `name` at `version` whose normalized manifest is
 /// `manifest`, as `cargo package` lays one out, made in memory.
 fn crate_of(name: &str, version: &str, manifest: &str) -> Vec<u8> {
@@ -142,10 +287,6 @@ fn crate_of(name: &str, version: &str, manifest: &str) -> Vec<u8> {
     archive.into_inner().unwrap().finish().unwrap()
 }
 
-/// The served Cargo address of the family repository the rig's crates
-/// depend on.
-const SERVED: &str = "sparse+http://127.0.0.1:7420/agentplot/family/cargo/";
-
 /// The workspace, a layout store beside it, and the projection of the
 /// workspace reading crates from the store.
 struct CargoRig {
@@ -156,7 +297,7 @@ struct CargoRig {
 
 impl CargoRig {
     fn new() -> CargoRig {
-        let workspace = Workspace::new();
+        let workspace = Workspace::new(false);
         let layout = Layout::create(workspace.scratch.path().join("layout")).unwrap();
         let projection = workspace.projection(Box::new(layout.clone()));
         CargoRig {
@@ -182,6 +323,11 @@ impl ProjectionRig for CargoRig {
         self.workspace.output()
     }
 
+    /// The component `fam`, declaring both crates' packaging outputs.
+    fn component(&self) -> (Component, Vec<Output>) {
+        self.workspace.fam(true)
+    }
+
     /// The crate packed at `1.0.0`, `1.1.0` and on, each put in the layout
     /// store as a publish puts an artifact: its bytes, then a manifest
     /// naming them as its one layer.
@@ -190,12 +336,8 @@ impl ProjectionRig for CargoRig {
             .map(|i| {
                 let version = Version::new(format!("1.{i}.0"));
                 let packed = self
-                    .projection
-                    .pack(
-                        &self.output(),
-                        &BuildId::new("b7e1"),
-                        Some(&Alone::new(&self.output(), version.as_str()).at()),
-                    )
+                    .workspace
+                    .pack(&self.projection, version.as_str(), true)
                     .unwrap();
                 let meta = packed.meta.unwrap();
                 let layer = self.layout.put_bytes(&packed.bytes).unwrap().digest;
@@ -343,19 +485,29 @@ fn every_scenario_of_the_projection_group_over_the_cargo_projection() {
     assert_eq!(inapplicable, CACHE, "{report}");
 }
 
-// Requirement: A pack leaves the checkout as it was and refuses what it
-// cannot promise
+// Requirement: A crate packed by Cargo's own packager, and a pack leaves
+// the checkout as it was
+
+/// The normalized manifest of `bytes` as a table.
+fn normalized(bytes: &[u8]) -> toml::Table {
+    toml::from_str(&crate_manifest(bytes)).unwrap()
+}
+
+/// The dependency `name` the normalized manifest `table` writes.
+fn dependency<'a>(table: &'a toml::Table, name: &str) -> &'a toml::Table {
+    table["dependencies"][name]
+        .as_table()
+        .unwrap_or_else(|| panic!("{name} is no dependency of {table}"))
+}
 
 #[test]
-fn a_crate_inheriting_its_version_packs_at_the_version_and_leaves_the_checkout_as_it_was() {
-    let workspace = Workspace::new();
-    let repo = workspace.repo();
+fn a_crate_and_its_sibling_pack_at_the_version_in_the_registry_and_the_checkout_is_as_it_was() {
+    let workspace = Workspace::new(false);
     let packed = workspace
-        .projection(Box::new(FakeStore::new()))
         .pack(
-            &workspace.output(),
-            &BuildId::new("b7e1"),
-            Some(&Alone::new(&workspace.output(), "1.4.0").at()),
+            &workspace.projection(Box::new(FakeStore::new())),
+            "1.4.0",
+            true,
         )
         .unwrap();
     assert_eq!(
@@ -370,33 +522,47 @@ fn a_crate_inheriting_its_version_packs_at_the_version_and_leaves_the_checkout_a
         )
     );
     assert!(packed.same_again);
-    let manifest = crate_manifest(&packed.bytes);
+    let manifest = normalized(&packed.bytes);
+    assert_eq!(manifest["package"]["version"].as_str(), Some("1.4.0"));
+    let fam_b = dependency(&manifest, "fam-b");
+    assert_eq!(fam_b["version"].as_str(), Some("1.4.0"), "{fam_b}");
+    assert_eq!(fam_b["registry-index"].as_str(), Some(SERVED), "{fam_b}");
+    assert!(!fam_b.contains_key("path"), "{fam_b}");
+    let files = crate_files(&packed.bytes);
     assert!(
-        manifest.contains("name = \"fam-lib\"\nversion = \"1.4.0\"\n"),
-        "{manifest}"
+        !files.iter().any(|f| f.ends_with("Cargo.lock")),
+        "the crate holds a lockfile: {files:?}"
     );
-    assert_eq!(
-        fs::read_to_string(repo.path.join("Cargo.toml")).unwrap(),
-        WORKSPACE
-    );
-    assert_eq!(
-        fs::read_to_string(repo.path.join("crates/fam/Cargo.toml")).unwrap(),
-        MEMBER
-    );
-    assert_eq!(repo.git(&["status", "--porcelain", "--ignored"]), "");
+    workspace.as_it_was();
 }
 
 #[test]
-fn a_version_cargo_refuses_is_unreadable_in_cargos_words_and_the_manifest_is_written_back() {
-    let workspace = Workspace::new();
-    let repo = workspace.repo();
-    let answer = workspace.projection(Box::new(FakeStore::new())).pack(
-        &workspace.output(),
-        &BuildId::new("b7e1"),
-        Some(&Alone::new(&workspace.output(), "not.a.version").at()),
-    );
-    match answer {
-        Err(tailrace_seams::Not::Unreadable(u)) => {
+fn a_sibling_none_of_the_components_outputs_packs_is_refused_naming_it_and_the_component() {
+    let workspace = Workspace::new(false);
+    match workspace.pack(
+        &workspace.projection(Box::new(FakeStore::new())),
+        "1.4.0",
+        false,
+    ) {
+        Err(Not::Refused(r)) => {
+            let said = r.said.unwrap();
+            assert!(said.starts_with("the crate fam-b, at "), "{said}");
+            assert!(said.contains("of the component fam by its paths"), "{said}");
+        }
+        other => panic!("answered {other:?}"),
+    }
+    workspace.as_it_was();
+}
+
+#[test]
+fn a_version_cargo_refuses_is_unreadable_in_cargos_words_and_the_manifests_are_written_back() {
+    let workspace = Workspace::new(false);
+    match workspace.pack(
+        &workspace.projection(Box::new(FakeStore::new())),
+        "not.a.version",
+        true,
+    ) {
+        Err(Not::Unreadable(u)) => {
             assert_eq!(u.source, CargoProjection::source());
             assert!(
                 u.what.contains(" package --no-verify --allow-dirty"),
@@ -407,9 +573,82 @@ fn a_version_cargo_refuses_is_unreadable_in_cargos_words_and_the_manifest_is_wri
         }
         other => panic!("answered {other:?}"),
     }
-    assert_eq!(
-        fs::read_to_string(repo.path.join("Cargo.toml")).unwrap(),
-        WORKSPACE
+    workspace.as_it_was();
+}
+
+// Requirement: A crate of another component is depended on as the
+// manifest writes
+
+/// A layout store beside the workspace naming `base-c` at each of
+/// `versions`.
+fn holding(workspace: &Workspace, versions: &[&str]) -> Layout {
+    let layout = Layout::create(workspace.scratch.path().join("layout")).unwrap();
+    let digest = layout.put_bytes(b"base-c's index").unwrap().digest;
+    for version in versions {
+        let name = artifact_name(
+            &Ecosystem::new(ECOSYSTEM),
+            &EcosystemName::new("base-c"),
+            &Version::new(*version),
+        );
+        layout.name(&name, &digest, None).unwrap();
+    }
+    layout
+}
+
+fn refused(answer: Answer<Packed>) -> String {
+    match answer {
+        Err(Not::Refused(r)) => {
+            assert_eq!(r.source, CargoProjection::source());
+            r.said.unwrap()
+        }
+        other => panic!("answered {other:?}"),
+    }
+}
+
+#[test]
+fn another_components_crate_is_packed_at_its_requirement_the_same_whatever_the_store_holds() {
+    let workspace = Workspace::new(true);
+    let layout = holding(&workspace, &["0.3.1"]);
+    let projection = workspace.projection(Box::new(layout.clone()));
+    let packed = workspace.pack(&projection, "1.4.0", true).unwrap();
+    assert!(packed.same_again);
+    let manifest = normalized(&packed.bytes);
+    let base_c = dependency(&manifest, "base-c");
+    assert_eq!(base_c["version"].as_str(), Some("0.3"), "{base_c}");
+    assert_eq!(base_c["registry-index"].as_str(), Some(SERVED), "{base_c}");
+    assert!(!base_c.contains_key("path"), "{base_c}");
+    workspace.as_it_was();
+
+    let digest = layout.put_bytes(b"base-c's next index").unwrap().digest;
+    let next = artifact_name(
+        &Ecosystem::new(ECOSYSTEM),
+        &EcosystemName::new("base-c"),
+        &Version::new("0.3.2"),
     );
-    assert_eq!(repo.git(&["status", "--porcelain", "--ignored"]), "");
+    layout.name(&next, &digest, None).unwrap();
+    let again = workspace.pack(&projection, "1.4.0", true).unwrap();
+    assert_eq!(again.bytes, packed.bytes, "the bytes moved with the store");
+    workspace.as_it_was();
+}
+
+#[test]
+fn another_components_crate_the_store_holds_only_outside_its_requirement_is_refused() {
+    let workspace = Workspace::new(true);
+    let projection = workspace.projection(Box::new(holding(&workspace, &["0.4.0"])));
+    assert_eq!(
+        refused(workspace.pack(&projection, "1.4.0", true)),
+        "base-c of another component is required at 0.3, and the store holds it only at 0.4.0"
+    );
+    workspace.as_it_was();
+}
+
+#[test]
+fn another_components_crate_the_store_names_at_no_version_is_refused_saying_so() {
+    let workspace = Workspace::new(true);
+    let projection = workspace.projection(Box::new(holding(&workspace, &[])));
+    assert_eq!(
+        refused(workspace.pack(&projection, "1.4.0", true)),
+        "base-c of another component is required at 0.3, and the store holds no version of it"
+    );
+    workspace.as_it_was();
 }
