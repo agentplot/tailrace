@@ -12,11 +12,10 @@ mod scratch;
 
 use std::fs;
 use std::io::Read;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
-use scratch::{on_path, Repo, Scratch};
+use scratch::{sealed_cargo, Repo, Scratch};
 use tailrace::profiles::projection::cargo::{CargoProjection, ECOSYSTEM};
 use tailrace::profiles::store::layout::Layout;
 use tailrace_conformance::seams::projection::{self, ProjectionRig};
@@ -110,7 +109,7 @@ impl Workspace {
         repo.write("base/base-c/Cargo.toml", BASE_C);
         repo.write("base/base-c/src/lib.rs", LIB);
         repo.commit("feat: the family crates");
-        let cargo = sealed(&scratch.path());
+        let cargo = sealed_cargo(&scratch.path());
         let workspace = Workspace {
             scratch,
             cargo,
@@ -218,27 +217,6 @@ impl Workspace {
         assert_eq!(read("base/base-c/Cargo.toml"), BASE_C);
         assert_eq!(repo.git(&["status", "--porcelain", "--ignored"]), "");
     }
-}
-
-/// A script at `dir/bin/cargo` running the shell's cargo with `CARGO_HOME`
-/// and `HOME` under `dir`, so nothing of the host's home is read.
-fn sealed(dir: &Path) -> PathBuf {
-    let home = dir.join("home");
-    fs::create_dir_all(home.join("cargo")).unwrap();
-    let bin = dir.join("bin");
-    fs::create_dir_all(&bin).unwrap();
-    let script = bin.join("cargo");
-    fs::write(
-        &script,
-        format!(
-            "#!/bin/sh\nCARGO_HOME='{home}/cargo' HOME='{home}' exec '{cargo}' \"$@\"\n",
-            home = home.display(),
-            cargo = on_path("cargo").display()
-        ),
-    )
-    .unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-    script
 }
 
 /// The text of the crate's own `Cargo.toml`, as cargo normalized it.
