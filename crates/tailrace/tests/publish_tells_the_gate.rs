@@ -16,9 +16,9 @@ use tailrace_conformance::world::{
 use tailrace_core::{accept, answer_json, publish, AcceptAsk, Kept, Published, ToldBy};
 use tailrace_fakes::KeeperOp;
 use tailrace_seams::{
-    Audience, Chain, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName, Digest,
-    Envelope, Keeper, NamedSigner, Not, Outcome, Promotion, Required, RequiredClaim, Revision,
-    Seam, Source, Store, Version,
+    AskedOf, Audience, Chain, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
+    Digest, Envelope, Keeper, NamedSigner, Not, Outcome, Promotion, Required, RequiredClaim,
+    Revision, Seam, Source, Store, Version,
 };
 use tempfile::TempDir;
 
@@ -42,6 +42,8 @@ fn named(id: &str, kinds: &[ClaimKind]) -> NamedSigner {
     }
 }
 
+/// The landing's verdict of `test`, asked of built artifacts alone, so
+/// a version's notes, rendered with no build, are never asked it (134).
 fn test_from_the_landing() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Verdict,
@@ -50,11 +52,13 @@ fn test_from_the_landing() -> RequiredClaim {
             checks: vec![Check::new("test")],
             ..named(LANDING, &[ClaimKind::Verdict])
         }],
+        asked_of: AskedOf::Built,
     }
 }
 
-/// Acceptance requires the host's provenance, the host named for
-/// `kinds`, and the landing's verdict of `test`.
+/// Acceptance requires the host's provenance of every artifact, the host
+/// named for `kinds`, and the landing's verdict of `test` of built
+/// artifacts alone.
 fn acceptance(kinds: &[ClaimKind]) -> Required {
     Required::Acceptance {
         claims: vec![
@@ -62,6 +66,7 @@ fn acceptance(kinds: &[ClaimKind]) -> Required {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![named(HOST, kinds)],
+                asked_of: AskedOf::Every,
             },
             test_from_the_landing(),
         ],
@@ -82,6 +87,7 @@ fn requires(world: &FakeWorld, channel: &ChannelId, more: Vec<RequiredClaim>) {
         kind: ClaimKind::Acceptance,
         check: None,
         signers: vec![host.clone()],
+        asked_of: AskedOf::Every,
     }];
     claims.extend(more);
     world.fakes.policy.require(
@@ -111,6 +117,7 @@ fn beta_requires_a_gate_elsewhere(world: &FakeWorld) {
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: vec![gate.clone()],
+                asked_of: AskedOf::Every,
             }],
             bound_to: None,
             promoted_by: vec![gate],
@@ -137,6 +144,7 @@ fn the_host_the_given_gate(world: &FakeWorld) {
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: vec![host.clone()],
+                asked_of: AskedOf::Every,
             }],
             bound_to: None,
             promoted_by: vec![host],
@@ -146,7 +154,8 @@ fn the_host_the_given_gate(world: &FakeWorld) {
 }
 
 /// `policy` landed, each of `outputs` built and given the landing's
-/// passing `test` at that revision, acceptance requiring `required`, and
+/// passing `test` at that revision, its cache entry pushed (135),
+/// acceptance requiring `required`, and
 /// `channel` following each publish as the policy seam lists it,
 /// requiring the host's acceptance; the revision.
 fn landed(
@@ -170,6 +179,7 @@ fn landed(
         })
         .collect();
     world.land(&revision, &verdicts);
+    world.pushed(&verdicts);
     let built: Vec<_> = outputs.iter().map(|o| (*o, Outcome::Pass)).collect();
     world.outputs(&revision, &built);
     world.fakes.policy.require(Audience::Acceptance, required);
@@ -192,6 +202,7 @@ fn binding(world: &FakeWorld, gate: Teller) -> Binding {
         store: world.store(),
         signer: Some(world.host.clone()),
         gate,
+        trust: Vec::new(),
     }
 }
 
@@ -337,6 +348,7 @@ fn a_channel_held_is_refused_while_the_version_is_accepted() {
         kind: ClaimKind::Review,
         check: None,
         signers: vec![named("reviewer", &[ClaimKind::Review])],
+        asked_of: AskedOf::Every,
     };
     beta_requires(&world, vec![review]);
     let (code, printed) = publish_through(&world, binding(&world, Teller::Publish), &revision, &[]);
@@ -598,6 +610,60 @@ fn a_file_with_no_gate_table_tells_the_gate_as_publish_does() {
     assert_eq!(naming_none.2, named.2);
     assert_eq!(naming_none.3.len(), 1, "{:?}", naming_none.3);
     assert_eq!(naming_none.3, named.3);
+}
+
+#[test]
+fn a_version_with_notes_is_accepted_on_their_provenance_alone_and_beta_moves() {
+    let world = FakeWorld::new();
+    let revision = following(&world, one_host());
+    let (code, printed) = publish_through(
+        &world,
+        binding(&world, Teller::Publish),
+        &revision,
+        &["--json"],
+    );
+    assert_eq!(code, OK, "{printed}");
+    let index = index_of(&world, "v0.2.0");
+    let component = &json(&printed)["value"]["components"][0];
+    let notes = &component["value"]["notes"];
+    let digest = Digest::parse(notes["digest"].as_str().expect("the notes' digest"))
+        .unwrap_or_else(|e| panic!("{e}: {printed}"));
+    let provenance = &notes["claims"][0];
+    assert_eq!(provenance["kind"], "provenance", "{notes}");
+
+    // The notes carry the publisher's provenance and no verdict.
+    let on_notes = world.fakes.store.claims_of(&digest).unwrap();
+    assert_eq!(on_notes.len(), 1, "{on_notes:?}");
+    assert_eq!(
+        Value::from(on_notes[0].digest().to_string()),
+        provenance["envelope"]
+    );
+
+    let gate = &component["gate"];
+    assert_eq!(gate["value"]["judged"], "accepted", "{gate}");
+    let acceptances = of_kind(&world, &index, ClaimKind::Acceptance);
+    let [acceptance] = acceptances.as_slice() else {
+        panic!("not one acceptance: {acceptances:?}")
+    };
+    let satisfied = acceptance.body["claims"].as_array().unwrap();
+    assert!(
+        satisfied.contains(&provenance["envelope"]),
+        "the acceptance does not name the notes' provenance: {satisfied:?}"
+    );
+    // Each output's provenance and verdict, and of the notes their
+    // provenance alone.
+    assert_eq!(satisfied.len(), 5, "{satisfied:?}");
+
+    let chain = beta_chain(&world);
+    assert_eq!(chain.len(), 1, "beta did not move");
+    assert_eq!(
+        world
+            .fakes
+            .store
+            .resolve(&tailrace_seams::channel_name(&beta()))
+            .unwrap(),
+        index
+    );
 }
 
 #[test]

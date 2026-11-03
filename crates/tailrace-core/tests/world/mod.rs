@@ -7,15 +7,18 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use serde_json::json;
-use tailrace_core::{publish, Ask, History, Kept, Publish, Published, POLICY_FILE};
-use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, Fakes};
+use tailrace_core::{
+    cache_name, publish, Ask, Entry, History, Kept, Publish, Published, NOTES, POLICY_FILE,
+};
+use tailrace_fakes::{FakeBuild, FakeProjection, FakeSigner, FakeStore, Fakes};
 use tailrace_seams::{
-    Answer, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem,
-    Envelope, Layout, Outcome, Output, OutputName, Packed, Projection, Rendered, Report, Revision,
-    Seam, Serving, SignerId, Source, Verdict, Version,
+    Answer, Artifact, Branch, BuildId, Check, Claim, ClaimKind, ComponentName, Contents, Digest,
+    Ecosystem, Envelope, Held, IndexMeta, Layout, Manifest, Miss, Name, Outcome, Output,
+    OutputName, PackAt, Packed, Pin, Projection, Put, Range, Rendered, Report, Request,
+    Requirement, Response, Revision, Seam, SignerId, Source, Store, Verdict, Version,
 };
 
-use crate::common::{Fixture, Repo};
+use crate::common::{Fixture, Repo, CLIFF_TOML};
 
 /// Two components: `lib`, two outputs packed in two ecosystems, and
 /// `web`, one.
@@ -34,6 +37,10 @@ paths = ["site/**"]
 prefix = "web-v"
 projections = { site = "eco-a" }
 "#;
+
+/// A policy declaring no component: the one component's `site`, packed
+/// in `eco-a`, versioned under the rule's prefix `v` (123).
+pub const UNDECLARED: &str = "outputs = [\"site\"]\n[projections]\nsite = \"eco-a\"\n";
 
 pub const HOST: &str = "host";
 pub const LANDING: &str = "landing";
@@ -72,8 +79,8 @@ pub fn build_of(output: &str, revision: &Revision) -> BuildId {
 }
 
 impl World {
-    /// The repository, its shared history and the fakes: `lib` and `web`
-    /// tagged at `start`, one feature on `lib` since, landed on `main`,
+    /// The repository, its shared history and the fakes: the policy and
+    /// the notes' template, `lib` and `web` tagged at `start`, one feature on `lib` since, landed on `main`,
     /// every output built and passing, the host's identity at hand, and
     /// both ecosystems bound.
     pub fn new() -> World {
@@ -91,7 +98,10 @@ impl World {
         let fixture = Fixture::new();
         let shared = fixture.bare("shared.git");
         let repo = fixture.clone_of(&shared, "repo");
-        repo.commit("chore: policy", &[(POLICY_FILE, policy)]);
+        repo.commit(
+            "chore: policy",
+            &[(POLICY_FILE, policy), ("cliff.toml", CLIFF_TOML)],
+        );
         let start = repo.touch("feat: start", &["crates/lib", "site"]);
         repo.tag("lib-v0.1.0", &start);
         repo.tag("web-v0.1.0", &start);
@@ -149,6 +159,26 @@ impl World {
         );
     }
 
+    /// One commit more on `lib` with the message `subject`, landed on
+    /// `main`, every output built and passing there: a revision a later
+    /// version is published from.
+    pub fn next(&self, subject: &str) -> Revision {
+        let revision = self.repo.touch(subject, &["crates/lib"]);
+        self.fakes.landing.land(&self.main, &revision);
+        for o in ["lib-pack", "lib-docs", "site"] {
+            self.fakes.build.made(
+                &revision,
+                &OutputName::new(o),
+                Report {
+                    build: build_of(o, &revision),
+                    outcome: Outcome::Pass,
+                    files: vec![format!("dist/{o}.tar")],
+                },
+            );
+        }
+        revision
+    }
+
     pub fn ask(&self) -> Ask {
         Ask {
             branch: self.main.clone(),
@@ -156,6 +186,7 @@ impl World {
             component: None,
             signer: SignerId::new(HOST),
             store: store(),
+            tree: self.repo.path.display().to_string(),
         }
     }
 
@@ -218,6 +249,21 @@ impl World {
             self.verdict(check, &build_of(o, &self.head), Outcome::Pass, LANDING);
         }
     }
+
+    /// The cache entry of each of `outputs`' build identities at the head
+    /// held in the store under `cache/<build identity>`, as a check job's
+    /// push before the landing leaves it (52, 135).
+    pub fn pushed(&self, outputs: &[&str]) {
+        for o in outputs {
+            let build = build_of(o, &self.head);
+            let bytes = format!("the archive of {build}");
+            let digest = self.fakes.store.put_bytes(bytes.as_bytes()).unwrap().digest;
+            self.fakes
+                .store
+                .name(&cache_name(&build), &digest, None)
+                .unwrap();
+        }
+    }
 }
 
 /// The version a published answer names, and its index.
@@ -240,7 +286,7 @@ pub struct Watched<T, F: Fn() -> T> {
 }
 
 impl<T, F: Fn() -> T> Projection for Watched<T, F> {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         self.seen.borrow_mut().push((self.watch)());
         self.inner.pack(output, at, version)
     }
@@ -249,9 +295,31 @@ impl<T, F: Fn() -> T> Projection for Watched<T, F> {
         self.inner.render(contents, at)
     }
 
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        self.inner.serve(layout)
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.inner.serve(layout, request, miss)
     }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
+        self.inner.pinned(checkout)
+    }
+
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        self.inner.requires(held)
+    }
+
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        self.inner.satisfying(range, versions)
+    }
+}
+
+/// Every name `store` was asked to resolve since its call `since`, in
+/// the order asked.
+pub fn resolved_since(store: &FakeStore, since: usize) -> Vec<String> {
+    store.calls()[since..]
+        .iter()
+        .filter(|c| c.op == tailrace_fakes::StoreOp::Resolve)
+        .map(|c| c.given["name"].as_str().unwrap().to_string())
+        .collect()
 }
 
 /// The calls a fake build recorded, by operation.
@@ -265,4 +333,71 @@ pub fn by_host(envelopes: &[Envelope]) -> Vec<&Envelope> {
         .iter()
         .filter(|e| e.signatures.iter().any(|s| s.signer.as_str() == HOST))
         .collect()
+}
+
+/// A store that puts as its fake does, but an index with no artifact of
+/// the notes' ecosystem, as a publisher before notes put it.
+pub struct BeforeNotes(pub FakeStore);
+
+impl Store for BeforeNotes {
+    fn put_bytes(&self, bytes: &[u8]) -> Answer<Put> {
+        self.0.put_bytes(bytes)
+    }
+    fn put_artifact(&self, manifest: &Manifest) -> Answer<Put> {
+        let Manifest::Index(meta) = manifest else {
+            return self.0.put_artifact(manifest);
+        };
+        let outputs = meta
+            .artifacts()
+            .iter()
+            .filter(|a| a.meta.ecosystem().as_str() != NOTES)
+            .cloned()
+            .collect();
+        let index = IndexMeta::new(meta.component().clone(), meta.version().clone(), outputs);
+        self.0.put_artifact(&Manifest::Index(index.unwrap()))
+    }
+    fn attach(&self, subject: &Digest, attestation: &Envelope) -> Answer<Put> {
+        self.0.attach(subject, attestation)
+    }
+    fn claims_of(&self, digest: &Digest) -> Answer<Vec<Envelope>> {
+        self.0.claims_of(digest)
+    }
+    fn name(&self, name: &Name, to: &Digest, expected: Option<&Digest>) -> Answer<()> {
+        self.0.name(name, to, expected)
+    }
+    fn resolve(&self, name: &Name) -> Answer<Digest> {
+        self.0.resolve(name)
+    }
+    fn read(&self, digest: &Digest) -> Answer<Held> {
+        self.0.read(digest)
+    }
+    fn versions(
+        &self,
+        ecosystem: &tailrace_seams::Ecosystem,
+        name: &tailrace_seams::EcosystemName,
+    ) -> Answer<Vec<tailrace_seams::Version>> {
+        self.0.versions(ecosystem, name)
+    }
+}
+
+/// `world`'s `lib` published by a publisher before notes: its index names
+/// the two outputs' artifacts and no notes, and its entry in the host's
+/// record names no notes' commits, as that publisher wrote it.
+pub fn published_before_notes(world: &World) -> Published {
+    let history = world.history();
+    let mut seams = world.fakes.seams();
+    seams.store = Box::new(BeforeNotes(world.fakes.store.clone()));
+    let kept = Kept::at(&history);
+    let publish = publish(&seams, &history, &kept, &world.ask_for("lib")).unwrap();
+    let first = publish.components.into_iter().next().unwrap().1.unwrap();
+    let Published::Version { tag, .. } = &first else {
+        panic!("{first:?}")
+    };
+    let path = kept.dir().join("lib").join(format!("{tag}.json"));
+    let mut entry: Entry = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    entry.notes = None;
+    let mut text = serde_json::to_string_pretty(&entry).unwrap();
+    text.push('\n');
+    std::fs::write(&path, text).unwrap();
+    first
 }

@@ -9,7 +9,7 @@ mod world;
 use tailrace_core::{answer_json, in_force, ChannelInForce, ChannelsInForce, InForce, InForceAsk};
 use tailrace_fakes::{FakePolicy, LandingOp, PolicyOp, PROFILE};
 use tailrace_seams::{
-    Answer, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
+    Answer, AskedOf, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
     EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim,
     Revision, Seam, Seams, Source, Why,
 };
@@ -27,6 +27,7 @@ fn acceptance() -> Required {
             kind: ClaimKind::Provenance,
             check: None,
             signers: vec![],
+            asked_of: AskedOf::Every,
         }],
     }
 }
@@ -287,14 +288,19 @@ fn the_givens_held_off_are_shown_beside_the_channels_from_one_answer() {
     assert_eq!(held["switch"], "[channels.lib.canary]", "{json}");
 }
 
+fn layout() -> Required {
+    Required::Layout {
+        claims: vec![],
+        given: false,
+        signers: vec![],
+    }
+}
+
 #[test]
 fn an_unreadable_channels_answer_leaves_the_acceptance_and_the_layout_shown() {
     let world = World::new();
     declare(&world.fakes.policy);
-    world
-        .fakes
-        .policy
-        .require(Audience::Layout, Required::Layout { claims: vec![] });
+    world.fakes.policy.require(Audience::Layout, layout());
     world.fakes.policy.fault(
         PolicyOp::Channels,
         tailrace_fakes::Fault::Unreadable("the channels cannot be read".into()),
@@ -302,7 +308,7 @@ fn an_unreadable_channels_answer_leaves_the_acceptance_and_the_layout_shown() {
     );
     let answer = asked(&world, &world.fakes.seams()).unwrap();
     assert_eq!(answer.acceptance, Ok(acceptance()));
-    assert_eq!(answer.layout, Ok(Required::Layout { claims: vec![] }));
+    assert_eq!(answer.layout, Ok(layout()));
     let Err(Not::Unreadable(u)) = &answer.channels else {
         panic!("the channels answered {:?}", answer.channels)
     };

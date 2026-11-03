@@ -6,15 +6,21 @@ use std::collections::BTreeMap;
 
 use semver::{Prerelease, Version};
 use serde::Deserialize;
-use tailrace_seams::{Answer, Component, ComponentName, Ecosystem, Not, OutputName, Source, Why};
+use tailrace_seams::{
+    Answer, Component, ComponentName, Ecosystem, Not, OutputName, Source, Why, ARTIFACT,
+};
 
-use crate::{History, Landed, LOCAL};
+use crate::{History, Landed, CACHE, LOCAL, NOTES};
 
 /// The policy file, at the root of the repository's tree.
 pub const POLICY_FILE: &str = ".config/tailrace.toml";
 
 /// What the one component of a repository that declares none is named.
 pub use tailrace_seams::REPOSITORY_COMPONENT as REPOSITORY;
+
+/// 138: the spaces of the store's names no component's tag may enter: an
+/// artifact's, a cache entry's and a channel's (design D14).
+pub const RESERVED: [&str; 3] = [ARTIFACT, CACHE, "channel/"];
 
 /// The version rule: git-cliff's conventional bump with these settings,
 /// and a prerelease where no commit makes a release (21, section 9).
@@ -68,7 +74,16 @@ impl Default for Rule {
 /// named `repository` over the paths `["**"]`, with the rule's prefix,
 /// the top-level `outputs` and the top-level `projections`. A
 /// projections key naming an output its component does not declare is
-/// unreadable naming it.
+/// unreadable naming it. A projections key naming the ecosystem `notes`,
+/// which a version's notes are carried in, is refused naming the
+/// component and the output (design D9). A component's prefix, or the
+/// rule's where none is declared, beginning with a space of
+/// [`RESERVED`] is refused naming the component, the prefix and the
+/// space (138). A component named `artifact`, `cache` or `repository`, or
+/// whose name holds a `/` or a `:`, is refused naming it and what it
+/// would enter, and two whose names are one once lowercased are refused
+/// naming both, so every declared component has a repository of its own
+/// on every store (125, C.1).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declared {
     pub rule: Rule,
@@ -129,8 +144,10 @@ impl Declared {
     /// 123: the components and the rule the policy file declares at the
     /// landed revision; unreadable naming the file and the revision, with
     /// the parser's words, when it is not well formed (58, 59); refused
-    /// [`Why::DeclaredTwice`] when two components share a name or a
-    /// prefix.
+    /// [`Why::DeclaredTwice`] when two components share a name, once
+    /// lowercased, or a prefix, [`Why::Reserved`] when a prefix enters a
+    /// space of [`RESERVED`] or a name would name no repository of its
+    /// own, and [`Why::Said`] when an output is packed as `notes`.
     pub fn read(history: &History, landed: &Landed) -> Answer<Declared> {
         let what = format!("{POLICY_FILE} at {}", landed.revision());
         let unreadable = |said: String| Not::unreadable(&Source::history(LOCAL), &what, Some(said));
@@ -180,11 +197,75 @@ impl Declared {
                 None => Ok(()),
             }
         };
+        let reserved = |name: &ComponentName, projections: &BTreeMap<OutputName, Ecosystem>| {
+            match projections.iter().find(|(_, e)| e.as_str() == NOTES) {
+                Some((output, _)) => Err(Not::refused(
+                    &Source::history(LOCAL),
+                    Why::Said,
+                    Some(format!(
+                        "component {name}: projections packs {output} as {NOTES}, the ecosystem of a version's notes, which no output is packed in"
+                    )),
+                )),
+                None => Ok(()),
+            }
+        };
+
+        // 138: a prefix is followed by a version, which begins with a
+        // digit, so a prefix enters a space only by beginning with it.
+        let in_space = |name: &ComponentName, prefix: &str| match RESERVED
+            .iter()
+            .find(|space| prefix.starts_with(**space))
+        {
+            Some(space) => Err(Not::refused(
+                &Source::history(LOCAL),
+                Why::Reserved {
+                    component: name.clone(),
+                    what: format!("prefix \"{prefix}\""),
+                    space: space.to_string(),
+                },
+                None,
+            )),
+            None => Ok(()),
+        };
+
+        // C.1, 125: a declared component's name is one path segment of
+        // its own, apart from the store's spaces and the undeclared
+        // component's, so every store can place what it names (design
+        // D14).
+        let own_repository = |name: &ComponentName| {
+            let text = name.as_str();
+            let space = if text.contains('/') {
+                "a repository path of more than one part".to_string()
+            } else if text.contains(':') {
+                "a version's store name, `<component>:<tag>`".to_string()
+            } else if text == REPOSITORY {
+                "the undeclared component's repository".to_string()
+            } else {
+                match RESERVED[..2]
+                    .iter()
+                    .find(|space| space.strip_suffix('/') == Some(text))
+                {
+                    Some(space) => space.to_string(),
+                    None => return Ok(()),
+                }
+            };
+            Err(Not::refused(
+                &Source::history(LOCAL),
+                Why::Reserved {
+                    component: name.clone(),
+                    what: format!("name \"{name}\""),
+                    space,
+                },
+                None,
+            ))
+        };
 
         if file.component.is_empty() {
             let name = ComponentName::new(REPOSITORY);
+            in_space(&name, &rule.prefix)?;
             let packed_by = ecosystems(file.projections);
             undeclared(&name, &file.outputs, &packed_by)?;
+            reserved(&name, &packed_by)?;
             return Ok(Declared {
                 components: vec![Component {
                     name: name.clone(),
@@ -200,8 +281,11 @@ impl Declared {
         let mut components: Vec<Component> = Vec::new();
         let mut projections = BTreeMap::new();
         for raw in file.component {
+            in_space(&raw.name, &raw.prefix)?;
+            own_repository(&raw.name)?;
             let packed_by = ecosystems(raw.projections);
             undeclared(&raw.name, &raw.outputs, &packed_by)?;
+            reserved(&raw.name, &packed_by)?;
             if raw.paths.is_empty() {
                 return Err(unreadable(format!(
                     "component {} declares no paths",
@@ -217,6 +301,11 @@ impl Declared {
                     format!("name \"{}\"", raw.name)
                 } else if other.prefix == raw.prefix {
                     format!("prefix \"{}\"", raw.prefix)
+                } else if other.name.as_str().to_lowercase() == raw.name.as_str().to_lowercase() {
+                    format!(
+                        "name once lowercased, \"{}\" and \"{}\"",
+                        other.name, raw.name
+                    )
                 } else {
                     continue;
                 };

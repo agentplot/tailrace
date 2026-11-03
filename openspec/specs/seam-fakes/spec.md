@@ -169,6 +169,60 @@ both answer absent for one.
 - **WHEN** a test scripts the fake projection to pack no cache entries
 - **THEN** a pack with no version and a render of cache entries each answer absent, and a pack with a version answers as before
 
+### Requirement: The fake projection answers the pins a test sets
+The fake projection SHALL answer pinned, for a checkout, the pins and
+ranges a test set for that checkout, each an ecosystem name with a
+version or with a range, in the order set, and absent naming the
+lockfile for a checkout given none; it SHALL render artifacts as a
+layout holding their metadata, recording what it was given, and write
+nothing (137, 85).
+
+#### Scenario: Pins set by the test
+- **WHEN** a test sets two pins for one checkout and asks the fake projection for that checkout's pins and another's
+- **THEN** the first answer is the two pins in the order set, and the second is absent naming the lockfile
+
+#### Scenario: A pin and a range set by the test
+- **WHEN** a test sets a checkout's pins to `app` 1.0.0 and a range `^1` of `lib`
+- **THEN** pinned of that checkout answers both, as set and in the order set
+
+#### Scenario: The fake renders artifacts
+- **WHEN** the fake projection renders two artifacts at a place
+- **THEN** the layout holds those two artifacts' metadata and no other, and the test reads back the place and the artifacts it was given
+
+### Requirement: The fake projection answers the requirements a test sets
+The fake projection SHALL answer requires, for an artifact, the
+requirements a test set for that artifact's digest, in the order set,
+and absent naming the manifest of that artifact's name and version for
+an artifact given none; it reads no bytes (140). requires SHALL be
+recorded and can be faulted, as every operation of a fake is.
+
+#### Scenario: Requirements set by the test
+- **WHEN** a test sets two requirements for one artifact and asks the fake projection what that artifact and another require
+- **THEN** the first answer is the two requirements in the order set, and the second is absent naming the other artifact's manifest
+
+#### Scenario: requires faulted and recorded
+- **WHEN** a test faults requires once and asks it
+- **THEN** it answers the fault, and the fake's calls record requires with the artifact it was given
+
+### Requirement: The fake projection orders versions by Semantic Versioning
+The fake projection SHALL answer satisfying with the versions given
+that satisfy the range by Semantic Versioning, newest first by its
+precedence (23, 140). A range it cannot read SHALL be refused carrying
+the range parser's own words (59), and a version it cannot read SHALL
+satisfy no range. satisfying SHALL be recorded and can be faulted.
+
+#### Scenario: Newest first, not by spelling
+- **WHEN** the fake projection is asked which of `1.9.0`, `2.0.0`, `1.10.0`, `1.2.0` and `1.1.9` satisfy `^1.2`
+- **THEN** it answers `1.10.0`, `1.9.0`, `1.2.0`, in that order
+
+#### Scenario: A range it cannot read
+- **WHEN** the fake projection is asked which versions satisfy a range that is not a Semantic Versioning range
+- **THEN** the answer is refused carrying the parser's words, never absent and never an empty list
+
+#### Scenario: satisfying faulted and recorded
+- **WHEN** a test faults satisfying once and asks it
+- **THEN** it answers the fault, and the fake's calls record satisfying with the range and versions it was given
+
 ### Requirement: The fake keeper answers as last read
 
 The fake keeper SHALL keep, per channel, the chain as it last answered
@@ -206,3 +260,40 @@ reachable, every answer SHALL say it was read from the landing itself.
 
 - **WHEN** the fake landing is made unreachable before it answered anything, and landed and verdicts-of are asked
 - **THEN** both answer unreadable with the words it was made unreachable with
+
+### Requirement: The fake projection serves its layouts
+The fake projection SHALL serve a layout it rendered: a request whose
+path names an ecosystem name and version the layout holds is answered
+`200` with that artifact's metadata as its body; one naming a version the
+layout lacks asks the core once and answers `200` where the core's answer
+is held, and otherwise a status of `404`, `403` or `502` for absent,
+refused or unreadable, with the answer's words as its body. It SHALL
+record every request and every version it asked of the core, and a test
+SHALL be able to script it to serve none, after which every request is
+absent naming serving (86, 115).
+
+#### Scenario: A version held and a version lacked
+- **WHEN** the fake projection renders one version, then serves a request for it and a request for a second version the core answers refused
+- **THEN** the first answer is `200` and asked the core nothing, the second is `403` carrying the refusal's words, and the test reads back both requests and the one version asked
+
+#### Scenario: The fake scripted to serve none
+- **WHEN** a test scripts the fake projection to serve none and asks it to serve a request
+- **THEN** the answer is absent naming serving, and the core is asked nothing
+
+### Requirement: The fake build answers what a checkout left
+
+The fake build SHALL answer left, for a checkout a test names, with the
+build identities the test scripted that checkout as holding, each with
+its tasks, outcome and files, in the order scripted, and an empty list
+for a checkout the test scripted nothing for; it SHALL record each
+asking with the checkout it was given.
+
+#### Scenario: A checkout scripted with two builds
+
+- **WHEN** a test scripts a checkout as holding two build identities, one passed and one failed, and the core asks the fake build what that checkout left
+- **THEN** the answer names both in the scripted order with their outcomes, and the fake's record holds one left naming the checkout
+
+#### Scenario: A checkout scripted with nothing
+
+- **WHEN** the core asks the fake build what a checkout no test scripted left
+- **THEN** the answer is an empty list

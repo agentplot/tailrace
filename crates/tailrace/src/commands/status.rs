@@ -1,9 +1,12 @@
 //! `tailrace status`: where each channel the policy declares is and the
-//! chain of promotions that put it there, read from the ledger, the
+//! chain of promotions that put it there, read from the ledger, each
+//! promotion with the notes of the version it moved to, the
 //! environments, unreadable while no target is read, and the versions
-//! this host published, from its own record; on any machine, one that
-//! never published included (31, 36, 56 to 61, 98). It is bound to the
-//! landing, the policy and the ledger alone, asks no store, signer or
+//! this host published, from its own record, each with its notes; every
+//! version's notes rendered from the repository's own history, on any
+//! machine, one that never published included (31, 33, 36, 56 to 61, 98,
+//! 134). It is bound to
+//! the landing, the policy and the ledger alone, asks no store, signer or
 //! target, and writes nothing (60, rule core.32). It reads the asker's
 //! time from the clock and hands it to the core, which reads none.
 //!
@@ -22,13 +25,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::Args;
 use tailrace_core::{
     overview, overview_unbound, Channel, ChannelStatus, Channels, EnvironmentCounts, History, Kept,
-    Overview, OverviewAsk, RepositoryName, Status,
+    Logged, Overview, OverviewAsk, Status,
 };
 use tailrace_seams::{
     Answer, Branch, ComponentName, Digest, Moves, Not, Promotion, Read, Seam, Source,
 };
 
-use crate::bindings;
 use crate::commands::serve::{self, host, host::Host};
 use crate::{render, Binding};
 
@@ -119,44 +121,24 @@ pub(crate) fn overview_in(
     let kept = Kept::at(&history);
     Ok(match binding {
         Ok(binding) => overview(&binding.seams, &history, &kept, &ask),
-        Err(not) => overview_unbound(not.clone(), &kept, &ask),
+        Err(not) => overview_unbound(not.clone(), &history, &kept, &ask),
     })
 }
 
 /// 114, 132: the address of the page of the repository whose checkout is
 /// at `checkout`, on the host's serving process at `address`: the
-/// repository named by its landing's remote's owner and name and named
+/// repository its landing's remote names ([`host::repository_of`]) named
 /// to `host`, then the process found at `address`, or `start` run where
-/// none answers. Absent where the landing has no remote or the remote no
-/// address, and unreadable naming the remote and its address where it
-/// ends in no owner and name, writing nothing.
+/// none answers. Where the remote names no repository, that answer,
+/// writing nothing.
 pub fn page(
     checkout: &Path,
     host: &Host,
     address: SocketAddr,
     start: impl FnOnce() -> Answer<()>,
 ) -> Answer<String> {
-    let remote = bindings::landing_remote(&host.config, host.home.as_deref(), checkout)?
-        .ok_or_else(|| {
-            Not::absent(
-                &Source::history(checkout.display()),
-                "remote of the landing, which neither [landing] nor the repository names",
-            )
-        })?;
+    let repository = host::repository_of(host, checkout)?;
     let history = History::open(checkout)?;
-    let url = history.remote_url(&remote)?.ok_or_else(|| {
-        Not::absent(
-            &Source::history(&remote),
-            format!("address of the remote {remote}"),
-        )
-    })?;
-    let repository = RepositoryName::from_remote(&url).ok_or_else(|| {
-        Not::unreadable(
-            &Source::history(&remote),
-            format!("an owner and a name in the address of the remote {remote}, {url}"),
-            None,
-        )
-    })?;
     let root = history.workdir().unwrap_or_else(|| history.common_dir());
     host::name(host, &repository, &root)?;
     host::find_or_start(address, start)?;
@@ -166,7 +148,7 @@ pub fn page(
 /// `tailrace serve` started from this binary, detached from the asker's
 /// terminal and its signals, its working directory the state directory,
 /// never a checkout, and not waited for (114).
-fn detached(host: &Host) -> impl FnOnce() -> Answer<()> + '_ {
+pub(crate) fn detached(host: &Host) -> impl FnOnce() -> Answer<()> + '_ {
     move || {
         let unstarted = |said: String| {
             Not::unreadable(
@@ -258,8 +240,9 @@ fn channels(out: &mut dyn Write, channels: &Channels) -> io::Result<()> {
     Ok(())
 }
 
-/// One channel's line, then its chain newest first, or its own answer
-/// with the source's words on a line of their own (58, 59).
+/// One channel's line, then its chain newest first, each promotion with
+/// the notes of the version it moved to beneath it, or its own answer
+/// with the source's words on a line of their own (58, 59, 134).
 fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Result<()> {
     write!(out, "  {:<width$}  ", channel.name().as_str())?;
     let bound = match &channel.declared.moves {
@@ -291,6 +274,7 @@ fn channel(out: &mut dyn Write, channel: &ChannelStatus, width: usize) -> io::Re
             let indent = " ".repeat(width + 6);
             for (claim, promotion) in chain.iter().rev() {
                 promoted(out, &indent, claim, promotion)?;
+                logged(out, &format!("{indent}  "), &channel.notes, promotion)?;
             }
             Ok(())
         }
@@ -326,6 +310,34 @@ fn promoted(
         satisfied(promotion.policy.claims.iter().map(Digest::to_string)),
         render::utc(promotion.at)
     )
+}
+
+/// 134: the notes of the version `promotion` moved its channel to, as
+/// `notes` answers them, each line at `indent` with trailing spaces
+/// trimmed, as a published version's notes are printed, or why they
+/// cannot be read (58; design D4).
+fn logged(
+    out: &mut dyn Write,
+    indent: &str,
+    notes: &[Logged],
+    promotion: &Promotion,
+) -> io::Result<()> {
+    let to = &promotion.to;
+    let Some(logged) = notes
+        .iter()
+        .find(|l| l.version == to.version && l.index == to.index)
+    else {
+        return Ok(());
+    };
+    match &logged.notes {
+        Ok(text) => {
+            for line in text.lines() {
+                writeln!(out, "{}", format!("{indent}{line}").trim_end())?;
+            }
+            Ok(())
+        }
+        Err(not) => render::not(out, indent, not),
+    }
 }
 
 /// The claims that satisfied a promotion's policy, or `no claim` where
@@ -367,7 +379,8 @@ fn published(out: &mut dyn Write, answer: &Answer<Status>) -> io::Result<()> {
         Err(not) => return render::not(out, "  ", not),
     };
     for component in &status.components {
-        for entry in &component.versions {
+        for shown in &component.versions {
+            let entry = &shown.entry;
             writeln!(
                 out,
                 "  {} {} ({}) from {} on {}: index {} in {}",
@@ -379,6 +392,15 @@ fn published(out: &mut dyn Write, answer: &Answer<Status>) -> io::Result<()> {
                 entry.index,
                 entry.store
             )?;
+            match &shown.notes {
+                Some(Ok(notes)) => {
+                    for line in notes.lines() {
+                        writeln!(out, "{}", format!("    {line}").trim_end())?;
+                    }
+                }
+                Some(Err(not)) => render::not(out, "    ", not)?,
+                None => {}
+            }
         }
     }
     Ok(())

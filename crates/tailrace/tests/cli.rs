@@ -8,17 +8,21 @@ use std::process::Command;
 use clap::Parser;
 use serde_json::Value;
 use tailrace::bindings::Teller;
+use tailrace::commands::serve::host::{self as serving, Host as ServingHost};
+use tailrace::commands::sync::{run_on as sync_on, SyncArgs};
 use tailrace::profiles::policy::file::PolicyFile;
 use tailrace::{run, Binding, Cli};
 use tailrace_core::{
-    accept, answer_json, in_force, promote, publish, push, sync, write, AcceptAsk, Ask, Entry,
-    History, InForceAsk, Judged, Kept, Moved, PromoteAsk, PushAsk, SyncAsk, To, ToldBy,
+    accept, answer_json, artifact_name, in_force, promote, publish, push, push_left, sync_checkout,
+    write, AcceptAsk, Ask, CheckoutAsk, Entry, History, InForceAsk, Judged, Kept, Layouts, LeftAsk,
+    Moved, PromoteAsk, PushAsk, RepositoryName, To, ToldBy,
 };
 use tailrace_fakes::{Fakes, Fault, StoreOp, Times};
 use tailrace_seams::{
-    Answer, Audience, Branch, BuildId, ChannelId, ChannelName, Check, Claim, ClaimKind,
-    ComponentName, Digest, Ecosystem, NamedSigner, Outcome, Output, OutputName, Promotion, Report,
-    Required, RequiredClaim, Revision, Seam, Signer, SignerId, Source, Verdict, Version,
+    Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
+    Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
+    Left, Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
+    RequiredClaim, Revision, Seam, Signer, SignerId, Source, Store, Verdict, Version,
 };
 use tempfile::TempDir;
 
@@ -56,6 +60,27 @@ fn git(dir: &Path, args: &[&str]) -> String {
         .unwrap()
         .trim_end()
         .to_string()
+}
+
+/// The day `at` was committed in the repository at `dir`, in UTC, as a
+/// template's date filter prints its time.
+fn day(dir: &Path, at: &Revision) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args([
+            "show",
+            "-s",
+            "--date=format-local:%Y-%m-%d",
+            "--format=%cd",
+            at.as_str(),
+        ])
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("TZ", "UTC")
+        .output()
+        .expect("git runs");
+    assert!(out.status.success());
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
 }
 
 /// A repository on `main` whose shared history is a bare one beside it,
@@ -104,6 +129,7 @@ impl Host {
             store: store(),
             signer: Some(SignerId::new("host")),
             gate: Teller::Job(JOB.into()),
+            trust: Vec::new(),
         }
     }
 
@@ -227,6 +253,7 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
             component: None,
             signer: SignerId::new("host"),
             store: store(),
+            tree: history.workdir().unwrap().display().to_string(),
         },
     );
     assert_eq!(printed, answer_json(&core));
@@ -234,6 +261,99 @@ fn publish_through_the_command_line_prints_the_cores_answer_value_for_value() {
         printed["value"]["components"][0]["value"]["version"],
         "0.1.0"
     );
+}
+
+// Requirement: A publish answers what a program reads
+
+#[test]
+fn publish_prints_the_notes_beneath_the_versions_line_and_names_them_in_its_json() {
+    let host = Host::new();
+    let (code, printed) = host.run(&["publish", "HEAD"]);
+    assert_eq!(code, 0, "{printed}");
+    let (code, json) = host.run(&["publish", "HEAD", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let notes = &json["value"]["components"][0]["value"]["notes"];
+    let text = notes["text"].as_str().expect("the notes' text");
+    // The repository keeps no template, so git-cliff's own default
+    // renders them, dated the day of the tagged revision.
+    let day = day(&host.repo, &host.head);
+    assert_eq!(
+        text,
+        format!("## [0.1.0] - {day}\n\n### 🚀 Features\n\n- The site\n")
+    );
+
+    let Held::Bytes(bytes) = host
+        .fakes
+        .store
+        .read(&Digest::parse(notes["bytes"].as_str().unwrap()).unwrap())
+        .unwrap()
+    else {
+        panic!("no bytes under {}", notes["bytes"])
+    };
+    assert_eq!(bytes, text.as_bytes());
+    let envelope = notes["claims"][0]["envelope"].as_str().unwrap();
+    let digest = Digest::parse(notes["digest"].as_str().unwrap()).unwrap();
+    let attached = host.fakes.store.claims_of(&digest).unwrap();
+    assert_eq!(
+        attached
+            .iter()
+            .map(|e| e.digest().as_str().to_string())
+            .collect::<Vec<_>>(),
+        [envelope]
+    );
+
+    let lines: Vec<&str> = printed.lines().collect();
+    let version = lines
+        .iter()
+        .position(|l| l.starts_with("repository 0.1.0 (v0.1.0)"))
+        .expect(&printed);
+    let at = lines
+        .iter()
+        .position(|l| *l == format!("  notes {digest}"))
+        .expect(&printed);
+    assert!(version < at, "{printed}");
+    assert_eq!(
+        lines[at + 1],
+        format!("    provenance by host, envelope {envelope}")
+    );
+    let shown: Vec<String> = text
+        .lines()
+        .map(|l| format!("    {l}").trim_end().to_string())
+        .collect();
+    let end = at + 2 + shown.len();
+    assert_eq!(lines[at + 2..end], shown, "{printed}");
+    assert!(lines[end].starts_with("  gate: "), "{printed}");
+
+    let artifact = &json["value"]["components"][0]["value"]["artifacts"][0];
+    let store_name = artifact["store_name"].as_str().expect("the store name");
+    assert_eq!(store_name, "artifact/eco/site@0.1.0");
+    let line = format!(
+        "  eco site {}, named {store_name}, from site by build site-build",
+        artifact["digest"].as_str().unwrap()
+    );
+    assert!(lines.contains(&line.as_str()), "{printed}");
+}
+
+// Requirement: Publish fills the checkout it runs in
+
+#[test]
+fn publish_in_a_repository_with_no_working_tree_is_absent_naming_it_and_asks_the_store_nothing() {
+    let host = Host::new();
+    passed(&host, "site-build");
+    git(&host.repo, &["push", "-q", "origin", "main"]);
+    let bare = host.root().join("shared.git");
+    let cli = Cli::try_parse_from(["tailrace", "publish", "HEAD", "--json"]).unwrap();
+    let mut out = Vec::new();
+    let code = run(&cli, &Ok(host.binding()), &bare, &mut out);
+    let printed: Value = serde_json::from_slice(&out).unwrap();
+    assert_eq!(printed["answer"], "absent", "{printed}");
+    let what = printed["absent"]["what"].as_str().unwrap();
+    assert!(what.starts_with("working tree at "), "{what}");
+    assert!(what.contains("shared.git"), "{what}");
+    assert_eq!(code, tailrace::render::ABSENT);
+    assert_eq!(host.fakes.store.calls(), [], "the store was asked");
+    assert_eq!(host.fakes.landing.calls(), [], "the core was asked");
 }
 
 // Requirement: Sync fills the checkout's cache from a landed revision
@@ -290,16 +410,24 @@ fn sync_with_one_entry_gone_prints_one_rendered_and_one_absent_and_exits_0() {
     assert_eq!(entries[1]["answer"], "ok");
     assert_eq!(printed["value"]["revision"], host.head.as_str());
 
-    let at = History::open(&host.repo).unwrap().workdir().unwrap();
-    let core = sync(
+    let history = History::open(&host.repo).unwrap();
+    let core = sync_checkout(
         &host.fakes.seams(),
-        &SyncAsk {
+        &Layouts::at(&history),
+        &CheckoutAsk {
             branch: Branch::new("main"),
             revision: host.head.clone(),
-            at: at.display().to_string(),
+            tree: history.workdir().unwrap(),
+            when: 0,
+            trusted: vec![],
+            repository: Ok(RepositoryName {
+                owner: "agentplot".into(),
+                name: "tailrace".into(),
+            }),
         },
     );
     assert_eq!(printed, answer_json(&core));
+    assert_eq!(printed["value"]["layouts"], serde_json::json!([]));
 
     let (code, printed) = host.run(&["sync"]);
     assert_eq!(code, 0, "{printed}");
@@ -320,6 +448,204 @@ fn sync_on_a_branch_the_repository_lacks_is_absent_and_one_that_did_not_land_it_
     assert_eq!(code, 1, "{printed}");
     let json: Value = serde_json::from_str(&printed).unwrap();
     assert_eq!(json["refused"]["why"]["not_landed"]["branch"], "release");
+}
+
+/// `version` of `name` in `eco` put in the host's store with its index,
+/// the name a pin resolves through moved to it, and, where `accepted`,
+/// the gate's acceptance attached to the index.
+fn published(host: &Host, name: &str, version: &str, accepted: bool) {
+    let store = &host.fakes.store;
+    let meta = ArtifactMeta::new(
+        Ecosystem::new("eco"),
+        EcosystemName::new(name),
+        Version::new(version),
+    )
+    .unwrap();
+    let layer = store
+        .put_bytes(format!("{name} {version}").as_bytes())
+        .unwrap()
+        .digest;
+    let artifact = store
+        .put_artifact(&Manifest::Artifact {
+            meta: meta.clone(),
+            layers: vec![layer],
+        })
+        .unwrap()
+        .digest;
+    let index = IndexMeta::new(
+        ComponentName::new(name),
+        Version::new(version),
+        vec![Artifact {
+            digest: artifact,
+            meta,
+        }],
+    )
+    .unwrap();
+    let index = store.put_artifact(&Manifest::Index(index)).unwrap().digest;
+    let pointer = artifact_name(
+        &Ecosystem::new("eco"),
+        &EcosystemName::new(name),
+        &Version::new(version),
+    );
+    store.name(&pointer, &index, None).unwrap();
+    if accepted {
+        let gate = SignerId::new("gate");
+        let theirs = tailrace_fakes::FakeSigner::new();
+        theirs.hold(&gate);
+        let claim = Claim {
+            subject: index.clone(),
+            kind: ClaimKind::Acceptance,
+            revision: Revision::new("p1b11s4"),
+            build: None,
+            body: Value::Null,
+        };
+        store
+            .attach(&index, &theirs.sign(&claim, &gate).unwrap())
+            .unwrap();
+    }
+}
+
+/// The host's checkout pinning `pkg 1.1.0`, which the gate accepted,
+/// `lib 2.0.0`, which it did not, and `left-pad 1.3.0`, which the store
+/// does not name, under a policy for layouts requiring the gate's
+/// acceptance.
+fn pinning_one_of_each(host: &Host) {
+    pinning_one_of_each_served(host);
+    // The fake stands for a projection whose clients read files, so the
+    // sync names no address and starts no process on the host running
+    // the test.
+    host.fakes.projections[&Ecosystem::new("eco")].serves_none();
+}
+
+/// What [`pinning_one_of_each`] stages, the projection serving its
+/// layout.
+fn pinning_one_of_each_served(host: &Host) {
+    published(host, "pkg", "1.1.0", true);
+    published(host, "lib", "2.0.0", false);
+    let tree = History::open(&host.repo).unwrap().workdir().unwrap();
+    let pin = |name: &str, version: &str| Pinned {
+        name: EcosystemName::new(name),
+        version: Version::new(version),
+    };
+    host.fakes.projections[&Ecosystem::new("eco")].lockfile(
+        &tree.display().to_string(),
+        &[
+            pin("pkg", "1.1.0"),
+            pin("lib", "2.0.0"),
+            pin("left-pad", "1.3.0"),
+        ],
+    );
+    host.fakes.policy.require(
+        Audience::Layout,
+        Required::Layout {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Acceptance,
+                check: None,
+                signers: vec![NamedSigner {
+                    id: SignerId::new("gate"),
+                    verified_by: "the gate's key".into(),
+                    kinds: vec![ClaimKind::Acceptance],
+                    checks: vec![],
+                }],
+                asked_of: AskedOf::Every,
+            }],
+            given: false,
+            signers: vec![],
+        },
+    );
+}
+
+#[test]
+fn sync_with_a_version_refused_prints_the_cores_answer_and_exits_1() {
+    let host = Host::new();
+    pinning_one_of_each(&host);
+    let (code, printed) = host.run(&["sync", "--json"]);
+    assert_eq!(code, 1, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let layout = &printed["value"]["layouts"][0];
+    assert_eq!(layout["ecosystem"], "eco");
+    let pins = &layout["value"]["refreshed"]["pins"];
+    let answers: Vec<(&str, &str)> = pins
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["name"].as_str().unwrap(), p["answer"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        answers,
+        [("pkg", "ok"), ("lib", "refused"), ("left-pad", "absent")]
+    );
+    let wanting = &pins[1]["refused"]["why"]["version_wanting"];
+    assert_eq!(wanting["version"]["version"], "2.0.0");
+    assert_eq!(wanting["wanting"]["kind"], "acceptance");
+    assert_eq!(wanting["checked"], serde_json::json!(["gate"]));
+
+    let history = History::open(&host.repo).unwrap();
+    let when = layout["value"]["refreshed"]["rendered_at"]
+        .as_u64()
+        .unwrap();
+    let core = sync_checkout(
+        &host.fakes.seams(),
+        &Layouts::at(&history),
+        &CheckoutAsk {
+            branch: Branch::new("main"),
+            revision: host.head.clone(),
+            tree: history.workdir().unwrap(),
+            when,
+            trusted: vec![],
+            repository: Ok(RepositoryName {
+                owner: "agentplot".into(),
+                name: "tailrace".into(),
+            }),
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+
+    let (code, printed) = host.run(&["sync"]);
+    assert_eq!(code, 1, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(
+        lines[1].starts_with("layout eco at ")
+            && lines[1].ends_with(&format!(", rendered under its own policy at {}", host.head)),
+        "{printed}"
+    );
+    assert!(
+        lines[2].starts_with("  pkg 1.1.0 held, sha256:"),
+        "{printed}"
+    );
+    assert!(lines[3].starts_with("  lib 2.0.0: "), "{printed}");
+    assert!(lines[3].contains("acceptance"), "{printed}");
+    assert_eq!(lines[4], "  1 pin the store does not name", "{printed}");
+}
+
+#[test]
+fn sync_whose_layout_cannot_be_refreshed_prints_what_it_holds_and_the_stores_words_and_exits_3() {
+    let host = Host::new();
+    pinning_one_of_each(&host);
+    let (code, printed) = host.run(&["sync"]);
+    assert_eq!(code, 1, "{printed}");
+    host.fakes.store.fault(
+        StoreOp::Resolve,
+        Fault::Unreadable("connection refused".into()),
+        Times::UntilHealed,
+    );
+    let (code, printed) = host.run(&["sync"]);
+    assert_eq!(code, 3, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(
+        lines[1].contains(" left as it was, rendered 20")
+            && lines[1].ends_with(&format!("Z under its own policy at {}", host.head)),
+        "{printed}"
+    );
+    assert!(
+        lines[2].starts_with("  pkg 1.1.0 held, sha256:"),
+        "{printed}"
+    );
+    assert!(lines.contains(&"connection refused"), "{printed}");
+    assert!(
+        !printed.contains("lib 2.0.0"),
+        "a refusal was printed: {printed}"
+    );
 }
 
 // Requirement: Push takes a landed revision
@@ -397,6 +723,95 @@ fn the_built_binary_on_a_host_with_no_bindings_file_pushes_through_the_given_lan
     );
     assert!(!file.exists(), "the push wrote a bindings file");
     assert!(!host.given_key().exists(), "the push made a key");
+}
+
+// Requirement: Push takes what the checkout left with --left
+
+/// The two passing build identities a check job's run in `tree` left.
+fn left_by_a_job(fakes: &Fakes, tree: &Path) {
+    let left = |build: &str, task: &str| Left {
+        build: BuildId::new(build),
+        tasks: vec![task.into()],
+        outcome: Outcome::Pass,
+        files: vec![tree.join(format!("{task}.out")).display().to_string()],
+    };
+    fakes.build.left_in(
+        &tree.display().to_string(),
+        vec![left("b7e1", "web:build"), left("c3d4", "app:test")],
+    );
+}
+
+#[test]
+fn a_check_jobs_push_prints_the_cores_answer_and_asks_no_landing() {
+    let host = Host::new();
+    let tree = host.repo.canonicalize().unwrap();
+    left_by_a_job(&host.fakes, &tree);
+
+    let (code, printed) = host.run(&["push", "--left", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    assert_eq!(printed["value"]["at"], tree.display().to_string());
+    let entries = &printed["value"]["entries"];
+    for (i, build) in ["b7e1", "c3d4"].iter().enumerate() {
+        assert_eq!(entries[i]["build"], *build, "{printed}");
+        assert_eq!(entries[i]["answer"], "ok", "{printed}");
+        assert_eq!(entries[i]["value"]["held_at"], Value::Null);
+        let digest = entries[i]["value"]["entry"]["digest"].as_str().unwrap();
+        assert!(digest.starts_with("sha256:"), "{printed}");
+    }
+    assert_eq!(host.fakes.landing.calls(), [], "the landing was asked");
+
+    let twin = Host::new();
+    left_by_a_job(&twin.fakes, &tree);
+    let core = push_left(
+        &twin.fakes.seams(),
+        &LeftAsk {
+            at: tree.display().to_string(),
+        },
+    );
+    assert_eq!(printed, answer_json(&core));
+
+    let (code, printed) = host.run(&["push", "--left"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    assert!(
+        lines[0].starts_with("b7e1 held already at sha256:"),
+        "{printed}"
+    );
+    assert!(
+        lines[1].starts_with("c3d4 held already at sha256:"),
+        "{printed}"
+    );
+}
+
+#[test]
+fn a_check_job_whose_run_left_nothing_pushes_nothing_and_exits_0() {
+    let host = Host::new();
+    let (code, printed) = host.run(&["push", "--left"]);
+    assert_eq!(code, 0, "{printed}");
+    assert!(printed.contains("left no build that passed"), "{printed}");
+    assert_eq!(host.fakes.store.calls(), [], "the store was asked");
+}
+
+#[test]
+fn a_revision_or_a_branch_beside_left_is_an_argument_it_cannot_read() {
+    let host = Host::new();
+    for (args, named) in [
+        (&["tailrace", "push", "--left", "HEAD"][..], "REVISION"),
+        (
+            &["tailrace", "push", "--left", "--branch", "main"][..],
+            "--branch",
+        ),
+    ] {
+        let err = Cli::try_parse_from(args).expect_err("push took both");
+        assert_eq!(err.exit_code(), 2);
+        assert!(err.to_string().contains(named), "{err}");
+        let out = host.binary(&args[1..]);
+        assert_eq!(out.status.code(), Some(2));
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(stderr.contains(named), "{stderr}");
+    }
+    assert_eq!(host.calls(), 0, "the core was asked");
 }
 
 // Requirement: Rebuild takes a landed revision
@@ -528,6 +943,7 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
             branch: Branch::new("main"),
             index: index.clone(),
             store: store(),
+            notes: None,
         })
         .unwrap();
 
@@ -550,6 +966,76 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
     assert_eq!(json["value"]["environments"]["answer"], "unreadable");
 }
 
+// Requirement: Verify shows the notes the index names
+
+#[test]
+fn verify_prints_the_notes_after_the_claims() {
+    let host = Host::new();
+    let (code, published) = host.run(&["publish", "HEAD", "--json"]);
+    assert_eq!(code, 0, "{published}");
+    let published: Value = serde_json::from_str(&published).unwrap();
+    let notes = &published["value"]["components"][0]["value"]["notes"];
+    let text = notes["text"].as_str().expect("the notes' text");
+
+    let (code, printed) = host.run(&["verify", "0.1.0"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| *l == format!("notes {}", notes["digest"].as_str().unwrap()))
+        .expect(&printed);
+    assert!(
+        lines[1..at].iter().all(|l| l.starts_with("  ")) && at > 1,
+        "the notes are not after the claims: {printed}"
+    );
+    let shown: Vec<String> = text
+        .lines()
+        .map(|l| format!("  {l}").trim_end().to_string())
+        .collect();
+    assert_eq!(lines[at + 1..], shown, "{printed}");
+
+    let (code, json) = host.run(&["verify", "0.1.0", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(json["value"]["notes"]["value"]["text"], text);
+}
+
+// Requirement: Status shows each version's notes from git
+
+#[test]
+fn status_prints_the_notes_beneath_the_versions_line_and_carries_them_in_its_json() {
+    let host = Host::new();
+    let (code, published) = host.run(&["publish", "HEAD", "--json"]);
+    assert_eq!(code, 0, "{published}");
+    let published: Value = serde_json::from_str(&published).unwrap();
+    let carried = published["value"]["components"][0]["value"]["notes"]["text"]
+        .as_str()
+        .expect("the notes' text")
+        .to_string();
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| l.starts_with("  repository 0.1.0 (v0.1.0) from "))
+        .expect(&printed);
+    let shown: Vec<String> = carried
+        .lines()
+        .map(|l| format!("    {l}").trim_end().to_string())
+        .collect();
+    assert_eq!(lines[at + 1..], shown, "{printed}");
+
+    let (code, json) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let version = &json["value"]["published"]["value"]["components"][0]["versions"][0];
+    assert_eq!(version["version"], "0.1.0");
+    assert_eq!(version["notes"]["answer"], "ok");
+    assert_eq!(version["notes"]["value"], carried.as_str());
+}
+
+// Requirement: An unbound host answers absent
 /// The moment now, in seconds since the Unix epoch.
 fn now() -> u64 {
     std::time::SystemTime::now()
@@ -708,8 +1194,25 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
         ),
         "{printed}"
     );
+    // Neither version was ever tagged here: each promotion's notes are
+    // unreadable beneath it, two spaces in, naming the tag, with the
+    // history's words on a line of their own.
+    let indent = lines[stable + 1].len() - lines[stable + 1].trim_start().len();
+    let unread = |version: &str| {
+        [
+            format!(
+                "{}the history (git, local) could not read the notes of repository {version}",
+                " ".repeat(indent + 2)
+            ),
+            format!(
+                "the history holds no tag v{version} reached from {}",
+                host.head
+            ),
+        ]
+    };
+    assert_eq!(lines[stable + 2..stable + 4], unread("0.2.0"), "{printed}");
     assert_eq!(
-        lines[stable + 2].trim_start(),
+        lines[stable + 4].trim_start(),
         format!(
             "0.1.0, the first, asked by host, under the policy at {} satisfied by {}, \
              2026-10-26T07:33:20Z, claim {}",
@@ -719,6 +1222,7 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
         ),
         "{printed}"
     );
+    assert_eq!(lines[stable + 5..stable + 7], unread("0.1.0"), "{printed}");
     let environments = at("environments");
     assert!(
         lines[environments + 1].contains("no target is read"),
@@ -726,6 +1230,66 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
     );
     let published = at("published from this host");
     assert!(lines[published + 1].contains("holds no"), "{printed}");
+}
+
+// Requirement (channel-status): A channel's changelog is its chain read
+// with each promotion's notes
+
+#[test]
+fn status_prints_each_promotions_notes_beneath_it_and_carries_them_beside_the_channel() {
+    let host = Host::new();
+    let second = grown(&host);
+    promotable(&host, &host.fakes, &second);
+    for version in ["0.1.0", "0.2.0"] {
+        let (code, printed) = host.run(&["promote", version, "--to", "stable"]);
+        assert_eq!(code, 0, "{printed}");
+    }
+
+    let (code, json) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let channel = &json["value"]["channels"]["value"]["channels"][0];
+    assert_eq!(channel["channel"]["name"], "stable", "{json}");
+    let notes = channel["notes"]
+        .as_array()
+        .expect("the notes beside the channel");
+    assert_eq!(notes.len(), 2, "{json}");
+    let published = &json["value"]["published"]["value"]["components"][0]["versions"];
+    let mut texts = Vec::new();
+    for (i, version) in ["0.1.0", "0.2.0"].into_iter().enumerate() {
+        assert_eq!(notes[i]["version"], version, "{json}");
+        assert_eq!(notes[i]["index"], published[i]["index"], "{json}");
+        assert_eq!(notes[i]["notes"]["answer"], "ok", "{json}");
+        // The same text as the notes of the version this host published.
+        assert_eq!(
+            notes[i]["notes"]["value"], published[i]["notes"]["value"],
+            "{json}"
+        );
+        texts.push(notes[i]["notes"]["value"].as_str().unwrap().to_string());
+    }
+    assert_ne!(texts[0], texts[1]);
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let stable = lines
+        .iter()
+        .position(|l| l.starts_with("  stable "))
+        .unwrap_or_else(|| panic!("no stable line: {printed}"));
+    let mut at = stable + 1;
+    for (version, text) in [("0.2.0", &texts[1]), ("0.1.0", &texts[0])] {
+        assert!(
+            lines[at].trim_start().starts_with(version) && lines[at].contains("asked by host"),
+            "{printed}"
+        );
+        let indent = " ".repeat(lines[at].len() - lines[at].trim_start().len() + 2);
+        let shown: Vec<String> = text
+            .lines()
+            .map(|l| format!("{indent}{l}").trim_end().to_string())
+            .collect();
+        assert_eq!(lines[at + 1..at + 1 + shown.len()], shown, "{printed}");
+        at += 1 + shown.len();
+    }
 }
 
 // Requirement: Status says when the landing was fetched
@@ -845,6 +1409,7 @@ fn a_broken_bindings_file_is_the_channels_answer_and_the_record_still_answers() 
             branch: Branch::new("main"),
             index: Digest::of(b"the index"),
             store: store(),
+            notes: None,
         })
         .unwrap();
     host.bind("[landing\n");
@@ -1051,6 +1616,7 @@ fn the_built_binary_on_a_host_with_no_bindings_file_shows_status_from_the_record
             branch: Branch::new("main"),
             index: index.clone(),
             store: store(),
+            notes: None,
         })
         .unwrap();
     // One promotion of stable on origin's ledger refs, where the given
@@ -1241,6 +1807,7 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
                 component: None,
                 signer: SignerId::new("host"),
                 store: store(),
+                tree: history.workdir().unwrap().display().to_string(),
             },
         )
         .unwrap();
@@ -1273,6 +1840,7 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: vec![host_signer.clone()],
+                asked_of: AskedOf::Every,
             }],
             bound_to: None,
             promoted_by: vec![host_signer],
@@ -1385,6 +1953,7 @@ fn accepted_with(line: &str, subject: &str) -> (Version, Vec<(ChannelId, Answer<
             component: None,
             signer: SignerId::new("host"),
             store: store(),
+            tree: history.workdir().unwrap().display().to_string(),
         },
     )
     .unwrap();
@@ -1483,6 +2052,7 @@ fn over_the_file(host: &Host) -> Binding {
         store: store(),
         signer: None,
         gate: Teller::Job(JOB.into()),
+        trust: Vec::new(),
     }
 }
 
@@ -1544,7 +2114,45 @@ fn policy_through_the_command_line_prints_the_givens_beside_a_line_value_for_val
         .collect();
     assert_eq!(kinds, ["acceptance", "rebuild"]);
     assert_eq!(claims[0]["signers"][0]["id"], "gate");
+    assert!(claims[0].get("asked_of").is_none(), "{claims}");
+    assert_eq!(claims[1]["asked_of"], "built", "{claims}");
     assert_eq!(channels.len(), 2, "{printed}");
+}
+
+#[test]
+fn policy_shows_a_verdict_asked_of_built_artifacts_alone() {
+    let host = Host::new();
+    fs::write(
+        host.repo.join(".config/tailrace.toml"),
+        format!(
+            "{POLICY}\n[signers.laptop]\nssh = \"ssh-ed25519 AAAA\"\nkinds = [\"provenance\"]\n\n\
+             [signers.box]\nssh = \"ssh-ed25519 BBBB\"\nkinds = [\"verdict\"]\nchecks = [\"cli:test\"]\n\n\
+             [acceptance]\nrequire = [\n  {{ kind = \"provenance\", signers = [\"laptop\"] }},\n  \
+             {{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"] }},\n]\n"
+        ),
+    )
+    .unwrap();
+    git(&host.repo, &["commit", "-q", "-am", "chore: the policy"]);
+    let head = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
+    host.fakes.landing.land(&Branch::new("main"), &head);
+
+    let (lines, json) = policy_lines(&host);
+    let printed = lines.join("\n");
+    let acceptance = lines
+        .iter()
+        .position(|l| l == "acceptance")
+        .unwrap_or_else(|| panic!("no acceptance: {printed}"));
+    assert_eq!(
+        lines[acceptance + 1..acceptance + 3],
+        [
+            "  provenance by laptop",
+            "  verdict of cli:test by box, of built artifacts alone",
+        ],
+        "{printed}"
+    );
+    let claims = &json["value"]["acceptance"]["value"]["acceptance"]["claims"];
+    assert!(claims[0].get("asked_of").is_none(), "{claims}");
+    assert_eq!(claims[1]["asked_of"], "built", "{claims}");
 }
 
 #[test]
@@ -1819,5 +2427,180 @@ fn policy_at_a_head_not_landed_exits_1_naming_the_branch_and_the_revision() {
     assert!(
         host.fakes.policy.calls().is_empty(),
         "the policy was asked of a head not landed"
+    );
+}
+
+/// A host of the test's own for the serving process: its state, its
+/// bindings file and its home under the scratch directory, so a sync
+/// reads and writes no file of the host running the test.
+fn serving_host(host: &Host) -> ServingHost {
+    ServingHost {
+        state: host.root().join("state/tailrace"),
+        config: host.bindings_file(),
+        home: Some(host.root().join("home")),
+        data: None,
+    }
+}
+
+/// An address of the test's own that nothing listens on: below the
+/// ranges a system hands to connections, apart for each test by `k`.
+fn unanswered(k: u16) -> std::net::SocketAddr {
+    let port = 28_000 + (std::process::id() % 500) as u16 * 4 + k;
+    std::net::SocketAddr::from(([127, 0, 0, 1], port))
+}
+
+/// A start that, once run, answers at `address` as the host's serving
+/// process does, counting each time it was run in `started`.
+fn starting(
+    address: std::net::SocketAddr,
+    started: &std::cell::Cell<u32>,
+) -> impl FnOnce() -> Answer<()> + '_ {
+    move || {
+        started.set(started.get() + 1);
+        let listener = std::net::TcpListener::bind(address).unwrap();
+        std::thread::spawn(move || {
+            let body = r#"{"serving":"tailrace","revision":"r","pid":7}"#;
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut asked = [0u8; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut asked);
+                let _ = std::io::Write::write_all(
+                    &mut stream,
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+            }
+        });
+        Ok(())
+    }
+}
+
+/// `tailrace sync --json` over the fakes on `serving`, its process found
+/// at `address` or started by `start`: the exit code and what it printed.
+fn synced_on(
+    host: &Host,
+    serving: &ServingHost,
+    address: std::net::SocketAddr,
+    start: impl FnOnce() -> Answer<()>,
+) -> (i32, Value) {
+    let args = SyncArgs {
+        revision: None,
+        branch: "main".into(),
+        json: true,
+    };
+    let mut out = Vec::new();
+    let code = sync_on(
+        &args,
+        &Ok(host.binding()),
+        &host.repo,
+        &mut out,
+        &Ok(serving.clone()),
+        address,
+        start,
+    );
+    (code, serde_json::from_slice(&out).unwrap())
+}
+
+#[test]
+fn a_sync_of_a_served_layout_names_its_address_and_finds_or_starts_the_hosts_process() {
+    let host = Host::new();
+    git(
+        &host.repo,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.com/agentplot/consumer.git",
+        ],
+    );
+    pinning_one_of_each_served(&host);
+    let serving = serving_host(&host);
+    let address = unanswered(0);
+    let started = std::cell::Cell::new(0);
+
+    let (code, printed) = synced_on(&host, &serving, address, starting(address, &started));
+    assert_eq!(code, 1, "the refused pin is not the exit: {printed}");
+    assert_eq!(
+        printed["value"]["layouts"][0]["served"],
+        serde_json::json!({
+            "answer": "ok",
+            "value": "http://127.0.0.1:7420/agentplot/consumer/eco/"
+        })
+    );
+    assert_eq!(printed["serving"]["answer"], "ok", "{printed}");
+    assert_eq!(printed["serving"]["value"]["pid"], 7);
+    assert_eq!(started.get(), 1);
+    let consumer = RepositoryName {
+        owner: "agentplot".into(),
+        name: "consumer".into(),
+    };
+    let tree = History::open(&host.repo).unwrap().workdir().unwrap();
+    assert_eq!(serving::checkout_of(&serving, &consumer), Ok(tree));
+
+    let (_, printed) = synced_on(&host, &serving, address, || {
+        panic!("started a second process")
+    });
+    assert_eq!(printed["serving"]["answer"], "ok", "{printed}");
+    assert_eq!(started.get(), 1);
+}
+
+#[test]
+fn a_sync_with_no_served_layout_names_nothing_and_starts_nothing() {
+    let host = Host::new();
+    git(
+        &host.repo,
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "https://example.com/agentplot/consumer.git",
+        ],
+    );
+    pinning_one_of_each(&host);
+    let serving = serving_host(&host);
+    let (code, printed) = synced_on(&host, &serving, unanswered(1), || {
+        panic!("a process was started")
+    });
+    assert_eq!(code, 1, "{printed}");
+    assert_eq!(printed["value"]["layouts"][0]["served"], Value::Null);
+    assert!(printed.get("serving").is_none(), "{printed}");
+    assert!(
+        !serving.state.join(serving::REPOSITORIES).exists(),
+        "the host's file was written"
+    );
+}
+
+#[test]
+fn a_sync_in_a_checkout_whose_remote_names_no_owner_is_unreadable_naming_it() {
+    let host = Host::new();
+    git(
+        &host.repo,
+        &["remote", "set-url", "origin", "/srv/consumer.git"],
+    );
+    pinning_one_of_each_served(&host);
+    let serving = serving_host(&host);
+    let (code, printed) = synced_on(&host, &serving, unanswered(2), || {
+        panic!("a process was started")
+    });
+    assert_eq!(code, 3, "{printed}");
+    let layout = &printed["value"]["layouts"][0];
+    assert_eq!(
+        layout["answer"], "ok",
+        "the layout was not rendered: {printed}"
+    );
+    let served = &layout["served"];
+    assert_eq!(served["answer"], "unreadable", "{printed}");
+    let what = served["unreadable"]["what"].as_str().unwrap();
+    assert!(
+        what.contains("origin") && what.contains("/srv/consumer.git"),
+        "{what}"
+    );
+    assert!(printed.get("serving").is_none(), "{printed}");
+    assert!(
+        !serving.state.join(serving::REPOSITORIES).exists(),
+        "the host's file was written"
     );
 }

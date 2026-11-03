@@ -5,8 +5,11 @@
 //! component's prefix are the record of claimed versions (22); a tag
 //! whose revision the branch landed and whose name the store resolves to
 //! that component's index at that version is one entry, the same file a
-//! publish of it writes. A tag whose name the store does not hold gets no
-//! entry, as a publish that stopped before its index keeps none.
+//! publish of it writes. Where that index names notes, the entry's
+//! commits are those the version rule derives the version from again at
+//! the tag's revision, under the policy file there (21, 134; design D8).
+//! A tag whose name the store does not hold gets no entry, as a publish
+//! that stopped before its index keeps none.
 //!
 //! Every read comes before any write: the landing first, then the policy
 //! file, the tags and the store, and an answer that cannot be read, a
@@ -27,11 +30,12 @@
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Branch, ComponentName, Digest, Held, IsLanded, Manifest, Name, Not, Revision, Seams,
-    Source, Version,
+    version_name, Answer, Branch, ComponentName, Digest, Held, IndexMeta, Manifest, Not, Revision,
+    Seams, Source, Version, Why,
 };
 
-use crate::{answer_json, Declared, Entry, History, Kept, Landed, Tag, Written};
+use crate::notes::noted;
+use crate::{answer_json, Declared, Entry, History, Kept, Landed, Tag, Written, NOTES};
 
 /// What a rebuild is asked: the landed revision whose policy file
 /// declares the components, the branch that landed it, and the store as
@@ -88,12 +92,23 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
                 .then_with(|| a.version.cmp(&b.version))
         });
         for tag in tags {
-            match seams.landing.landed(&ask.branch, &tag.revision) {
-                Ok(IsLanded { landed: true, .. }) => {}
-                Ok(IsLanded { landed: false, .. }) | Err(Not::Absent(_)) => continue,
+            let at = match Landed::check(seams.landing.as_ref(), &ask.branch, &tag.revision) {
+                Ok(at) => at,
+                Err(Not::Refused(r))
+                    if matches!(
+                        r.why,
+                        Why::NotLanded { .. } | Why::NotLandedAsFetched { .. }
+                    ) =>
+                {
+                    continue
+                }
+                Err(Not::Absent(_)) => continue,
                 Err(not) => return Err(not),
-            }
-            let index = match seams.store.resolve(&Name::new(&tag.name)) {
+            };
+            let index = match seams
+                .store
+                .resolve(&version_name(&component.name, &tag.name))
+            {
                 Ok(index) => index,
                 Err(Not::Absent(_)) => continue,
                 Err(not) => return Err(not),
@@ -104,7 +119,16 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
                 Err(not) => return Err(not),
             };
             let version = Version::new(tag.version.to_string());
-            indexed(ask, &component.name, &version, &tag, &index, held)?;
+            let meta = indexed(ask, &component.name, &version, &tag, &index, held)?;
+            let notes = if meta
+                .artifacts()
+                .iter()
+                .any(|a| a.meta.ecosystem().as_str() == NOTES)
+            {
+                Some(noted(history, &at, &component.name, &tag)?)
+            } else {
+                None
+            };
             entries.push(Entry {
                 component: component.name.clone(),
                 version,
@@ -113,6 +137,7 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
                 branch: ask.branch.clone(),
                 index,
                 store: ask.store.clone(),
+                notes,
             });
         }
     }
@@ -130,8 +155,8 @@ pub fn rebuild(seams: &Seams, history: &History, kept: &Kept, ask: &RebuildAsk) 
 }
 
 /// Whether `held`, what the digest `tag`'s name resolves to holds, is
-/// the index of `component` at `version`; unreadable naming the tag and
-/// the digest when it is anything else (rule core.4).
+/// the index of `component` at `version`, answering it; unreadable
+/// naming the tag and the digest when it is anything else (rule core.4).
 fn indexed(
     ask: &RebuildAsk,
     component: &ComponentName,
@@ -139,7 +164,7 @@ fn indexed(
     tag: &Tag,
     index: &Digest,
     held: Held,
-) -> Answer<()> {
+) -> Answer<IndexMeta> {
     let what = format!(
         "the index of {component} {version} that {} names, {index}",
         tag.name
@@ -148,7 +173,7 @@ fn indexed(
         Held::Manifest(Manifest::Index(meta))
             if meta.component() == component && meta.version() == version =>
         {
-            return Ok(())
+            return Ok(meta)
         }
         Held::Manifest(Manifest::Index(meta)) => {
             format!("the index of {} {}", meta.component(), meta.version())

@@ -27,7 +27,7 @@ use std::io::Write;
 use std::path::Path;
 
 use clap::{Parser, Subcommand};
-use tailrace_seams::{Answer, Not, Seam, Seams, SignerId, Source};
+use tailrace_seams::{Answer, NamedSigner, Not, Seam, Seams, SignerId, Source};
 
 pub mod bindings;
 pub mod commands;
@@ -72,10 +72,12 @@ pub enum Command {
     /// record.
     Status(commands::status::StatusArgs),
     /// Render the cache entries a landed revision's passing verdicts name
-    /// into this checkout, where its tools read them.
+    /// into this checkout, where its tools read them, and each layout of
+    /// the versions its lockfiles pin that the policy admits.
     Sync(commands::sync::SyncArgs),
     /// Write the cache entries of a landing's passing builds to the store,
-    /// from what its build left on this host, after the landing.
+    /// from what its build left on this host, after the landing; with
+    /// --left, those this checkout's run left with a pass, before it.
     Push(commands::push::PushArgs),
     /// Rebuild this host's record of the versions it published from the
     /// store and git.
@@ -97,13 +99,17 @@ pub enum Command {
 /// name it, which the host's record keeps of each version (61, 118);
 /// the identity of the party running tailrace, which signs what it
 /// observed (11, 79), `None` on a host that binds no key and only
-/// verifies; and what tells the host's gate of a version a publish
-/// offered, which only publish reads (130).
+/// verifies; what tells the host's gate of a version a publish offered,
+/// which only publish reads (130); and the signers the host trusts for
+/// reading, its own signer for a sync and those `[trust]` names, through
+/// whom a consumer reads every claim its policy file names no signer for
+/// (118, C.10).
 pub struct Binding {
     pub seams: Seams,
     pub store: Source,
     pub signer: Option<SignerId>,
     pub gate: bindings::Teller,
+    pub trust: Vec<NamedSigner>,
 }
 
 /// `cli` asked in the repository at `at`, over the binding the host's

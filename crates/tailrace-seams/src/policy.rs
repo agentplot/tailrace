@@ -16,13 +16,42 @@ pub enum Audience {
 }
 
 /// 82: one claim a policy requires: its kind, the check it is for where
-/// it is a verdict, and the signers that may make it, each with what it
-/// may claim.
+/// it is a verdict, the signers that may make it, each with what it may
+/// claim, and the artifacts it is asked of (134), every artifact where it
+/// names none.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequiredClaim {
     pub kind: ClaimKind,
     pub check: Option<Check>,
     pub signers: Vec<NamedSigner>,
+    #[serde(default, skip_serializing_if = "AskedOf::is_every")]
+    pub asked_of: AskedOf,
+}
+
+/// 134: the artifacts a required claim is asked of: every artifact a
+/// version names, or a built artifact alone, which leaves a rendered
+/// artifact, one no build made, unasked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AskedOf {
+    #[default]
+    Every,
+    Built,
+}
+
+impl AskedOf {
+    pub fn is_every(&self) -> bool {
+        *self == AskedOf::Every
+    }
+
+    /// Whether a claim so asked is asked of an artifact a build made,
+    /// `built`, or of one rendered with no build behind it.
+    pub fn asks(self, built: bool) -> bool {
+        match self {
+            AskedOf::Every => true,
+            AskedOf::Built => built,
+        }
+    }
 }
 
 /// 82, 83: the claims an audience requires, by audience, so the policy
@@ -30,7 +59,13 @@ pub struct RequiredClaim {
 /// channel names the channel it is bound to where it is bound (37), the
 /// signers whose promotion of it counts (32), and the signers that may
 /// ask for it to move, none meaning any asker the gate verifies (129,
-/// C.10).
+/// C.10). The policy for a layout says whether it is the given laid
+/// beneath a file that writes none (C.10), so a consumer stacks the
+/// publisher's policy above the given and never above its own line
+/// (113); and it carries the signers the file names, each with what it
+/// may claim, so a consumer reads every claim through its file's signers
+/// alone where the file names one for it, and through its host's trusted
+/// signers only where the file names none (C.10, 118).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Required {
@@ -45,7 +80,15 @@ pub enum Required {
     },
     Layout {
         claims: Vec<RequiredClaim>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        given: bool,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        signers: Vec<NamedSigner>,
     },
+}
+
+fn is_false(given: &bool) -> bool {
+    !given
 }
 
 impl Required {
@@ -53,7 +96,7 @@ impl Required {
         match self {
             Required::Acceptance { claims }
             | Required::Channel { claims, .. }
-            | Required::Layout { claims } => claims,
+            | Required::Layout { claims, .. } => claims,
         }
     }
 
@@ -168,6 +211,7 @@ pub trait Policy {
 mod tests {
     use super::*;
     use crate::{round_trip, ComponentName, SignerId};
+    use serde_json::json;
 
     fn gate() -> NamedSigner {
         NamedSigner {
@@ -197,6 +241,7 @@ mod tests {
                 kinds: vec![ClaimKind::Verdict],
                 checks: vec![Check::new("test")],
             }],
+            asked_of: AskedOf::Every,
         }]
     }
 
@@ -262,7 +307,81 @@ mod tests {
             promoted_by: vec![gate()],
             approvers: vec![],
         });
-        round_trip(Required::Layout { claims: vec![] });
+        round_trip(Required::Layout {
+            claims: vec![],
+            given: false,
+            signers: vec![],
+        });
+    }
+
+    #[test]
+    fn a_layout_policy_reads_back_given_or_written() {
+        let given = Required::Layout {
+            claims: claims(),
+            given: true,
+            signers: claims().remove(0).signers,
+        };
+        round_trip(given.clone());
+        let json = serde_json::to_value(&given).unwrap();
+        assert_eq!(json["layout"]["given"], true, "{json}");
+        assert_eq!(json["layout"]["signers"][0]["id"], "landing", "{json}");
+
+        let written = Required::Layout {
+            claims: claims(),
+            given: false,
+            signers: vec![],
+        };
+        round_trip(written.clone());
+        let json = serde_json::to_value(&written).unwrap();
+        assert!(json["layout"].get("given").is_none(), "{json}");
+        assert!(json["layout"].get("signers").is_none(), "{json}");
+        let read: Required = serde_json::from_value(json!({ "layout": { "claims": [] } })).unwrap();
+        assert_eq!(
+            read,
+            Required::Layout {
+                claims: vec![],
+                given: false,
+                signers: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn a_required_claim_reads_back_the_artifacts_it_is_asked_of() {
+        let built = RequiredClaim {
+            asked_of: AskedOf::Built,
+            ..claims().remove(0)
+        };
+        let every = RequiredClaim {
+            kind: ClaimKind::Provenance,
+            check: None,
+            signers: vec![],
+            asked_of: AskedOf::Every,
+        };
+        round_trip(built.clone());
+        round_trip(every.clone());
+        let json = serde_json::to_value(&built).unwrap();
+        assert_eq!(json["asked_of"], "built", "{json}");
+        let json = serde_json::to_value(&every).unwrap();
+        assert!(json.get("asked_of").is_none(), "{json}");
+
+        assert!(AskedOf::Every.asks(true) && AskedOf::Every.asks(false));
+        assert!(AskedOf::Built.asks(true) && !AskedOf::Built.asks(false));
+    }
+
+    #[test]
+    fn a_layout_policy_written_before_asks_every_artifact() {
+        let read: Required = serde_json::from_value(json!({
+            "layout": { "claims": [
+                { "kind": "verdict", "check": "test", "signers": [] },
+                { "kind": "acceptance", "check": null, "signers": [] },
+            ] }
+        }))
+        .unwrap();
+        assert_eq!(read.claims().len(), 2);
+        for claim in read.claims() {
+            assert_eq!(claim.asked_of, AskedOf::Every, "{claim:?}");
+        }
     }
 
     #[test]

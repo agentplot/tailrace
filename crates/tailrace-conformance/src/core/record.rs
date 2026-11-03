@@ -87,7 +87,10 @@ fn record(world: &FakeWorld) -> Vec<(PathBuf, Vec<u8>)> {
 }
 
 fn status_of(world: &FakeWorld) -> Status {
-    ok(status(&world.kept(), &StatusAsk::default()), "status")
+    ok(
+        status(&world.history(), &world.kept(), &StatusAsk::default()),
+        "status",
+    )
 }
 
 /// The record's file of `tag`, of `component`.
@@ -134,7 +137,7 @@ fn everything_kept_deleted_and_rebuilt(world: &FakeWorld) {
 fn a_claimed_version_with_no_index(world: &FakeWorld) {
     published(world);
     world.delete_record();
-    world.fakes.store.forget(&Name::new("app-v0.1.0"));
+    world.fakes.store.forget(&Name::new("app:app-v0.1.0"));
     ok(rebuilt(world), "the rebuild");
     assert!(
         !file(world, "app", "app-v0.1.0").exists(),

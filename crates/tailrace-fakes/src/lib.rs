@@ -6,11 +6,11 @@
 //! | seam | fake | holds |
 //! |---|---|---|
 //! | the store | [`FakeStore`] | bytes and manifests by digest, attestations, names |
-//! | the build | [`FakeBuild`] | what each revision left of each output |
+//! | the build | [`FakeBuild`] | what each revision left of each output, what each checkout's run left |
 //! | the landing | [`FakeLanding`] | revisions landed per branch, verdicts per revision |
 //! | the signer | [`FakeSigner`] | the identity at hand, the identities expired |
 //! | the policy | [`FakePolicy`] | what each audience requires, per revision, and the channels that follow each publish |
-//! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes, whether it packs cache entries, the build identities it holds no archive for |
+//! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes, whether it packs cache entries, the build identities it holds no archive for, each checkout's pins, each render of artifacts |
 //! | a target | [`FakeTarget`] | per environment, its channel's head and what it runs |
 //! | the keeper | [`FakeKeeper`] | per channel and its component, a chain of promotion claims |
 //!
@@ -126,7 +126,7 @@ mod tests {
     use tailrace_seams::{
         Artifact, Audience, Branch, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
         Environment, IsLanded, Layout, Manifest, Name, NamedSigner, Output, OutputName, Read,
-        Required, Revision, SignerId, Verdicts, Verified, Version,
+        Request, Required, Revision, SignerId, Verdicts, Verified, Version,
     };
 
     use super::*;
@@ -168,7 +168,16 @@ mod tests {
                     files: vec![],
                 },
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(
+                    &Alone::new(
+                        &Output {
+                            name: OutputName::new("site"),
+                            files: vec![],
+                        },
+                        "1.0.0",
+                    )
+                    .at(),
+                ),
             )
             .unwrap();
         let meta = packed.meta.expect("a versioned pack names metadata");
@@ -240,25 +249,46 @@ mod tests {
                     files: vec![],
                 },
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(
+                    &Alone::new(
+                        &Output {
+                            name: OutputName::new("cli"),
+                            files: vec![],
+                        },
+                        "1.0.0",
+                    )
+                    .at()
+                ),
             )
             .is_ok());
+        let request = Request {
+            method: "GET".into(),
+            path: format!("{}/{}", artifact.meta.name(), artifact.meta.version()),
+            base: "http://127.0.0.1:7420/o/r/eco-b".into(),
+        };
         let rendered = projection
             .render(Contents::Artifacts(&[artifact]), "layouts/eco-b")
             .unwrap();
         assert_eq!(
-            projection.serve(&rendered.layout).unwrap().address,
-            "fake://eco-b/layouts/eco-b"
+            projection
+                .serve(&rendered.layout, &request, &|_| panic!("asked the core"))
+                .unwrap()
+                .status,
+            200
         );
         let projection = seams.projection(&eco_a).unwrap();
         assert!(projection
             .render(Contents::Artifacts(&[]), "layouts/eco-a")
             .is_ok());
         assert!(projection
-            .serve(&Layout {
-                at: "layouts/eco-a".into()
-            })
-            .is_ok());
+            .serve(
+                &Layout {
+                    at: "layouts/eco-a".into()
+                },
+                &request,
+                &|_| Ok(())
+            )
+            .is_ok_and(|served| served.status == 200));
 
         let bound = seams.target(&production.name).expect("production is bound");
         assert!(bound.desired(&production).is_err());
@@ -360,7 +390,16 @@ mod tests {
                     files: vec![],
                 },
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(
+                    &Alone::new(
+                        &Output {
+                            name: OutputName::new("site"),
+                            files: vec![],
+                        },
+                        "1.0.0",
+                    )
+                    .at()
+                ),
             )
             .unwrap()
             .same_again

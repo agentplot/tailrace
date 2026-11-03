@@ -11,11 +11,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tailrace_seams::{Answer, Branch, ComponentName, Digest, Not, Revision, Source, Version, Why};
 
-use crate::History;
+use crate::{History, Versioned};
 
 /// 61: the record of one version this host published: the component,
 /// the version and its tag, the revision and branch it was published
-/// from, the index's digest and the store it was offered to.
+/// from, the index's digest and the store it was offered to, and, where
+/// the index names notes, the commits they were rendered from.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Entry {
     pub component: ComponentName,
@@ -25,6 +26,31 @@ pub struct Entry {
     pub branch: Branch,
     pub index: Digest,
     pub store: Source,
+    /// None for an index offered before notes were carried, and for an
+    /// entry written before entries named them, which reads back as it
+    /// was (134; design D6).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<Noted>,
+}
+
+/// 134: what a version's notes were rendered from: the last release tag
+/// as the history spells it, and each commit's revision in the order the
+/// history gives them. Never the notes' text or their digest, which are
+/// the store's (61; design D6).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Noted {
+    pub last: Option<String>,
+    pub commits: Vec<Revision>,
+}
+
+impl Noted {
+    /// What `versioned`'s notes are rendered from.
+    pub fn of(versioned: &Versioned) -> Noted {
+        Noted {
+            last: versioned.last.as_ref().map(|t| t.name.clone()),
+            commits: versioned.since.iter().map(|c| c.revision.clone()).collect(),
+        }
+    }
 }
 
 /// Which entries a read keeps: those of one component, of one revision,

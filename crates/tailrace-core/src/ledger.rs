@@ -16,9 +16,10 @@
 
 use serde::{Serialize, Serializer};
 use tailrace_seams::{
-    channel_name, Answer, Audience, Branch, Chain, ChannelId, ChannelName, Claim, ClaimKind,
-    ComponentName, DeclaredChannel, Digest, Envelope, Keeper, Moved, Name, NamedSigner, Not, Read,
-    Required, RequiredClaim, Satisfied, Seam, Seams, SignerId, Source, Store, Version, Why,
+    channel_name, version_name, Answer, AskedOf, Audience, Branch, Chain, ChannelId, ChannelName,
+    Claim, ClaimKind, ComponentName, DeclaredChannel, Digest, Envelope, Keeper, Moved, NamedSigner,
+    Not, Read, Required, RequiredClaim, Satisfied, Seam, Seams, SignerId, Source, Store, Version,
+    Why,
 };
 
 pub use tailrace_seams::Promotion;
@@ -228,7 +229,7 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
             .ok_or_else(|| Not::absent(&keeper(), format!("a version {channel} moved from")))?,
     };
     let tag = format!("{}{}", component.prefix, version);
-    let index = seams.store.resolve(&Name::new(&tag))?;
+    let index = seams.store.resolve(&version_name(&component.name, &tag))?;
     let revision = history
         .tags(&at_head, &component.prefix)?
         .into_iter()
@@ -370,6 +371,7 @@ fn of_kind(signers: &[NamedSigner], kind: ClaimKind) -> RequiredClaim {
             .filter(|s| s.kinds.contains(&kind))
             .cloned()
             .collect(),
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -466,6 +468,7 @@ pub(crate) fn may_promote(required: &Required, signer: &SignerId) -> Answer<()> 
             kind: ClaimKind::Promotion,
             check: None,
             signers: required.promoted_by().to_vec(),
+            asked_of: AskedOf::Every,
         }))
     }
 }

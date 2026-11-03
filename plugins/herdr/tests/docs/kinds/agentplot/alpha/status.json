@@ -1,0 +1,308 @@
+{
+  "answer": "ok",
+  "value": {
+    "branch": "main",
+    "asked_at": 1793000100,
+    "channels": {
+      "answer": "ok",
+      "value": {
+        "revision": "1111111111111111111111111111111111111111",
+        "landing": {
+          "kept": {
+            "at": 1793000040,
+            "said": "fatal: unable to access 'https://example.com/agentplot/alpha.git/': Could not resolve host: example.com"
+          }
+        },
+        "channels": [
+          {
+            "channel": {
+              "component": "app",
+              "name": "beta"
+            },
+            "moves": {
+              "by": "each_publish",
+              "prereleases": true
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "head": {
+                  "channel": "beta",
+                  "component": "app",
+                  "to": {
+                    "version": "1.2.0",
+                    "index": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                  },
+                  "from": {
+                    "version": "1.1.0",
+                    "index": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+                  },
+                  "predecessor": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                  "asked_by": "gate",
+                  "policy": {
+                    "revision": "1111111111111111111111111111111111111111",
+                    "claims": [
+                      "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+                    ]
+                  },
+                  "at": 1793000001
+                },
+                "chain": [
+                  [
+                    "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                    {
+                      "channel": "beta",
+                      "component": "app",
+                      "to": {
+                        "version": "1.1.0",
+                        "index": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+                      },
+                      "from": null,
+                      "predecessor": null,
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "1111111111111111111111111111111111111111",
+                        "claims": [
+                          "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+                        ]
+                      },
+                      "at": 1793000000
+                    }
+                  ],
+                  [
+                    "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+                    {
+                      "channel": "beta",
+                      "component": "app",
+                      "to": {
+                        "version": "1.2.0",
+                        "index": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                      },
+                      "from": {
+                        "version": "1.1.0",
+                        "index": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+                      },
+                      "predecessor": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "1111111111111111111111111111111111111111",
+                        "claims": [
+                          "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+                        ]
+                      },
+                      "at": 1793000001
+                    }
+                  ]
+                ],
+                "read": "source"
+              }
+            },
+            "notes": [
+              {
+                "version": "1.1.0",
+                "index": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                "notes": {
+                  "answer": "refused",
+                  "refused": {
+                    "source": {
+                      "seam": "landing",
+                      "profile": "branch, origin"
+                    },
+                    "why": {
+                      "not_landed": {
+                        "branch": "main",
+                        "revision": "2222222222222222222222222222222222222222"
+                      }
+                    },
+                    "said": null
+                  }
+                }
+              },
+              {
+                "version": "1.2.0",
+                "index": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "notes": {
+                  "answer": "ok",
+                  "value": "## 1.2.0\n\n- feat: the pane\n- fix: the \u001b[1mkeys\u001b[0m\n"
+                }
+              }
+            ]
+          },
+          {
+            "channel": {
+              "component": "app",
+              "name": "stable"
+            },
+            "moves": {
+              "by": "promotion"
+            },
+            "at": {
+              "answer": "refused",
+              "refused": {
+                "source": {
+                  "seam": "keeper",
+                  "profile": "git ref, origin"
+                },
+                "why": {
+                  "fork": {
+                    "predecessor": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "claims": [
+                      "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                      "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                    ]
+                  }
+                },
+                "said": "error: two claims name one predecessor\n\tsee the ledger's \u001b[31mlog\u001b[0m\n"
+              }
+            },
+            "notes": []
+          },
+          {
+            "channel": {
+              "component": "app",
+              "name": "edge"
+            },
+            "moves": {
+              "by": "bound",
+              "to": "beta"
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "empty",
+                "read": {
+                  "kept": {
+                    "at": 1793000030,
+                    "said": "fatal: could not read from remote repository."
+                  }
+                }
+              }
+            },
+            "notes": []
+          },
+          {
+            "channel": {
+              "component": "app",
+              "name": "nightly"
+            },
+            "moves": {
+              "by": "each_publish",
+              "prereleases": false
+            },
+            "at": {
+              "answer": "absent",
+              "absent": {
+                "source": {
+                  "seam": "keeper",
+                  "profile": "git ref, origin"
+                },
+                "what": "chain of app/nightly"
+              }
+            },
+            "notes": []
+          },
+          {
+            "channel": {
+              "component": "app",
+              "name": "canary"
+            },
+            "moves": {
+              "by": "promotion"
+            },
+            "at": {
+              "answer": "unreadable",
+              "unreadable": {
+                "source": {
+                  "seam": "keeper",
+                  "profile": "git ref, origin"
+                },
+                "what": "chain of app/canary",
+                "said": "fatal: unable to access 'origin': Could not resolve host"
+              }
+            },
+            "notes": []
+          }
+        ]
+      }
+    },
+    "environments": {
+      "answer": "ok",
+      "value": {
+        "converged": 0,
+        "behind": 0,
+        "waiting": 0,
+        "unreadable": 2
+      }
+    },
+    "published": {
+      "answer": "ok",
+      "value": {
+        "record": "/srv/alpha/.git/tailrace/published",
+        "components": [
+          {
+            "component": "app",
+            "versions": [
+              {
+                "component": "app",
+                "version": "1.1.0",
+                "tag": "app-v1.1.0",
+                "revision": "2222222222222222222222222222222222222222",
+                "branch": "main",
+                "index": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                "store": {
+                  "seam": "store",
+                  "profile": "registry ghcr.io/agentplot"
+                }
+              },
+              {
+                "component": "app",
+                "version": "1.2.0",
+                "tag": "app-v1.2.0",
+                "revision": "3333333333333333333333333333333333333333",
+                "branch": "main",
+                "index": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "store": {
+                  "seam": "store",
+                  "profile": "registry ghcr.io/agentplot"
+                },
+                "notes": {
+                  "answer": "ok",
+                  "value": "## 1.2.0\n\n- feat: the pane\n"
+                }
+              }
+            ]
+          },
+          {
+            "component": "docs",
+            "versions": [
+              {
+                "component": "docs",
+                "version": "0.3.0",
+                "tag": "docs-v0.3.0",
+                "revision": "4444444444444444444444444444444444444444",
+                "branch": "main",
+                "index": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "store": {
+                  "seam": "store",
+                  "profile": "layout /srv/layout"
+                },
+                "notes": {
+                  "answer": "unreadable",
+                  "unreadable": {
+                    "source": {
+                      "seam": "history",
+                      "profile": "git, local"
+                    },
+                    "what": "commit 4444444444444444444444444444444444444444",
+                    "said": "fatal: bad object 4444444444444444444444444444444444444444"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

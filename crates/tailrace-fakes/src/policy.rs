@@ -166,7 +166,9 @@ impl Policy for FakePolicy {
 
 #[cfg(test)]
 mod tests {
-    use tailrace_seams::{ChannelName, Check, ClaimKind, ComponentName, RequiredClaim, Source};
+    use tailrace_seams::{
+        AskedOf, ChannelName, Check, ClaimKind, ComponentName, RequiredClaim, Source,
+    };
 
     use super::*;
     use crate::{Fault, Times};
@@ -176,6 +178,7 @@ mod tests {
             kind: ClaimKind::Verdict,
             check: Some(Check::new(check)),
             signers: vec![],
+            asked_of: AskedOf::Every,
         }
     }
 
@@ -215,12 +218,21 @@ mod tests {
     fn a_policy_at_one_revision_is_read_at_that_revision() {
         let policy = FakePolicy::new();
         let (old, new) = (Revision::new("old"), Revision::new("new"));
-        policy.require(Audience::Layout, Required::Layout { claims: vec![] });
+        policy.require(
+            Audience::Layout,
+            Required::Layout {
+                claims: vec![],
+                given: false,
+                signers: vec![],
+            },
+        );
         policy.require_at(
             &new,
             Audience::Layout,
             Required::Layout {
                 claims: vec![claim("test")],
+                given: false,
+                signers: vec![],
             },
         );
         assert_eq!(

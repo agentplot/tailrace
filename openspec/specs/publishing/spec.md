@@ -81,7 +81,10 @@ naming it, before the build is asked anything.
 
 A publish SHALL ask the build seam to ensure every output the component
 declares in one asking, then read each output's build identity, outcome
-and files, before anything is packed. An output the build could not
+and files, before anything is packed. Where the landing carries verdicts
+for the revision, the publish SHALL first fill the checkout's build
+cache from the store, as the next requirement says, so the asking
+replays what the landing's checks built. An output the build could not
 make SHALL refuse the version whole, naming each such output (74, 75,
 16).
 
@@ -94,6 +97,11 @@ make SHALL refuse the version whole, naming each such output (74, 75,
 
 - **WHEN** the fake build cannot make one of a component's two outputs
 - **THEN** the publish is refused naming that output, and nothing is packed or put
+
+#### Scenario: The cache filled before the asking
+
+- **WHEN** a landing with verdicts is published and the store holds the cache entries its passing verdicts name
+- **THEN** every cache-entry render into the checkout precedes the one ensure
 
 ### Requirement: An output is a pass only by the build and the landing together
 
@@ -167,17 +175,18 @@ SHALL stop before the index (2, core.5).
 
 ### Requirement: Each artifact carries one provenance claim in the host's identity
 
-Each artifact SHALL be attached one provenance claim, signed in the
-identity of the party running the publish, naming the artifact's
+Each output's artifact SHALL be attached one provenance claim, signed in
+the identity of the party running the publish, naming the artifact's
 digest, the revision, the output, the output's build identity and the
-build's outcome (11, 13, 79, core.8, core.9). Where no identity is at
-hand, the publish SHALL stop before the index and answer absent naming
-the signer (17).
+build's outcome (11, 13, 79, core.8, core.9). The version's notes carry
+a provenance claim of their own, naming no build (134). Where no
+identity is at hand, the publish SHALL stop before the index and answer
+absent naming the signer (17).
 
 #### Scenario: A provenance claim attached
 
 - **WHEN** a version is published
-- **THEN** claims-of each artifact's digest answers one provenance claim signed by the host's signer, naming the revision and the output's build identity
+- **THEN** claims-of each output's artifact digest answers one provenance claim signed by the host's signer, naming the revision and the output's build identity
 
 #### Scenario: No identity at hand
 
@@ -217,60 +226,251 @@ that digest (8, core.27).
 ### Requirement: The index is offered last, then the version is named
 
 The index SHALL be put only after every artifact it names is put and its
-claims attached, and the version's name SHALL then be moved in the store
-from nothing to the index's digest. A version exists only once its index
-is held, and a publish that stops before its index has published nothing
-(6, 17, core.12, core.6).
+claims attached. The publisher's layout-policy claim, where one is
+attached, SHALL be attached next; then each artifact's name SHALL be
+made at the index's digest; and only then SHALL the version's name be
+moved in the store from nothing to the index's digest. A version exists
+only once its index is held, and a publish that stops before its index
+has published nothing (6, 17, 113, 138, core.12, core.6).
 
 #### Scenario: The order of puts
 
 - **WHEN** a component with two outputs is published
-- **THEN** the fake store records both artifacts and their attachments before the index, and the name after the index
+- **THEN** the fake store records both artifacts and their attachments before the index, the index before either artifact's name, and both artifacts' names before the version's name
 
 #### Scenario: A stopped publish
 
 - **WHEN** a publish stops after one artifact is put
-- **THEN** no index is held, the version's name resolves to nothing, and the host's record holds no entry for the version
+- **THEN** no index is held, the version's name and every artifact's name resolve to nothing, and the host's record holds no entry for the version
 
 ### Requirement: A second publish of a revision ends at the same index
 
-A publish of a revision whose version's name already names an index
-SHALL compare each packed artifact's digest with the digest the index
-names for that ecosystem name. All the same, nothing SHALL be written
-and the answer SHALL name the same index (5, 18, S2). One different, the
-publish SHALL be refused naming the artifact and both digests, nothing
-SHALL be offered, and the name SHALL stay with the first index (18, 87).
+A publish of a revision whose version's name already names an index,
+or for a declared component whose bare tag does, as a publish before
+version names carried their component left it, SHALL compare each packed artifact's digest with the digest the index
+names for that ecosystem name. All the same, it SHALL attach the
+publisher's layout policy where the index lacks it, make each artifact's
+name the store lacks at that index, write nothing else, and answer the
+same index (5, 18, 113, 138, S2). One different, the publish SHALL be
+refused naming the artifact and both digests, nothing SHALL be offered
+or named, and the name SHALL stay with the first index (18, 87).
 
 #### Scenario: The same revision again
 
 - **WHEN** a revision is published twice with projections that pack the same
 - **THEN** the second answer names the same index and digests, and the store, the history and the host's record hold after it exactly what they held before it
 
+#### Scenario: A version named before its artifacts were
+
+- **WHEN** the store holds a version's index and its tag but no artifact's name and no layout-policy claim, as a publish before this change left it, and the revision, whose file writes a policy for layouts, is published again
+- **THEN** the layout-policy claim is attached to that index, each artifact's name is then made from nothing at it, nothing is put, and the answer names the same index
+
 #### Scenario: A projection that packs differently
 
 - **WHEN** a revision is published twice and the fake projection packs different bytes the second time
-- **THEN** the second publish is refused naming the artifact, the digest the index names and the digest packed now, the store records no put, and the version's name still names the first index
+- **THEN** the second publish is refused naming the artifact, the digest the index names and the digest packed now, the store records no put and no name, and the version's name still names the first index
 
 ### Requirement: A publish answers what a program reads
 
 A publish SHALL end with an answer readable by a program that names, for
 each component, the version, the tag, the revision, the index's digest,
-each artifact's digest, ecosystem and name, whether its projection
-promises the same bytes again, and each claim with its kind, its signer,
-its envelope's digest and the digest it is attached to (19, 57).
+each artifact's digest, ecosystem, name and store name, whether its
+projection promises the same bytes again, and each claim with its kind,
+its signer, its envelope's digest and the digest it is attached to; and,
+where the index names notes, the notes' digest, their bytes' digest,
+their claim and their text (19, 57, 134, 138).
 
 #### Scenario: The answer names every digest
 
 - **WHEN** a component with two outputs is published and its answer is read as JSON
-- **THEN** it names the index's digest, the version, both artifacts' digests and ecosystem names, and for each artifact the provenance claim's envelope digest and the artifact digest it is attached to, each equal to what the fake store holds
+- **THEN** it names the index's digest, the version, both artifacts' digests, ecosystem names and store names, and for each artifact the provenance claim's envelope digest and the artifact digest it is attached to, each equal to what the fake store holds
+
+#### Scenario: The answer shows the notes
+
+- **WHEN** a version is published and its answer is read as JSON and as text
+- **THEN** the JSON names the notes' digest, their claim's envelope digest and their text equal to the bytes the fake store holds, and the text answer prints the notes beneath the version's line
 
 ### Requirement: A publish offers and does nothing more
 
 A publish SHALL never accept, promote, move a channel or reach a target,
-and SHALL move no name in the store but its version's (20, core.10,
-I2).
+and SHALL move no name in the store but its version's and its
+artifacts' names (20, 138, core.10, I2).
 
 #### Scenario: No channel moved
 
-- **WHEN** a version is published with a target and a keeper bound
-- **THEN** the fake keeper and the fake target record no call, and the fake store records one name moved, the version's
+- **WHEN** a version of two artifacts is published with a target and a keeper bound
+- **THEN** the fake keeper and the fake target record no call, and the fake store records three names made, the two artifacts' and the version's
+
+### Requirement: The index carries the publisher's layout policy
+Where the publishing repository's file writes a policy for layouts at
+the landed revision, a publish SHALL sign it as a layout-policy claim about
+the index, in the identity of the party running the publish and naming
+that revision, and attach it to the index after the index is put and
+before any artifact's name or the version's name is made (113, 8, 138,
+core.8, core.9). Where the file writes none, or the revision holds no
+policy file, it SHALL attach none. A publish whose index already carries
+that claim SHALL attach nothing more.
+
+#### Scenario: A publish under a policy for layouts
+- **WHEN** a revision whose policy file declares a policy for layouts is published
+- **THEN** the index carries one layout-policy claim by the publishing host naming the revision and the claims that policy requires, attached before the first artifact's name was made
+
+#### Scenario: A publish with no layout line
+- **WHEN** a revision whose policy file names a gate signer and no `[layout]` is published
+- **THEN** the index carries no layout-policy claim, and the given is left for a consumer to lay beneath itself
+
+#### Scenario: A publish with no policy file
+- **WHEN** a revision whose tree holds no policy file is published
+- **THEN** the index carries no layout-policy claim, and the given is left for a consumer to lay beneath itself, and the publish answers as before
+
+#### Scenario: A repeat publish
+- **WHEN** the same revision is published again and ends at the same index
+- **THEN** the index still carries one layout-policy claim
+
+### Requirement: Each artifact is named by its ecosystem, its name and its version
+
+A publish SHALL make, for each artifact of the version, the store name
+`artifact/<ecosystem>/<name>@<version>` at the index's digest, made from
+nothing and spelled from the artifact's metadata alone, naming no host,
+store, component, prefix or repository (138, 3, 49, core.18).
+
+#### Scenario: Two artifacts named
+
+- **WHEN** a component whose two outputs pack as `eco` artifacts `site` and `cli` is published at version 1.3.0
+- **THEN** the store's names `artifact/eco/site@1.3.0` and `artifact/eco/cli@1.3.0` each resolve to the index's digest, beside the version's tag at the same digest
+
+#### Scenario: A consumer finds the artifact by name and version alone
+
+- **WHEN** the name `artifact/eco/site@1.3.0` is resolved and the digest it names is read
+- **THEN** the read answers an index naming one artifact of ecosystem `eco`, name `site` and version 1.3.0, and the claims attached to that index are read from it
+
+#### Scenario: The same name for every publisher
+
+- **WHEN** one revision is published by two hosts whose bindings name different stores
+- **THEN** each store holds the artifact under the same name, which holds neither store's name nor the component's prefix
+
+### Requirement: Every artifact name is read before any is made
+
+A publish SHALL resolve every artifact name of the version before it
+makes any. A name already at this index SHALL be left as it is. A name
+at another digest SHALL refuse the version, naming the name, the digest
+it is at and this index, and no name SHALL be made (70, 109, core.6).
+
+#### Scenario: A name another index holds
+
+- **WHEN** a store already names `artifact/eco/site@1.3.0` at another index and a component packing `site` at 1.3.0 is published
+- **THEN** the publish is refused naming the name, the other index's digest and this index's, no artifact name is made, the version's tag is not made, and the store is asked to move no name
+
+#### Scenario: A name already at this index
+
+- **WHEN** a publish stopped after making one artifact's name, and the revision is published again
+- **THEN** that name is not moved again, the other artifact's name is made from nothing, and the version's tag is made last
+
+#### Scenario: A make refused by the store
+
+- **WHEN** the fake store refuses the make of an artifact's name, naming the digest the name is at
+- **THEN** the publish answers that refusal with the store's words, the make is not asked again, and the version's tag is not made
+
+### Requirement: The index names its revision and its repository
+
+A new index SHALL name the revision it was published from, and the
+publishing repository by the owner and name of its landed branch's
+remote's address, as the address is written (13, 138). Where the branch
+names no remote, or its address gives no owner and name, the index SHALL
+name no repository, and the publish SHALL go on.
+
+#### Scenario: A repository with a remote
+
+- **WHEN** a revision of a repository whose branch's remote is `https://example.com/acme/site.git` is published, on a host whose git rewrites that address to a local path
+- **THEN** the index names the revision and the repository `acme/site`
+
+#### Scenario: A repository with no remote
+
+- **WHEN** a revision of a repository whose branch names no remote is published
+- **THEN** the index names the revision and no repository, and the publish answers as it otherwise would
+
+### Requirement: A declared component's version is named with its component
+
+A publish of a declared component SHALL make the version's store name
+`<component>:<tag>`, and a publish of a repository that declares none
+the bare tag, as it did before; the gate's acceptance, a promotion, the
+host's record and verify SHALL resolve a version by the same name (22,
+125, C.1, core.4).
+
+#### Scenario: A declared component published and accepted
+
+- **WHEN** the component `lib` with prefix `lib-v` is published at 1.2.0, and the gate is asked to accept `lib` 1.2.0
+- **THEN** the fake store's name `lib:lib-v1.2.0` resolves to the index, the store holds no name `lib-v1.2.0`, and the gate resolves `lib:lib-v1.2.0` to that index
+
+#### Scenario: A version held under its bare tag
+
+- **WHEN** the store holds a declared component's index under the bare tag `lib-v1.2.0`, as a publish before this change left it, and the revision is published again with projections that pack the same
+- **THEN** `lib:lib-v1.2.0` is made from nothing at that index after the artifacts' names, no index is put, the bare tag still names the index, and the answer names the same index
+
+### Requirement: A pack is handed its component
+
+A publish SHALL hand each output's pack, with the version, the component
+the output belongs to, the component's declared outputs with the files
+the build left for each, and a way to ask whether the component's paths
+hold a path of the repository, matched as the version rule matches them
+(84, 123). It SHALL do so only once every output of the component has
+been built and its outcome read (core.12).
+
+#### Scenario: The component and its outputs
+
+- **WHEN** a component declaring the outputs `fam-a` and `fam-b` publishes
+- **THEN** each output's pack is given the component and both outputs, each with the files its build left
+
+#### Scenario: The component's paths
+
+- **WHEN** a component declaring the paths `crates/fam-*/**` publishes an output, and its projection asks of `crates/fam-b/Cargo.toml` and of `crates/base-c/Cargo.toml`
+- **THEN** the first is held by the component's paths and the second is not
+
+### Requirement: Where the landing carries verdicts, the outputs come from the store
+
+Where the landing carries verdicts, a publish SHALL resolve the cache
+entry of each build identity a passing verdict names, once, and render
+each the store holds into the checkout through every bound projection
+that renders cache entries, before the build is asked (52, 135). It
+SHALL ask the store only to resolve and read for this, write nothing to
+it, and a render's refusal or unreadable answer SHALL be the publish's
+whole answer.
+
+#### Scenario: Entries rendered from the store
+
+- **WHEN** a landing whose verdicts pass on two build identities is published and the store holds both entries
+- **THEN** both are resolved and rendered into the checkout, and the store records no put and no name for them
+
+#### Scenario: A failed verdict's build identity
+
+- **WHEN** a landing's verdicts fail on one build identity and pass on another
+- **THEN** only the passing build identity's entry is resolved
+
+#### Scenario: A landing with no verdicts fills nothing
+
+- **WHEN** the landing carries no verdicts for the revision
+- **THEN** no cache name is resolved and nothing is rendered before the build is asked (C.6)
+
+### Requirement: An output whose entry the store lacks refuses the version
+
+Where the landing carries verdicts, an output whose reported build
+identity's cache entry was not rendered from the store SHALL refuse the
+version whole, naming the output and its build identity, before the
+version's name is claimed and with nothing packed or offered (15, 16,
+58, I3). A publish SHALL never offer bytes a build made on its own host
+in place of the landing's.
+
+#### Scenario: One output's entry missing from the store
+
+- **WHEN** a component's two outputs come from build identities the landing's verdicts pass, and the store holds the entry of only one
+- **THEN** the publish is refused naming the other output and its build identity, no tag is claimed, and the store records no put
+
+#### Scenario: Every entry held
+
+- **WHEN** the store holds the entry of every output's build identity
+- **THEN** the publish offers the version as before, and each artifact's bytes are packed from what the build replayed
+
+#### Scenario: A plain branch builds on the publishing host
+
+- **WHEN** the landing carries no verdicts and the store holds no cache entry
+- **THEN** the publish offers what the build left on the host, and is not refused for an entry missing (135, S13)

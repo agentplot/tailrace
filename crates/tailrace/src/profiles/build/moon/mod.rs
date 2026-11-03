@@ -1,8 +1,12 @@
 //! The build seam (B.2) bound to moon (C.3): the repository names, in
 //! its policy file at the revision, the moon task that makes each
 //! output; ensure is one moon run of those tasks in a checkout of exactly
-//! that revision, and report reads moon's own record of the run, the
-//! task's hash its build identity (74 to 76).
+//! that revision, sharing the outputs directory of the repository the
+//! build is bound over, as every checkout on a host shares it, so an
+//! archive any of them holds is replayed; and report reads moon's own
+//! record of the run, the task's hash its build identity (74 to 76).
+//! Left reads a checkout's own run report and the archives moon's
+//! outputs directory holds, and runs no task (139).
 //!
 //! The policy file names an output's task in a table of its own, which
 //! the core's reader leaves to this profile (design D3):
@@ -29,11 +33,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use tailrace_seams::{
-    Answer, Build, BuildId, Not, OutputName, Report, Revision, Seam, Source, Why,
+    Answer, Build, BuildId, Left, Not, OutputName, Report, Revision, Seam, Source, Why,
 };
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
-use report::{Declared, RunReport, RUN_REPORT};
+use report::{Declared, RunReport, OUTPUTS, RUN_REPORT};
 
 /// The policy file, read at the revision and never from a checkout (65,
 /// rule core.22).
@@ -313,16 +317,72 @@ impl Build for Moon {
                 .collect(),
         })
     }
+
+    /// 139: each task the run report in the checkout at `at` records with
+    /// a hash and an outcome, whose archive moon's outputs directory there
+    /// holds, grouped by hash in the report's order: the hash as the
+    /// build identity, the tasks with it, its outcome, and the files they
+    /// declare that are there. moon archives a task that passes, with
+    /// declared outputs or none, and never one that fails, so a failed
+    /// task is never named. A checkout with no run report ran nothing and
+    /// answers an empty list. No task is run.
+    fn left(&self, at: &str) -> Answer<Vec<Left>> {
+        self.open()?;
+        let checkout = Path::new(at);
+        let Some(report) = self.run_report(checkout)? else {
+            return Ok(Vec::new());
+        };
+        let outputs = checkout.join(OUTPUTS);
+        let mut left: Vec<Left> = Vec::new();
+        for (target, action) in report.tasks() {
+            let (Some(hash), Some(outcome)) = (&action.hash, action.outcome()) else {
+                continue;
+            };
+            let archive = outputs.join(format!("{hash}.tar.gz"));
+            match fs::metadata(&archive) {
+                Ok(meta) if meta.is_file() => {}
+                Ok(_) => continue,
+                Err(e) if e.kind() == ErrorKind::NotFound => continue,
+                Err(e) => return Err(self.unreadable_file(&archive, e.to_string())),
+            }
+            let files: Vec<String> = self
+                .declared(checkout, target)?
+                .files_in(checkout)
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect();
+            match left.iter_mut().find(|l| l.build.as_str() == hash) {
+                Some(same) => {
+                    same.tasks.push(target.to_string());
+                    for file in files {
+                        if !same.files.contains(&file) {
+                            same.files.push(file);
+                        }
+                    }
+                }
+                None => left.push(Left {
+                    build: BuildId::new(hash.clone()),
+                    tasks: vec![target.to_string()],
+                    outcome,
+                    files,
+                }),
+            }
+        }
+        Ok(left)
+    }
 }
 
 #[cfg(test)]
 pub(super) mod tests {
     use std::fs;
+    use std::os::unix::fs::PermissionsExt;
     use std::path::Path;
     use std::process::Command;
 
+    use tailrace_seams::Outcome;
     use tempfile::TempDir;
 
+    use super::report::tests::{APP_TEST, RAN, WEB_BUILD};
     use super::*;
 
     /// A git repository in a temporary directory, committed to under a
@@ -391,6 +451,220 @@ pub(super) mod tests {
 
     fn output(name: &str) -> OutputName {
         OutputName::new(name)
+    }
+
+    /// A moon that runs nothing: it prints its version, and for `moon
+    /// task <target> --json` the outputs `declared` gives the target, none
+    /// for any other; every asking is logged, so a test sees no task run.
+    struct StubMoon {
+        dir: TempDir,
+    }
+
+    impl StubMoon {
+        fn new(declared: &[(&str, &str)]) -> StubMoon {
+            let dir = TempDir::new().unwrap();
+            let log = dir.path().join("asked");
+            let mut cases = String::new();
+            for (target, json) in declared {
+                cases.push_str(&format!("  '{target}') printf '%s\\n' '{json}' ;;\n"));
+            }
+            let script = format!(
+                "#!/bin/sh\n\
+                 printf '%s\\n' \"$*\" >> '{log}'\n\
+                 case \"$1\" in\n\
+                 --version) echo 'moon 2.6.1' ;;\n\
+                 task)\n\
+                 case \"$2\" in\n\
+                 {cases}\
+                 *) printf '%s\\n' '{{\"outputFiles\":null,\"outputGlobs\":null}}' ;;\n\
+                 esac ;;\n\
+                 *) exit 1 ;;\n\
+                 esac\n",
+                log = log.display(),
+            );
+            let program = dir.path().join("moon");
+            fs::write(&program, script).unwrap();
+            fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+            StubMoon { dir }
+        }
+
+        fn program(&self) -> PathBuf {
+            self.dir.path().join("moon")
+        }
+
+        /// Every asking, its arguments joined by spaces.
+        fn asked(&self) -> Vec<String> {
+            fs::read_to_string(self.dir.path().join("asked"))
+                .unwrap_or_default()
+                .lines()
+                .map(str::to_string)
+                .collect()
+        }
+    }
+
+    /// moon's run report of `tasks`, each a target, its hash and its
+    /// status, in moon's form.
+    fn ran(tasks: &[(&str, &str, &str)]) -> String {
+        let actions: Vec<serde_json::Value> = tasks
+            .iter()
+            .map(|(target, hash, status)| {
+                serde_json::json!({
+                    "label": format!("RunTask({target})"),
+                    "node": {"action": "run-task", "params": {"target": target}},
+                    "operations": [{"meta": {"type": "hash-generation", "hash": hash}}],
+                    "status": status,
+                })
+            })
+            .collect();
+        serde_json::json!({ "actions": actions }).to_string()
+    }
+
+    /// `report` left as the run report of the checkout at `at`, and an
+    /// archive in its outputs directory for each of `archived`.
+    fn left_by_a_run(at: &Path, report: &str, archived: &[&str]) {
+        fs::create_dir_all(at.join(OUTPUTS)).unwrap();
+        fs::write(at.join(RUN_REPORT), report).unwrap();
+        for hash in archived {
+            fs::write(at.join(OUTPUTS).join(format!("{hash}.tar.gz")), hash).unwrap();
+        }
+    }
+
+    fn at(repo: &Repo) -> &str {
+        repo.path().to_str().unwrap()
+    }
+
+    #[test]
+    fn a_run_that_passed_one_task_and_failed_another() {
+        let repo = Repo::new();
+        let stub = StubMoon::new(&[(
+            "web:build",
+            r#"{"outputFiles":{"web/dist/site.txt":{"optional":false}},"outputGlobs":null}"#,
+        )]);
+        repo.write("web/dist/site.txt", "site");
+        repo.write("app/out/app.txt", "app");
+        left_by_a_run(repo.path(), RAN, &[WEB_BUILD]);
+        let moon = repo.moon().moon_program(stub.program());
+        assert_eq!(
+            moon.left(at(&repo)),
+            Ok(vec![Left {
+                build: BuildId::new(WEB_BUILD),
+                tasks: vec!["web:build".into()],
+                outcome: Outcome::Pass,
+                files: vec![repo.path().join("web/dist/site.txt").display().to_string()],
+            }])
+        );
+        assert!(
+            !moon
+                .left(at(&repo))
+                .unwrap()
+                .iter()
+                .any(|l| l.build.as_str() == APP_TEST),
+            "the failed task is named"
+        );
+        assert!(
+            stub.asked()
+                .iter()
+                .all(|a| a == "--version" || a == "task web:build --json"),
+            "{:?}",
+            stub.asked()
+        );
+    }
+
+    #[test]
+    fn a_task_with_no_declared_outputs() {
+        let repo = Repo::new();
+        let stub = StubMoon::new(&[]);
+        left_by_a_run(repo.path(), &ran(&[("app:lint", "a1", "passed")]), &["a1"]);
+        assert_eq!(
+            repo.moon().moon_program(stub.program()).left(at(&repo)),
+            Ok(vec![Left {
+                build: BuildId::new("a1"),
+                tasks: vec!["app:lint".into()],
+                outcome: Outcome::Pass,
+                files: vec![],
+            }])
+        );
+    }
+
+    #[test]
+    fn tasks_of_one_hash_are_one_build_in_the_reports_order() {
+        let repo = Repo::new();
+        let stub = StubMoon::new(&[
+            (
+                "web:build",
+                r#"{"outputFiles":{"web/dist/site.txt":{}},"outputGlobs":null}"#,
+            ),
+            (
+                "web:copy",
+                r#"{"outputFiles":{"web/dist/site.txt":{},"web/dist/copy.txt":{}},"outputGlobs":null}"#,
+            ),
+        ]);
+        repo.write("web/dist/site.txt", "site");
+        repo.write("web/dist/copy.txt", "copy");
+        left_by_a_run(
+            repo.path(),
+            &ran(&[
+                ("web:build", "b2", "passed"),
+                ("app:lint", "a1", "cached"),
+                ("web:copy", "b2", "cached"),
+            ]),
+            &["a1", "b2"],
+        );
+        let left = repo
+            .moon()
+            .moon_program(stub.program())
+            .left(at(&repo))
+            .unwrap();
+        let named: Vec<(&str, Vec<String>, usize)> = left
+            .iter()
+            .map(|l| (l.build.as_str(), l.tasks.clone(), l.files.len()))
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("b2", vec!["web:build".into(), "web:copy".into()], 2),
+                ("a1", vec!["app:lint".into()], 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_checkout_that_ran_nothing() {
+        let repo = Repo::new();
+        let stub = StubMoon::new(&[]);
+        assert_eq!(
+            repo.moon().moon_program(stub.program()).left(at(&repo)),
+            Ok(vec![])
+        );
+        assert_eq!(stub.asked(), ["--version"]);
+    }
+
+    #[test]
+    fn an_archive_removed_after_the_run() {
+        let repo = Repo::new();
+        let stub = StubMoon::new(&[]);
+        left_by_a_run(repo.path(), RAN, &[WEB_BUILD]);
+        fs::remove_file(
+            repo.path()
+                .join(OUTPUTS)
+                .join(format!("{WEB_BUILD}.tar.gz")),
+        )
+        .unwrap();
+        assert_eq!(
+            repo.moon().moon_program(stub.program()).left(at(&repo)),
+            Ok(vec![])
+        );
+    }
+
+    #[test]
+    fn a_moon_that_cannot_run_is_unreadable_before_the_report_is_read() {
+        let repo = Repo::new();
+        left_by_a_run(repo.path(), "not a run report", &[]);
+        let moon = repo.moon().moon_program(repo.path().join("no-moon"));
+        match moon.left(at(&repo)) {
+            Err(Not::Unreadable(u)) => assert!(!u.what.contains(RUN_REPORT), "{u:?}"),
+            other => panic!("answered {other:?}"),
+        }
     }
 
     #[test]

@@ -128,18 +128,21 @@ its own form, as text or with `--json` (58, 59).
 - **THEN** it prints that entry and the promoted channel, and exits 0
 
 ### Requirement: Sync fills the checkout's cache from a landed revision
-
 `tailrace sync [revision]` SHALL take the revision whose verdicts name
-the entries, by default the newest revision of the branch the checkout
-descends from, `--branch` (by default `main`) and `--json`; it SHALL be
-bound as verify is, by the host's bindings file or the defaults where
-it has none, never making the store it is bound to, and SHALL answer
-each build identity as rendered, absent, or the refusal or unreadable
-answer its render gave, exiting 0 when the only entries not rendered
-are absent (54, 57, 118).
+the entries and whose policy judges the layouts, by default the newest
+revision of the branch the checkout descends from, `--branch` (by
+default `main`) and `--json`; it SHALL be bound as verify is, by the
+host's bindings file or the defaults where it has none, trusting the
+host's own signer and the signers the file trusts, never making the
+store it is bound to, and SHALL answer, as one answer of the core, each
+build identity as rendered, absent, or the refusal or unreadable answer
+its render gave, and each layout as refreshed, naming every pin held,
+refused with its claim found wanting, or absent, or as what it still
+holds and when it was rendered beside what could not be read. It SHALL
+exit 0 when the only entries and pins not rendered or held are absent,
+and otherwise with the worst code among them (51, 54, 57, 99, 118).
 
 #### Scenario: A sync with one entry gone
-
 - **WHEN** `tailrace sync --json` runs over the fakes for a landed revision whose verdicts name two build identities, one of which the store holds no entry for
 - **THEN** the printed JSON names one as rendered and the other as absent, and the exit is 0
 
@@ -147,6 +150,14 @@ are absent (54, 57, 118).
 
 - **WHEN** the built binary runs `tailrace sync --json` on a host with no bindings file and no given layout yet
 - **THEN** it answers unreadable naming the given layout's path, exits 3, and writes no cache, layout or bindings file
+
+#### Scenario: A sync with a version refused
+- **WHEN** `tailrace sync --json` runs over the fakes in a checkout whose lockfile pins one version the policy admits, one it refuses and one the store does not name
+- **THEN** the printed JSON is the core's answer value for value, naming the first held, the second refused with its version and the claim found wanting, and the third absent, and the exit is 1
+
+#### Scenario: A sync whose layout cannot be refreshed
+- **WHEN** `tailrace sync` runs over the fakes while the store's resolve is unreadable with the words `connection refused`, in a checkout whose layout was rendered before
+- **THEN** it prints what the layout holds and when it was rendered, prints `connection refused` verbatim, and exits 3
 
 ### Requirement: Push takes a landed revision
 
@@ -371,3 +382,71 @@ written, and SHALL ask the gate nothing; the version stays offered (20,
 
 - **WHEN** `tailrace publish --json` offers 0.2.0 on a host whose file binds `[gate] job = "the release job a push to main wakes"`
 - **THEN** the component's `gate` member says it is told by a job and carries those words as written
+
+### Requirement: Policy shows which artifacts a claim is asked of
+
+`tailrace policy` SHALL show, beside each required claim the policy asks
+of built artifacts alone, that it is asked of built artifacts alone, and
+nothing beside a claim asked of every artifact, as the policy's answer
+carries it (82, 134, core.31); `--json` SHALL print it as the core's
+answer value for value.
+
+#### Scenario: A verdict asked of built artifacts
+
+- **WHEN** `tailrace policy` runs at a head whose `[acceptance]` requires provenance from `laptop` and a verdict of `cli:test` from `box`
+- **THEN** it shows `provenance by laptop` as written and `verdict of cli:test by box` marked asked of built artifacts alone, and the exit is 0
+
+### Requirement: Sync makes a served layout reachable
+After the layouts are rendered, `tailrace sync` SHALL answer, for each
+layout whose projection serves it, the address its clients read it at,
+and, where there is one, SHALL name the checkout's repository to the
+host and find the host's serving process at the core's address or start
+it where none answers, as `tailrace status --page` does, and answer that
+it serves or why it cannot (114, 132). A layout whose projection serves
+none SHALL name no address and start nothing. A repository whose landing
+remote names no owner and name SHALL be answered unreadable naming the
+remote and its address beside the layouts, and nothing named or started.
+The exit SHALL count that answer as it counts a layout's (57).
+
+#### Scenario: A sync of an npm layout
+- **WHEN** `tailrace sync --json` runs in a checkout of `agentplot/consumer` whose npm projection rendered a layout, with no process answering at the address
+- **THEN** the answer names the layout's address `http://127.0.0.1:7420/agentplot/consumer/npm/`, the host's file names the checkout for `agentplot/consumer`, one process was started, and a second sync starts none
+
+#### Scenario: A sync with no served layout
+- **WHEN** `tailrace sync` runs in a checkout whose only rendered layouts are of projections that serve none
+- **THEN** the answer names no address, the host's file is unchanged, and no process is started
+
+#### Scenario: A remote that names no owner
+- **WHEN** `tailrace sync` renders an npm layout in a checkout whose landing remote is `/srv/consumer.git`
+- **THEN** the layout is rendered, the answer is unreadable naming the remote and its address in place of the address, and the exit is 3
+
+### Requirement: Push takes what the checkout left with --left
+
+`tailrace push --left` SHALL push what the checkout it runs in left,
+taking no revision and no `--branch`, and `--json`; it SHALL ask no
+landing, SHALL answer each build identity as `tailrace push` does, and
+SHALL exit 0 when the only build identities not written or held are
+absent (54, 57, 139). A revision or `--branch` given beside `--left`
+SHALL exit 2 naming the argument, with the core not asked.
+
+#### Scenario: A check job's push
+
+- **WHEN** `tailrace push --left --json` runs over the fakes in a checkout the fake build scripts as having left two passing build identities
+- **THEN** the printed JSON names the checkout and both build identities as written with their digests, its JSON is the core's answer value for value, the landing was asked nothing, and the exit is 0
+
+#### Scenario: A revision beside --left
+
+- **WHEN** `tailrace push --left HEAD` runs
+- **THEN** it exits 2 naming the revision it cannot take with `--left`, and the core is not asked
+
+### Requirement: Publish fills the checkout it runs in
+
+`tailrace publish` SHALL render the cache entries it reads from the
+store into the working tree of the checkout it runs in, and SHALL answer
+absent naming the working tree where the checkout has none, before
+anything is read of the store (135).
+
+#### Scenario: A bare repository
+
+- **WHEN** `tailrace publish` runs in a repository with no working tree, for a landing with verdicts
+- **THEN** it answers absent naming the working tree it would render into, and the store is asked nothing

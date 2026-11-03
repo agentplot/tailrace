@@ -186,6 +186,71 @@ policy lets that signer claim it (80, 9, 61).
 - **WHEN** the layout is copied to another directory, the repository cloned beside it, and the built binary runs `tailrace verify <version> --json` there under a bindings file naming the copy, sluice with the clone's remote, and no `[signing]` table
 - **THEN** every provenance on the index's artifacts is made by the publishing host and counts under an acceptance policy requiring provenance from it, and each of sluice's verdicts is reported as carried in the provenance that holds it
 
+### Requirement: The host trusts its own signer
+
+For reading, the host SHALL trust its own signer, the one `[signing]`
+names, verified by what its profile verifies it by: a host key by its
+key's public half, the file beside the key that ssh-keygen names
+`<key>.pub`, read when sync binds and never the key itself; a key in a
+key service by its key ARN, which is its name. So a host consumes what
+it published itself (118, C.10). The
+binding SHALL carry the trusted signers to sync alone, the host's own
+before those `[trust]` names; a file naming no `[signing]` and no
+`[trust]` SHALL trust no signer.
+
+#### Scenario: The host's own signer trusted
+
+- **WHEN** the file names `[signing]` for the signer `laptop` with a key whose public half lies beside it, and `[trust.gate]`
+- **THEN** a sync's binding trusts `laptop`, verified by that public half, then `gate`, neither with a claim of its own, and the key itself was not read
+
+#### Scenario: A key service's own signer trusted
+
+- **WHEN** the file names `[signing] kms` with a key ARN and no `[trust]`
+- **THEN** a sync's binding trusts that ARN's signer, verified by the ARN, with no claim of its own, and nothing is read or reached
+
+#### Scenario: No trust named
+
+- **WHEN** the file names `[store]`, `[landing]` and `[signing]` and no `[trust]`
+- **THEN** a sync's binding trusts the host's own signer alone, and publish and verify answer as before
+
+#### Scenario: Neither signing nor trust named
+
+- **WHEN** the file names `[store]` and `[landing]`, no `[signing]` and no `[trust]`
+- **THEN** a sync's binding trusts no signer
+
+### Requirement: The file names the other signers the host trusts
+
+The file SHALL name the other signers the host trusts, one
+`[trust.<signer>]` table each, holding exactly one key whose string
+value is the text the signer's profile verifies it by, in the policy
+file's `[signers]` form and with no `kinds` or `checks` (section 2,
+118, C.10), and never a credential (64, core.21). No trusted signer
+SHALL carry a claim of its own to make: its reader allows it the one
+claim it reads through it (C.10).
+
+#### Scenario: A signer trusted
+
+- **WHEN** the file names `[trust.gate]` with `ssh = "ssh-ed25519 AAAA… gate@box"`
+- **THEN** the binding trusts `gate`, verified by that key, with no claim of its own
+
+### Requirement: A broken trust table is unreadable
+A trust table naming no key, two keys, or a value that is not a string
+SHALL be unreadable naming the file and the table; a public half beside
+the `[signing]` key that is missing or holds no OpenSSH public key line
+SHALL be unreadable naming its file, in the operating system's or the
+parser's words; and sync SHALL then read and write nothing (58, 59,
+core.19).
+
+#### Scenario: A trust table with two keys
+
+- **WHEN** `[trust.gate]` names both `ssh` and `kms`
+- **THEN** sync answers unreadable naming the file and `[trust.gate]`, and nothing is read or written
+
+#### Scenario: No public half beside the signing key
+
+- **WHEN** `[signing]` names a key with no `<key>.pub` beside it, and sync runs
+- **THEN** sync answers unreadable naming the public half's file, and nothing is read or written
+
 ### Requirement: Every host binds every signer profile for verify
 
 The binding SHALL bind both signer profiles on every host: the one
@@ -510,3 +575,21 @@ provenance (S1, 80, 95, 108, 118, C.10).
 
 - **WHEN** the built binary then runs `tailrace verify <that version> --json` on the same host
 - **THEN** every provenance is made by the host's name and counts under the acceptance policy, read at that version's revision
+
+### Requirement: A push before the landing binds with a store alone
+
+`tailrace push --left` SHALL bind from the host's file with `[store]`
+alone: a file naming no `[landing]` and no `[signing]` SHALL bind, the
+landing answering absent naming its binding for every operation; it
+SHALL make the layout the file names as push does. Every other command
+SHALL still answer absent naming `[landing]` where the file names none.
+
+#### Scenario: A check job's file
+
+- **WHEN** the file names `[store] registry` and nothing else, and `tailrace push --left` runs
+- **THEN** the push binds and writes the checkout's entries into that repository, and the file names no credential
+
+#### Scenario: The same file for a publish
+
+- **WHEN** the same file is read for `tailrace publish`
+- **THEN** publish answers absent naming `[signing]`, and nothing is read or written

@@ -1,0 +1,33 @@
+{
+  "answer": "ok",
+  "value": {
+    "branch": "main",
+    "asked_at": 1793000100,
+    "channels": {
+      "answer": "ok",
+      "value": {
+        "revision": "1111111111111111111111111111111111111111",
+        "landing": "source",
+        "channels": []
+      }
+    },
+    "environments": {
+      "answer": "unreadable",
+      "unreadable": {
+        "source": {
+          "seam": "target",
+          "profile": "kubernetes, prod"
+        },
+        "what": "the environments of agentplot/gamma",
+        "said": "Unauthorized\n"
+      }
+    },
+    "published": {
+      "answer": "ok",
+      "value": {
+        "record": "/srv/gamma/.git/tailrace/published",
+        "components": []
+      }
+    }
+  }
+}

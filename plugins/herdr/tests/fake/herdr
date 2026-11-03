@@ -1,0 +1,4 @@
+#!/bin/sh
+# A stand-in herdr: logs each call.
+printf '%s\n' "$*" >>"$FAKE/herdr-calls"
+echo '{"result":{}}'

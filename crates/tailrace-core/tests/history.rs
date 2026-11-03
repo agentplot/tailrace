@@ -7,7 +7,7 @@ use std::fs;
 
 use common::{landed, Fixture};
 use semver::Version;
-use tailrace_core::History;
+use tailrace_core::{paths_hold, History};
 use tailrace_seams::{Branch, Not, Revision, Seam};
 
 #[test]
@@ -73,6 +73,36 @@ fn a_commit_outside_the_paths_is_not_listed() {
         revisions(Some(&first), &["**"]),
         BTreeSet::from([commit(&site, "feat: site"), commit(&lib, "fix: lib")])
     );
+}
+
+#[test]
+fn a_commits_message_is_read_as_written_from_the_local_history() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    let rev = repo.commit("feat: a call\n\nWith a body.", &[("lib.txt", "a call")]);
+    let history = repo.history();
+    assert_eq!(
+        history.message(&rev).unwrap(),
+        "feat: a call\n\nWith a body.\n"
+    );
+    let listed = history
+        .commits(&landed(&rev), None, &["**".into()])
+        .unwrap();
+    assert_eq!(history.message(&rev).unwrap(), listed[0].message);
+}
+
+#[test]
+fn a_commit_the_history_does_not_hold_is_absent_naming_it() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a.txt", "a")]);
+    let history = repo.history();
+    let gone = Revision::new("4f2a9c1e0b7d3a5f6c8e9d0a1b2c3d4e5f6a7b8c");
+    let Err(Not::Absent(a)) = history.message(&gone) else {
+        panic!("a commit the history does not hold was read")
+    };
+    assert_eq!(a.source.seam, Seam::History);
+    assert!(a.what.contains(gone.as_str()), "{}", a.what);
 }
 
 #[test]
@@ -238,4 +268,68 @@ fn two_worktrees_of_one_repository_answer_one_common_directory() {
     let elsewhere = fixture.repo("elsewhere");
     elsewhere.commit("chore: start", &[("a", "a")]);
     assert_ne!(elsewhere.history().common_dir(), here);
+}
+
+#[test]
+fn two_worktrees_of_one_repository_answer_two_git_directories() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: start", &[("a", "a")]);
+    let other = fixture.path("other");
+    repo.git(&[
+        "worktree",
+        "add",
+        "-q",
+        "-b",
+        "other",
+        other.to_str().unwrap(),
+    ]);
+
+    let (here, there) = (repo.history(), History::open(&other).unwrap());
+    assert_ne!(here.git_dir(), there.git_dir());
+    assert_eq!(here.common_dir(), there.common_dir());
+    assert_eq!(
+        here.git_dir(),
+        repo.path.join(".git").canonicalize().unwrap()
+    );
+    let theirs = repo.git(&[
+        "-C",
+        other.to_str().unwrap(),
+        "rev-parse",
+        "--absolute-git-dir",
+    ]);
+    assert_eq!(
+        there.git_dir(),
+        std::path::Path::new(&theirs).canonicalize().unwrap()
+    );
+    assert!(
+        there.git_dir().starts_with(here.common_dir()),
+        "{} is not under the common directory",
+        there.git_dir().display()
+    );
+}
+
+#[test]
+fn a_components_paths_hold_a_path_as_git_cliffs_filter_matches_it() {
+    let holds = paths_hold(&["crates/fam/**".into(), "./site/**".into(), "docs/".into()]).unwrap();
+    for path in [
+        "crates/fam/Cargo.toml",
+        "crates/fam/src/lib.rs",
+        "site/index.html",
+        "docs/guide/start.md",
+    ] {
+        assert!(holds(path), "{path}");
+    }
+    for path in [
+        "crates/family/Cargo.toml",
+        "crates/base/Cargo.toml",
+        "Cargo.toml",
+    ] {
+        assert!(!holds(path), "{path}");
+    }
+    let Err(Not::Unreadable(u)) = paths_hold(&["crates/[".into()]) else {
+        panic!("a path that is no glob was read")
+    };
+    assert_eq!(u.source.seam, Seam::History);
+    assert!(u.what.contains("crates/["), "{u:?}");
 }

@@ -11,16 +11,21 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::SystemTime;
 
-use serde_json::json;
-use tailrace_core::{publish, verify, Ask, History, Kept, Publish, Verified, VerifyAsk};
+use serde_json::{json, Value};
+use tailrace_core::{
+    artifact_name, cache_name, publish, sync_checkout, verify, Ask, CheckoutAsk, CheckoutSynced,
+    History, Kept, Layouts, Publish, RepositoryName, Verified, VerifyAsk,
+};
 use tailrace_fakes::{
     BuildOp, Call, FakeProjection, FakeSigner, Fakes, KeeperOp, StoreOp, TargetOp,
 };
 use tailrace_seams::{
-    Answer, Audience, Branch, BuildId, ChannelId, ChannelName, Check, Claim, ClaimKind, Contents,
-    Digest, Ecosystem, Envelope, Environment, EnvironmentName, Layout, Manifest, Name, Outcome,
-    Output, OutputName, Packed, Projection, Rendered, Report, Revision, Seam, Seams, Serving,
-    Signer, SignerId, Source, Verdict, Version,
+    Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId, ChannelId, ChannelName, Check,
+    Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Envelope,
+    Environment, EnvironmentName, IndexMeta, Layout, Manifest, Miss, Name, NamedSigner, Outcome,
+    Output, OutputName, PackAt, Packed, Pin, Pinned, Projection, Range, Rendered, Report, Request,
+    Requirement, Response, Revision, Seam, Seams, Signer, SignerId, Source, Store, Verdict,
+    Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -112,6 +117,9 @@ pub struct FakeWorld {
     /// One commit after `start`, a feature, neither landed nor built.
     pub head: Revision,
     packs: Rc<RefCell<Vec<Packing>>>,
+    /// The store's calls the world asked itself to hold what a check
+    /// job pushed, by their place in its record.
+    seeded: RefCell<Vec<usize>>,
 }
 
 impl Rig for FakeWorld {
@@ -225,7 +233,20 @@ impl FakeWorld {
             start,
             head,
             packs: Rc::new(RefCell::new(Vec::new())),
+            seeded: RefCell::new(Vec::new()),
         }
+    }
+
+    /// One feature more on the site, committed on the clone after `head`
+    /// and pushed, neither landed nor built: a revision a later version
+    /// is published from.
+    pub fn grow(&self) -> Revision {
+        let revision = self.repo().commit(
+            &[("site/index.html", "<p>the site grows</p>")],
+            "feat: the site grows",
+        );
+        self.repo().push();
+        revision
     }
 
     /// The clone the host publishes from.
@@ -245,6 +266,52 @@ impl FakeWorld {
         for verdict in verdicts {
             self.fakes.landing.verdict(revision, verdict.clone());
         }
+    }
+
+    /// The cache entry of each build identity a verdict of `verdicts`
+    /// passes on held in the store under `cache/<build identity>`, once
+    /// each, as a check job's push before the landing leaves it (52,
+    /// 135). The store's calls for it are the world's own, which
+    /// [`FakeWorld::writes`] and [`FakeWorld::store_calls`] leave out.
+    pub fn pushed(&self, verdicts: &[Verdict]) {
+        let store = &self.fakes.store;
+        let mut done: Vec<&BuildId> = Vec::new();
+        for verdict in verdicts {
+            if verdict.outcome != Outcome::Pass || done.contains(&&verdict.build) {
+                continue;
+            }
+            done.push(&verdict.build);
+            let from = store.calls().len();
+            let bytes = format!("the archive of {}", verdict.build);
+            let digest = store
+                .put_bytes(bytes.as_bytes())
+                .expect("the fake store holds bytes")
+                .digest;
+            store
+                .name(&cache_name(&verdict.build), &digest, None)
+                .expect("the entry's name is made from nothing");
+            self.seeded.borrow_mut().extend(from..store.calls().len());
+        }
+    }
+
+    /// How many of the store's calls the world asked itself to hold what
+    /// a check job pushed, each of them a write.
+    pub fn seeded(&self) -> usize {
+        self.seeded.borrow().len()
+    }
+
+    /// The store's calls the core asked, in order, leaving out the
+    /// world's own.
+    fn core_store_calls(&self) -> Vec<Call<StoreOp>> {
+        let seeded = self.seeded.borrow();
+        self.fakes
+            .store
+            .calls()
+            .into_iter()
+            .enumerate()
+            .filter(|(i, _)| !seeded.contains(i))
+            .map(|(_, call)| call)
+            .collect()
     }
 
     /// Each of `outputs` left at `revision` by its own build, ending in
@@ -306,6 +373,7 @@ impl FakeWorld {
             component: None,
             signer: self.host.clone(),
             store: self.store(),
+            tree: self.repo().path.display().to_string(),
         }
     }
 
@@ -360,12 +428,10 @@ impl FakeWorld {
         verify(&self.seams(), &self.history(), ask)
     }
 
-    /// Every write the store was asked, in order: puts, attaches and name
-    /// moves.
+    /// Every write the core asked of the store, in order: puts, attaches
+    /// and name moves.
     pub fn writes(&self) -> Vec<Write> {
-        self.fakes
-            .store
-            .calls()
+        self.core_store_calls()
             .into_iter()
             .filter_map(|call| {
                 let given = call.given;
@@ -387,15 +453,17 @@ impl FakeWorld {
                         to: serde_json::from_value(read("to")).ok()?,
                         expected: serde_json::from_value(read("expected")).ok()?,
                     },
-                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read => return None,
+                    StoreOp::ClaimsOf | StoreOp::Resolve | StoreOp::Read | StoreOp::Versions => {
+                        return None
+                    }
                 })
             })
             .collect()
     }
 
-    /// Every operation asked of the store, in order.
+    /// Every operation the core asked of the store, in order.
     pub fn store_calls(&self) -> Vec<StoreOp> {
-        changes(self.fakes.store.calls())
+        changes(self.core_store_calls())
     }
 
     pub fn keeper_calls(&self) -> Vec<KeeperOp> {
@@ -454,10 +522,11 @@ impl FakeWorld {
         found
     }
 
-    /// How many operations every fake has been asked, all told.
+    /// How many operations every fake has been asked, all told, leaving
+    /// out the store's calls the world asked itself.
     pub fn asked(&self) -> usize {
         let fakes = &self.fakes;
-        fakes.store.calls().len()
+        self.core_store_calls().len()
             + fakes.build.calls().len()
             + fakes.landing.calls().len()
             + fakes.signer.calls().len()
@@ -474,6 +543,127 @@ impl FakeWorld {
                 .map(|t| t.calls().len())
                 .sum::<usize>()
     }
+
+    /// `pins`, names and versions, as what the clone's lockfile of
+    /// `ecosystem` pins (137): its fake projection answers them for the
+    /// clone's working tree.
+    pub fn lockfile(&self, ecosystem: &str, pins: &[(&str, &str)]) {
+        let pins: Vec<Pinned> = pins
+            .iter()
+            .map(|(name, version)| Pinned {
+                name: EcosystemName::new(*name),
+                version: Version::new(*version),
+            })
+            .collect();
+        self.fakes.projections[&Ecosystem::new(ecosystem)]
+            .lockfile(&self.repo().path.display().to_string(), &pins);
+    }
+
+    /// `version` of `name` in `ecosystem` held as a version's index naming
+    /// its one artifact, and `artifact/<ecosystem>/<name>@<version>` moved
+    /// to the index, as a publish will name it (138); the index and the
+    /// artifact.
+    pub fn artifact(&self, ecosystem: &str, name: &str, version: &str) -> (Digest, Artifact) {
+        let store = &self.fakes.store;
+        let ecosystem = Ecosystem::new(ecosystem);
+        let meta = ArtifactMeta::new(
+            ecosystem.clone(),
+            EcosystemName::new(name),
+            Version::new(version),
+        )
+        .expect("the metadata names all three");
+        let bytes = format!("{ecosystem} {name} {version}");
+        let layer = store
+            .put_bytes(bytes.as_bytes())
+            .expect("the fake store holds bytes")
+            .digest;
+        let digest = store
+            .put_artifact(&Manifest::Artifact {
+                meta: meta.clone(),
+                layers: vec![layer],
+            })
+            .expect("the fake store holds an artifact")
+            .digest;
+        let artifact = Artifact { digest, meta };
+        let index = IndexMeta::new(
+            ComponentName::new(name),
+            Version::new(version),
+            vec![artifact.clone()],
+        )
+        .expect("the index names its one artifact");
+        let index = store
+            .put_artifact(&Manifest::Index(index))
+            .expect("the fake store holds an index")
+            .digest;
+        let named = artifact_name(
+            &ecosystem,
+            &EcosystemName::new(name),
+            &Version::new(version),
+        );
+        store
+            .name(&named, &index, None)
+            .expect("the name is made from nothing");
+        (index, artifact)
+    }
+
+    /// A claim of `kind` about `subject` with `body`, made at `start`,
+    /// signed by `signer` as another party's signer signs it and attached
+    /// beside its subject; the envelope.
+    pub fn attach(&self, subject: &Digest, kind: ClaimKind, body: Value, signer: &str) -> Envelope {
+        let id = SignerId::new(signer);
+        let theirs = FakeSigner::new();
+        theirs.hold(&id);
+        let claim = Claim {
+            subject: subject.clone(),
+            kind,
+            revision: self.start.clone(),
+            build: None,
+            body,
+        };
+        let envelope = theirs
+            .sign(&claim, &id)
+            .expect("their signer holds their identity");
+        self.fakes
+            .store
+            .attach(subject, &envelope)
+            .expect("the fake store holds the subject");
+        envelope
+    }
+
+    /// 114: the repository the clone is of, as its landing's remote
+    /// names it: `agentplot/consumer`.
+    pub fn repository(&self) -> RepositoryName {
+        RepositoryName {
+            owner: "agentplot".into(),
+            name: "consumer".into(),
+        }
+    }
+
+    /// The host's record of the clone's layouts, under its own git
+    /// directory (61, 62).
+    pub fn layouts(&self) -> Layouts {
+        Layouts::at(&self.history())
+    }
+
+    /// The clone synced for `revision` on `main`, its cache and then its
+    /// layouts, at `when` by the asker's clock, on a host trusting
+    /// `trusted`.
+    pub fn sync_checkout(
+        &self,
+        revision: &Revision,
+        when: u64,
+        trusted: &[NamedSigner],
+    ) -> Answer<CheckoutSynced> {
+        let ask = CheckoutAsk {
+            branch: self.main.clone(),
+            revision: revision.clone(),
+            tree: self.repo().path.clone(),
+            when,
+            trusted: trusted.to_vec(),
+            repository: Ok(self.repository()),
+        };
+        sync_checkout(&self.seams(), &self.layouts(), &ask)
+    }
 }
 
 /// A projection that hands every operation to its fake and, at each
@@ -485,7 +675,7 @@ struct Watched {
 }
 
 impl Projection for Watched {
-    fn pack(&self, output: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let packed = self.inner.pack(output, at, version);
         if let (
             Ok(Packed {
@@ -496,7 +686,7 @@ impl Projection for Watched {
         {
             self.packs.borrow_mut().push(Packing {
                 ecosystem: meta.ecosystem().clone(),
-                version: version.clone(),
+                version: version.version.clone(),
                 shared_tags: self.shared.tags(),
             });
         }
@@ -507,8 +697,20 @@ impl Projection for Watched {
         self.inner.render(contents, at)
     }
 
-    fn serve(&self, layout: &Layout) -> Answer<Serving> {
-        self.inner.serve(layout)
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.inner.serve(layout, request, miss)
+    }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
+        self.inner.pinned(checkout)
+    }
+
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        self.inner.requires(held)
+    }
+
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        self.inner.satisfying(range, versions)
     }
 }
 
@@ -622,12 +824,14 @@ impl FakeWorld {
             kind: ClaimKind::Acceptance,
             check: None,
             signers: vec![gate.clone()],
+            asked_of: tailrace_seams::AskedOf::Every,
         }];
         if rebuild {
             claims.push(tailrace_seams::RequiredClaim {
                 kind: ClaimKind::Rebuild,
                 check: None,
                 signers: vec![named(REBUILDER, &[ClaimKind::Rebuild])],
+                asked_of: tailrace_seams::AskedOf::Every,
             });
         }
         self.fakes.policy.require(

@@ -2,7 +2,7 @@
 //! with the runner and reported as any profile is (93; design D9).
 
 use tailrace_conformance::core::{
-    cache, copy, gate, ledger, publish, record, status, verify, version,
+    cache, copy, gate, layouts, ledger, naming, publish, record, status, verify, version,
 };
 use tailrace_conformance::fakes::{
     FakeBindingRig, FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig,
@@ -113,10 +113,13 @@ fn the_fake_projection_keeps_a_projections_contract() {
     report.assert();
     assert_eq!(
         inapplicable(&report),
-        [(
-            "a projection that packs no cache entries",
-            "the projection packs cache entries"
-        )],
+        [
+            (
+                "a projection that packs no cache entries",
+                "the projection packs cache entries"
+            ),
+            ("no manifest, none", "the ecosystem has a manifest")
+        ],
         "{report}"
     );
 }
@@ -137,7 +140,8 @@ fn a_fake_projection_packing_no_cache_entries_keeps_a_projections_contract() {
             (
                 "a layout of the build identities given",
                 "the projection packs no cache entries"
-            )
+            ),
+            ("no manifest, none", "the ecosystem has a manifest")
         ],
         "{report}"
     );
@@ -249,6 +253,22 @@ fn the_core_follows_the_ledger_over_the_fakes() {
 #[test]
 fn the_core_keeps_the_cache_over_the_fakes() {
     run(cache::GROUP, &cache::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_core_renders_layouts_over_the_fakes() {
+    run(layouts::GROUP, &layouts::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
+}
+
+#[test]
+fn the_core_names_what_a_publish_offers_over_the_fakes() {
+    run(naming::GROUP, &naming::scenarios(), &|| {
         Box::new(FakeWorld::new())
     })
     .assert();

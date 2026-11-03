@@ -116,7 +116,8 @@ clauses its operations keep: the same bytes put twice are held once
 under their own digest (1, 5); an artifact keeps the metadata that says
 what it is (4); attestations are held beside their digest, all of them,
 none altered (8, 10); a name moves only from where it is expected to be
-(70, 71); bytes read back are the bytes put (73).
+(70, 71); bytes read back are the bytes put (73); and a name's versions
+are listed (138).
 
 #### Scenario: The same bytes put twice
 
@@ -153,11 +154,18 @@ none altered (8, 10); a name moves only from where it is expected to be
 - **WHEN** the rig makes the store unreachable and bytes are read
 - **THEN** the answer is unreadable, carrying the store's own words unchanged, and never empty or not held
 
+#### Scenario: A name's versions listed
+
+- **WHEN** an index is put and named `artifact/eco/@acme/site@1.0.0` and `artifact/eco/@acme/site@1.1.0+b.1`, another `artifact/eco/@acme/site-cli@1.0.0`, and the versions of `eco` `@acme/site` and of a name never named are asked
+- **THEN** the first answer is 1.0.0 and 1.1.0+b.1 and no other, each resolving to the index, and the second is the empty list, neither absent nor refused
+
 ### Requirement: The build's contract
 
 The build's group SHALL hold a build to 74 to 76: every output ensured
-in one asking or the unmade ones named, and the same revision giving
-the same build identity on every host.
+in one asking or the unmade ones named, the same revision giving the
+same build identity on every host, and what a checkout's run left
+answered with each build identity, its tasks, its outcome and its files,
+or an empty list for a checkout that ran nothing.
 
 #### Scenario: Outputs ensured and reported
 
@@ -173,6 +181,16 @@ the same build identity on every host.
 
 - **WHEN** one revision's output is reported on the rig's host and on a second host the rig gives
 - **THEN** both name the same build identity
+
+#### Scenario: What an ensure left
+
+- **WHEN** a revision's outputs are ensured in a checkout the rig gives and left is asked of that checkout
+- **THEN** left names the build identity each report answered, with a pass
+
+#### Scenario: A checkout that ran nothing
+
+- **WHEN** left is asked of a checkout the rig gives in which nothing has run
+- **THEN** it answers an empty list
 
 ### Requirement: The landing's contract
 
@@ -241,8 +259,10 @@ The policy's group SHALL hold a policy to 82, 83 and 131: for each
 audience, the claims required with the signers that may make each and
 the kinds and checks each may claim, binding no signer by output or
 ecosystem (116); where the repository declares no policy for an
-audience, an absence naming the audience, the revision beside it being
-verify's to name, not the policy's (82); and the channels the policy
+audience, an absence naming the audience, asked of a channel no policy
+declares, since the policy file answers a layout with no table by the
+given (C.10), the revision beside it being verify's to name, not the
+policy's (82); and the channels the policy
 declares, each with the one component it belongs to and how it moves,
 on each publish with releases alone or prereleases too, by promotion
 alone, or bound within its component, one
@@ -262,18 +282,15 @@ profile gives, so a profile whose givens bear other names passes alike
 (C.10).
 
 #### Scenario: The claims an audience requires
-
 - **WHEN** the policy for acceptance is asked at a revision whose policy requires a provenance from one signer and a verdict for one check from another
 - **THEN** it answers both requirements, each with its signers and what each may claim
 
 #### Scenario: Acceptance names no channel
-
 - **WHEN** the policy for acceptance and for a channel bound to another are asked
 - **THEN** acceptance answers no channel, and the bound channel's answer names the channel it is bound to
 
 #### Scenario: No policy for an audience
-
-- **WHEN** the policy for a layout is asked where none is declared
+- **WHEN** the policy for the channel `nightly` is asked where no policy declares it
 - **THEN** the answer is absent naming the audience, never refused
 
 #### Scenario: The channels a policy declares
@@ -314,7 +331,9 @@ same artifacts is the same layout, and holds the versions it was given
 and no other. It SHALL hold a projection whose rig says it packs cache
 entries to their case of 84, 85 and 87, and one whose rig says it packs
 none to answering absent for one; each case's scenarios are not
-applicable to a projection of the other.
+applicable to a projection of the other. The rig SHALL name its
+ecosystem's request for a version's bytes, since a request's form is
+the ecosystem's.
 
 #### Scenario: Packed the same again
 
@@ -328,8 +347,8 @@ applicable to a projection of the other.
 
 #### Scenario: Served where the clients read no files
 
-- **WHEN** a projection whose clients read no files serves a rendered layout
-- **THEN** it answers an address its clients read
+- **WHEN** a projection whose clients read no files renders a layout and is asked to serve the rig's request for a version it holds
+- **THEN** it answers a response that answers that request, and asks the core nothing
 
 #### Scenario: A cache entry packed with no version
 
@@ -443,7 +462,7 @@ verdict naming their build is published.
 #### Scenario: S1, a landed revision published
 
 - **WHEN** a revision landed with a verdict naming its build is published, its two outputs read from the build and packed
-- **THEN** both artifacts carry the version history derives, the index is put after both artifacts and their claims, each artifact has one provenance in the host's identity naming the revision and build identity with the landing's verdict carried unchanged, the version's name is made at the index, the answer names every digest and where each claim is attached, and nothing else moved: no other name, no keeper append and no target call
+- **THEN** both artifacts carry the version history derives, the index is put after both artifacts and their claims and names the revision, each artifact has one provenance in the host's identity naming the revision and build identity with the landing's verdict carried unchanged, each artifact's name by its ecosystem, name and version is made at the index before the version's name is, the answer names every digest and where each claim is attached, and nothing else moved: no other name, no keeper append and no target call
 
 ### Requirement: S2 over the fakes
 
@@ -453,7 +472,7 @@ revision again.
 #### Scenario: S2, the same revision again
 
 - **WHEN** the revision published in S1 is published again
-- **THEN** the store records no put, attach or name move, the history and the host's record are unchanged, and the answer equals the first
+- **THEN** the store records no put, attach or name move, the history and the host's record are unchanged, and the answer equals the first, its notes among it
 
 ### Requirement: Publish's refusals over the fakes
 
@@ -600,12 +619,12 @@ what the host keeps, with no seam asked and nothing written.
 #### Scenario: Status after a publish
 
 - **WHEN** status is asked after a publish
-- **THEN** it answers the component, version, revision and index published, no fake records a call after the publish's last, and no file of the record changes
+- **THEN** it answers the component, version, revision and index published with the notes the index names, byte for byte, no fake records a call after the publish's last, and no file of the record changes
 
 #### Scenario: The record read with a file reader
 
 - **WHEN** an entry of the host's record is read as plain JSON from its file
-- **THEN** it names the component, version, revision, branch, index and store, and nothing the store or git holds besides
+- **THEN** it names the component, version, revision, branch, index, store and the revisions the notes were rendered from, and nothing the store or git holds besides
 
 #### Scenario: Nothing kept, and an entry that cannot be read
 
@@ -727,6 +746,95 @@ the conformance register in the commit whose scenario first cites it.
 
 - **WHEN** the coverage check runs
 - **THEN** 63 is cited by the record's group and is not in the register
+
+### Requirement: The projection's group holds pinned
+The projection's group SHALL hold a projection to pinned, below its
+marker: a checkout holding the ecosystem's lockfile answers what the rig
+says it pins, as the lockfile spells it, and a checkout holding none
+answers absent. The rig SHALL say whether its ecosystem has a lockfile,
+and the lockfile scenario SHALL be not applicable to one that has none.
+The scenarios cite 50 and 58 until the suite's statement list holds 137.
+
+#### Scenario: Pinned as the lockfile spells it
+- **WHEN** a projection whose ecosystem has a lockfile is asked for the pins of the rig's checkout holding one
+- **THEN** it answers the names and versions the rig says that lockfile pins, and no other
+
+#### Scenario: No lockfile, absent
+- **WHEN** a projection is asked for the pins of a checkout holding no lockfile of its ecosystem
+- **THEN** the answer is absent, never refused, unreadable or an empty list
+
+#### Scenario: Every projection runs it
+- **WHEN** the projection group runs over the fake projection, the file, image and moon cache profiles
+- **THEN** the no-lockfile scenario passes for each, and the lockfile scenario passes over the fake set with pins and is not applicable to the three profiles
+
+### Requirement: The layouts over the fakes
+The layouts' group SHALL hold the core to 47, 50, 51, 61, 62, 63, 99,
+113 and 118 over the fakes, below its marker, playing S4, with a scenario for
+each requirement of consumer layouts. 47, 51, 99 and 113 SHALL leave the
+register in the commit whose scenario first cites them.
+
+#### Scenario: S4 over the fakes
+- **WHEN** a checkout whose fake projection pins two versions the store names under the consumer's policy is synced, and the store holds a third version of the name
+- **THEN** the projection is asked to render exactly the two versions' artifacts at the checkout's layout place, and the store was asked nothing about the third
+
+#### Scenario: The publisher's policy through the host's trust over the fakes
+- **WHEN** the fake policy answers no policy for layouts and a pinned version's index carries layout-policy claims by a trusted and an untrusted signer of different content
+- **THEN** the version is judged under the trusted signer's claim alone, and the answer names its revision
+
+#### Scenario: The publisher's above the consumer's given over the fakes
+- **WHEN** the fake policy answers a given policy for layouts and a pinned version's index carries a trusted signer's layout-policy claim
+- **THEN** the version is judged under the publisher's policy, and where the index carries none, under the consumer's given
+
+#### Scenario: A consumer's file reads under its own signers alone over the fakes
+- **WHEN** the fake policy answers a given policy for layouts whose file names `gate` for acceptance and `curator` for layout policies, the host trusts `box`, and three pinned versions carry an acceptance by `box`, an acceptance by `gate` with a layout-policy claim by `box`, and a layout-policy claim by `curator` requiring provenance by the host or `box` with a provenance by the host
+- **THEN** the first is refused naming acceptance checked against `gate` alone, the second is held under the consumer's given, and the third is judged under the publisher's policy and refused naming provenance checked against `box` alone
+
+#### Scenario: A claim the file names no signer for read through the host's trust over the fakes
+- **WHEN** the fake policy answers a given policy requiring acceptance naming no signer, whose file names `laptop` for provenance alone, the host trusts its own signer and `gate`, and one pinned version carries an acceptance by `laptop` and another an acceptance by the host's own signer
+- **THEN** the first is refused naming acceptance checked against the host's own signer and `gate`, never `laptop`, and the second is held under the consumer's given
+
+#### Scenario: A version refused over the fakes
+- **WHEN** a pinned version's index lacks the acceptance claim the consumer's policy requires
+- **THEN** the answer names the version and acceptance as the claim found wanting, and the render was not given it
+
+#### Scenario: The store unreachable over the fakes
+- **WHEN** a layout was rendered and the fake store's resolve is then unreadable for a second sync
+- **THEN** the second answer names what the layout holds, when it was rendered and the store's own words, the projection was not asked to render, and nothing is named refused
+
+#### Scenario: The register after the layouts
+- **WHEN** the coverage check runs after this group's scenarios are added
+- **THEN** 47, 51, 99 and 113 are cited and none of them is in the register
+
+### Requirement: The projection's group holds requires and satisfying
+The projection's group SHALL hold a projection whose ecosystem has a
+manifest, below its marker, to answering requires of the rig's held
+artifact with what the rig says its manifest requires, as spelled, and
+satisfying of the rig's range with the versions the rig says satisfy
+it, newest first. The scenarios cite 23, 50 and 58 until the suite's
+statement list holds 140.
+
+#### Scenario: Required as the manifest spells it
+- **WHEN** a projection whose ecosystem has a manifest is asked what the rig's held artifact requires
+- **THEN** it answers the names and ranges the rig says that artifact's manifest requires, spelled as the manifest spells them, and no other
+
+#### Scenario: Satisfied by the ecosystem's own ordering
+- **WHEN** a projection whose ecosystem has a manifest is asked which of the rig's versions satisfy the rig's range, the versions listed in neither the ecosystem's order nor spelling order
+- **THEN** it answers the versions the rig says satisfy the range, newest first, and no other
+
+### Requirement: The projection's group holds an ecosystem with no manifest to none
+The projection's group SHALL hold a projection whose ecosystem has no
+manifest to answering none to requires and to satisfying. The rig SHALL
+say whether its ecosystem has a manifest; the manifest scenarios SHALL
+be not applicable to a projection whose ecosystem has none, and the
+none scenario to one that has one.
+
+#### Scenario: No manifest, none
+- **WHEN** a projection whose ecosystem has no manifest is asked what the rig's held artifact requires and which versions satisfy a range
+- **THEN** both answers are none, an empty list, never absent, refused or unreadable
+
+#### Scenario: Every projection runs them
+- **WHEN** the projection group runs over the fake projection, the file, image and moon cache profiles
+- **THEN** the two manifest scenarios pass over the fake and are not applicable to the three profiles, and the none scenario passes over the three profiles and is not applicable to the fake
 
 ### Requirement: Promotion over the fakes
 
@@ -933,3 +1041,151 @@ commit that cites it (core.33).
 
 - **WHEN** the coverage check runs
 - **THEN** 130 is cited by the gate's group and is not in the register
+
+### Requirement: Store naming over the fakes
+A store-naming group SHALL hold the core to 138 over the fakes, below
+its marker: what a publish names is found by a consumer by ecosystem,
+name and version alone, on the index the publish answered, with the
+claims a layout reads beside it. 138 SHALL leave the register in the
+commit whose scenario first cites it, and the parts of 137 about a
+range and the closure SHALL be named in the register as
+cargos-registry's.
+
+#### Scenario: A pin found through what a publish wrote
+- **WHEN** a component whose two outputs pack as `eco` `site` and `cli` is published at 1.0.0 under a policy for layouts, and a checkout pinning `site` 1.0.0 is synced
+- **THEN** the layout holds `site` 1.0.0 from the index the publish answered, rendered under the layout-policy claim read from that index, and nothing in the checkout's ask or the answer names a component, a tag prefix or a repository
+
+#### Scenario: The register after store naming
+- **WHEN** the coverage check runs after this group's scenarios are added
+- **THEN** 138 is cited and not in the register, and the parts of 137 about a range and the closure are pending naming cargos-registry
+
+### Requirement: The Cargo projection runs the projection group
+The Cargo projection SHALL run the projection group whole: its render,
+serve, requires, satisfying and unreachable scenarios over crates a test
+makes, and its pack and pinned scenarios with the cargo the tree pins,
+in `check-tools` (93, core.33).
+
+#### Scenario: The group over Cargo
+- **WHEN** the conformance tests of the Cargo projection run
+- **THEN** every scenario of the projection group passes or is not applicable with its reason, and none is left out
+
+### Requirement: The layouts' group holds a range and the closure
+The layouts' group SHALL hold the core, below its marker, over the
+fakes, to holding the newest admitted version within a range by the
+store's listing, and to holding what each held version requires through
+every level (137, 138, 140). 137's range and closure part SHALL leave
+the register in the commit whose scenarios first cite it.
+
+#### Scenario: The newest admitted within a range over the fakes
+- **WHEN** the fake projection answers a range of `site` within which the store lists 1.0.0 and 1.1.0, admitted, and 1.2.0, refused, and lists 2.0.0 outside it
+- **THEN** the projection is asked to render `site` 1.1.0 alone, the answer names 1.2.0 refused with its claim, and 2.0.0 was never judged
+
+#### Scenario: A pinned version's dependencies, two levels down, over the fakes
+- **WHEN** the fake projection pins `app` 1.0.0, which requires `lib`, whose newest admitted version within the range requires `base`
+- **THEN** the projection is asked to render all three, and the answer names each range with the version that required it
+
+### Requirement: The projection's group holds serve
+The projection's group SHALL hold a projection to serve, below its
+marker, over the rig's own request for a version, which the rig names
+since a request's form is the ecosystem's: a version the layout holds is
+answered and asks the core nothing (86, 46); a version it lacks is asked
+of the core once, and answered once the core renders it (115, 50); a
+refusal the core answers is carried in the response in its own words
+(99, 59); and one layout served under one base from two places answers
+the same and names neither place (49). Each scenario SHALL be not
+applicable to a projection whose clients read files, which SHALL answer
+absent naming serving. The group's scenario "served where the clients
+read no files" SHALL ask serve for the rig's request of a version the
+layout holds, in place of an address, citing 86 as before.
+
+#### Scenario: A version held, served
+- **WHEN** a projection that serves renders two of the rig's artifacts and is asked to serve the rig's request for one
+- **THEN** the response answers it, and the core was asked nothing
+
+#### Scenario: A version lacked, asked of the core
+- **WHEN** a projection that serves renders one of two artifacts and is asked for the other, the core rendering it on the ask
+- **THEN** the core was asked once for that version's ecosystem name and version, and the response answers it
+
+#### Scenario: A refusal in the response
+- **WHEN** a projection that serves is asked for a version it lacks and the core answers it refused with the words `acceptance wanting`
+- **THEN** the response is no answer of the version and carries `acceptance wanting` verbatim
+
+#### Scenario: One base, two places
+- **WHEN** one set of artifacts is rendered at two places and the same request is served from each under one base
+- **THEN** the two responses are the same, and neither names either place
+
+#### Scenario: Every projection runs it
+- **WHEN** the projection group runs over the fake projection, the npm projection, and the file, image and moon cache profiles
+- **THEN** the serve scenarios pass over the fake and npm, and are not applicable to the three profiles, each of which answers absent naming serving
+
+### Requirement: The npm projection runs the projection group
+The npm projection SHALL run the projection group whole: its render,
+serve, pinned and unreachable scenarios over tarballs a test makes, in
+`check-fast`, with no npm on the host, and its pack scenarios with the
+npm the tree pins, in `check-tools` (93, core.33).
+
+#### Scenario: The group over npm
+- **WHEN** the conformance tests of the npm projection run in both layers
+- **THEN** every scenario of the projection group passes or is not applicable with its reason, and none is left out
+
+### Requirement: The layouts' group holds a render on a miss
+The layouts' group SHALL hold the core to a render on a miss, below its
+marker, over the fakes: a version the policy admits is added to the
+layout and the record and only it is read; a refused one is answered
+naming the claim and changes nothing; and the served layout's address is
+the core's name and port with the repository in the path (115, 50, 47,
+99, 114, 49). 46, 49, 114 and 115 SHALL leave the register in the commit
+whose scenario first cites them.
+
+#### Scenario: A miss over the fakes
+- **WHEN** a layout rendered holding one version is asked for a second the policy admits
+- **THEN** the projection is asked to render both versions' artifacts, the record names both, and the fake store was asked about the second alone
+
+#### Scenario: A refused miss over the fakes
+- **WHEN** a layout is asked for a version whose index lacks the claim the policy requires
+- **THEN** the answer names that claim as wanting, and the projection was asked to render nothing
+
+#### Scenario: The served address over the fakes
+- **WHEN** the served address is asked for two remotes of one repository
+- **THEN** both answer one address at port 7420 with the owner and name in the path
+
+#### Scenario: The register after serving
+- **WHEN** the coverage check runs after these scenarios are added
+- **THEN** 46, 49, 114 and 115 are cited and none of them is in the register
+
+### Requirement: Publish from the store over the fakes
+
+The publish group SHALL hold the core, over the fakes, to taking a
+landing's outputs from the store, below its marker, citing 15, 16, 52
+and 58: the passing verdicts' entries rendered before the build is
+asked, an output whose entry the store lacks refusing the version
+naming the output and its build identity with nothing claimed or put,
+and a landing with no verdicts filling nothing.
+
+#### Scenario: S1 with the outputs read from the cache
+
+- **WHEN** a world's store holds the entries of every build identity its landing's passing verdicts name, and the landed revision is published
+- **THEN** each entry was rendered before the one ensure, the version is offered, and the answer names every digest (S1)
+
+#### Scenario: An entry missing from the store
+
+- **WHEN** a world's store lacks the entry of one output's build identity and the landed revision is published
+- **THEN** the publish is refused naming that output and build identity, no tag is claimed, and the store records no put
+
+### Requirement: The push before a landing over the fakes
+
+The cache's group SHALL hold the push of what a checkout left, over the
+fakes, below the push's scenarios, citing 52, 53 and 54: a checkout's
+passing builds written with the landing asked nothing, a failed one not
+written, a push repeated writing nothing, and a world that holds none of
+the outputs publishing what another world pushed before its landing.
+
+#### Scenario: Pushed before the landing, published elsewhere
+
+- **WHEN** one world's build scripts a checkout as having left the passing build identities a later landing's verdicts name, that world pushes what the checkout left, and a second world sharing only its store, whose build holds nothing, publishes the landed revision
+- **THEN** the second world's projection renders exactly those build identities, the version is offered, and the first world's landing fake was asked nothing
+
+#### Scenario: A failed build identity left
+
+- **WHEN** a checkout is scripted as having left a failed build identity beside a passing one, and what it left is pushed
+- **THEN** only the passing one's entry is written

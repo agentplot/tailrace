@@ -1,14 +1,16 @@
 //! The repository's history, which the core reads itself through git
 //! (section 9): the files of a landed revision's tree, the commits that
-//! touch a component's paths and the tags that carry its prefix, read
-//! from the local history and the shared one (21 to 23, 65, 123; design
-//! D3, D6).
+//! touch a component's paths, a commit's message and the commit as the
+//! version rule's tool reads it, and the tags that carry its prefix, read
+//! from the local history and the shared one (21 to 23, 65, 123, 134;
+//! design D3, D6).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use git2::{ErrorCode, Object, ObjectType, Oid, Repository};
+use git_cliff_core::commit::Commit as CliffCommit;
 use glob::Pattern;
 use regex::Regex;
 use semver::Version;
@@ -49,6 +51,28 @@ pub(crate) enum Pushed {
     Held,
     /// The shared history refused it, in git's words.
     Rejected(String),
+}
+
+/// 123: whether a component's `paths` hold a path of the repository,
+/// relative to its root, matched as git-cliff's own path filter matches
+/// a commit's changed files: a pattern ending `/` holding everything
+/// under it and a leading `./` dropped (ADR 0010). Unreadable naming the
+/// pattern with the parser's words where one is no glob.
+pub fn paths_hold(paths: &[String]) -> Answer<impl Fn(&str) -> bool> {
+    let patterns = paths
+        .iter()
+        .map(|path| {
+            let path = match path.strip_suffix('/') {
+                Some(dir) => format!("{dir}/**"),
+                None => path.clone(),
+            };
+            let path = path.strip_prefix("./").unwrap_or(&path);
+            Pattern::new(path).map_err(|e| {
+                Not::unreadable(&local(), format!("the paths {path}"), Some(e.to_string()))
+            })
+        })
+        .collect::<Answer<Vec<Pattern>>>()?;
+    Ok(move |path: &str| patterns.iter().any(|p| p.matches_path(Path::new(path))))
 }
 
 fn local() -> Source {
@@ -95,7 +119,12 @@ impl History {
     /// The file at `path` in the landed revision's tree, never the working
     /// tree's (65); absent when the tree holds nothing there.
     pub fn blob(&self, landed: &Landed, path: &str) -> Answer<Vec<u8>> {
-        let revision = landed.revision();
+        self.file(landed.revision(), path)
+    }
+
+    /// The file at `path` in `revision`'s tree, never the working tree's
+    /// (65); absent when the tree holds nothing there.
+    pub(crate) fn file(&self, revision: &Revision, path: &str) -> Answer<Vec<u8>> {
         let what = format!("{path} at {revision}");
         let unreadable = |e: git2::Error| Not::unreadable(&local(), what.clone(), words(&e));
         let tree = self.commit(revision)?.tree().map_err(unreadable)?;
@@ -148,6 +177,35 @@ impl History {
                 message: String::from_utf8_lossy(c.message_bytes()).into_owned(),
             })
             .collect())
+    }
+
+    /// 134: the message of the commit `revision` names, as written, read
+    /// from the local history alone and never a remote; absent naming the
+    /// revision when the history holds no such commit (58; design D7).
+    pub fn message(&self, revision: &Revision) -> Answer<String> {
+        let commit = self.held(revision)?;
+        Ok(String::from_utf8_lossy(commit.message_bytes()).into_owned())
+    }
+
+    /// 134: the commit `revision` names as the version rule's tool reads
+    /// one, its message, author, committer and whether it merges, from the
+    /// local history alone; absent naming the revision when the history
+    /// holds no such commit (58).
+    pub(crate) fn cliff_commit(&self, revision: &Revision) -> Answer<CliffCommit<'static>> {
+        Ok(CliffCommit::from(&self.held(revision)?))
+    }
+
+    /// The commit `revision` names in full, from the local history alone;
+    /// absent naming it when the history holds no such commit.
+    fn held(&self, revision: &Revision) -> Answer<git2::Commit<'_>> {
+        let what = format!("the commit {revision}");
+        let absent = || Not::absent(&local(), what.clone());
+        let oid = Oid::from_str(revision.as_str()).map_err(|_| absent())?;
+        match self.git.find_commit(oid) {
+            Ok(commit) => Ok(commit),
+            Err(e) if e.code() == ErrorCode::NotFound => Err(absent()),
+            Err(e) => Err(Not::unreadable(&local(), what.clone(), words(&e))),
+        }
     }
 
     /// Every tag carrying `prefix` then a semantic version, in the local
@@ -461,6 +519,15 @@ impl History {
     /// on the host shares and no push carries (62).
     pub fn common_dir(&self) -> PathBuf {
         let dir = self.git.commondir();
+        dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())
+    }
+
+    /// The git directory of the worktree this history was opened at, its
+    /// own and no other worktree's, which no push carries (50, 62): the
+    /// common directory for the main worktree, and the one git keeps for
+    /// a linked worktree under it.
+    pub fn git_dir(&self) -> PathBuf {
+        let dir = self.git.path();
         dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf())
     }
 }

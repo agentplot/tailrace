@@ -152,6 +152,7 @@ fn a_host_key_listed_is_a_signer_with_its_verifier_and_reach() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop_the_given_gate()],
+                asked_of: AskedOf::Every,
             }],
         }
     );
@@ -239,11 +240,157 @@ fn no_file_and_no_table_are_absent_naming_the_audience() {
         repo.policy().policy_for(&none, &Audience::Acceptance),
         "acceptance",
     );
+    absent(repo.policy().policy_for(&none, &Audience::Layout), "layout");
     let at = repo.at(&format!(
         "{}[acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
         signers()
     ));
-    absent(repo.policy().policy_for(&at, &Audience::Layout), "layout");
+    absent(
+        repo.policy()
+            .policy_for(&at, &Audience::Channel(id(None, "nightly"))),
+        "the channel nightly",
+    );
+}
+
+/// The policy for a layout at `text`'s revision, which must be the given
+/// one, marked as given, requiring acceptance alone; answers the signers
+/// its acceptance names, and every signer the answer carries.
+fn given_and_carried(text: &str) -> (Vec<NamedSigner>, Vec<NamedSigner>) {
+    let repo = Repo::new();
+    let at = repo.at(text);
+    match repo.policy().policy_for(&at, &Audience::Layout) {
+        Ok(Required::Layout {
+            claims,
+            given: true,
+            signers,
+        }) => match <[RequiredClaim; 1]>::try_from(claims) {
+            Ok([claim]) => {
+                assert_eq!((claim.kind, claim.check), (ClaimKind::Acceptance, None));
+                (claim.signers, signers)
+            }
+            Err(claims) => panic!("the given requires {claims:?}"),
+        },
+        other => panic!("the policy for a layout answered {other:?}"),
+    }
+}
+
+/// The signers the given's acceptance names at `text`'s revision.
+fn given(text: &str) -> Vec<NamedSigner> {
+    given_and_carried(text).0
+}
+
+/// `[signers.<name>]` of `kinds`, verified by `<name>`'s key.
+fn signer_table(name: &str, kinds: &str) -> String {
+    format!("[signers.{name}]\nssh = \"ssh-ed25519 {name}\"\nkinds = {kinds}\n\n")
+}
+
+#[test]
+fn with_no_layout_line_the_gate_named_is_the_given_layouts_acceptance() {
+    let signers = given(&format!(
+        "{}{}[acceptance]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
+        signer_table("laptop", "[\"provenance\"]"),
+        signer_table("gate", "[\"acceptance\"]"),
+    ));
+    assert_eq!(
+        signers,
+        [NamedSigner {
+            id: SignerId::new("gate"),
+            verified_by: "ssh-ed25519 gate".into(),
+            kinds: vec![ClaimKind::Acceptance],
+            checks: vec![],
+        }]
+    );
+
+    let signers = given(&format!(
+        "{}{}{}",
+        signer_table("zeta", "[\"acceptance\"]"),
+        signer_table("laptop", "[\"provenance\"]"),
+        signer_table("alpha", "[\"acceptance\", \"verdict\"]"),
+    ));
+    let named: Vec<&str> = signers.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(
+        named,
+        ["zeta", "alpha"],
+        "the gate is not in the file's order"
+    );
+}
+
+#[test]
+fn with_one_publisher_and_no_gate_the_given_layout_names_no_signer_for_reading() {
+    // C.10: the one host 108 admits as the gate is for publishing, not
+    // reading; the reader reads acceptance through its host's trusted
+    // signers.
+    let (gate, carried) = given_and_carried(&signer_table("laptop", "[\"provenance\"]"));
+    assert_eq!(gate, []);
+    assert_eq!(
+        carried,
+        [NamedSigner {
+            id: SignerId::new("laptop"),
+            verified_by: "ssh-ed25519 laptop".into(),
+            kinds: vec![ClaimKind::Provenance],
+            checks: vec![],
+        }]
+    );
+}
+
+#[test]
+fn the_given_layout_carries_every_signer_the_file_names_in_its_order() {
+    let (_, carried) = given_and_carried(&format!(
+        "{}{}{}",
+        signer_table("zeta", "[\"acceptance\"]"),
+        signer_table("laptop", "[\"provenance\"]"),
+        signer_table("alpha", "[\"layout_policy\"]"),
+    ));
+    let named: Vec<&str> = carried.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(named, ["zeta", "laptop", "alpha"]);
+    assert_eq!(carried[2].kinds, [ClaimKind::LayoutPolicy]);
+}
+
+#[test]
+fn with_several_publishers_and_no_gate_the_given_layout_names_no_signer() {
+    let signers = given(&format!(
+        "{}{}",
+        signer_table("laptop", "[\"provenance\"]"),
+        signer_table("box", "[\"provenance\"]"),
+    ));
+    assert_eq!(signers, []);
+}
+
+#[test]
+fn a_layout_line_written_is_answered_with_nothing_of_the_given_beneath_it() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}[layout]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
+        signers(),
+        signer_table("gate", "[\"acceptance\"]"),
+    ));
+    assert_eq!(
+        repo.policy().policy_for(&at, &Audience::Layout),
+        Ok(Required::Layout {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Provenance,
+                check: None,
+                signers: vec![laptop()],
+                asked_of: AskedOf::Every,
+            }],
+            given: false,
+            signers: vec![
+                laptop(),
+                NamedSigner {
+                    id: SignerId::new("box"),
+                    verified_by: "ssh-ed25519 BBBB".into(),
+                    kinds: vec![ClaimKind::Verdict],
+                    checks: vec![Check::new("cli:test"), Check::new("core:test")],
+                },
+                NamedSigner {
+                    id: SignerId::new("gate"),
+                    verified_by: "ssh-ed25519 gate".into(),
+                    kinds: vec![ClaimKind::Acceptance],
+                    checks: vec![],
+                },
+            ],
+        })
+    );
 }
 
 #[test]
@@ -384,6 +531,7 @@ fn by_the_gate(signers: Vec<NamedSigner>) -> RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
         signers,
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -549,6 +697,7 @@ fn a_bound_channel_names_the_channel_it_is_bound_to() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop_the_given_gate()],
+                asked_of: AskedOf::Every,
             }],
             bound_to: Some(ChannelName::new("edge")),
             promoted_by: vec![],
@@ -738,6 +887,7 @@ fn a_rebuild() -> RequiredClaim {
             kinds: vec![ClaimKind::Rebuild],
             checks: vec![],
         }],
+        asked_of: AskedOf::Built,
     }
 }
 
@@ -970,6 +1120,7 @@ fn a_givens_line_naming_another_promoter_never_widens_who_signs() {
                 kind: ClaimKind::Promotion,
                 check: None,
                 signers: vec![release],
+                asked_of: AskedOf::Every,
             }],
             None
         ))
@@ -1330,6 +1481,7 @@ fn a_line_that_restates_prods_binding_adds_its_claims() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop()],
+                asked_of: AskedOf::Every,
             },
         ])
     );
@@ -1458,6 +1610,7 @@ fn a_fragment_of_other_names_is_read_with_a_line_under_one() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop()],
+                asked_of: AskedOf::Every,
             },
         ]
     );
@@ -1552,6 +1705,7 @@ fn a_laptops_policy_names_it_the_gate_for_acceptance_and_the_given_channels() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop_the_given_gate()],
+                asked_of: AskedOf::Every,
             }],
         })
     );
@@ -1586,6 +1740,7 @@ fn a_file_naming_a_gate_answers_its_provenance_signer_as_written() {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![laptop()],
+                asked_of: AskedOf::Every,
             }],
         })
     );
@@ -1691,11 +1846,14 @@ fn with_two_publishers_and_no_gate_the_layout_and_a_hand_declared_channel_answer
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     };
     assert_eq!(
         repo.policy().policy_for(&at, &Audience::Layout),
         Ok(Required::Layout {
-            claims: vec![provenance_by(desk)],
+            claims: vec![provenance_by(desk.clone())],
+            given: false,
+            signers: vec![laptop(), desk],
         })
     );
     assert_eq!(
@@ -1819,4 +1977,118 @@ fn another_fragments_held_given_is_answered_with_its_line() {
         })
     );
     none_in_both(&policy, &none);
+}
+
+// Requirement: Each required claim is answered with the artifacts it is asked of
+
+/// The box's signer as `signers()` names it.
+fn the_box() -> NamedSigner {
+    NamedSigner {
+        id: SignerId::new("box"),
+        verified_by: "ssh-ed25519 BBBB".into(),
+        kinds: vec![ClaimKind::Verdict],
+        checks: vec![Check::new("cli:test"), Check::new("core:test")],
+    }
+}
+
+#[test]
+fn acceptance_asks_its_provenance_of_every_artifact_and_its_verdict_of_built_ones() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[acceptance]\nrequire = [\n  {{ kind = \"provenance\", signers = [\"laptop\"] }},\n  \
+         {{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"] }},\n]\n",
+        signers()
+    ));
+    assert_eq!(
+        repo.policy().policy_for(&at, &Audience::Acceptance),
+        Ok(Required::Acceptance {
+            claims: vec![
+                RequiredClaim {
+                    kind: ClaimKind::Provenance,
+                    check: None,
+                    signers: vec![laptop_the_given_gate()],
+                    asked_of: AskedOf::Every,
+                },
+                RequiredClaim {
+                    kind: ClaimKind::Verdict,
+                    check: Some(Check::new("cli:test")),
+                    signers: vec![the_box()],
+                    asked_of: AskedOf::Built,
+                },
+            ],
+        })
+    );
+}
+
+#[test]
+fn a_given_channels_line_asks_its_rebuild_of_built_artifacts_and_the_gates_acceptance_of_every() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}[channels.stable]\nrequire = [{{ kind = \"rebuild\", signers = [\"verifier\"] }}]\n",
+        gate_table(false),
+        verifier_table()
+    ));
+    let required = channel_policy(&repo, &at, &id(None, "stable")).unwrap();
+    let asked: Vec<(ClaimKind, AskedOf)> = required
+        .claims()
+        .iter()
+        .map(|c| (c.kind, c.asked_of))
+        .collect();
+    assert_eq!(
+        asked,
+        [
+            (ClaimKind::Acceptance, AskedOf::Every),
+            (ClaimKind::Rebuild, AskedOf::Built),
+        ]
+    );
+}
+
+#[test]
+fn the_one_hosts_own_given_acceptance_is_asked_of_every_artifact() {
+    let repo = Repo::new();
+    let at = repo.at(&laptop_alone());
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "beta")).map(|r| r.claims().to_vec()),
+        Ok(vec![RequiredClaim {
+            kind: ClaimKind::Acceptance,
+            check: None,
+            signers: vec![laptop_the_given_gate()],
+            asked_of: AskedOf::Every,
+        }])
+    );
+}
+
+#[test]
+fn a_layouts_verdict_is_asked_of_every_artifact() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[layout]\nrequire = [{{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"] }}]\n",
+        signers()
+    ));
+    let required = repo.policy().policy_for(&at, &Audience::Layout).unwrap();
+    assert_eq!(
+        required.claims(),
+        [RequiredClaim {
+            kind: ClaimKind::Verdict,
+            check: Some(Check::new("cli:test")),
+            signers: vec![the_box()],
+            asked_of: AskedOf::Every,
+        }]
+    );
+}
+
+#[test]
+fn a_key_naming_the_artifacts_a_claim_is_asked_of_is_unreadable() {
+    let repo = Repo::new();
+    let text = format!(
+        "{}[acceptance]\nrequire = [\n  \
+         {{ kind = \"verdict\", check = \"cli:test\", signers = [\"box\"], asked_of = \"built\" }},\n]\n",
+        signers()
+    );
+    let at = repo.at(&text);
+    let said = unreadable(repo.policy().policy_for(&at, &Audience::Acceptance), &at);
+    assert_eq!(
+        said,
+        "[acceptance]: unknown field `asked_of`, expected one of `kind`, `check`, `signers`"
+    );
 }

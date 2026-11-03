@@ -142,6 +142,12 @@ impl Gate {
     /// and stepped until sluice landed it; answers the landing commit,
     /// `main`'s head on the remote.
     pub fn land(&self, name: &str, files: &[(&str, &str)]) -> String {
+        self.submit(&self.unit(name, files))
+    }
+
+    /// A session's unit off `main` writing `files`, committed and not yet
+    /// submitted: the candidate a check job runs at.
+    pub fn unit(&self, name: &str, files: &[(&str, &str)]) -> Repo {
         let dir = self.sessions.join(name);
         self.repo.git(&["fetch", "-q", "origin"]);
         self.repo.git(&[
@@ -158,7 +164,13 @@ impl Gate {
             unit.write(file, contents);
         }
         unit.commit(&format!("feat: {name}"));
-        let out = self.sluice(&dir, &["submit", MAIN, "--no-wait", "--json"]);
+        unit
+    }
+
+    /// `unit` submitted to `main` and stepped until sluice landed it;
+    /// answers the landing commit, `main`'s head on the remote.
+    pub fn submit(&self, unit: &Repo) -> String {
+        let out = self.sluice(&unit.path, &["submit", MAIN, "--no-wait", "--json"]);
         assert!(out.status.success(), "{}", text(&out));
         let submitted: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         let id = submitted["id"].as_u64().unwrap().to_string();
@@ -183,4 +195,25 @@ impl Gate {
         self.repo.git(&["merge", "-q", "--ff-only", "origin/main"]);
         self.repo.git(&["rev-parse", "origin/main"])
     }
+}
+
+/// `checkout`'s moon outputs directory linked as the gate's places link
+/// theirs, by the same command, as a landing host's own checkout reads
+/// the archives its checks left.
+pub fn link_outputs(checkout: &Path) {
+    let [program, args @ ..] = LINK_OUTPUTS;
+    let out = git_command()
+        .get_envs()
+        .fold(Command::new(program), |mut command, (name, value)| {
+            match value {
+                Some(value) => command.env(name, value),
+                None => command.env_remove(name),
+            };
+            command
+        })
+        .args(args)
+        .current_dir(checkout)
+        .output()
+        .expect("the shell runs");
+    assert!(out.status.success(), "{out:?}");
 }

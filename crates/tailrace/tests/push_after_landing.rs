@@ -22,7 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use scratch::gate::{Gate, LINK_OUTPUTS};
+use scratch::gate::{link_outputs, Gate, LINK_OUTPUTS};
 use scratch::recorder::Recorder;
 use scratch::{git, git_command, moon_hash, moon_workspace, Repo, Scratch, Task};
 use serde_json::{json, Value};
@@ -116,26 +116,6 @@ fn status(dir: &Path, target: &str) -> String {
         .and_then(|a| a["status"].as_str())
         .unwrap_or_else(|| panic!("moon's run report holds no run of {target}: {report}"))
         .to_string()
-}
-
-/// `checkout`'s moon outputs directory linked as the gate's places link
-/// theirs, by the same command.
-fn link_outputs(checkout: &Path) {
-    let [program, args @ ..] = LINK_OUTPUTS;
-    let out = git_command()
-        .get_envs()
-        .fold(Command::new(program), |mut command, (name, value)| {
-            match value {
-                Some(value) => command.env(name, value),
-                None => command.env_remove(name),
-            };
-            command
-        })
-        .args(args)
-        .current_dir(checkout)
-        .output()
-        .expect("the shell runs");
-    assert!(out.status.success(), "{out:?}");
 }
 
 /// Each entry a push or a sync answered, by build identity, with the

@@ -5,11 +5,11 @@
 //! | seam | trait | statement |
 //! |---|---|---|
 //! | the store | [`Store`] | B.1, 66 to 73 |
-//! | the build | [`Build`] | B.2, 74 to 76 |
+//! | the build | [`Build`] | B.2, 74 to 76, 139 |
 //! | the landing | [`Landing`] | B.3, 77, 78 |
 //! | the signer | [`Signer`] | B.4, 79 to 81 |
 //! | the policy | [`Policy`] | B.5, 82, 83, 131 |
-//! | a projection | [`Projection`] | B.6, 84 to 87 |
+//! | a projection | [`Projection`] | B.6, 84 to 87, 115, 137, 140 |
 //! | a target | [`Target`] | B.7, 88 to 91 |
 //! | the ledger | [`Keeper`] | B.8, 120 to 122 |
 //!
@@ -128,6 +128,9 @@ mod tests {
         fn read(&self, _: &Digest) -> Answer<Held> {
             nothing(Seam::Store, "read")
         }
+        fn versions(&self, _: &Ecosystem, _: &EcosystemName) -> Answer<Vec<Version>> {
+            nothing(Seam::Store, "versions")
+        }
     }
 
     impl Build for Nowhere {
@@ -136,6 +139,9 @@ mod tests {
         }
         fn report(&self, _: &Revision, _: &OutputName) -> Answer<Report> {
             nothing(Seam::Build, "report")
+        }
+        fn left(&self, _: &str) -> Answer<Vec<Left>> {
+            nothing(Seam::Build, "left")
         }
     }
 
@@ -167,14 +173,23 @@ mod tests {
     }
 
     impl Projection for Nowhere {
-        fn pack(&self, _: &Output, _: &BuildId, _: Option<&Version>) -> Answer<Packed> {
+        fn pack(&self, _: &Output, _: &BuildId, _: Option<&PackAt<'_>>) -> Answer<Packed> {
             nothing(Seam::Projection, "pack")
         }
         fn render(&self, _: Contents<'_>, _: &str) -> Answer<Rendered> {
             nothing(Seam::Projection, "render")
         }
-        fn serve(&self, _: &Layout) -> Answer<Serving> {
+        fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
             nothing(Seam::Projection, "serve")
+        }
+        fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
+            nothing(Seam::Projection, "pinned")
+        }
+        fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
+            nothing(Seam::Projection, "requires")
+        }
+        fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
+            nothing(Seam::Projection, "satisfying")
         }
     }
 
@@ -241,6 +256,16 @@ mod tests {
             build: None,
             body: Value::Null,
         };
+        let site = Output {
+            name: OutputName::new("site"),
+            files: vec![],
+        };
+        let component = Component {
+            name: ComponentName::new("web"),
+            outputs: vec![site.name.clone()],
+            paths: vec!["**".into()],
+            prefix: "web-v".into(),
+        };
 
         let store: Box<dyn Store> = Box::new(Nowhere);
         let build: Box<dyn Build> = Box::new(Nowhere);
@@ -262,8 +287,10 @@ mod tests {
             asked(store.name(&Name::new("n"), &d, None)),
             asked(store.resolve(&Name::new("n"))),
             asked(store.read(&d)),
+            asked(store.versions(&Ecosystem::new("eco"), &EcosystemName::new("pkg"))),
             asked(build.ensure(&rev, &[OutputName::new("site")])),
             asked(build.report(&rev, &OutputName::new("site"))),
+            asked(build.left("checkout")),
             asked(landing.landed(&Branch::new("main"), &rev)),
             asked(landing.verdicts_of(&rev)),
             asked(signer.sign(&claim, &SignerId::new("host"))),
@@ -271,21 +298,37 @@ mod tests {
             asked(policy.policy_for(&rev, &Audience::Acceptance)),
             asked(policy.channels(&rev)),
             asked(projection.pack(
-                &Output {
-                    name: OutputName::new("site"),
-                    files: vec![],
-                },
+                &site,
                 &BuildId::new("b7e1"),
-                Some(&Version::new("1.0.0")),
+                Some(&PackAt {
+                    version: &Version::new("1.0.0"),
+                    component: &component,
+                    outputs: std::slice::from_ref(&site),
+                    holds: &|_| true,
+                }),
             )),
             asked(projection.render(
                 Contents::Artifacts(&[Artifact {
                     digest: d.clone(),
-                    meta,
+                    meta: meta.clone(),
                 }]),
                 "at",
             )),
-            asked(projection.serve(&Layout { at: "at".into() })),
+            asked(projection.serve(
+                &Layout { at: "at".into() },
+                &Request {
+                    method: "GET".into(),
+                    path: String::new(),
+                    base: "http://127.0.0.1:7420/o/r/eco".into(),
+                },
+                &|_| nothing(Seam::Projection, "miss"),
+            )),
+            asked(projection.pinned("checkout")),
+            asked(projection.requires(&Artifact {
+                digest: d.clone(),
+                meta,
+            })),
+            asked(projection.satisfying(&Range::new("^1"), &[Version::new("1.0.0")])),
             asked(target.desired(&environment)),
             asked(target.current(&environment)),
             asked(target.apply(
@@ -312,14 +355,25 @@ mod tests {
                 "claims-of",
                 "name",
                 "resolve",
-                "read"
+                "read",
+                "versions"
             ]
         );
-        assert_eq!(named(Seam::Build), ["ensure", "report"]);
+        assert_eq!(named(Seam::Build), ["ensure", "report", "left"]);
         assert_eq!(named(Seam::Landing), ["landed", "verdicts-of"]);
         assert_eq!(named(Seam::Signer), ["sign", "verify"]);
         assert_eq!(named(Seam::Policy), ["policy-for", "channels"]);
-        assert_eq!(named(Seam::Projection), ["pack", "render", "serve"]);
+        assert_eq!(
+            named(Seam::Projection),
+            [
+                "pack",
+                "render",
+                "serve",
+                "pinned",
+                "requires",
+                "satisfying"
+            ]
+        );
         assert_eq!(
             named(Seam::Target),
             ["desired", "current", "apply", "report"]

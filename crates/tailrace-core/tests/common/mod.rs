@@ -17,6 +17,36 @@ pub struct Fixture {
     root: TempDir,
 }
 
+/// A repository's own git-cliff template, as its `cliff.toml` holds it:
+/// a heading naming the tag, the last release tag where there is one,
+/// then each group that has commits, one line per commit with its
+/// subject, `(breaking)` where it is one, its seven-character revision
+/// and its author.
+pub const CLIFF_TOML: &str = r#"[changelog]
+body = '''
+## {{ version }}
+{%- if previous.version %}
+
+Since {{ previous.version }}.
+{%- endif %}
+{%- for group in commits | commit_groups(groups=commit_parsers_groups) %}
+
+### {{ group.group }}
+{% for commit in group.commits %}
+- {{ commit.message | split(pat="\n") | first | trim }}{% if commit.breaking %} (breaking){% endif %} ({{ commit.id | truncate(length=7, end="") }}) by {{ commit.author.name }}
+{%- endfor %}
+{%- endfor %}
+'''
+
+[git]
+filter_unconventional = false
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Fixes" },
+  { message = ".*", group = "Other" },
+]
+"#;
+
 /// One repository of a fixture: a working tree, or a bare one standing
 /// for the shared history.
 #[derive(Clone, Debug)]
@@ -155,6 +185,27 @@ impl Repo {
         out.status
             .success()
             .then(|| String::from_utf8(out.stdout).unwrap().trim().to_string())
+    }
+
+    /// The day `at` was committed, in UTC, as a template's date filter
+    /// prints its time.
+    pub fn day(&self, at: &Revision) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(&self.path)
+            .args([
+                "show",
+                "-s",
+                "--date=format-local:%Y-%m-%d",
+                "--format=%cd",
+                at.as_str(),
+            ])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("TZ", "UTC")
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap().trim().to_string()
     }
 
     pub fn history(&self) -> History {

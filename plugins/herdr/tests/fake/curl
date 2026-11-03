@@ -1,0 +1,48 @@
+#!/bin/sh
+# A stand-in curl, asked as lib/common.sh asks: logs each URL, and answers
+# its path from the test's files under $FAKE/http, the HTTP status from
+# the file beside it ending .code, else 200, and 404 where there is no
+# file. With no $FAKE/http/serving.json no process answers, and every
+# connection is refused. $FAKE/fail holds an exit code and words to fail
+# with instead.
+out=
+format=
+url=
+while [ $# -gt 0 ]; do
+  case $1 in
+  --output)
+    out=$2
+    shift
+    ;;
+  --write-out)
+    format=$2
+    shift
+    ;;
+  --max-time) shift ;;
+  -*) ;;
+  *) url=$1 ;;
+  esac
+  shift
+done
+printf '%s\n' "$url" >>"$FAKE/curl-calls"
+if [ -f "$FAKE/fail" ]; then
+  read -r rc words <"$FAKE/fail"
+  printf 'curl: (%s) %s\n' "$rc" "$words" >&2
+  printf '000'
+  exit "$rc"
+fi
+path=${url#http://127.0.0.1:7420}
+if [ ! -f "$FAKE/http/serving.json" ]; then
+  echo "curl: (7) Failed to connect to 127.0.0.1 port 7420 after 0 ms: Couldn't connect to server" >&2
+  printf '000'
+  exit 7
+fi
+if [ -f "$FAKE/http$path" ]; then
+  cat "$FAKE/http$path" >"$out"
+  code=$(cat "$FAKE/http$path.code" 2>/dev/null || echo 200)
+else
+  printf '%s is not answered here\n' "$path" >"$out"
+  code=404
+fi
+[ "$format" = '%{http_code}' ] && printf '%s' "$code"
+exit 0

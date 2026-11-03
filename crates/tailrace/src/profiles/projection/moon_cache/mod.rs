@@ -18,15 +18,21 @@
 //! artifacts answer absent naming artifacts and read nothing (53). It
 //! reaches the store only through the store seam it is handed (rule
 //! core.2), and serves nothing, since moon reads its outputs directory
-//! before any remote.
+//! before any remote: serve answers absent naming serving for every
+//! request and asks the core nothing (86). Moon's cache has no lockfile: pinned answers
+//! absent naming the lockfile for every checkout and reads nothing, and
+//! sync fills the cache from the landing's verdicts, never from a pin
+//! (137). Nor has it a manifest: requires and satisfying answer none, an
+//! empty list, and reach neither the store nor the checkout (140).
 
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
 use tailrace_seams::{
-    Answer, BuildId, CacheEntry, Contents, Digest, Held, Holds, Layout, Not, Output, Packed,
-    Projection, Rendered, Seam, Serving, Source, Store, Version, Why,
+    no_lockfile, no_serving, Answer, Artifact, BuildId, CacheEntry, Contents, Digest, Held, Holds,
+    Layout, Miss, Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered, Request,
+    Requirement, Response, Seam, Source, Store, Version, Why,
 };
 
 /// The ecosystem this projection packs in, as the bindings bind it.
@@ -156,7 +162,7 @@ impl Projection for MoonCache {
     /// unchanged with no metadata, never promised the same again; absent
     /// naming the archive's path where moon left none. `output` is not
     /// read: the archive holds the task's outputs as moon declared them.
-    fn pack(&self, _: &Output, at: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, _: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         if version.is_some() {
             return Err(no_artifacts());
         }
@@ -197,11 +203,29 @@ impl Projection for MoonCache {
         })
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
-        Err(Not::absent(
-            &MoonCache::source(),
-            "serve of the moon-cache projection, whose outputs directory moon reads itself",
-        ))
+    /// 86: absent naming serving for every request, since moon reads its
+    /// outputs directory itself; the core is asked nothing.
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
+        Err(no_serving(&MoonCache::source()))
+    }
+
+    /// 137: absent naming the lockfile for every checkout, since moon's
+    /// cache has no lockfile: sync fills it from the landing's verdicts,
+    /// never from a pin.
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
+        Err(no_lockfile(&MoonCache::source()))
+    }
+
+    /// 140: none for every artifact, since moon's cache has no manifest;
+    /// it reaches neither the store nor the checkout.
+    fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
+        Ok(Vec::new())
+    }
+
+    /// 140: none for any range and any versions, since moon's cache has
+    /// no manifest to require a range.
+    fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
+        Ok(Vec::new())
     }
 }
 

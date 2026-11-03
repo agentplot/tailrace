@@ -66,6 +66,17 @@
 //! `require` keeps its order, which fixes the first claim found wanting
 //! (58).
 //!
+//! Each claim `[acceptance]` or a channel requires, the given channels'
+//! acceptance among them, is answered with the artifacts it is asked of,
+//! read from its kind alone (134): a provenance, an acceptance and a
+//! promotion of every artifact, the publisher's word and the claims about
+//! the version as a whole, which a claim on the index satisfies (7); a
+//! verdict, a test, a review, a rebuild and a carried claim of a built
+//! artifact alone, since a rendered artifact has no build. `[layout]`'s
+//! claims are asked of every artifact. C.10 writes no form for it, so the
+//! file gains no key: an entry naming any key besides `kind`, `check` and
+//! `signers` is unreadable naming its table.
+//!
 //! The given channels are a fragment in this same form, `givens.toml`
 //! beside this module, laid beneath the repository's file as one table in
 //! force (C.10): `[channels.<name>]` of the fragment lies beneath the
@@ -113,9 +124,9 @@
 //!
 //! Where `[signers]` lets no signer claim acceptance and exactly one
 //! claim provenance, that signer may claim acceptance too in everything
-//! this profile answers: the one host 108 admits, the repository's gate
-//! for acceptance and the promoter of its given and made channels, its
-//! acceptance saying one host (118, 108, C.10). The gate reads this from
+//! this profile answers but a layout's policy: the one host 108 admits,
+//! the repository's gate for acceptance and the promoter of its given and
+//! made channels, its acceptance saying one host (118, 108, C.10). The gate reads this from
 //! the answer and decides nothing of it (rule core.7), and the file is
 //! never rewritten. A file that lets a signer claim acceptance, or none
 //! claim provenance, is answered as written. Where it lets several claim
@@ -124,6 +135,22 @@
 //! an acceptance no signer may make, in the words [`NO_GATE`], and
 //! `[layout]` and a channel declared by hand are answered as written (58,
 //! C.10).
+//!
+//! A file with no `[layout]` answers for a layout the given policy for
+//! one, marked as given, a version the gate accepted and no other (C.10):
+//! acceptance by every signer `[signers]` lets claim acceptance, in the
+//! file's order, and by no signer where it names none. The given names no
+//! signer of its own: its gate is read from the file alone (116), and the
+//! one host 108 admits as the gate is for publishing, not reading, so a
+//! file naming no signer that may claim acceptance leaves its reader to
+//! read acceptance through its host's trusted signers (C.10, 118). The
+//! mark lets a consumer stack its publisher's layout policy above the
+//! given (113). A `[layout]` written is answered as written, not marked,
+//! with nothing of the given beneath it. Either answer carries every
+//! signer `[signers]` names, in the file's order, each with what the file
+//! lets it claim, so a consumer reads each claim through its file's
+//! signers alone where the file names one for it (C.10). Only a revision
+//! holding no policy file is absent for a layout (design D11).
 //!
 //! Every operation begins by reading the fragment and resolving the
 //! revision in the repository, so a fragment or a repository that cannot
@@ -136,10 +163,11 @@ use std::path::PathBuf;
 
 use serde::Deserialize;
 use tailrace_seams::{
-    Answer, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
-    HeldChannel, Moves, NamedSigner, Not, Policy, PolicyChannels, Required, RequiredClaim,
-    Revision, Seam, SignerId, Source, Why,
+    Answer, AskedOf, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName,
+    DeclaredChannel, HeldChannel, Moves, NamedSigner, Not, Policy, PolicyChannels, Required,
+    RequiredClaim, Revision, Seam, SignerId, Source, Why,
 };
+use toml::Spanned;
 
 use crate::profiles::run::{Ran, Tool, GIT_REPOSITORY_ENV};
 
@@ -197,15 +225,18 @@ struct Givens {
     channels: toml::Table,
 }
 
-/// What this profile reads of the file: the signers, each audience's
-/// table, the channels' and the environments' tables as written, read
-/// once the components are known, and the components' names.
+/// What this profile reads of the file: the signers, each name with
+/// where it is written so they keep the file's order, each audience's
+/// table as written, read when its audience is asked, so a key it does
+/// not hold is unreadable naming the table, the channels' and the
+/// environments' tables as written, read once the components are known,
+/// and the components' names.
 #[derive(Deserialize)]
 struct File {
     #[serde(default)]
-    signers: BTreeMap<String, toml::Table>,
-    acceptance: Option<AudienceTable>,
-    layout: Option<AudienceTable>,
+    signers: BTreeMap<Spanned<String>, toml::Table>,
+    acceptance: Option<toml::Table>,
+    layout: Option<toml::Table>,
     #[serde(default)]
     channels: toml::Table,
     #[serde(default)]
@@ -262,12 +293,14 @@ struct EnvironmentTable {
     other: BTreeMap<String, toml::Value>,
 }
 
-/// The file at a revision, parsed whole, with its signers read, and
-/// whether they leave the repository with several publishers and no gate
-/// (108, C.10).
+/// The file at a revision, parsed whole, with its signers read, by name
+/// with the given gate among them and as written in the file's order,
+/// and whether they leave the repository with several publishers and no
+/// gate (108, C.10).
 struct Read {
     file: File,
     signers: BTreeMap<String, NamedSigner>,
+    written: Vec<NamedSigner>,
     gateless: bool,
 }
 
@@ -427,15 +460,20 @@ impl PolicyFile {
         };
         let text = String::from_utf8(bytes).map_err(|e| unreadable(e.to_string()))?;
         let file: File = toml::from_str(&text).map_err(|e| unreadable(e.to_string()))?;
-        let mut signers = BTreeMap::new();
+        let mut written = Vec::new();
         for (name, table) in &file.signers {
-            signers.insert(name.clone(), signer(name, table).map_err(unreadable)?);
+            let named = signer(name.as_ref(), table).map_err(unreadable)?;
+            written.push((name.span().start, named));
         }
+        written.sort_by_key(|(at, _)| *at);
+        let written: Vec<NamedSigner> = written.into_iter().map(|(_, s)| s).collect();
+        let mut signers = by_name(&written);
         let gateless = several_publishers_and_no_gate(&signers);
         given_gate(&mut signers);
         Ok(Some(Read {
             file,
             signers,
+            written,
             gateless,
         }))
     }
@@ -757,7 +795,7 @@ fn moves_of(full: &str, keys: &ChannelTable) -> Result<Moves, String> {
 fn approvers_of(
     full: &str,
     approvers: &Option<Vec<SignerId>>,
-    signers: &BTreeMap<String, toml::Table>,
+    signers: &BTreeMap<Spanned<String>, toml::Table>,
 ) -> Result<Vec<SignerId>, String> {
     match approvers {
         None => Ok(Vec::new()),
@@ -766,7 +804,7 @@ fn approvers_of(
         )),
         Some(approvers) => match approvers
             .iter()
-            .find(|a| !signers.contains_key(a.as_str()))
+            .find(|a| !signers.keys().any(|k| k.get_ref() == a.as_str()))
         {
             Some(unknown) => Err(format!(
                 "{full} names the approver {unknown}, which [signers] does not name"
@@ -1059,13 +1097,15 @@ fn after(
     Ok(first)
 }
 
-/// The claims `entries` require, each signer as `[signers]` names it,
-/// for `table`; the words that make the file unreadable where one names
-/// a signer it does not hold.
+/// The claims `entries` require, each signer as `[signers]` names it and
+/// each asked of the artifacts `asked` answers for its kind, for `table`;
+/// the words that make the file unreadable where one names a signer it
+/// does not hold.
 fn claims_of(
     table: &str,
     entries: &[Entry],
     signers: &BTreeMap<String, NamedSigner>,
+    asked: fn(ClaimKind) -> AskedOf,
 ) -> Result<Vec<RequiredClaim>, String> {
     let mut claims = Vec::new();
     for entry in entries {
@@ -1082,9 +1122,44 @@ fn claims_of(
             kind: entry.kind,
             check: entry.check.clone(),
             signers: named,
+            asked_of: asked(entry.kind),
         });
     }
     Ok(claims)
+}
+
+/// 134, C.10: the artifacts a claim of `kind` that acceptance or a
+/// channel requires is asked of, read from its kind alone until the file
+/// writes a form for it: the publisher's provenance, and the claims about
+/// the version as a whole, which a claim on the index satisfies (7), of
+/// every artifact; a build's claims, and a claim carried from one, of a
+/// built artifact alone, since a rendered artifact has no build.
+fn asked_of(kind: ClaimKind) -> AskedOf {
+    match kind {
+        ClaimKind::Provenance
+        | ClaimKind::Acceptance
+        | ClaimKind::Promotion
+        | ClaimKind::LayoutPolicy => AskedOf::Every,
+        ClaimKind::Verdict
+        | ClaimKind::Test
+        | ClaimKind::Review
+        | ClaimKind::Rebuild
+        | ClaimKind::Carried => AskedOf::Built,
+    }
+}
+
+/// A layout's claims, each asked of every artifact: a layout holds one
+/// ecosystem's artifact and judges no artifact by how it was made.
+fn of_every(_: ClaimKind) -> AskedOf {
+    AskedOf::Every
+}
+
+/// `signers` by name.
+fn by_name(signers: &[NamedSigner]) -> BTreeMap<String, NamedSigner> {
+    signers
+        .iter()
+        .map(|s| (s.id.as_str().to_string(), s.clone()))
+        .collect()
 }
 
 /// 118, 108, C.10: the given gate. Where no signer of `signers` may
@@ -1144,7 +1219,7 @@ fn channel_policy(
     resolved: &Resolved,
     signers: &BTreeMap<String, NamedSigner>,
 ) -> Result<Required, String> {
-    let claims = claims_of(&resolved.table, &resolved.require, signers)?;
+    let claims = claims_of(&resolved.table, &resolved.require, signers, asked_of)?;
     let (claims, promoted_by) = match resolved.origin {
         Origin::Given | Origin::Made => {
             let gate = may_claim(signers.values(), ClaimKind::Acceptance);
@@ -1152,6 +1227,7 @@ fn channel_policy(
                 kind: ClaimKind::Acceptance,
                 check: None,
                 signers: gate.clone(),
+                asked_of: AskedOf::Every,
             }];
             all.extend(claims);
             (all, gate)
@@ -1231,15 +1307,36 @@ fn list<T: serde::de::DeserializeOwned>(
     }
 }
 
+/// C.10: the given policy for a layout, standing in for a `[layout]` the
+/// file does not write: acceptance by the gate, every signer of
+/// `signers`, in the file's order, that may claim acceptance; no signer
+/// where none may, since the one host 108 admits as the gate is for
+/// publishing, not reading, and a claim the file names no signer for is
+/// read through the reading host's trusted signers (118; design D11).
+fn given_layout(signers: &[NamedSigner]) -> Vec<RequiredClaim> {
+    vec![RequiredClaim {
+        kind: ClaimKind::Acceptance,
+        check: None,
+        signers: signers
+            .iter()
+            .filter(|s| s.kinds.contains(&ClaimKind::Acceptance))
+            .cloned()
+            .collect(),
+        asked_of: AskedOf::Every,
+    }]
+}
+
 impl Policy for PolicyFile {
     /// 82, 83: the claims `audience` requires in the policy file at
     /// `revision`, each signer with its verifier and its reach; for a
     /// channel, the channel it is bound to and the signers whose
-    /// promotion of it counts (32). Absent naming the audience where the
-    /// file or its table is missing and the channel is neither on in the
-    /// table in force nor made (C.10), and unreadable naming the file and
-    /// the revision, with git's or the parser's words, where it cannot be
-    /// read.
+    /// promotion of it counts (32); for a layout, the signers as the file
+    /// writes them, in its order, and with no `[layout]` the given, marked
+    /// so (C.10). Absent naming the audience where the file, or the table
+    /// of acceptance or a channel, is missing and the channel is neither
+    /// on in the table in force nor made (C.10), and unreadable naming the
+    /// file and the revision, with git's or the parser's words, where it
+    /// cannot be read.
     fn policy_for(&self, revision: &Revision, audience: &Audience) -> Answer<Required> {
         let absent = || {
             Not::absent(
@@ -1255,6 +1352,7 @@ impl Policy for PolicyFile {
                     file,
                     signers,
                     gateless,
+                    ..
                 }) => (file, signers, *gateless),
                 None => (&File::none(), &BTreeMap::new(), false),
             };
@@ -1269,6 +1367,7 @@ impl Policy for PolicyFile {
         let Some(Read {
             file,
             signers,
+            written,
             gateless,
         }) = read
         else {
@@ -1279,22 +1378,47 @@ impl Policy for PolicyFile {
             Audience::Layout => (file.layout.as_ref(), "[layout]"),
             Audience::Channel(_) => unreachable!("a channel is answered above"),
         };
+        let table: Option<AudienceTable> = table
+            .map(|table| {
+                toml::Value::Table(table.clone())
+                    .try_into()
+                    .map_err(|e: toml::de::Error| unreadable(format!("{name}: {}", e.message())))
+            })
+            .transpose()?;
         let claims = match table {
             Some(table) if table.bound_to.is_some() => {
                 return Err(unreadable(format!(
                     "{name} names bound_to, and only a channel is bound to another"
                 )))
             }
-            Some(table) => Some(claims_of(name, &table.require, &signers).map_err(unreadable)?),
+            // A layout's claims name its signers as written: the given
+            // gate is for publishing, not reading (118, C.10).
+            Some(table) if *audience == Audience::Layout => Some(
+                claims_of(name, &table.require, &by_name(&written), of_every)
+                    .map_err(unreadable)?,
+            ),
+            Some(table) => {
+                Some(claims_of(name, &table.require, &signers, asked_of).map_err(unreadable)?)
+            }
             None => None,
         };
         if gateless && *audience == Audience::Acceptance {
             return Err(self.no_gate());
         }
-        let claims = claims.ok_or_else(absent)?;
-        Ok(match audience {
-            Audience::Layout => Required::Layout { claims },
-            _ => Required::Acceptance { claims },
+        Ok(match (audience, claims) {
+            (Audience::Layout, Some(claims)) => Required::Layout {
+                claims,
+                given: false,
+                signers: written,
+            },
+            (Audience::Layout, None) => Required::Layout {
+                claims: given_layout(&written),
+                given: true,
+                signers: written,
+            },
+            (_, claims) => Required::Acceptance {
+                claims: claims.ok_or_else(absent)?,
+            },
         })
     }
 

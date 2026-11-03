@@ -24,25 +24,17 @@ pub struct Pending {
     pub why: &'static str,
 }
 
-const RENDER: &str = "bolt 5 · render under a policy";
-const SERVED: &str = "bolt 5 · the first served projection";
+const DRIVER: &str = "bolt 5 · the driver and the pool run publish";
 const TARGET: &str = "phase 2 · the first target";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
 const PHASE_2: &str = "phase 2";
-const NOTES: &str = "the notes unit, which the user has not said yes to";
 
 // One entry per line, as the module says, wider than the formatter's
 // width.
 #[rustfmt::skip]
 pub const PENDING: &[Pending] = &[
-    Pending { clause: 47, unit: RENDER, why: "A consumer layout holds only versions its policy satisfies, and bolt 1 renders under no policy." },
-    Pending { clause: 51, unit: RENDER, why: "A layout that cannot be refreshed answers what it holds, and bolt 1 keeps no layout." },
-    Pending { clause: 99, unit: RENDER, why: "A version a layout's policy refuses is answered naming the claim, and bolt 1 renders under no policy." },
-    Pending { clause: 113, unit: RENDER, why: "A consuming repository's layout is rendered under its own policy, and bolt 1 renders under no policy." },
-    Pending { clause: 46, unit: SERVED, why: "A consumer reads in its ecosystem's own form, which the first served projection serves." },
-    Pending { clause: 49, unit: SERVED, why: "A client's recorded address names no host, which a served layout keeps." },
-    Pending { clause: 114, unit: SERVED, why: "A served layout is reached at the core's address, which bolt 5's first served projection serves and cites; the process is status-on-any-machine's, proven in the command line's tests." },
-    Pending { clause: 115, unit: SERVED, why: "The host runs a served layout for as long as a client needs it, and bolt 1 serves none." },
+    Pending { clause: 135, unit: DRIVER, why: "A check job pushes what its run left before the landing and a publish takes its outputs from the store, and no publish reads the store for them yet." },
+    Pending { clause: 139, unit: DRIVER, why: "The build answers what a checkout's run left, and the build seam has no such operation yet." },
     Pending { clause: 41, unit: TARGET, why: "An environment that waits converges on an approver's promotion, S6's environment half, and phase 1 leaves every target to phase 2." },
     Pending { clause: 97, unit: TARGET, why: "An approval is a promotion of the environment's own channel, S6's environment half, and phase 1 leaves every target to phase 2." },
     Pending { clause: 42, unit: TARGET, why: "A reconciler verifies before it applies, and phase 1 leaves every target to phase 2." },
@@ -51,8 +43,10 @@ pub const PENDING: &[Pending] = &[
     Pending { clause: 119, unit: TARGET, why: "A reconciler leaves a marker of what it applied, and phase 1 leaves every target to phase 2." },
     Pending { clause: 126, unit: TARGET, why: "The roster is a target's, and phase 1 leaves every target to phase 2." },
     Pending { clause: 98, unit: TARGET, why: "What each environment should run and runs is reported by a target, and phase 1 leaves every target to phase 2." },
+    Pending { clause: 136, unit: TARGET, why: "The policy seam answers the environments a policy declares, each with its target, and phase 1 leaves every target to phase 2." },
     Pending { clause: 55, unit: REBUILD, why: "A verifier's rebuild reads no cache entry it did not write, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 112, unit: REBUILD, why: "A verifier compares the digests of outputs, and phase 1 leaves the rebuild to phase 2." },
+    Pending { clause: 133, unit: REBUILD, why: "A verifier's rebuild reads no compilation's cache another party wrote, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 127, unit: PHASE_2, why: "A channel declared by a pattern over branch names, which no unit of phase 1 carves." },
     Pending { clause: 128, unit: PHASE_2, why: "Several promotions in one act, which no unit of phase 1 carves." },
     Pending { clause: 129, unit: PHASE_2, why: "The asker named by an identity the owner's identity provider issued, and phase 1 binds none." },
@@ -72,5 +66,41 @@ pub struct Part {
 #[rustfmt::skip]
 pub const PARTS: &[Part] = &[
     Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: TARGET, why: "The pages show environments once a target reports them, and phase 1 leaves every target to phase 2." },
-    Part { clause: 132, part: "each version's notes", unit: NOTES, why: "No version carries notes yet, and the notes unit waits on the user." },
+    Part { clause: 134, part: "the notes of every version between what an environment runs and what it should", unit: TARGET, why: "The surfaces show environments once a target reports them, and phase 1 leaves every target to phase 2." },
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::citations;
+
+    #[test]
+    fn store_naming_leaves_the_register() {
+        assert!(
+            !PENDING.iter().any(|p| p.clause == 138),
+            "138 is cited, and still in the register"
+        );
+        assert!(citations().iter().any(|c| c.cites.contains(&138)));
+    }
+
+    #[test]
+    fn cargos_registry_takes_137s_range_and_closure_out_of_the_register() {
+        assert!(
+            !PENDING.iter().any(|p| p.clause == 137),
+            "137 is cited, and still in the register"
+        );
+        let parts: Vec<&Part> = PARTS.iter().filter(|p| p.clause == 137).collect();
+        assert_eq!(parts, Vec::<&Part>::new(), "137's range and closure wait");
+        let layouts: Vec<&str> = citations()
+            .iter()
+            .filter(|c| c.group == "layouts" && c.cites.contains(&137))
+            .map(|c| c.name)
+            .collect();
+        for scenario in [
+            "the newest admitted within a range",
+            "a pinned version's dependencies, two levels down",
+        ] {
+            assert!(layouts.contains(&scenario), "{scenario} cites no 137");
+        }
+    }
+}

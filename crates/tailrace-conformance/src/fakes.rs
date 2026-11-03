@@ -14,9 +14,9 @@ use tailrace_fakes::{
 use tailrace_seams::{
     Artifact, ArtifactMeta, Audience, Branch, Build, BuildId, ChannelId, ChannelName, Claim,
     ClaimKind, ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope,
-    Environment, EnvironmentName, HeldChannel, Keeper, Landing, Moves, NamedSigner, Outcome,
-    Output, OutputName, Policy, Projection, Report, Required, Revision, Seams, Signature, Signer,
-    SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
+    Environment, EnvironmentName, HeldChannel, Keeper, Landing, Left, Moves, NamedSigner, Outcome,
+    Output, OutputName, Pinned, Policy, Projection, Range, Report, Required, Requirement, Revision,
+    Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
@@ -132,24 +132,31 @@ impl BuildRig for FakeBuildRig {
         &self.second
     }
 
+    /// Each output made at a new revision, and the checkout it ran in
+    /// scripted as having left each one made, as its report says.
     fn revision(&self, outputs: &[(OutputName, Made)]) -> Revision {
         let at = revision(&self.revisions);
+        let mut lefts = Vec::new();
         for (output, made) in outputs {
             let outcome = match made {
                 Made::Pass => Outcome::Pass,
                 Made::Fail => Outcome::Fail,
                 Made::Unmade => continue,
             };
-            self.fakes.build.made(
-                &at,
-                output,
-                Report {
-                    build: BuildId::new(format!("{output}@{}", &at.as_str()[32..])),
-                    outcome,
-                    files: vec![format!("dist/{output}")],
-                },
-            );
+            let report = Report {
+                build: BuildId::new(format!("{output}@{}", &at.as_str()[32..])),
+                outcome,
+                files: vec![format!("dist/{output}")],
+            };
+            lefts.push(Left {
+                build: report.build.clone(),
+                tasks: vec![format!("{output}:make")],
+                outcome,
+                files: report.files.clone(),
+            });
+            self.fakes.build.made(&at, output, report);
         }
+        self.fakes.build.left_in(&self.ran_in(&at), lefts);
         at
     }
 
@@ -157,8 +164,17 @@ impl BuildRig for FakeBuildRig {
         let build = &self.fakes.build;
         unreachable(
             |op, f, t| build.fault(op, f, t),
-            &[BuildOp::Ensure, BuildOp::Report],
+            &[BuildOp::Ensure, BuildOp::Report, BuildOp::Left],
         )
+    }
+
+    fn ran_in(&self, revision: &Revision) -> String {
+        format!("checkouts/{revision}")
+    }
+
+    /// A checkout no revision is scripted in.
+    fn fresh_checkout(&self) -> String {
+        "checkouts/fresh".into()
     }
 }
 
@@ -516,8 +532,74 @@ impl ProjectionRig for FakeProjectionRig {
         true
     }
 
+    /// The fake projection's own request for a version,
+    /// `<name>/<version>`.
+    fn request(&self, meta: &ArtifactMeta) -> String {
+        format!("{}/{}", meta.name(), meta.version())
+    }
+
     fn caches(&self) -> bool {
         self.projection.caches()
+    }
+
+    fn has_lockfile(&self) -> bool {
+        true
+    }
+
+    /// The checkout `checkouts/with-lockfile`, its lockfile set to pin a
+    /// scoped name and a prerelease as a lockfile spells them, or
+    /// `checkouts/without`, which holds none.
+    fn checkout(&self, lockfile: bool) -> (String, Vec<Pinned>) {
+        if !lockfile {
+            return ("checkouts/without".into(), Vec::new());
+        }
+        let at = "checkouts/with-lockfile";
+        let pins = vec![
+            Pinned {
+                name: EcosystemName::new("@scope/site"),
+                version: Version::new("1.2.0-rc.1"),
+            },
+            Pinned {
+                name: EcosystemName::new("left-pad"),
+                version: Version::new("1.3.0"),
+            },
+        ];
+        self.projection.lockfile(at, &pins);
+        (at.into(), pins)
+    }
+
+    fn has_manifest(&self) -> bool {
+        true
+    }
+
+    /// The second of [`ProjectionRig::artifacts`], its manifest set to
+    /// require a scoped name with a caret range and a plain name with a
+    /// range carrying a prerelease, as a manifest spells them.
+    fn held(&self) -> (Artifact, Vec<Requirement>) {
+        let held = self.artifacts(2).remove(1);
+        let requirements = vec![
+            Requirement {
+                name: EcosystemName::new("@scope/lib"),
+                range: Range::new("^1.2.0"),
+            },
+            Requirement {
+                name: EcosystemName::new("left-pad"),
+                range: Range::new(">=1.2.0-rc.1 <2"),
+            },
+        ];
+        self.projection.manifest(&held.digest, &requirements);
+        (held, requirements)
+    }
+
+    /// `^1.2` over versions listed out of order, which Semantic
+    /// Versioning orders `1.10.0` above `1.9.0` and spelling below it.
+    fn ranged(&self) -> (Range, Vec<Version>, Vec<Version>) {
+        let versions = |spelled: &[&str]| spelled.iter().map(|v| Version::new(*v)).collect();
+        (
+            Range::new("^1.2"),
+            versions(&["1.9.0", "2.0.0", "1.10.0", "1.2.0", "1.1.9"]),
+            versions(&["1.10.0", "1.9.0", "1.2.0"]),
+        )
     }
 
     fn unreachable(&self) -> String {
@@ -528,6 +610,9 @@ impl ProjectionRig for FakeProjectionRig {
                 ProjectionOp::Pack,
                 ProjectionOp::Render,
                 ProjectionOp::Serve,
+                ProjectionOp::Pinned,
+                ProjectionOp::Requires,
+                ProjectionOp::Satisfying,
             ],
         )
     }

@@ -1,5 +1,6 @@
 //! B.2 The build: the repository's own commands over one revision, which
-//! tailrace asks for outputs and never runs itself (74 to 76).
+//! tailrace asks for outputs and never runs itself (74 to 76), and what a
+//! checkout's own run of them left (139).
 
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +11,16 @@ use crate::{Answer, BuildId, Outcome, OutputName, Revision};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Report {
     pub build: BuildId,
+    pub outcome: Outcome,
+    pub files: Vec<String>,
+}
+
+/// 139: one build identity a checkout's run left: the tasks that came
+/// from it, its outcome, and where their files are.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Left {
+    pub build: BuildId,
+    pub tasks: Vec<String>,
     pub outcome: Outcome,
     pub files: Vec<String>,
 }
@@ -27,6 +38,12 @@ pub trait Build {
     /// build's outcome, and where its files are; absent when the build
     /// left no such output.
     fn report(&self, revision: &Revision, output: &OutputName) -> Answer<Report>;
+
+    /// 139: the build identities whose outputs the checkout at `at`
+    /// holds, each with its tasks, its outcome and where its files are,
+    /// read from the build's own records and nothing of tailrace's; an
+    /// empty list where the checkout ran nothing.
+    fn left(&self, at: &str) -> Answer<Vec<Left>>;
 }
 
 #[cfg(test)]
@@ -41,5 +58,23 @@ mod tests {
             outcome: Outcome::Fail,
             files: vec!["dist/site.tar".into()],
         });
+    }
+
+    #[test]
+    fn what_a_checkout_left_round_trips_through_json() {
+        round_trip(vec![
+            Left {
+                build: BuildId::new("b7e1"),
+                tasks: vec!["web:build".into(), "web:check".into()],
+                outcome: Outcome::Pass,
+                files: vec!["/work/web/dist/site.tar".into()],
+            },
+            Left {
+                build: BuildId::new("c001"),
+                tasks: vec!["app:test".into()],
+                outcome: Outcome::Fail,
+                files: vec![],
+            },
+        ]);
     }
 }

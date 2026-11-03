@@ -9,8 +9,9 @@ use serde_json::json;
 use tailrace_core::{verify, Published, Told, Verified, POLICY_FILE};
 use tailrace_fakes::{FakeLanding, FakePolicy, Fault, LandingOp, PolicyOp, StoreOp, Times};
 use tailrace_seams::{
-    Answer, Audience, Check, Claim, ClaimKind, Envelope, Held, Manifest, NamedSigner, Not, Outcome,
-    Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store, Verdict,
+    Answer, AskedOf, Audience, Check, Claim, ClaimKind, Envelope, Held, Manifest, NamedSigner, Not,
+    Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store,
+    Verdict,
 };
 
 use crate::core::publish::{one, passing, version_of, TAG, VERSION};
@@ -81,6 +82,7 @@ fn provenance_from(signer: NamedSigner) -> RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -89,6 +91,7 @@ fn verdict_from(signer: NamedSigner, check: &str) -> RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new(check)),
         signers: vec![signer],
+        asked_of: AskedOf::Every,
     }
 }
 
@@ -148,6 +151,7 @@ fn a_verdict_from_a_signer_the_policy_does_not_name(world: &FakeWorld) {
     let mut verdicts: Vec<Verdict> = landing.to_vec();
     verdicts.push(stranger.clone());
     world.land(head, &verdicts);
+    world.pushed(&verdicts);
     world.outputs(head, &[("site", Outcome::Pass), ("server", Outcome::Pass)]);
     world
         .fakes
@@ -205,13 +209,18 @@ fn a_verdict_from_a_signer_the_policy_does_not_name(world: &FakeWorld) {
         "the stranger's verdict is no longer kept"
     );
 
-    // Nothing moves: no write since the publish, one name, no append.
+    // Nothing moves: no write since the publish, the publish's names, its
+    // two artifacts' and its version's, and no append.
     assert_eq!(world.writes(), writes, "verify wrote to the store");
     let names: Vec<&Write> = writes
         .iter()
         .filter(|w| matches!(w, Write::Name { .. }))
         .collect();
-    assert_eq!(names.len(), 1, "a name but the version's moved: {names:?}");
+    assert_eq!(
+        names.len(),
+        3,
+        "a name but the artifacts' and the version's moved: {names:?}"
+    );
     assert_eq!(world.keeper_calls(), [], "the keeper was asked");
     assert_eq!(world.target_calls(), [], "a target was asked");
 
@@ -277,8 +286,9 @@ fn no_landing_gate(world: &FakeWorld) {
         },
     );
     let requiring_provenance = verified(world);
+    // The two outputs' provenances and the notes'.
     let counted = provenances(&requiring_provenance);
-    assert_eq!(counted.len(), 2, "{counted:?}");
+    assert_eq!(counted.len(), 3, "{counted:?}");
     for told in counted {
         assert!(told.counts, "the host's provenance did not count: {told:?}");
     }
@@ -366,8 +376,9 @@ fn an_expired_signer(world: &FakeWorld) {
     published(world);
     world.fakes.signer.expire(&SignerId::new(HOST));
     let verified = verified(world);
+    // The two outputs' provenances and the notes'.
     let told = provenances(&verified);
-    assert_eq!(told.len(), 2, "{told:?}");
+    assert_eq!(told.len(), 3, "{told:?}");
     for told in told {
         assert_eq!(told.made_by, Some(SignerId::new(HOST)), "{told:?}");
         assert!(told.expired, "an expired signer was not told as expired");

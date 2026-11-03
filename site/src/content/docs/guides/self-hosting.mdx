@@ -133,7 +133,9 @@ empty file is no file.
   where the path is missing or an empty directory, at the first thing
   they ask of the store, so a publish refused before it asks the store
   anything, a revision not landed among them, makes none; push needs no
-  `[signing]`, since it signs nothing.
+  `[signing]`, since it signs nothing, and `push --left` binds no
+  landing where the file names no `[landing]`, since it asks the landing
+  nothing, so a check job's file names `[store]` alone.
   verify, sync and rebuild never make or write one, and answer a layout
   that is not there unreadable, naming its path.
 - The host's record of the versions it published is a file per version
@@ -144,8 +146,9 @@ empty file is no file.
   component's index.
 - `[store] registry` names one repository of a registry, such as
   `123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace` or
-  `localhost:5000/tailrace`, which holds everything the store holds. No
-  binding makes the repository. The credential is never the file's: it
+  `localhost:5000/tailrace`, the declared repository the store's spaces
+  hang under (see [a registry's repositories](#a-registrys-repositories)).
+  No binding makes a repository. The credential is never the file's: it
   is the host's Docker configuration and the credential helper it names
   for the registry, ECR's `ecr-login` among them, reached when the
   registry asks for one and kept nowhere (64).
@@ -185,6 +188,69 @@ empty file is no file.
   host's: moon is the build, and the policy file names each output's task
   and the projection that packs it. A `[build]` or `[projections]` table
   is refused, naming it.
+
+### A registry's repositories
+
+The declared repository holds every blob, artifact, index and claim.
+Under it, the store keeps three spaces of repositories, so a credential
+can be scoped to each apart (C.1, 135; ADR 0023): each declared
+component's own, `<declared>/<component>`, holding its versions' tags,
+its channels' names and its indexes; one per artifact name,
+`<declared>/artifact/<ecosystem>/<name>`, the version its tag; and one
+per build profile's cache entries, `<declared>/cache/moon`, the build
+identity its tag. A repository that declares no component keeps its
+versions and channels as tags of the declared repository, as before.
+
+A registry that makes a repository on its first push, zot, the
+reference distribution and GitHub's registry among them, makes each of
+these as tailrace first writes into it. One that makes repositories only
+by a creation template, Amazon ECR among them, refuses a push into a
+repository nobody made, and tailrace answers that refusal in the
+registry's words, naming the repository it was for, and asks nothing
+again. Before the first publish to such a registry, make:
+
+- the declared repository;
+- and repository creation templates applying on push to
+  `<declared>/artifact/`, `<declared>/cache/` and each declared
+  component's `<declared>/<component>`, or one template applying to
+  `<declared>/` that covers all three, or each repository by hand.
+
+A template that sets resource tags on the repositories it makes names a
+role that may tag them: on ECR, a template naming tags and no role makes
+no repository, and every push under it is refused.
+
+A credential needs to write only where its job writes:
+
+- a push writes cache entries alone: write on `<declared>/cache/`, and
+  nothing on the declared repository;
+- a publish writes the declared repository, its component's repository
+  and `<declared>/artifact/`;
+- a promotion writes the channel's component's repository, for the
+  channel's tag, and the declared one, for its claim.
+
+So a credential scoped to one component's repository makes that
+component's versions and moves its channels and no other component's.
+
+After upgrading to a tailrace that keeps these spaces, a store holding a
+declared component's versions from before:
+
+- **Carry each channel.** A declared component's channel tags written
+  before, `channel_2flib_2fbeta` in the declared repository, are read by
+  nothing now: put each, by hand, as the channel's tag of its
+  component's repository, `beta` in `<declared>/lib`, at the digest it
+  names, before the first promotion after upgrading. Until then the
+  channel, and its chain where the ledger is held in the store, reads as
+  empty.
+- **Publish each held version once again.** A declared component's
+  version is named `<component>:<tag>` now, so one held under its bare
+  tag is absent to the gate, a promotion, the record and verify. The next
+  publish of its revision finds the bare tag, names the version
+  `<component>:<tag>` at the same index and each artifact by its
+  ecosystem, name and version, and writes nothing else; do it before the
+  version is accepted or promoted.
+
+Cache entries a push wrote into the declared repository before are read
+by nothing and may be removed; an entry gone is a build again (54).
 
 ## The host's serving process
 
@@ -428,8 +494,9 @@ and who may ask for it. Beneath them, under `held off`, it shows each
 given you have not switched on, with how it would move and the line that
 switches it on, so a channel left off is seen one line away (C.10). The
 channels and the givens held off come in one answer of the policy, which
-carries them apart (131). Each part is its own answer, so a missing
-`[layout]` is shown as absent beside the rest:
+carries them apart (131). A claim asked of built artifacts alone is
+shown so, after its signers (134). Each part is its own answer, so a
+missing `[layout]` is shown as absent beside the rest:
 
 ```text
 $ tailrace policy
@@ -437,7 +504,7 @@ main at 4f2a9c1…
 
 acceptance
   provenance by laptop
-  verdict of cli:test by box
+  verdict of cli:test by box, of built artifacts alone
 layout
   the policy (policy file) holds no policy for layout in .config/tailrace.toml
 
@@ -451,7 +518,7 @@ channels
     promoted by gate
     may be asked for by any asker
   stable, bound to alpha
-    requires acceptance by gate, then verdict of core:test by box
+    requires acceptance by gate, then verdict of core:test by box, of built artifacts alone
     promoted by gate
     may be asked for by ci
 
@@ -473,6 +540,19 @@ accepted (94). It accepts the version whole or refuses it whole, naming
 the artifact and the claim it found wanting (28), and its acceptance is
 one more claim on the version's index: no byte changes (26).
 
+Each artifact is asked only the claims asked of artifacts made its way
+(134). A version's notes are rendered from its history with no build
+behind them, and carry the publisher's provenance naming no build: they
+are asked that provenance and the claims about the version as a whole,
+the gate's acceptance and a promotion, and never a verdict, a test, a
+review or a rebuild, which the policy file asks of built artifacts
+alone. The gate tells the notes are rendered from that provenance,
+counted through a signer `[acceptance]` names for provenance; an
+artifact whose provenance names its build, or whose only build-less
+provenance comes from a signer named for none, is judged as built and
+asked every claim. The notes still need the publisher's provenance: a
+version whose notes lack it is refused naming them.
+
 `beta`, and every channel of yours with `on_each_publish = true`,
 follows each publish. When a publish's answer tells the gate of a
 version of a component and the gate accepts it, the gate judges the
@@ -483,7 +563,9 @@ promotes the channel itself, its own act, naming its own signer as who
 asked whatever `approvers` the channel names: the promotion is held in
 the ledger before the channel's name moves (95, 125, C.10). A following channel
 whose promoters leave the gate out is refused naming them, and the
-acceptance stands. The gate learns these channels from the policy's
+acceptance stands. Each following channel judges each artifact as
+acceptance told it was made, so a channel's verdict or rebuild never
+holds a version for its notes. The gate learns these channels from the policy's
 list, never from the file itself (131). A publish never moves a channel,
 and a version the gate is asked about by anyone else moves none.
 
@@ -605,6 +687,198 @@ that has moved since is refused naming where it is (35); a promotion
 another host made between your read and your append is refused naming
 it, never retried. `tailrace promote --back --to stable` moves `stable`
 back to the version it moved from, one more promotion (34).
+
+## After a landing
+
+sluice runs nothing after a landing, and tailrace starts nothing of its
+own: whatever learns that the work landed pushes and publishes it. Which
+of two ways is yours depends on where your checks run.
+
+**You land from your own machines.** sluice runs the checks on hosts you
+keep, and whatever submitted the work waits for it: crew, or `wt submit`
+waiting. Once it learns the work landed, it runs, on the host that ran
+the checks, the push and then the publish:
+
+```sh
+tailrace push <revision>
+tailrace publish <revision>
+```
+
+The push puts the archives of the landing's passing checks in the
+store's cache. The publish then takes the landing's outputs from there:
+it never offers what its own host built in their place, and it refuses
+the version, naming the output and its task hash, when the store holds
+no entry for one. The repository carries nothing for this (118, C.16).
+
+**Your checks run on sluice's Actions pool.** No runner keeps what the
+checks built, so each run job pushes what its own run left before the
+landing is decided, and a workflow of the repository's own publishes
+after it. That takes four pieces.
+
+### The run job's push
+
+Add one step to the run job of the pool's workflow, after the step that
+runs `sluice job run`. It installs `tailrace` from its GitHub release,
+names the registry and nothing else in its bindings file, reaches the
+registry through Docker's credential helper for ECR, and runs `tailrace
+push --left` in the checkout the checks ran in, whether they passed or
+not, since only the tasks that passed are pushed. The run job holds no
+identity token, which sluice's pool keeps out of the job that runs
+checks, so the credential is an access key kept as repository secrets,
+not a role assumed by OIDC.
+
+```yaml
+# In the run job's steps, after the one that runs `sluice job run`.
+- name: Push what the run left
+  if: ${{ !cancelled() }}
+  # The checkout `sluice job run` ran the checks in.
+  working-directory: ${{ github.workspace }}
+  env:
+    AWS_ACCESS_KEY_ID: ${{ secrets.TAILRACE_CACHE_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.TAILRACE_CACHE_SECRET_KEY }}
+    AWS_REGION: us-east-1
+    GH_TOKEN: ${{ github.token }}
+  run: |
+    gh release download --repo agentplot/tailrace \
+      --pattern tailrace-x86_64-linux.tar.gz --output - | tar -xz -C "$RUNNER_TEMP"
+    sudo apt-get install -y amazon-ecr-credential-helper
+    mkdir -p ~/.docker ~/.config/tailrace
+    echo '{"credHelpers":{"123456789012.dkr.ecr.us-east-1.amazonaws.com":"ecr-login"}}' \
+      > ~/.docker/config.json
+    printf '[store]\nregistry = "%s"\n' \
+      123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace > ~/.config/tailrace/config.toml
+    "$RUNNER_TEMP/tailrace" push --left --json
+```
+
+### The cache key's scope
+
+The key belongs to an IAM user whose one policy lets it push to the
+cache entries' repositories and nothing else, so a check that reads the
+key can write cache entries and never offer, accept or move a name (96,
+135):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "arn:aws:ecr:us-east-1:123456789012:repository/tailrace/cache/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ecr:GetAuthorizationToken",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+ECR makes a repository on push only through a creation template, so the
+operator makes the repository `tailrace/cache/moon` once, before the
+first push, and the key needs no `ecr:CreateRepository` (C.1).
+
+### The publish workflow
+
+`.github/workflows/tailrace.yml` is the repository's own, and runs once
+for each landing: sluice lands with a GitHub App's push, which starts a
+`push` workflow, as a push made with `GITHUB_TOKEN` would not. It
+publishes one landing at a time and never cancels one. Its store
+credential is a role it assumes by OIDC, since this job runs no check,
+and the publisher's host key is a secret of the GitHub environment
+`tailrace`, which this job alone uses.
+
+```yaml
+name: tailrace
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: tailrace
+  cancel-in-progress: false
+
+permissions:
+  contents: write # the version's tag (22)
+  id-token: write # the store's role, by OIDC
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: tailrace
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - run: git fetch --no-tags origin '+refs/sluice/*:refs/sluice/*'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/tailrace-publish
+          aws-region: us-east-1
+      # The repository's own toolchain, so moon runs.
+      - uses: moonrepo/setup-toolchain@v0
+      - name: Publish the landing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNING_KEY: ${{ secrets.TAILRACE_SIGNING_KEY }}
+        run: |
+          gh release download --repo agentplot/tailrace \
+            --pattern tailrace-x86_64-linux.tar.gz --output - | tar -xz -C "$RUNNER_TEMP"
+          sudo apt-get install -y amazon-ecr-credential-helper
+          mkdir -p ~/.docker ~/.config/tailrace
+          echo '{"credHelpers":{"123456789012.dkr.ecr.us-east-1.amazonaws.com":"ecr-login"}}' \
+            > ~/.docker/config.json
+          (umask 077 && printf '%s\n' "$SIGNING_KEY" > ~/.config/tailrace/signing)
+          cat > ~/.config/tailrace/config.toml <<'EOF'
+          [store]
+          registry = "123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace"
+
+          [landing]
+          sluice = { remote = "origin" }
+
+          [signing]
+          signer = "ci"
+          key = "~/.config/tailrace/signing"
+          EOF
+          "$RUNNER_TEMP/tailrace" publish "$GITHUB_SHA" --json
+```
+
+### The publisher in the policy
+
+The policy file names the job's signer by the public half of that key,
+for provenance alone, and names it among the signers of the provenance
+`[acceptance]` requires:
+
+```toml
+[signers.ci]
+ssh = "ssh-ed25519 AAAA… tailrace@ci"
+kinds = ["provenance"]
+
+[acceptance]
+require = [{ kind = "provenance", signers = ["ci"] }]
+```
+
+The gate counts the job's provenance through that line, and from it
+tells the version's notes, which no build made, from its outputs: the
+notes are asked that provenance and never a verdict, which the policy
+file asks of built artifacts alone (134).
+
+A landing one of whose outputs the store holds no entry for is refused,
+naming the output; the pool's next run of that output's check pushes
+it, and the next landing publishes.
+
+One thing this way rests on is still being built: the step needs room
+in the pool's run job and to know where its checkout is, which sluice's
+Actions pool keeps; sluice's template names no tailrace.
 
 ## A team
 

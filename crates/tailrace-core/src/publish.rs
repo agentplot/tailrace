@@ -2,26 +2,47 @@
 //! component it publishes, in the statement's order: landed, declared,
 //! ensured, judged, claimed, packed, put, attested, indexed, named,
 //! recorded, answered (14 to 22, rules core.10 to core.13; design D1).
+//! Where the repository's file writes a policy for layouts at the landed
+//! revision, the index carries it as the publisher's layout-policy claim,
+//! attached before anything is named (113, 8); the given is never
+//! carried, and a consumer lays it beneath itself (C.10). Each artifact
+//! is then named by its ecosystem, its name and its version at the
+//! index, and the version last, so a version the store names is always
+//! found by what a lockfile pins (138; design D2).
+//! Where the landing carries verdicts, the outputs come from the store:
+//! the cache entries the passing verdicts name are rendered into the
+//! checkout before the build is asked, so it replays what the landing's
+//! checks built, and an output whose entry the store lacks refuses the
+//! version before its name is claimed; a publish never offers what its
+//! own host built in their place (15, 16, 52, 135). A landing with no
+//! verdicts builds on the publishing host as it always has (C.6).
 //! A publish offers and does nothing more: it never accepts, promotes,
 //! moves a channel or reaches a target (20, rule core.10).
+
+use std::collections::BTreeSet;
 
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use tailrace_seams::{
-    Answer, Artifact, ArtifactMeta, Branch, BuildId, ClaimKind, Component, ComponentName, Digest,
-    Ecosystem, EcosystemName, Held, IndexMeta, Manifest, Name, Not, Outcome, Output, OutputName,
-    Projection, Report, Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
+    artifact_name, version_name, Answer, Artifact, ArtifactMeta, Audience, Branch, BuildId,
+    CacheEntry, Claim, ClaimKind, Component, ComponentName, Digest, Ecosystem, EcosystemName, Held,
+    IndexMeta, Manifest, Name, Not, Outcome, Output, OutputName, PackAt, Projection, Report,
+    RepositoryName, Required, Revision, Seam, Seams, SignerId, Source, Verdict, Version, Why,
 };
 
+use crate::cache::{cache_name, fill};
+use crate::notes::{self, Rendered};
 use crate::{
-    claim, derive, touched, Carried, Declared, Derived, Entry, History, Kept, Landed, Provenance,
-    Versioned, BOUND, LOCAL, POLICY_FILE,
+    claim, derive, layout_policy_body, paths_hold, policy_at, touched, Carried, Declared, Derived,
+    Entry, History, Kept, Landed, Noted, Provenance, Versioned, BOUND, LOCAL, NOTES, POLICY_FILE,
+    REPOSITORY,
 };
 
 /// What a publish is asked: the revision, the branch that landed it, the
 /// one component to publish or every one the landing touched (124), the
-/// identity of the party running it, which signs (11, 79), and the store
-/// as the host's bindings name it, which the record keeps (61, 118).
+/// identity of the party running it, which signs (11, 79), the store as
+/// the host's bindings name it, which the record keeps (61, 118), and the
+/// working tree the landing's cache entries are rendered into (135).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ask {
     pub branch: Branch,
@@ -29,6 +50,7 @@ pub struct Ask {
     pub component: Option<ComponentName>,
     pub signer: SignerId,
     pub store: Source,
+    pub tree: String,
 }
 
 /// A publish's answer: per component, in the order the policy file
@@ -53,6 +75,10 @@ pub enum Published {
         branch: Branch,
         index: Digest,
         artifacts: Vec<PublishedArtifact>,
+        /// The notes the index names; none for an index offered before
+        /// notes were carried (134).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        notes: Option<PublishedNotes>,
         store: Source,
     },
     /// No commit since the component's last release tag touched it, and
@@ -64,7 +90,8 @@ pub enum Published {
 }
 
 /// An artifact a publish offered: its digest, its bytes' digest, its
-/// ecosystem and name there, the output and the build identity it came
+/// ecosystem and name there, the name the store holds it under by those
+/// and its version (138), the output and the build identity it came
 /// from, whether its projection promises the same bytes again (87), and
 /// every claim this publish attached to it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -73,9 +100,21 @@ pub struct PublishedArtifact {
     pub bytes: Digest,
     pub ecosystem: Ecosystem,
     pub name: EcosystemName,
+    pub store_name: Name,
     pub output: OutputName,
     pub build: BuildId,
     pub same_again: bool,
+    pub claims: Vec<Attached>,
+}
+
+/// 134: a version's notes as a publish answers them: their artifact's
+/// digest, their bytes' digest, their text, and every claim this host
+/// attached to them (design D5).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PublishedNotes {
+    pub digest: Digest,
+    pub bytes: Digest,
+    pub text: String,
     pub claims: Vec<Attached>,
 }
 
@@ -155,6 +194,9 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
         landed: &landed,
         declared: &declared,
         verdicts: None,
+        filled: None,
+        layout: None,
+        repository: None,
     };
     let components = versions
         .into_iter()
@@ -176,7 +218,11 @@ pub fn publish(seams: &Seams, history: &History, kept: &Kept, ask: &Ask) -> Answ
 }
 
 /// One publish's state across its components: the landing's verdicts,
-/// read once for the revision (78).
+/// read once for the revision (78), the build identities whose cache
+/// entries were rendered from the store, filled once where there are
+/// verdicts (135), the policy for layouts, read once at it where an
+/// index is put (113), and the publishing repository, read once before
+/// the first pack (13, 138).
 struct Run<'a> {
     seams: &'a Seams,
     history: &'a History,
@@ -185,6 +231,9 @@ struct Run<'a> {
     landed: &'a Landed,
     declared: &'a Declared,
     verdicts: Option<Answer<Vec<Verdict>>>,
+    filled: Option<Answer<BTreeSet<BuildId>>>,
+    layout: Option<Answer<Required>>,
+    repository: Option<Answer<Option<RepositoryName>>>,
 }
 
 /// An output with what the build reported of it, the ecosystem and
@@ -212,6 +261,112 @@ impl<'a> Run<'a> {
         self.verdicts
             .get_or_insert_with(|| seams.landing.verdicts_of(revision).map(|v| v.verdicts))
             .clone()
+    }
+
+    /// 52, 135: the build identities `verdicts`' passing verdicts name
+    /// whose cache entries the store holds and a bound projection
+    /// rendered at the ask's working tree, each resolved once, filled
+    /// once per publish. An entry the store does not name, or that no
+    /// projection renders, is left out; any other answer of the store or
+    /// a render is the publish's whole answer. The store is asked only to
+    /// resolve and read (53).
+    fn filled(&mut self, verdicts: &[Verdict]) -> Answer<BTreeSet<BuildId>> {
+        let (seams, tree) = (self.seams, &self.ask.tree);
+        self.filled
+            .get_or_insert_with(|| {
+                let mut filled = BTreeSet::new();
+                let mut asked = BTreeSet::new();
+                for verdict in verdicts {
+                    if verdict.outcome != Outcome::Pass || !asked.insert(verdict.build.clone()) {
+                        continue;
+                    }
+                    let digest = match seams.store.resolve(&cache_name(&verdict.build)) {
+                        Ok(digest) => digest,
+                        Err(Not::Absent(_)) => continue,
+                        Err(not) => return Err(not),
+                    };
+                    let entry = CacheEntry {
+                        build: verdict.build.clone(),
+                        digest,
+                    };
+                    match fill(seams, entry, tree) {
+                        Ok(_) => {
+                            filled.insert(verdict.build.clone());
+                        }
+                        Err(Not::Absent(_)) => {}
+                        Err(not) => return Err(not),
+                    }
+                }
+                Ok(filled)
+            })
+            .clone()
+    }
+
+    /// 13, 138: the publishing repository, by the owner and name of its
+    /// landed branch's remote's address as the git configuration writes
+    /// it, whatever a host's `insteadOf` makes of it (49, 114); none where
+    /// the branch names no remote or its address gives no owner and name,
+    /// as a local path does, and the publish goes on (22). A
+    /// configuration that cannot be read is the answer (design D5).
+    fn repository(&mut self) -> Answer<Option<RepositoryName>> {
+        let (history, branch) = (self.history, self.landed.branch());
+        self.repository
+            .get_or_insert_with(|| {
+                let Some(remote) = history.remote(branch)? else {
+                    return Ok(None);
+                };
+                Ok(history
+                    .remote_url(&remote)?
+                    .as_deref()
+                    .and_then(RepositoryName::from_remote))
+            })
+            .clone()
+    }
+
+    /// 113, 8: the layout line the repository's file writes at the landed
+    /// revision, signed as the party running the publish about `index`,
+    /// naming the revision and no build identity, and attached to it
+    /// (rules core.8, core.9; design D8). The given, which a file with no
+    /// layout line answers, and a revision with no policy file attach
+    /// nothing: a consumer lays the given beneath itself (C.10). A policy
+    /// that cannot be read stops the publish before the name moves. An
+    /// index already carrying a layout-policy claim of the same body has
+    /// nothing signed (18).
+    fn layout_policy(&mut self, index: &Digest) -> Answer<()> {
+        let (seams, landed) = (self.seams, self.landed);
+        let required = self
+            .layout
+            .get_or_insert_with(|| policy_at(seams.policy.as_ref(), landed, &Audience::Layout))
+            .clone();
+        let required = match required {
+            Ok(Required::Layout { given: true, .. }) | Err(Not::Absent(_)) => return Ok(()),
+            Ok(required) => required,
+            Err(not) => return Err(not),
+        };
+        let body = layout_policy_body(required.claims());
+        let carried = seams
+            .store
+            .claims_of(index)?
+            .iter()
+            .filter_map(Claim::from_envelope)
+            .any(|c| c.kind == ClaimKind::LayoutPolicy && c.subject == *index && c.body == body);
+        if carried {
+            return Ok(());
+        }
+        let signer = seams
+            .signers
+            .first()
+            .ok_or_else(|| Not::absent(&bound(Seam::Signer), "signer bound"))?;
+        let claim = Claim {
+            subject: index.clone(),
+            kind: ClaimKind::LayoutPolicy,
+            revision: landed.revision().clone(),
+            build: None,
+            body,
+        };
+        let envelope = signer.sign(&claim, &self.ask.signer)?;
+        seams.store.attach(index, &envelope)?;
+        Ok(())
     }
 
     fn component(&mut self, versioned: &Versioned) -> Answer<Published> {
@@ -246,9 +401,16 @@ impl<'a> Run<'a> {
             projections.push((ecosystem.clone(), projection));
         }
 
-        // 4, 5: the landing's verdicts, then every output in one asking
-        // and each one's report (74, 75, 78).
+        // 4, 5: the landing's verdicts, the cache entries their passing
+        // verdicts name rendered from the store where there are any, then
+        // every output in one asking and each one's report (52, 74, 75,
+        // 78, 135).
         let verdicts = self.verdicts()?;
+        let filled = if verdicts.is_empty() {
+            None
+        } else {
+            Some(self.filled(&verdicts)?)
+        };
         self.seams.build.ensure(revision, &component.outputs)?;
         let mut outputs = Vec::new();
         for (output, (ecosystem, projection)) in component.outputs.iter().zip(projections) {
@@ -268,31 +430,85 @@ impl<'a> Run<'a> {
             output.verdicts = judge(&output.name, &output.report, &verdicts)?;
         }
 
-        // 7: the name claimed after judging and before any pack (22, rule
-        // core.13).
-        let claimed = claim(self.history, self.landed, versioned)?;
-        let name = Name::new(&versioned.name);
+        // 6: where there are verdicts, the first output whose build
+        // identity's entry was not rendered from the store refuses the
+        // version whole, before its name is claimed: what the build made
+        // in its place is never offered (15, 16, 58, 135).
+        if let Some(filled) = &filled {
+            if let Some(output) = outputs.iter().find(|o| !filled.contains(&o.report.build)) {
+                return Err(Not::refused(
+                    &bound(Seam::Store),
+                    Why::NotInStore {
+                        output: output.name.clone(),
+                        build: output.report.build.clone(),
+                    },
+                    None,
+                ));
+            }
+        }
 
-        // 8: a name already held makes this a repeat (18).
-        let held = match self.seams.store.resolve(&name) {
-            Ok(index) => Some(self.held(&index)?),
-            Err(Not::Absent(_)) => None,
+        // The publishing repository, read before anything is claimed or
+        // packed, so a configuration that cannot be read offers nothing
+        // (design D5).
+        let repository = self.repository()?;
+
+        // 7: the name claimed after judging and before any pack (22, rule
+        // core.13), then the version's notes rendered from the commits it
+        // is derived from, so nothing of them exists before the claim
+        // (134; design D5).
+        let claimed = claim(self.history, self.landed, versioned)?;
+        let name = version_name(&component.name, &versioned.name);
+        let rendered = notes::render(
+            self.history,
+            &component.name,
+            &versioned.version,
+            &versioned.name,
+            &claimed.revision,
+            &Noted::of(versioned),
+        )?;
+
+        // 8: a name already held makes this a repeat (18); so does a
+        // declared component's bare tag, as a publish before version
+        // names carried their component named it, which this one names
+        // the new way at the same index (C.1; design D3, D18).
+        let (held, unnamed) = match self.seams.store.resolve(&name) {
+            Ok(index) => (Some(self.held(&index)?), false),
+            Err(Not::Absent(_)) if component.name.as_str() != REPOSITORY => {
+                let bare = version_name(&ComponentName::new(REPOSITORY), &versioned.name);
+                match self.seams.store.resolve(&bare) {
+                    Ok(index) => (Some(self.held(&index)?), true),
+                    Err(Not::Absent(_)) => (None, false),
+                    Err(not) => return Err(not),
+                }
+            }
+            Err(Not::Absent(_)) => (None, false),
             Err(not) => return Err(not),
         };
 
         // 9: each output packed at its build identity with the version,
-        // and a pack that names no metadata refused before anything is
-        // offered (84, rule core.12).
-        let mut packed = Vec::new();
-        for output in &outputs {
-            let files = Output {
+        // its component, the component's outputs as the build left them
+        // and its paths' match, the version rule's own, and a pack that
+        // names no metadata refused before anything is offered (84, 123,
+        // rule core.12).
+        let built: Vec<Output> = outputs
+            .iter()
+            .map(|output| Output {
                 name: output.name.clone(),
                 files: output.report.files.clone(),
-            };
-            let answer =
-                output
-                    .projection
-                    .pack(&files, &output.report.build, Some(&versioned.version))?;
+            })
+            .collect();
+        let holds = paths_hold(&component.paths)?;
+        let at = PackAt {
+            version: &versioned.version,
+            component,
+            outputs: &built,
+            holds: &holds,
+        };
+        let mut packed = Vec::new();
+        for (output, files) in outputs.iter().zip(&built) {
+            let answer = output
+                .projection
+                .pack(files, &output.report.build, Some(&at))?;
             let Some(meta) = answer.meta else {
                 return Err(Not::refused(
                     &Source::new(Seam::Projection, output.ecosystem.as_str()),
@@ -310,33 +526,94 @@ impl<'a> Run<'a> {
             });
         }
 
-        let artifacts = match held {
+        let (artifacts, (notes, answered)) = match held {
             Some((index, artifacts)) => {
-                let artifacts = self.again(&outputs, &packed, &artifacts)?;
-                return self.record(versioned, component, &claimed.revision, index, artifacts);
+                let (artifacts, notes) =
+                    self.again(versioned, &outputs, &packed, &rendered, &artifacts)?;
+                self.layout_policy(&index)?;
+                self.name_artifacts(&index, &packed)?;
+                if unnamed {
+                    self.seams.store.name(&name, &index, None)?;
+                }
+                return self.record(
+                    versioned,
+                    component,
+                    &claimed.revision,
+                    index,
+                    artifacts,
+                    notes,
+                );
             }
-            None => self.offer(versioned, &outputs, &packed, &claimed.revision)?,
+            None => self.offer(versioned, &outputs, &packed, &rendered, &claimed.revision)?,
         };
 
-        // 11: the index last, then the version's name moved from nothing
-        // to it (6, 17, 70, rule core.6).
+        // 11: the index last, naming the notes after the outputs'
+        // artifacts, then the version's name moved from nothing to it (6,
+        // 17, 70, 134, rule core.6).
         let meta = IndexMeta::new(
             component.name.clone(),
             versioned.version.clone(),
             artifacts
                 .iter()
                 .map(|(artifact, _)| artifact.clone())
+                .chain(std::iter::once(notes))
                 .collect(),
         )
-        .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))?;
+        .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))?
+        .published_from(claimed.revision.clone(), repository);
         let index = self
             .seams
             .store
             .put_artifact(&Manifest::Index(meta))?
             .digest;
+        self.layout_policy(&index)?;
+        self.name_artifacts(&index, &packed)?;
         self.seams.store.name(&name, &index, None)?;
         let artifacts = artifacts.into_iter().map(|(_, a)| a).collect();
-        self.record(versioned, component, &claimed.revision, index, artifacts)
+        self.record(
+            versioned,
+            component,
+            &claimed.revision,
+            index,
+            artifacts,
+            Some(answered),
+        )
+    }
+
+    /// 138: each packed artifact named `artifact/<ecosystem>/<name>@<version>`
+    /// at `index`. Every name is resolved before any is made: one at this
+    /// index is left as it is, one at another digest refuses the version
+    /// naming the name, the digest it is at and this index, and nothing
+    /// is made; then each absent one is made from nothing, a refusal from
+    /// the store answered as it gave it and never asked again (70, 109,
+    /// rules core.4, core.6; design D2, D3).
+    fn name_artifacts(&self, index: &Digest, packed: &[PackedArtifact]) -> Answer<()> {
+        let store = &self.seams.store;
+        let mut absent = Vec::new();
+        for packed in packed {
+            let meta = &packed.meta;
+            let name = artifact_name(meta.ecosystem(), meta.name(), meta.version());
+            match store.resolve(&name) {
+                Ok(at) if at == *index => {}
+                Ok(other) => {
+                    return Err(Not::refused(
+                        &self.ask.store,
+                        Why::NameAt {
+                            at: Some(other.clone()),
+                        },
+                        Some(format!(
+                            "{name} names {other}, and this publish's index is {index}"
+                        )),
+                    ))
+                }
+                Err(Not::Absent(_)) => absent.push(name),
+                Err(not) => return Err(not),
+            }
+        }
+        for name in absent {
+            store.name(&name, index, None)?;
+        }
+        Ok(())
     }
 
     /// The index a held name names and each artifact it names, with the
@@ -364,16 +641,20 @@ impl<'a> Run<'a> {
         Ok((index.clone(), artifacts))
     }
 
-    /// 18, 87: a repeat publish's packs compared with what the index
-    /// holds, before anything is put; all the same, the artifacts as the
-    /// index names them with the claims this host attached to them, read
-    /// and not signed again (design D6).
+    /// 18, 87: a repeat publish's packs, and the notes rendered again,
+    /// compared with what the index holds, before anything is put; all
+    /// the same, the artifacts as the index names them with the claims
+    /// this host attached to them, read and not signed again (design D5,
+    /// D6). An index naming no notes was offered before notes were
+    /// carried, and none are added (134).
     fn again(
         &self,
+        versioned: &Versioned,
         outputs: &[Judged],
         packed: &[PackedArtifact],
+        rendered: &Rendered,
         held: &[(Artifact, Vec<Digest>)],
-    ) -> Answer<Vec<PublishedArtifact>> {
+    ) -> Answer<(Vec<PublishedArtifact>, Option<PublishedNotes>)> {
         let mut same = Vec::new();
         for (output, packed) in outputs.iter().zip(packed) {
             let now = Digest::of(&packed.bytes);
@@ -399,60 +680,110 @@ impl<'a> Run<'a> {
             }
             same.push((output, packed, artifact.digest.clone(), now));
         }
+
+        let meta = notes_meta(versioned)?;
+        let now = Digest::of(rendered.bytes());
+        let found = held.iter().find(|(a, _)| {
+            a.meta.ecosystem().as_str() == NOTES && a.meta.name().as_str() == meta.name().as_str()
+        });
+        let notes = match found {
+            None => None,
+            Some((artifact, layers)) if *layers == [now.clone()] && artifact.meta == meta => {
+                Some(artifact.digest.clone())
+            }
+            Some((_, layers)) => {
+                return Err(Not::refused(
+                    &Source::history(LOCAL),
+                    Why::Differed {
+                        artifact: meta,
+                        first: layers.first().cloned(),
+                        now,
+                    },
+                    None,
+                ))
+            }
+        };
+
         let mut artifacts = Vec::new();
         for (output, packed, digest, bytes) in same {
-            let mut claims = Vec::new();
-            for envelope in self.seams.store.claims_of(&digest)? {
-                let ours = envelope.sole().is_some_and(|s| s.signer == self.ask.signer)
-                    && tailrace_seams::Claim::from_envelope(&envelope)
-                        .is_some_and(|c| c.kind == ClaimKind::Provenance && c.subject == digest);
-                if ours {
-                    claims.push(Attached {
-                        kind: ClaimKind::Provenance,
-                        signer: self.ask.signer.clone(),
-                        envelope: envelope.digest(),
-                        on: digest.clone(),
-                    });
-                }
-            }
+            let claims = self.ours(&digest)?;
             artifacts.push(answered(output, packed, digest, bytes, claims));
         }
-        Ok(artifacts)
+        let notes = match notes {
+            Some(digest) => Some(PublishedNotes {
+                claims: self.ours(&digest)?,
+                digest,
+                bytes: now,
+                text: rendered.text.clone(),
+            }),
+            None => None,
+        };
+        Ok((artifacts, notes))
+    }
+
+    /// The provenance claims this host attached to `digest`, as the store
+    /// holds them.
+    fn ours(&self, digest: &Digest) -> Answer<Vec<Attached>> {
+        let mut claims = Vec::new();
+        for envelope in self.seams.store.claims_of(digest)? {
+            let ours = envelope.sole().is_some_and(|s| s.signer == self.ask.signer)
+                && Claim::from_envelope(&envelope)
+                    .is_some_and(|c| c.kind == ClaimKind::Provenance && c.subject == *digest);
+            if ours {
+                claims.push(Attached {
+                    kind: ClaimKind::Provenance,
+                    signer: self.ask.signer.clone(),
+                    envelope: envelope.digest(),
+                    on: digest.clone(),
+                });
+            }
+        }
+        Ok(claims)
+    }
+
+    /// `bytes` put and checked against their own digest, then an artifact
+    /// of `meta` naming them as its one layer (2, 66, 67, rule core.5);
+    /// the artifact's digest and the bytes'.
+    fn put(&self, bytes: &[u8], meta: &ArtifactMeta) -> Answer<(Digest, Digest)> {
+        let store = &self.seams.store;
+        let expected = Digest::of(bytes);
+        let answered = store.put_bytes(bytes)?.digest;
+        if answered != expected {
+            return Err(Not::refused(
+                &self.ask.store,
+                Why::OtherBytes { expected, answered },
+                None,
+            ));
+        }
+        let digest = store
+            .put_artifact(&Manifest::Artifact {
+                meta: meta.clone(),
+                layers: vec![expected.clone()],
+            })?
+            .digest;
+        Ok((digest, expected))
     }
 
     /// A first publish's offer: each output's bytes and artifact put,
-    /// checked against their own digest (2, 66, 67), then each artifact's
-    /// provenance signed and attached beside it (8, 11 to 13).
+    /// then the notes', each checked against their own digest (2, 66,
+    /// 67), then each output's provenance signed and attached beside its
+    /// artifact (8, 11 to 13), and the notes' claim last (134; design D3
+    /// to D5).
     fn offer(
         &self,
         versioned: &Versioned,
         outputs: &[Judged],
         packed: &[PackedArtifact],
+        rendered: &Rendered,
         revision: &Revision,
-    ) -> Answer<Vec<(Artifact, PublishedArtifact)>> {
+    ) -> Answer<Offered> {
         let store = &self.seams.store;
         let mut put = Vec::new();
         for packed in packed {
-            let bytes = Digest::of(&packed.bytes);
-            let answered = store.put_bytes(&packed.bytes)?.digest;
-            if answered != bytes {
-                return Err(Not::refused(
-                    &self.ask.store,
-                    Why::OtherBytes {
-                        expected: bytes,
-                        answered,
-                    },
-                    None,
-                ));
-            }
-            let digest = store
-                .put_artifact(&Manifest::Artifact {
-                    meta: packed.meta.clone(),
-                    layers: vec![bytes.clone()],
-                })?
-                .digest;
-            put.push((digest, bytes));
+            put.push(self.put(&packed.bytes, &packed.meta)?);
         }
+        let meta = notes_meta(versioned)?;
+        let (notes, notes_bytes) = self.put(rendered.bytes(), &meta)?;
 
         let signer = self
             .seams
@@ -494,12 +825,46 @@ impl<'a> Run<'a> {
                 answered(output, packed, digest, bytes, claims),
             ));
         }
-        Ok(artifacts)
+
+        // 134: the notes' claim, the publisher's own, naming the revision
+        // and the commits they were rendered from and no build, since no
+        // build made them (rules core.8, core.9; design D4).
+        let claim = Claim {
+            subject: notes.clone(),
+            kind: ClaimKind::Provenance,
+            revision: revision.clone(),
+            build: None,
+            body: notes_body(versioned),
+        };
+        let envelope = signer.sign(&claim, &self.ask.signer)?;
+        let attached = store.attach(&notes, &envelope)?;
+        let claims = vec![Attached {
+            kind: ClaimKind::Provenance,
+            signer: self.ask.signer.clone(),
+            envelope: attached.digest,
+            on: notes.clone(),
+        }];
+        Ok((
+            artifacts,
+            (
+                Artifact {
+                    digest: notes.clone(),
+                    meta,
+                },
+                PublishedNotes {
+                    digest: notes,
+                    bytes: notes_bytes,
+                    text: rendered.text.clone(),
+                    claims,
+                },
+            ),
+        ))
     }
 
     /// 12: the host's record of the version, its last write, then the
     /// answer, each naming the store as the host's bindings name it (61,
-    /// 118, design D9).
+    /// 118, design D9); the record names the notes' commits exactly when
+    /// the index names notes (134; design D6).
     fn record(
         &self,
         versioned: &Versioned,
@@ -507,6 +872,7 @@ impl<'a> Run<'a> {
         revision: &Revision,
         index: Digest,
         artifacts: Vec<PublishedArtifact>,
+        notes: Option<PublishedNotes>,
     ) -> Answer<Published> {
         let store = self.ask.store.clone();
         self.kept.write(&Entry {
@@ -517,6 +883,7 @@ impl<'a> Run<'a> {
             branch: self.ask.branch.clone(),
             index: index.clone(),
             store: store.clone(),
+            notes: notes.as_ref().map(|_| Noted::of(versioned)),
         })?;
         Ok(Published::Version {
             component: component.name.clone(),
@@ -526,9 +893,42 @@ impl<'a> Run<'a> {
             branch: self.ask.branch.clone(),
             index,
             artifacts,
+            notes,
             store,
         })
     }
+}
+
+/// What a first publish offered: each output's artifact with its
+/// answer, and the notes' artifact with theirs.
+type Offered = (
+    Vec<(Artifact, PublishedArtifact)>,
+    (Artifact, PublishedNotes),
+);
+
+/// The notes' metadata: the ecosystem reserved for them, named by the
+/// component, at the version (design D3).
+fn notes_meta(versioned: &Versioned) -> Answer<ArtifactMeta> {
+    ArtifactMeta::new(
+        Ecosystem::new(NOTES),
+        EcosystemName::new(versioned.component.as_str()),
+        versioned.version.clone(),
+    )
+    .map_err(|bad| Not::refused(&bound(Seam::Projection), Why::Said, Some(bad.to_string())))
+}
+
+/// The body of the notes' claim: the component, the version, the last
+/// release tag and every commit the notes were rendered from, by its full
+/// revision (design D4).
+fn notes_body(versioned: &Versioned) -> Value {
+    json!({
+        "notes": {
+            "component": versioned.component,
+            "version": versioned.version,
+            "last": versioned.last.as_ref().map(|t| &t.name),
+            "commits": versioned.since.iter().map(|c| &c.revision).collect::<Vec<_>>(),
+        }
+    })
 }
 
 fn answered(
@@ -544,6 +944,7 @@ fn answered(
         bytes,
         ecosystem: meta.ecosystem().clone(),
         name: meta.name().clone(),
+        store_name: artifact_name(meta.ecosystem(), meta.name(), meta.version()),
         output: output.name.clone(),
         build: output.report.build.clone(),
         same_again: packed.same_again,

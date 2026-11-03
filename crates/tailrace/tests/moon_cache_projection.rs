@@ -3,7 +3,12 @@
 //! checkout and its layout store in a temporary directory (design D9).
 //!
 //! Only the group's two scenarios of a projection that packs cache
-//! entries run. The group's other scenarios each pack or render at a
+//! entries run, the pinned scenarios, whose lockfile one is not
+//! applicable, since moon's cache has no lockfile, and the manifest
+//! scenarios, whose two of a manifest are not applicable beside it, since
+//! moon's cache has no manifest either, and the serve scenarios, each
+//! not applicable, since moon reads its cache as files. The group's other
+//! scenarios each pack or render at a
 //! version, which the moon cache answers absent naming artifacts, since
 //! it packs no artifact (53), so they are not run over it: a departure
 //! from core.33, which asks every profile to pass the one suite, as
@@ -17,13 +22,26 @@ use tailrace::profiles::projection::moon_cache::MoonCache;
 use tailrace::profiles::store::layout::Layout;
 use tailrace_conformance::seams::projection::{self, ProjectionRig};
 use tailrace_conformance::{run, Rig, Scenario};
-use tailrace_seams::{Artifact, Output, OutputName, Projection, Store};
+use tailrace_seams::{
+    Artifact, ArtifactMeta, Digest, Ecosystem, EcosystemName, Output, OutputName, Pinned,
+    Projection, Range, Requirement, Store, Version,
+};
 use tempfile::TempDir;
 
-/// The scenarios of a projection that packs cache entries.
-const CACHE: [&str; 2] = [
+/// The scenarios of a projection that packs cache entries, of pinned,
+/// of requires and satisfying, and of serve.
+const CACHE: [&str; 11] = [
     "a cache entry packed with no version",
     "a layout of the build identities given",
+    "pinned as the lockfile spells it",
+    "no lockfile, absent",
+    "required as the manifest spells it",
+    "satisfied by the ecosystem's own ordering",
+    "no manifest, none",
+    "a version held, served",
+    "a version lacked, asked of the core",
+    "a refusal in the response",
+    "one base, two places",
 ];
 
 /// The task hashes the group packs at.
@@ -95,6 +113,39 @@ impl ProjectionRig for MoonCacheRig {
         true
     }
 
+    fn has_lockfile(&self) -> bool {
+        false
+    }
+
+    /// The checkout, which holds moon's outputs and no lockfile.
+    fn checkout(&self, _: bool) -> (String, Vec<Pinned>) {
+        (self.checkout.display().to_string(), Vec::new())
+    }
+
+    fn has_manifest(&self) -> bool {
+        false
+    }
+
+    /// An artifact named in the moon cache's ecosystem, which requires
+    /// nothing, since moon's cache has no manifest.
+    fn held(&self) -> (Artifact, Vec<Requirement>) {
+        let held = Artifact {
+            digest: Digest::of(b"moon's archive of b7e1"),
+            meta: ArtifactMeta::new(
+                Ecosystem::new(tailrace::profiles::projection::moon_cache::ECOSYSTEM),
+                EcosystemName::new("site"),
+                Version::new("1.0.0"),
+            )
+            .unwrap(),
+        };
+        (held, Vec::new())
+    }
+
+    /// None: moon's cache has no manifest to spell a range in.
+    fn ranged(&self) -> (Range, Vec<Version>, Vec<Version>) {
+        (Range::new(""), Vec::new(), Vec::new())
+    }
+
     /// The outputs directory replaced by a file, and the operating
     /// system's words for reading an archive through it.
     fn unreachable(&self) -> String {
@@ -117,5 +168,40 @@ fn the_cache_entry_scenarios_over_the_moon_cache() {
         ("moon-cache", CACHE.len())
     );
     report.assert();
-    assert_eq!(report.not_applicable, [], "{report}");
+    let inapplicable: Vec<(&str, &str)> = report
+        .not_applicable
+        .iter()
+        .map(|n| (n.scenario, n.why.as_str()))
+        .collect();
+    assert_eq!(
+        inapplicable,
+        [
+            (
+                "pinned as the lockfile spells it",
+                "the ecosystem has no lockfile"
+            ),
+            (
+                "required as the manifest spells it",
+                "the ecosystem has no manifest"
+            ),
+            (
+                "satisfied by the ecosystem's own ordering",
+                "the ecosystem has no manifest"
+            ),
+            (
+                "a version held, served",
+                "the ecosystem's clients read files"
+            ),
+            (
+                "a version lacked, asked of the core",
+                "the ecosystem's clients read files"
+            ),
+            (
+                "a refusal in the response",
+                "the ecosystem's clients read files"
+            ),
+            ("one base, two places", "the ecosystem's clients read files"),
+        ],
+        "{report}"
+    );
 }

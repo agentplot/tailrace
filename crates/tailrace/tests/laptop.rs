@@ -1,8 +1,10 @@
 //! Spec host-bindings: the laptop end to end, S1 and S2 played by the
 //! built binary bound by a bindings file, over a scratch repository that
-//! sluice gates and whose builds moon runs, then a second clone with a
-//! copy of the layout and no key verifying what the laptop published
-//! (S1, S2, 80, 118; design D8); and a laptop with nothing written, which
+//! sluice gates and whose builds moon runs, the landing pushed and then
+//! published as a landing host's driver runs them, its checks' archives
+//! where sluice's places leave them, then a second clone with a copy of
+//! the layout and no key verifying what the laptop published (S1, S2,
+//! 80, 118, 135; design D8); and a laptop with nothing written, which
 //! publishes with the key its first publish makes and, once its policy
 //! lists that key for provenance alone, accepts as one host and moves the
 //! given `beta` in the same run (95, 108, 118, C.10). The binary runs
@@ -22,7 +24,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use scratch::gate::{Gate, SIGNER};
+use scratch::gate::{link_outputs, Gate, LINK_OUTPUTS, SIGNER};
 use scratch::recorder::Recorder;
 use scratch::{
     git_command, moon_workspace, policy_file, ssh_keygen, Repo, Scratch, Task, POLICY_FILE,
@@ -184,7 +186,9 @@ struct Laptop {
 /// The repository's moon tasks, the image's archive and a policy file
 /// naming the outputs and their projections with `tables` after them,
 /// committed and pushed, and sluice gating `main` on both tasks, its
-/// landing's verdicts signed by `recorder`'s key for [`SIGNER`].
+/// landing's verdicts signed by `recorder`'s key for [`SIGNER`], and its
+/// places' moon outputs linked where the repository's own are, so the
+/// archives of a landing's checks are there to push (135).
 fn gated(scratch: &Scratch, recorder: &Recorder, tables: &str) -> Gate {
     let repo = &scratch.repo;
     // The shared history the version's name is claimed in (22).
@@ -219,7 +223,14 @@ fn gated(scratch: &Scratch, recorder: &Recorder, tables: &str) -> Gate {
     );
     repo.commit("feat: the notes and the image");
     repo.push();
-    Gate::new(scratch, recorder, &OUTPUTS.map(|(_, task, _)| task))
+    let gate = Gate::with_toolchain(
+        scratch,
+        recorder,
+        &OUTPUTS.map(|(_, task, _)| task),
+        &LINK_OUTPUTS,
+    );
+    link_outputs(&repo.path);
+    gate
 }
 
 impl Laptop {
@@ -266,6 +277,13 @@ impl Laptop {
         }
     }
 
+    /// The landing's cache entries pushed, as the driver runs it before
+    /// the publish (135).
+    fn push(&self) -> (Option<i32>, Value) {
+        self.host
+            .tailrace(&self.scratch.repo, &["push", &self.landed, "--json"])
+    }
+
     fn publish(&self) -> (Option<i32>, Value) {
         self.host
             .tailrace(&self.scratch.repo, &["publish", &self.landed, "--json"])
@@ -292,6 +310,11 @@ fn published(json: &Value) -> &Value {
 #[test]
 fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() {
     let laptop = Laptop::new();
+    let (code, pushed) = laptop.push();
+    assert_eq!(code, Some(0), "{pushed}");
+    let entries = pushed["value"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), OUTPUTS.len(), "{pushed}");
+    assert!(entries.iter().all(|e| e["answer"] == "ok"), "{pushed}");
 
     // S1: the landed revision offered, each artifact with its provenance
     // signed by the laptop and sluice's verdicts carried in it.
@@ -345,16 +368,29 @@ fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() 
             assert_eq!(carried.build.as_str(), artifact["build"].as_str().unwrap());
         }
     }
-    let named: Vec<String> =
+    let mut named: Vec<String> =
         serde_json::from_slice::<Value>(&fs::read(laptop.layout.join("index.json")).unwrap())
             .unwrap()["manifests"]
             .as_array()
             .unwrap()
             .iter()
             .filter_map(|m| m["annotations"]["org.opencontainers.image.ref.name"].as_str())
+            .filter(|name| !name.starts_with("cache/"))
             .map(str::to_string)
             .collect();
-    assert_eq!(named, ["v0.1.0"], "the layout names another ref, a channel");
+    named.sort();
+    // Each artifact's name and the version's, and no other ref, a
+    // channel's among them (138).
+    let mut made: Vec<String> = artifacts
+        .iter()
+        .map(|a| a["store_name"].as_str().unwrap().to_string())
+        .chain(std::iter::once("v0.1.0".to_string()))
+        .collect();
+    made.sort();
+    assert_eq!(
+        named, made,
+        "the layout names another ref than the push's entries, a channel"
+    );
 
     // The host's record names the store as the bindings file names it,
     // the layout's path with ~/ expanded (61, 118).
@@ -399,13 +435,16 @@ fn the_laptop_publishes_a_sluice_landing_and_a_second_machine_verifies_a_copy() 
     assert_eq!(verified["answer"], "ok", "{verified}");
     let value = &verified["value"];
     assert_eq!(value["index"], index.as_str());
+    // Each output's artifact and the notes, one provenance each.
+    let notes = version["notes"]["digest"].as_str().expect("the notes");
     let on: BTreeSet<&str> = artifacts
         .iter()
         .map(|a| a["digest"].as_str().unwrap())
+        .chain([notes])
         .collect();
     let told = value["claims"].as_array().unwrap();
     let provenances: Vec<&Value> = told.iter().filter(|t| t["kind"] == "provenance").collect();
-    assert_eq!(provenances.len(), artifacts.len(), "{verified}");
+    assert_eq!(provenances.len(), on.len(), "{verified}");
     for provenance in &provenances {
         assert!(
             on.contains(provenance["on"].as_str().unwrap()),
@@ -455,9 +494,12 @@ fn a_laptop_with_nothing_written_publishes_and_moves_beta_once_its_made_key_is_l
     let repo = &scratch.repo;
     assert_eq!(repo.git(&["remote"]), "origin");
 
-    // The first publish on the fresh laptop makes the layout and the key,
-    // both in the data directory, and nothing in the configuration's.
+    // The landing pushed and then published on the fresh laptop makes the
+    // layout and the key, both in the data directory, and nothing in the
+    // configuration's (135).
     let landed = gate.land("x", &[("notes/x.txt", "x")]);
+    let (code, pushed) = host.tailrace(repo, &["push", &landed, "--json"]);
+    assert_eq!(code, Some(0), "{pushed}");
     let (_, first) = host.tailrace(repo, &["publish", &landed, "--json"]);
     let version = published(&first);
     assert!(data.join("tailrace/layout/oci-layout").is_file(), "{first}");
@@ -500,6 +542,8 @@ fn a_laptop_with_nothing_written_publishes_and_moves_beta_once_its_made_key_is_l
             ("notes/moon.yml", notes.as_str()),
         ],
     );
+    let (code, pushed) = host.tailrace(repo, &["push", &landed, "--json"]);
+    assert_eq!(code, Some(0), "{pushed}");
     let (code, second) = host.tailrace(repo, &["publish", &landed, "--json"]);
     assert_eq!(code, Some(0), "{second}");
     let version = published(&second);

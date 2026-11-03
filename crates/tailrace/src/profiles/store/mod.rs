@@ -11,7 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use tailrace_seams::{
-    Answer, Digest, Envelope, Held, Manifest, Name, Not, Put, Seam, Source, Store,
+    Answer, Digest, Ecosystem, EcosystemName, Envelope, Held, Manifest, Name, Not, Put, Seam,
+    Source, Store, Version,
 };
 
 use crate::bindings::{self, Table};
@@ -61,6 +62,21 @@ pub fn given(file: &Path, xdg_data_home: Option<&OsStr>, home: Option<&Path>) ->
 /// operating system's words; `registry`, the repository it names, which
 /// no binding makes, whatever `make`; unreadable naming any other key.
 pub fn bind(table: &Table, make: bool) -> Answer<Box<dyn Store>> {
+    bind_for(table, make, None, false)
+}
+
+/// The store `[store]` names as [`bind`] binds it, bound for the build
+/// profile `build`, whose cache repository on a registry holds each cache
+/// entry, and, where `push`, putting bytes there too and nothing in the
+/// declared repository, since a push writes cache entries alone (52, 135,
+/// C.1, rule core.14; design D9). A layout holds every name as written,
+/// whatever it is bound for.
+pub fn bind_for(
+    table: &Table,
+    make: bool,
+    build: Option<&str>,
+    push: bool,
+) -> Answer<Box<dyn Store>> {
     match table.key() {
         "layout" => {
             let path = table.path()?;
@@ -72,7 +88,13 @@ pub fn bind(table: &Table, make: bool) -> Answer<Box<dyn Store>> {
             }
             Ok(Box::new(Layout::open(&path)?))
         }
-        "registry" => Ok(Box::new(registry(table)?)),
+        "registry" => {
+            let registry = registry(table)?;
+            Ok(Box::new(match build {
+                Some(build) => registry.bound_for(build, push),
+                None => registry,
+            }))
+        }
         _ => Err(table.unknown(&KEYS)),
     }
 }
@@ -153,6 +175,10 @@ impl Store for Unmade {
 
     fn read(&self, digest: &Digest) -> Answer<Held> {
         self.layout()?.read(digest)
+    }
+
+    fn versions(&self, ecosystem: &Ecosystem, name: &EcosystemName) -> Answer<Vec<Version>> {
+        self.layout()?.versions(ecosystem, name)
     }
 }
 

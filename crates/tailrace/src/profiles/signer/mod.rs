@@ -1,5 +1,6 @@
 //! The signer seam's profiles (B.4), the reading of the host's
-//! `[signing]`, and the binding of every signer profile (92; design D8).
+//! `[signing]`, the binding of every signer profile (92; design D8), and
+//! the host's own signer as the host trusts it for reading.
 
 pub mod host_key;
 pub mod kms;
@@ -11,7 +12,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use ssh_key::PublicKey;
-use tailrace_seams::{Answer, Not, Signer, SignerId};
+use tailrace_seams::{Answer, NamedSigner, Not, Signer, SignerId};
 
 use crate::bindings::{path_of, unreadable};
 use host_key::{public_half, HostKey};
@@ -245,4 +246,53 @@ pub fn bind(signing: Option<&Signing>) -> Vec<Box<dyn Signer>> {
             }
         })
         .collect()
+}
+
+/// The host's own signer, which the host trusts for reading, so it
+/// consumes what it published itself (118, C.10): the signer `[signing]`
+/// names, verified by what its profile verifies it by: a host key by its
+/// public half, the one line of the file beside the key ssh-keygen names
+/// `<key>.pub`, read now and never the key itself; a key in a key service
+/// by its key ARN, which is its name. None where the file names no
+/// `[signing]`. What it may claim is the reader's to say, claim by claim.
+/// Unreadable naming the public key file, in the operating system's or
+/// the parser's words, where it cannot be read or holds no OpenSSH public
+/// key line.
+pub fn own(signing: Option<&Signing>) -> Answer<Option<NamedSigner>> {
+    let (signer, key) = match signing {
+        Some(Signing::HostKey { signer, key }) => (signer, key),
+        Some(Signing::Kms(key)) => {
+            return Ok(Some(NamedSigner {
+                id: SignerId::new(key.as_str()),
+                verified_by: key.as_str().to_string(),
+                kinds: Vec::new(),
+                checks: Vec::new(),
+            }))
+        }
+        Some(Signing::Given { .. }) | None => return Ok(None),
+    };
+    let public = public_half(key);
+    let cannot = |said: String| {
+        Not::unreadable(
+            &HostKey::source(),
+            format!(
+                "the public key file {}, which the host's own signer {signer} is trusted by",
+                public.display(),
+            ),
+            Some(said),
+        )
+    };
+    let text = fs::read_to_string(&public).map_err(|e| cannot(e.to_string()))?;
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .ok_or_else(|| cannot(format!("{} holds no key line", public.display())))?;
+    PublicKey::from_openssh(line).map_err(|e| cannot(e.to_string()))?;
+    Ok(Some(NamedSigner {
+        id: signer.clone(),
+        verified_by: line.to_string(),
+        kinds: Vec::new(),
+        checks: Vec::new(),
+    }))
 }

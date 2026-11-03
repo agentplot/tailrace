@@ -2,7 +2,7 @@
 //! them (B.5).
 
 use tailrace_seams::{
-    Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
+    AskedOf, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
     HeldChannel, Moves, NamedSigner, Policy, Required, RequiredClaim, Revision, Seam, SignerId,
 };
 
@@ -119,18 +119,21 @@ fn named(id: &str, kinds: &[ClaimKind], checks: &[&str]) -> NamedSigner {
     }
 }
 
-/// A provenance from the host, and a verdict of `test` from the landing.
+/// A provenance from the host of every artifact, and a verdict of `test`
+/// from the landing of built artifacts alone (134).
 fn claims() -> Vec<RequiredClaim> {
     vec![
         RequiredClaim {
             kind: ClaimKind::Provenance,
             check: None,
             signers: vec![named("host", &[ClaimKind::Provenance], &[])],
+            asked_of: AskedOf::Every,
         },
         RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("test")),
             signers: vec![named("landing", &[ClaimKind::Verdict], &["test"])],
+            asked_of: AskedOf::Built,
         },
     ]
 }
@@ -207,11 +210,15 @@ fn no_policy_for_an_audience(rig: &dyn PolicyRig) {
         Required::Acceptance { claims: claims() },
     )]);
     // The policy's absence names the audience alone; the revision beside
-    // it is verify's to name (82).
+    // it is verify's to name (82). A channel, since a layout with no
+    // policy written has the given (C.10).
     absent(
-        rig.policy().policy_for(&at, &Audience::Layout),
+        rig.policy().policy_for(
+            &at,
+            &Audience::Channel(ChannelId::new(None, ChannelName::new("nightly"))),
+        ),
         Seam::Policy,
-        "layout",
+        "nightly",
         "policy-for an audience with no policy",
     );
 }

@@ -1,0 +1,10 @@
+agentplot/beta · main, as of 2026-10-26T07:35:00Z
+
+channels: refused — the landing (branch, origin) refused: not landed as fetched: branch main, revision eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee, fetched 2026-10-26T07:34:10Z
+  ssh: connect to host example.com port 22: Connection refused
+
+environments: absent — the target (unread) holds no environment of agentplot/beta
+
+published on this host: refused — the host (/srv/beta/.git/tailrace/published) refused: kept other: path app/1.0.0.json
+
+b back · r ask again · q close

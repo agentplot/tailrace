@@ -6,7 +6,8 @@
 //! requires, its promoters and who may ask for it; and beneath them each
 //! given held off, with how it would move and the line that switches it
 //! on, from the same channels answer (82, 131, 32, C.10; design D11,
-//! D13). It is bound as status is, to the landing and the policy, binds no
+//! D13). A claim asked of built artifacts alone is shown so (134). It is
+//! bound as status is, to the landing and the policy, binds no
 //! store and no signer, and writes nothing (60, rule core.32).
 
 use std::io::{self, Write};
@@ -15,7 +16,7 @@ use std::path::Path;
 use clap::Args;
 use tailrace_core::{in_force, ChannelInForce, History, InForce, InForceAsk};
 use tailrace_seams::{
-    Answer, Branch, HeldChannel, Moves, NamedSigner, Not, Required, RequiredClaim,
+    Answer, AskedOf, Branch, HeldChannel, Moves, NamedSigner, Not, Required, RequiredClaim,
 };
 
 use crate::{render, Binding};
@@ -151,15 +152,21 @@ fn channel(out: &mut dyn Write, channel: &ChannelInForce) -> io::Result<()> {
     }
 }
 
-/// One claim required: its kind, its check where it is a verdict, and
-/// the signers that may make it.
+/// One claim required: its kind, its check where it is a verdict, the
+/// signers that may make it, and that it is asked of built artifacts
+/// alone where the policy says so, nothing where it is asked of every
+/// artifact (134).
 fn claim(claim: &RequiredClaim) -> String {
     let check = claim
         .check
         .as_ref()
         .map_or_else(String::new, |c| format!(" of {c}"));
+    let asked = match claim.asked_of {
+        AskedOf::Every => "",
+        AskedOf::Built => ", of built artifacts alone",
+    };
     format!(
-        "{}{check} by {}",
+        "{}{check} by {}{asked}",
         claim.kind.name(),
         signers(&claim.signers)
     )

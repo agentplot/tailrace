@@ -78,7 +78,31 @@ impl Promotion {
 /// version's name, a component's prefix and a version, nor a cache
 /// entry's, `cache/` and a build identity, can be.
 pub fn channel_name(channel: &ChannelId) -> Name {
-    Name::new(format!("channel/{}", channel.spelled()))
+    Name::new(format!("{CHANNEL}{}", channel.spelled()))
+}
+
+/// What every channel's name in the store begins with (125, C.14).
+const CHANNEL: &str = "channel/";
+
+impl Name {
+    /// [`channel_name`] read back: after `channel/`, the component up to
+    /// the first `/` and the channel's name after it, or the channel's
+    /// name alone with no component where no `/` follows; none for a name
+    /// outside `channel/` or with a part empty (C.1; design D10).
+    pub fn as_channel(&self) -> Option<ChannelId> {
+        let rest = self.as_str().strip_prefix(CHANNEL)?;
+        let (component, name) = match rest.split_once('/') {
+            Some((component, name)) => (Some(component), name),
+            None => (None, rest),
+        };
+        if name.is_empty() || component.is_some_and(str::is_empty) {
+            return None;
+        }
+        Some(ChannelId::new(
+            component.map(ComponentName::new),
+            ChannelName::new(name),
+        ))
+    }
 }
 
 /// 121: a channel's promotion claims in order from the first, and how
@@ -213,6 +237,25 @@ mod tests {
             )),
             Name::new("channel/lib/stable")
         );
+    }
+
+    #[test]
+    fn a_channels_name_in_the_store_reads_back_to_the_channel() {
+        for channel in [
+            ChannelId::new(None, ChannelName::new("stable")),
+            ChannelId::new(Some(ComponentName::new("lib")), ChannelName::new("beta")),
+        ] {
+            assert_eq!(channel_name(&channel).as_channel(), Some(channel));
+        }
+        for name in [
+            "cache/x",
+            "channel/",
+            "channel/lib/",
+            "channel//beta",
+            "lib:beta",
+        ] {
+            assert_eq!(Name::new(name).as_channel(), None, "{name}");
+        }
     }
 
     #[test]

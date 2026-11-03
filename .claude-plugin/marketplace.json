@@ -1,0 +1,16 @@
+{
+  "name": "tailrace",
+  "owner": {
+    "name": "agentplot"
+  },
+  "metadata": {
+    "description": "Claude Code plugin for tailrace, which delivers what the merge queue lands."
+  },
+  "plugins": [
+    {
+      "name": "tailrace",
+      "source": "./plugins/claude-code",
+      "description": "Keep a session publishing a tailrace repository only through tailrace publish: an ecosystem's own publish command is refused."
+    }
+  ]
+}

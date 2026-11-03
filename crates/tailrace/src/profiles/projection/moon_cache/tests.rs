@@ -4,10 +4,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use tailrace_fakes::{FakeStore, StoreOp};
+use tailrace_fakes::{Alone, FakeStore, StoreOp};
 use tailrace_seams::{
     Artifact, ArtifactMeta, BuildId, CacheEntry, Contents, Digest, Ecosystem, EcosystemName, Holds,
-    Manifest, Not, Output, OutputName, Seam, Store, Version, Why,
+    Manifest, Not, Output, OutputName, Pinned, Seam, Store, Version, Why,
 };
 use tempfile::TempDir;
 
@@ -184,7 +184,7 @@ fn a_pack_at_a_version_and_a_render_of_artifacts_are_absent_and_read_nothing() {
     absent_naming_artifacts(projection.pack(
         &site(),
         &BuildId::new(B7E1),
-        Some(&Version::new("1.0.0")),
+        Some(&Alone::new(&site(), "1.0.0").at()),
     ));
     let meta = ArtifactMeta::new(
         Ecosystem::new("file"),
@@ -382,10 +382,66 @@ fn a_build_identity_with_a_path_in_it_refuses_the_render_and_nothing_is_written(
 }
 
 #[test]
-fn serve_is_absent() {
+fn serve_is_absent_naming_serving_and_asks_the_core_nothing() {
     let rig = Rig::new();
-    assert!(matches!(
-        rig.projection().serve(&Layout { at: "at".into() }),
-        Err(Not::Absent(_))
-    ));
+    let asked = std::cell::Cell::new(0);
+    for path in ["", "b7e1", "b7e1@1.4.0"] {
+        let request = Request {
+            method: "GET".into(),
+            path: path.into(),
+            base: "http://127.0.0.1:7420/o/r/moon-cache".into(),
+        };
+        let miss = |_: &Pinned| {
+            asked.set(asked.get() + 1);
+            Ok(())
+        };
+        assert_eq!(
+            rig.projection()
+                .serve(&Layout { at: "at".into() }, &request, &miss),
+            Err(Not::absent(&MoonCache::source(), "serving")),
+            "{path}"
+        );
+    }
+    assert_eq!(asked.get(), 0, "the core was asked for a version");
+}
+
+#[test]
+fn the_pins_of_a_checkout_are_absent_naming_the_lockfile() {
+    let rig = Rig::new();
+    let absent = Not::absent(&MoonCache::source(), "lockfile");
+    for checkout in [rig.checkout.clone(), rig.checkout.join("no checkout")] {
+        assert_eq!(
+            rig.projection().pinned(checkout.to_str().unwrap()),
+            Err(absent.clone()),
+            "the pins of {}",
+            checkout.display()
+        );
+    }
+    assert_eq!(files(&rig.checkout), [], "a file was written");
+}
+
+#[test]
+fn what_an_artifact_requires_and_which_versions_satisfy_a_range_are_none() {
+    let rig = Rig::new();
+    rig.left(B7E1, b"archive");
+    let store = FakeStore::new();
+    let projection = MoonCache::new(&rig.checkout, Box::new(store.clone()));
+    let held = Artifact {
+        digest: Digest::of(b"archive"),
+        meta: ArtifactMeta::new(
+            Ecosystem::new(ECOSYSTEM),
+            EcosystemName::new("site"),
+            Version::new("1.0.0"),
+        )
+        .unwrap(),
+    };
+    let before = files(&rig.checkout);
+    assert_eq!(projection.requires(&held), Ok(vec![]));
+    let versions = [Version::new("1.0.0"), Version::new("1.10.0")];
+    assert_eq!(
+        projection.satisfying(&Range::new("^1"), &versions),
+        Ok(vec![])
+    );
+    assert_eq!(store.calls(), [], "the store was read");
+    assert_eq!(files(&rig.checkout), before, "the checkout was written");
 }

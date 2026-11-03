@@ -9,12 +9,12 @@ use std::fs;
 use std::rc::Rc;
 
 use serde_json::json;
-use tailrace_core::{verify, Published, Told, Verified, VerifyAsk};
+use tailrace_core::{verify, Published, Told, Verified, VerifiedNotes, VerifyAsk, NOTES};
 use tailrace_fakes::{Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times};
 use tailrace_seams::{
-    Answer, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName, Envelope,
-    NamedSigner, Not, Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam,
-    SignerId, Store, Version, Why,
+    Answer, AskedOf, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
+    Digest, Envelope, Held, IndexMeta, Manifest, Name, NamedSigner, Not, Outcome, Policy,
+    PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store, Version, Why,
 };
 use world::{build_of, World, HOST, LANDING};
 
@@ -36,11 +36,13 @@ fn acceptance() -> Required {
                 kind: ClaimKind::Provenance,
                 check: None,
                 signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
+                asked_of: AskedOf::Every,
             },
             RequiredClaim {
                 kind: ClaimKind::Verdict,
                 check: Some(Check::new("test")),
                 signers: vec![named(LANDING, &[ClaimKind::Verdict], &["test"])],
+                asked_of: AskedOf::Every,
             },
         ],
     }
@@ -59,6 +61,7 @@ fn published() -> (World, Published) {
         .fakes
         .policy
         .require(Audience::Acceptance, acceptance());
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     (world, published)
 }
@@ -95,6 +98,45 @@ fn carried(verified: &Verified) -> Vec<&Told> {
 // Requirement: Verify resolves the version to its index first
 
 #[test]
+fn a_declared_components_version_is_verified_by_its_component_and_tag() {
+    let (world, published) = published();
+    let (_, index) = world::version_of(&published);
+    let before = world.fakes.store.calls().len();
+    let verified = verified(&world, &ask("0.2.0")).unwrap();
+    assert_eq!(&verified.index, index);
+    assert_eq!(
+        world::resolved_since(&world.fakes.store, before),
+        ["lib:lib-v0.2.0"]
+    );
+}
+
+#[test]
+fn an_undeclared_components_version_is_verified_by_its_bare_tag() {
+    let world = World::with_policy(world::UNDECLARED);
+    world
+        .fakes
+        .policy
+        .require(Audience::Acceptance, acceptance());
+    let published = world.publish_one(&world.ask()).unwrap();
+    let (_, index) = world::version_of(&published);
+    let before = world.fakes.store.calls().len();
+    let verified = verified(
+        &world,
+        &VerifyAsk {
+            component: None,
+            ..ask("0.1.0")
+        },
+    )
+    .unwrap();
+    assert_eq!(&verified.index, index);
+    assert_eq!(verified.tag, "v0.1.0");
+    assert_eq!(
+        world::resolved_since(&world.fakes.store, before),
+        ["v0.1.0"]
+    );
+}
+
+#[test]
 fn a_published_version_names_its_index_and_every_artifact() {
     let (world, published) = published();
     let Published::Version {
@@ -108,13 +150,17 @@ fn a_published_version_names_its_index_and_every_artifact() {
     assert_eq!(verified.tag, "lib-v0.2.0");
     assert_eq!(verified.revision, world.head);
     assert_eq!(
-        verified
-            .artifacts
+        verified.artifacts[..2]
             .iter()
             .map(|a| &a.digest)
             .collect::<Vec<_>>(),
         artifacts.iter().map(|a| &a.digest).collect::<Vec<_>>()
     );
+    let [.., notes] = verified.artifacts.as_slice() else {
+        unreachable!()
+    };
+    assert_eq!(verified.artifacts.len(), 3);
+    assert_eq!(notes.meta.ecosystem().as_str(), NOTES);
 }
 
 #[test]
@@ -247,9 +293,11 @@ fn a_channel_named_alone_is_the_versions_components() {
     )
     .unwrap();
     assert_eq!(verified.audience, Audience::Channel(libs.clone()));
+    // The publish asked the policy for a layout before verify asked.
     let asked = world.fakes.policy.calls();
     let policy_for = asked
         .iter()
+        .rev()
         .find(|c| c.op == PolicyOp::PolicyFor)
         .expect("the policy for the channel was asked");
     assert_eq!(
@@ -268,13 +316,17 @@ fn a_provenance_and_its_carried_verdicts_are_told_by_their_signers() {
     };
     let verified = verified(&world, &ask("0.2.0")).unwrap();
     let provenances = provenances(&verified);
-    assert_eq!(provenances.len(), 2);
+    assert_eq!(provenances.len(), 3, "two outputs' and the notes'");
     for (told, artifact) in provenances.iter().zip(artifacts) {
         assert_eq!(told.on, artifact.digest);
         assert_eq!(told.envelope, artifact.claims[0].envelope);
         assert_eq!(told.made_by, Some(SignerId::new(HOST)));
         assert!(told.counts && !told.expired);
     }
+    let notes = &provenances[2];
+    assert_eq!(notes.on, verified.artifacts[2].digest);
+    assert_eq!(notes.made_by, Some(SignerId::new(HOST)));
+    assert!(notes.counts && !notes.expired);
     let carried = carried(&verified);
     assert_eq!(carried.len(), 4);
     for told in &carried {
@@ -325,6 +377,7 @@ fn a_verdict_from_a_signer_the_policy_names_for_nothing_is_kept_and_not_counted(
         .fakes
         .policy
         .require(Audience::Acceptance, acceptance());
+    world.pushed(&["lib-pack", "lib-docs"]);
     let published = world.publish_one(&world.ask_for("lib")).unwrap();
     let Published::Version { artifacts, .. } = &published else {
         unreachable!()
@@ -413,6 +466,122 @@ fn a_changed_attestation_is_made_by_no_named_signer() {
     assert!(!told.counts);
 }
 
+// Requirement: Verify shows the notes the index names
+
+/// The digest of the notes' artifact `published`'s index names, and the
+/// text of the bytes the fake store holds under its one layer.
+fn notes_held(world: &World, published: &Published) -> (Digest, String) {
+    let Published::Version { index, .. } = published else {
+        unreachable!()
+    };
+    let held = world.fakes.store.contents().held;
+    let Held::Manifest(Manifest::Index(meta)) = &held[index] else {
+        panic!("no index under {index}")
+    };
+    let notes = meta
+        .artifacts()
+        .iter()
+        .find(|a| a.meta.ecosystem().as_str() == NOTES)
+        .expect("the index names notes");
+    let Held::Manifest(Manifest::Artifact { layers, .. }) = &held[&notes.digest] else {
+        panic!("no artifact under {}", notes.digest)
+    };
+    let Held::Bytes(bytes) = &held[&layers[0]] else {
+        panic!("no bytes under {}", layers[0])
+    };
+    (
+        notes.digest.clone(),
+        String::from_utf8(bytes.clone()).unwrap(),
+    )
+}
+
+#[test]
+fn a_published_versions_notes_are_shown_with_their_digest_and_their_claim_told() {
+    let (world, published) = published();
+    let (digest, text) = notes_held(&world, &published);
+    let verified = verified(&world, &ask("0.2.0")).unwrap();
+    assert_eq!(
+        verified.notes,
+        Some(Ok(VerifiedNotes {
+            digest: digest.clone(),
+            text: text.clone(),
+        }))
+    );
+    let on_notes: Vec<&Told> = verified.claims.iter().filter(|t| t.on == digest).collect();
+    assert_eq!(on_notes.len(), 1, "{on_notes:?}");
+    assert_eq!(on_notes[0].kind, Some(ClaimKind::Provenance));
+    assert_eq!(on_notes[0].made_by, Some(SignerId::new(HOST)));
+
+    let json = serde_json::to_value(&verified).unwrap();
+    assert_eq!(json["notes"]["answer"], "ok");
+    assert_eq!(json["notes"]["value"]["digest"], digest.as_str());
+    assert_eq!(json["notes"]["value"]["text"], text.as_str());
+}
+
+#[test]
+fn a_version_whose_index_names_no_notes_shows_none_and_tells_every_claim() {
+    let world = World::new();
+    world
+        .fakes
+        .policy
+        .require(Audience::Acceptance, acceptance());
+    world::published_before_notes(&world);
+    let verified = verified(&world, &ask("0.2.0")).unwrap();
+    assert_eq!(verified.notes, None);
+    assert_eq!(verified.artifacts.len(), 2);
+    let on: Vec<&Digest> = provenances(&verified).iter().map(|t| &t.on).collect();
+    assert_eq!(
+        on,
+        verified
+            .artifacts
+            .iter()
+            .map(|a| &a.digest)
+            .collect::<Vec<_>>()
+    );
+    let json = serde_json::to_value(&verified).unwrap();
+    assert!(json.get("notes").is_none(), "{json}");
+}
+
+#[test]
+fn notes_whose_bytes_are_not_text_are_unreadable_naming_the_digest() {
+    let (world, published) = published();
+    let Published::Version { index, .. } = &published else {
+        unreachable!()
+    };
+    let store = &world.fakes.store;
+    let Held::Manifest(Manifest::Index(meta)) = store.read(index).unwrap() else {
+        panic!("no index under {index}")
+    };
+    // The name moved to an index whose notes are bytes that are not text.
+    let bytes = store.put_bytes(&[0xff, 0xfe, 0x00]).unwrap().digest;
+    let mut artifacts = meta.artifacts().to_vec();
+    let last = artifacts.last_mut().unwrap();
+    last.digest = store
+        .put_artifact(&Manifest::Artifact {
+            meta: last.meta.clone(),
+            layers: vec![bytes.clone()],
+        })
+        .unwrap()
+        .digest;
+    let notes = last.digest.clone();
+    let other =
+        IndexMeta::new(meta.component().clone(), meta.version().clone(), artifacts).unwrap();
+    let other = store.put_artifact(&Manifest::Index(other)).unwrap().digest;
+    store
+        .name(&Name::new("lib:lib-v0.2.0"), &other, Some(index))
+        .unwrap();
+
+    let verified = verified(&world, &ask("0.2.0")).unwrap();
+    assert_eq!(verified.index, other);
+    let Some(Err(Not::Unreadable(u))) = &verified.notes else {
+        panic!("bytes that are not text were shown: {:?}", verified.notes)
+    };
+    assert!(u.what.contains(notes.as_str()), "{u:?}");
+    assert!(u.said.as_deref().unwrap().contains(bytes.as_str()), "{u:?}");
+    let json = serde_json::to_value(&verified).unwrap();
+    assert_eq!(json["notes"]["answer"], "unreadable");
+}
+
 // Requirement: A failed read is not an empty answer
 
 #[test]
@@ -447,7 +616,12 @@ fn a_verify_puts_attaches_names_signs_and_records_nothing() {
         .collect();
     let tags = world.repo.git(&["tag", "-l"]);
 
-    verified(&world, &ask("0.2.0")).unwrap();
+    let verified = verified(&world, &ask("0.2.0")).unwrap();
+    assert!(
+        matches!(verified.notes, Some(Ok(_))),
+        "{:?}",
+        verified.notes
+    );
     for call in &world.fakes.store.calls()[store..] {
         assert!(
             matches!(

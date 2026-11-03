@@ -1,16 +1,26 @@
-//! The publish group: a landed revision offered as a version, S1 and S2,
-//! and what publish refuses (2 to 20, 102, 110, 111); and, below the
-//! marker, a landing read from its copy as last fetched, a no refused
-//! saying when and a yes published as from the remote (14, 59, 77).
+//! The publish group: a landed revision offered as a version with its
+//! notes, S1 and S2, its outputs read from the store's cache entries
+//! where the landing carries verdicts, and what publish refuses (2 to 22,
+//! 52, 58, 102, 110, 111, 134); and, below the marker, a landing read from
+//! its copy as last fetched, a no refused saying when and a yes published
+//! as from the remote (14, 59, 77).
 
-use tailrace_core::{answer_json, publish, Provenance, Publish, Published};
-use tailrace_fakes::{FakeStore, PROFILE};
+use std::cell::RefCell;
+use std::rc::Rc;
+
+use tailrace_core::{
+    answer_json, layout_policy_body, publish, Provenance, Publish, Published, CACHE, NOTES,
+};
+use tailrace_fakes::{FakeBuild, FakeStore, PROFILE};
 use tailrace_seams::{
-    Answer, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Digest, Ecosystem,
-    EcosystemName, Envelope, Held, Manifest, Name, Not, Outcome, Put, Required, Revision, Seam,
-    Source, Store, Verdict, Version, Why,
+    Answer, Artifact, AskedOf, Audience, BuildId, ChannelId, ChannelName, Claim, ClaimKind,
+    Contents, Digest, Ecosystem, EcosystemName, Envelope, Held, Layout, Manifest, Miss, Name,
+    NamedSigner, Not, Outcome, Output, OutputName, PackAt, Packed, Pin, Projection, Put, Range,
+    Rendered, Request, Required, RequiredClaim, Requirement, Response, Revision, Seam, Source,
+    Store, Verdict, Version, Why,
 };
 
+use crate::fixture::DATE;
 use crate::world::{build_of, FakeWorld, Write, FILE, IMAGE, LANDING};
 use crate::{ok, Scenario};
 
@@ -21,13 +31,13 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         Scenario {
             name: "a landed revision published",
             plays: Some("S1"),
-            cites: &[6, 7, 11, 12, 13, 17, 19, 20, 22, 110],
+            cites: &[6, 7, 11, 12, 13, 17, 19, 20, 21, 22, 110, 134, 138],
             run: a_landed_revision_published,
         },
         Scenario {
             name: "the same revision again",
             plays: Some("S2"),
-            cites: &[3, 5, 18],
+            cites: &[3, 5, 18, 134],
             run: the_same_revision_again,
         },
         Scenario {
@@ -80,6 +90,18 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         },
         // Below this line a later unit adds its scenarios; nothing above it changes.
         Scenario {
+            name: "S1 with the outputs read from the cache",
+            plays: None,
+            cites: &[15, 16, 52],
+            run: s1_with_the_outputs_read_from_the_cache,
+        },
+        Scenario {
+            name: "an entry missing from the store",
+            plays: None,
+            cites: &[15, 16, 58],
+            run: an_entry_missing_from_the_store,
+        },
+        Scenario {
             name: "a revision not landed as last fetched",
             plays: None,
             cites: &[14, 59, 77],
@@ -102,8 +124,18 @@ pub(crate) const VERSION: &str = "0.2.0";
 pub(crate) const TAG: &str = "v0.2.0";
 
 /// `revision` landed with a passing verdict of `test` naming each
-/// output's build, and each output built and passing; the verdicts.
+/// output's build, each output built and passing, and each build's cache
+/// entry pushed before the landing, as a publish of it reads them (135);
+/// the verdicts.
 pub(crate) fn passing(world: &FakeWorld, revision: &Revision) -> Vec<Verdict> {
+    let verdicts = landed(world, revision);
+    world.pushed(&verdicts);
+    verdicts
+}
+
+/// `revision` landed as [`passing`] lands it, with no cache entry pushed;
+/// the verdicts.
+pub(crate) fn landed(world: &FakeWorld, revision: &Revision) -> Vec<Verdict> {
     let verdicts: Vec<Verdict> = OUTPUTS
         .iter()
         .map(|o| {
@@ -176,6 +208,28 @@ fn nothing_offered(world: &FakeWorld, case: &str) {
 
 fn a_landed_revision_published(world: &FakeWorld) {
     let verdicts = passing(world, &world.head);
+    // The file writes a policy for layouts, which the index carries before
+    // anything names it (113, 138).
+    let required = vec![RequiredClaim {
+        kind: ClaimKind::Provenance,
+        check: None,
+        signers: vec![NamedSigner {
+            id: world.host.clone(),
+            verified_by: "the host's key".into(),
+            kinds: vec![ClaimKind::Provenance],
+            checks: vec![],
+        }],
+        asked_of: AskedOf::Every,
+    }];
+    world.fakes.policy.require_at(
+        &world.head,
+        Audience::Layout,
+        Required::Layout {
+            claims: required.clone(),
+            given: false,
+            signers: vec![],
+        },
+    );
     let published = ok(one(world.publish(&world.ask(&world.head))), "the publish");
     let Published::Version {
         component,
@@ -184,6 +238,7 @@ fn a_landed_revision_published(world: &FakeWorld) {
         revision,
         index,
         artifacts,
+        notes,
         ..
     } = &published
     else {
@@ -195,16 +250,27 @@ fn a_landed_revision_published(world: &FakeWorld) {
         "the version is not the one history derives"
     );
     assert_eq!(revision, &world.head);
+    let notes = notes.as_ref().expect("the publish answered no notes");
 
     // 6, 110: the index names the version's artifacts, each at its one
-    // version.
+    // version, the notes last.
     let store = &world.fakes.store;
     let Ok(Held::Manifest(Manifest::Index(meta))) = store.read(index) else {
         panic!("{index} holds no index")
     };
     assert_eq!((meta.component(), meta.version()), (component, version));
+    // 13, 138: the index names the revision it was published from.
+    assert_eq!(
+        meta.revision(),
+        Some(&world.head),
+        "the index names no revision"
+    );
     let named: Vec<&Digest> = meta.artifacts().iter().map(|a| &a.digest).collect();
-    let answered: Vec<&Digest> = artifacts.iter().map(|a| &a.digest).collect();
+    let answered: Vec<&Digest> = artifacts
+        .iter()
+        .map(|a| &a.digest)
+        .chain(std::iter::once(&notes.digest))
+        .collect();
     assert_eq!(named, answered, "the index names other artifacts");
     let mut ecosystems: Vec<&str> = meta
         .artifacts()
@@ -215,10 +281,45 @@ fn a_landed_revision_published(world: &FakeWorld) {
         })
         .collect();
     ecosystems.sort_unstable();
-    assert_eq!(ecosystems, [FILE, IMAGE], "two packages, one per ecosystem");
+    assert_eq!(
+        ecosystems,
+        [FILE, IMAGE, NOTES],
+        "two packages, one per ecosystem, and the notes"
+    );
 
-    // 17: every artifact and its claims before the index, the index
-    // before the name.
+    // 6, 21: the notes, an artifact named by the component, whose one
+    // layer is the notes rendered from the commits since the last release
+    // the version is derived from: the head's feature.
+    let held = &meta.artifacts()[2];
+    assert_eq!(held.meta.name().as_str(), component.as_str());
+    let Ok(Held::Manifest(Manifest::Artifact { layers, .. })) = store.read(&notes.digest) else {
+        panic!("{} holds no artifact", notes.digest)
+    };
+    assert_eq!(
+        layers,
+        std::slice::from_ref(&notes.bytes),
+        "the notes hold other bytes"
+    );
+    let Ok(Held::Bytes(bytes)) = store.read(&notes.bytes) else {
+        panic!("{} holds no bytes", notes.bytes)
+    };
+    assert_eq!(
+        bytes,
+        notes.text.as_bytes(),
+        "the answer's notes are not the bytes the store holds"
+    );
+    // The repository keeps no template, so git-cliff's own default
+    // renders them, dated the day of the tagged revision.
+    let day = &DATE[..10];
+    assert_eq!(
+        notes.text,
+        format!("## [{VERSION}] - {day}\n\n### 🚀 Features\n\n- The server answers\n"),
+        "the notes are not the commits the version is derived from"
+    );
+
+    // 17, 138: every artifact and its claims before the index, then the
+    // layout policy on it, then the names: each artifact's by its
+    // ecosystem, name and version, then the version's.
     let writes = world.writes();
     let indexes: Vec<usize> = (0..writes.len())
         .filter(|i| writes[*i].is_index())
@@ -235,8 +336,8 @@ fn a_landed_revision_published(world: &FakeWorld) {
             .iter()
             .filter(|w| matches!(w, Write::Attach { .. }))
             .count(),
-        2,
-        "the index was put before every artifact's claim: {writes:?}"
+        3,
+        "the index was put before every artifact's claim and the notes': {writes:?}"
     );
     assert!(
         writes[..at]
@@ -244,14 +345,40 @@ fn a_landed_revision_published(world: &FakeWorld) {
             .all(|w| !matches!(w, Write::Name { .. })),
         "a name was moved before the index was put: {writes:?}"
     );
+    let Some(Write::Attach { subject, envelope }) = writes.get(at + 1) else {
+        panic!("the layout policy was not attached next to the index: {writes:?}")
+    };
+    let policy = Claim::from_envelope(envelope).expect("a claim of tailrace's form");
     assert_eq!(
-        &writes[at + 1..],
-        [Write::Name {
-            name: Name::new(TAG),
+        (subject, policy.kind, &policy.body),
+        (
+            index,
+            ClaimKind::LayoutPolicy,
+            &layout_policy_body(&required)
+        ),
+        "another claim was attached next to the index"
+    );
+    let made: Vec<Write> = artifacts
+        .iter()
+        .map(|a| {
+            assert_eq!(
+                a.store_name,
+                tailrace_seams::artifact_name(&a.ecosystem, &a.name, version),
+                "an artifact's name is spelled otherwise"
+            );
+            a.store_name.clone()
+        })
+        .chain(std::iter::once(Name::new(TAG)))
+        .map(|name| Write::Name {
+            name,
             to: index.clone(),
             expected: None,
-        }],
-        "after the index, the version's name was not made from nothing at it, alone"
+        })
+        .collect();
+    assert_eq!(
+        &writes[at + 2..],
+        made,
+        "after the layout policy, each artifact's name and then the version's were not made from nothing at the index, alone"
     );
 
     // 7, 11 to 13: one provenance per artifact, in the host's identity,
@@ -289,10 +416,31 @@ fn a_landed_revision_published(world: &FakeWorld) {
         assert_eq!(artifact.claims[0].on, artifact.digest);
         assert_eq!(artifact.claims[0].envelope, envelope.digest());
     }
+
+    // 11, 13: the notes' one provenance, in the host's identity, about the
+    // notes, naming the revision and no build, carrying no verdict.
+    let held = ok(store.claims_of(&notes.digest), "claims-of the notes");
+    assert_eq!(held.len(), 1, "the notes carry {held:?}");
+    assert_eq!(held[0].sole().map(|s| &s.signer), Some(&world.host));
+    let claim = Claim::from_envelope(&held[0]).expect("a claim of tailrace's form");
+    assert_eq!(
+        (claim.kind, &claim.subject, &claim.revision, &claim.build),
+        (ClaimKind::Provenance, &notes.digest, &world.head, &None),
+        "the notes' claim is another"
+    );
+    assert_eq!(Provenance::of(&claim), None, "the notes carry a verdict");
+    assert_eq!(
+        claim.body["notes"]["commits"],
+        serde_json::json!([world.head.as_str()]),
+        "the notes' claim names other commits"
+    );
+    assert_eq!(notes.claims.len(), 1);
+    assert_eq!(notes.claims[0].envelope, held[0].digest());
     for call in world.fakes.signer.calls() {
-        assert_eq!(
-            call.given["claim"]["kind"], "provenance",
-            "the host signed a claim not its own to make"
+        let kind = &call.given["claim"]["kind"];
+        assert!(
+            kind == "provenance" || kind == "layout_policy",
+            "the host signed a claim not its own to make: {kind}"
         );
     }
 
@@ -322,6 +470,12 @@ fn a_landed_revision_published(world: &FakeWorld) {
         assert_eq!(answered["name"], artifact.name.as_str());
         assert_eq!(answered["claims"][0]["on"], artifact.digest.as_str());
     }
+    assert_eq!(value["notes"]["digest"], notes.digest.as_str());
+    assert_eq!(value["notes"]["text"], notes.text.as_str());
+    assert_eq!(
+        value["notes"]["claims"][0]["envelope"],
+        notes.claims[0].envelope.as_str()
+    );
 
     // 6: the host keeps the index and nothing it names.
     for (path, bytes, _) in world.record() {
@@ -331,13 +485,22 @@ fn a_landed_revision_published(world: &FakeWorld) {
             "{} names no index",
             path.display()
         );
-        for artifact in artifacts {
+        for digest in artifacts
+            .iter()
+            .map(|a| &a.digest)
+            .chain([&notes.digest, &notes.bytes])
+        {
             assert!(
-                !text.contains(artifact.digest.as_str()),
+                !text.contains(digest.as_str()),
                 "{} keeps an artifact apart from the index",
                 path.display()
             );
         }
+        assert!(
+            !text.contains("the server answers"),
+            "{} keeps the notes' text",
+            path.display()
+        );
     }
 
     // 20: nothing else moved.
@@ -357,6 +520,15 @@ fn the_same_revision_again(world: &FakeWorld) {
 
     let second = ok(world.publish(&ask), "the second publish");
     assert_eq!(second, first, "the second publish answered otherwise");
+    let notes = |p: &Publish| match p.components[0].1.as_ref() {
+        Ok(Published::Version { notes, .. }) => notes.clone(),
+        other => panic!("not published: {other:?}"),
+    };
+    assert!(
+        notes(&first).is_some(),
+        "the first publish carried no notes"
+    );
+    assert_eq!(notes(&second), notes(&first), "the notes changed");
     assert_eq!(
         &world.writes()[writes..],
         [],
@@ -370,10 +542,20 @@ fn the_same_revision_again(world: &FakeWorld) {
     );
     assert_eq!(world.record(), record, "the host's record changed");
 
-    // 3: the name resolved first, and every read of the digest it named
-    // or of the digests that index names.
+    // 3: the name resolved first, past the landing's cache entries the
+    // repeat renders again, and every read of the digest it named or of
+    // the digests that index names.
     let (_, index) = version_of(first.components[0].1.as_ref().expect("published"));
-    let calls = &world.fakes.store.calls()[asked..];
+    let calls: Vec<_> = world.fakes.store.calls()[asked..]
+        .iter()
+        .filter(|c| {
+            c.op != tailrace_fakes::StoreOp::Resolve
+                || !c.given["name"]
+                    .as_str()
+                    .is_some_and(|n| n.starts_with(CACHE))
+        })
+        .cloned()
+        .collect();
     assert_eq!(calls[0].op, tailrace_fakes::StoreOp::Resolve, "{calls:?}");
     assert_eq!(calls[0].given["name"], TAG);
     let Ok(Held::Manifest(Manifest::Index(meta))) = world.fakes.store.read(index) else {
@@ -599,6 +781,13 @@ macro_rules! delegate {
             fn read(&self, digest: &Digest) -> Answer<Held> {
                 self.0.read(digest)
             }
+            fn versions(
+                &self,
+                ecosystem: &tailrace_seams::Ecosystem,
+                name: &tailrace_seams::EcosystemName,
+            ) -> Answer<Vec<tailrace_seams::Version>> {
+                self.0.versions(ecosystem, name)
+            }
         }
     };
 }
@@ -673,6 +862,7 @@ fn a_publish_that_stops_before_its_index(world: &FakeWorld) {
 
 fn a_store_that_names_bytes_wrongly(world: &FakeWorld) {
     passing(world, &world.head);
+    let names = world.fakes.store.contents().names;
     let answer = over(world, Box::new(Misnaming(world.fakes.store.clone())));
     let r = refused(answer, "a publish to a store that names bytes wrongly");
     let Some(Write::Bytes(expected)) = world.writes().into_iter().next() else {
@@ -690,10 +880,7 @@ fn a_store_that_names_bytes_wrongly(world: &FakeWorld) {
         !world.writes().iter().any(Write::is_index),
         "an index was put"
     );
-    assert!(
-        world.fakes.store.contents().names.is_empty(),
-        "a name moved"
-    );
+    assert_eq!(world.fakes.store.contents().names, names, "a name moved");
 }
 
 fn a_repeat_that_packs_differently(world: &FakeWorld) {
@@ -784,7 +971,11 @@ fn attestations_beside_their_digest(world: &FakeWorld) {
         .filter_map(|c| c.answer.ok())
         .map(|e| serde_json::from_value(e).expect("an envelope"))
         .collect();
-    assert_eq!(signed.len(), 2, "one claim per artifact");
+    assert_eq!(
+        signed.len(),
+        3,
+        "one claim per artifact, the notes among them"
+    );
     for envelope in &signed {
         let subject = Claim::from_envelope(envelope)
             .expect("a claim of tailrace's form")
@@ -813,6 +1004,134 @@ fn attestations_beside_their_digest(world: &FakeWorld) {
             );
         }
     }
+}
+
+/// A projection over another that, at each render of cache entries,
+/// keeps the build identities rendered and how many operations the build
+/// had been asked by then.
+struct Filling {
+    inner: Box<dyn Projection>,
+    build: FakeBuild,
+    seen: Rc<RefCell<Vec<(Vec<BuildId>, usize)>>>,
+}
+
+impl Projection for Filling {
+    fn pack(&self, output: &Output, at: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
+        self.inner.pack(output, at, version)
+    }
+
+    fn render(&self, contents: Contents<'_>, at: &str) -> Answer<Rendered> {
+        if let Contents::CacheEntries(entries) = contents {
+            let builds = entries.iter().map(|e| e.build.clone()).collect();
+            self.seen
+                .borrow_mut()
+                .push((builds, self.build.calls().len()));
+        }
+        self.inner.render(contents, at)
+    }
+
+    fn serve(&self, layout: &Layout, request: &Request, miss: Miss<'_>) -> Answer<Response> {
+        self.inner.serve(layout, request, miss)
+    }
+
+    fn pinned(&self, checkout: &str) -> Answer<Vec<Pin>> {
+        self.inner.pinned(checkout)
+    }
+
+    fn requires(&self, held: &Artifact) -> Answer<Vec<Requirement>> {
+        self.inner.requires(held)
+    }
+
+    fn satisfying(&self, range: &Range, versions: &[Version]) -> Answer<Vec<Version>> {
+        self.inner.satisfying(range, versions)
+    }
+}
+
+fn s1_with_the_outputs_read_from_the_cache(world: &FakeWorld) {
+    passing(world, &world.head);
+    let seen = Rc::new(RefCell::new(Vec::new()));
+    let mut seams = world.seams();
+    for ecosystem in world.fakes.projections.keys() {
+        let inner = seams
+            .projections
+            .remove(ecosystem)
+            .expect("the world binds each ecosystem");
+        seams.projections.insert(
+            ecosystem.clone(),
+            Box::new(Filling {
+                inner,
+                build: world.fakes.build.clone(),
+                seen: seen.clone(),
+            }),
+        );
+    }
+    let (history, kept) = (world.history(), world.kept());
+    let published = ok(
+        one(publish(&seams, &history, &kept, &world.ask(&world.head))),
+        "the publish",
+    );
+
+    // 52: every passing verdict's entry rendered by every projection,
+    // each before the build was asked anything.
+    let mut rendered: Vec<BuildId> = Vec::new();
+    for (builds, asked) in seen.borrow().iter() {
+        assert_eq!(
+            *asked, 0,
+            "{builds:?} was rendered after the build was asked"
+        );
+        rendered.extend(builds.iter().cloned());
+    }
+    rendered.sort();
+    let mut expected: Vec<BuildId> = Vec::new();
+    for _ in world.fakes.projections.keys() {
+        expected.extend(OUTPUTS.iter().map(|o| build_of(o, &world.head)));
+    }
+    expected.sort();
+    assert_eq!(
+        rendered, expected,
+        "the entries rendered are not the landing's passing builds, once per projection"
+    );
+
+    // 15, 16, S1: the version offered, and the answer naming every digest.
+    let (version, index) = version_of(&published);
+    assert_eq!(version.as_str(), VERSION);
+    let Published::Version { artifacts, .. } = &published else {
+        unreachable!()
+    };
+    assert_eq!(artifacts.len(), OUTPUTS.len(), "{artifacts:?}");
+    let json = answer_json(&Ok::<_, Not>(published.clone()));
+    assert_eq!(json["value"]["index"], index.as_str());
+    for (i, artifact) in artifacts.iter().enumerate() {
+        assert_eq!(
+            json["value"]["artifacts"][i]["digest"],
+            artifact.digest.as_str()
+        );
+    }
+}
+
+fn an_entry_missing_from_the_store(world: &FakeWorld) {
+    let verdicts = landed(world, &world.head);
+    let site = build_of("site", &world.head);
+    let held: Vec<Verdict> = verdicts
+        .iter()
+        .filter(|v| v.build == site)
+        .cloned()
+        .collect();
+    world.pushed(&held);
+    let r = refused(
+        one(world.publish(&world.ask(&world.head))),
+        "a publish whose entry the store lacks",
+    );
+    assert_eq!(
+        r.why,
+        Why::NotInStore {
+            output: OutputName::new("server"),
+            build: build_of("server", &world.head),
+        },
+        "the refusal names another output or build"
+    );
+    assert_eq!(r.source.seam, Seam::Store);
+    nothing_offered(world, "an entry missing from the store");
 }
 
 /// The landing's remote's words, once the world's landing is cut off.

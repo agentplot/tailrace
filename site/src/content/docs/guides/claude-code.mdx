@@ -61,10 +61,16 @@ proved by one real publish before the session ends.
 
 In a repository with a `.config/tailrace.toml`, Claude:
 
-- never runs `npm publish`, `mvn deploy`, `uv publish`, `cargo publish` or
-  `docker push`. A hook refuses each and names `tailrace publish`, which
-  is the only way bytes leave the repository, and only for a revision
-  sluice has landed.
+- never runs an ecosystem's own publish command: for npm, `npm publish`,
+  `pnpm publish`, `yarn publish`, `yarn npm publish` or `bun publish`; for
+  Cargo, `cargo publish`; for Maven, `mvn deploy` or `gradle publish`, and
+  their `mvnw` and `gradlew` wrappers; for Python, `uv publish`,
+  `poetry publish`, `hatch publish`, `flit publish` or `twine upload`; for
+  NuGet, `dotnet nuget push` or `nuget push`; for an image, `docker push`
+  or `podman push`. A hook refuses each and names `tailrace publish`,
+  which is the only way bytes leave the repository, and only for a
+  revision sluice has landed. The hook reads only whether the
+  repository's HEAD holds `.config/tailrace.toml`, never the file itself.
 - reads the publish's answer after its submission lands: the version, the
   index digest, each artifact's digest, and which claims were attached.
   The answer is JSON, so the agent quotes digests rather than guessing

@@ -69,16 +69,29 @@ acceptance and layout tables SHALL name no channel.
 ### Requirement: An audience with no table is absent
 
 Where the revision holds no policy file, or its file holds no table for
-the audience asked, the answer SHALL be absent naming the audience (82,
-58), except for a channel the givens declare, a held one the
-repository has switched on, or one an environment's words make, whose
-policy SHALL be answered as given (C.10). A file that cannot be
-read or parsed SHALL be unreadable naming the file and the revision,
-with git's or the parser's own words (59).
+acceptance or for a channel asked, the answer SHALL be absent naming
+the audience (82, 58), except for a channel the givens declare, a held
+one the repository has switched on, or one an environment's words make,
+whose policy SHALL be answered as given (C.10); where the revision holds
+no policy file, the answer for a layout SHALL be absent naming it, and
+where its file holds no `[layout]`, the answer for a layout SHALL be the
+given policy for a layout (C.10). A file that cannot be read or parsed
+SHALL be unreadable naming the file and the revision, with git's or the
+parser's own words (59).
 
 #### Scenario: No layout policy
 
 - **WHEN** the file holds `[acceptance]` and no `[layout]`
+- **THEN** the policy for a layout is the given one, marked as given, never absent
+
+#### Scenario: No policy for a channel
+
+- **WHEN** the file holds `[acceptance]` and no `[channels.nightly]`
+- **THEN** the policy for the channel `nightly` is absent, naming the audience
+
+#### Scenario: No policy file
+
+- **WHEN** the revision's tree holds no `.config/tailrace.toml`
 - **THEN** the policy for a layout is absent, naming the audience
 
 #### Scenario: A malformed file
@@ -106,6 +119,55 @@ group asks for (93, core.33).
 
 - **WHEN** the policy group runs against the profile over a scratch repository
 - **THEN** every scenario of the group passes
+
+### Requirement: The given policy for a layout admits what the gate accepted
+
+A file with no `[layout]` SHALL answer for a layout, marked as given,
+one required claim: acceptance, by every signer its `[signers]` lets
+claim acceptance, in the file's order, and by no signer where it names
+none that may (C.10). The one host 108 admits as the gate SHALL be the
+gate for publishing, not reading: the given SHALL never name a signer
+the file lets claim provenance alone, and its reader reads a claim it
+names no signer for through its host's trusted signers (118).
+
+#### Scenario: A gate named
+
+- **WHEN** the file names `[signers.gate]` with `kinds = ["acceptance"]` and `[signers.laptop]` with `kinds = ["provenance"]`, and no `[layout]`
+- **THEN** the policy for a layout requires acceptance by `gate` alone, verified by the key `[signers.gate]` names
+
+#### Scenario: One publisher and no gate
+
+- **WHEN** the file names one signer, `laptop`, with `kinds = ["provenance"]`, and no `[layout]`
+- **THEN** the policy for a layout requires acceptance naming no signer, marked as given, and never names `laptop` for it
+
+#### Scenario: Several publishers and no gate
+
+- **WHEN** the file names two signers that may claim provenance, none that may claim acceptance, and no `[layout]`
+- **THEN** the policy for a layout requires acceptance naming no signer, marked as given, never absent and never unreadable
+
+### Requirement: The given names no signer, and a written line stands alone
+
+The given SHALL name no signer of its own: its gate is read from the
+file alone (116, C.10). A file's own `[layout]` SHALL be answered as
+written, not marked as given, with nothing of the given laid beneath it.
+
+#### Scenario: A layout line written
+
+- **WHEN** the file's `[layout]` requires provenance from `laptop`
+- **THEN** the policy for a layout requires that provenance alone, and no acceptance, and is not marked as given
+
+### Requirement: The policy for a layout carries the file's signers
+
+The policy for a layout, given or written, SHALL carry every signer
+`[signers]` names, in the file's order, each with what it may claim, so
+a consumer reads each claim through its file's signers alone where the
+file names one for it, and through its host's trusted signers only
+where the file names none (C.10, 118).
+
+#### Scenario: The signers carried
+
+- **WHEN** the file names `[signers.gate]` with `kinds = ["acceptance"]` and `[signers.curator]` with `kinds = ["layout_policy"]`, with or without a `[layout]`
+- **THEN** the policy for a layout carries `gate` then `curator`, each with its verifier and the kinds the file lets it claim
 
 ### Requirement: A channel's table names its component
 
@@ -409,7 +471,8 @@ off.
 Where `[signers]` at the revision asked names no signer that may claim
 `acceptance` and exactly one that may claim `provenance`, the profile
 SHALL answer that signer as one that may claim `acceptance` too, in
-every audience's claims: the repository's gate, and the promoter of its
+every audience's claims but a layout's, whose given gate is for
+publishing, not reading: the repository's gate, and the promoter of its
 given and made channels, as the one host 108 admits (118, C.10). It
 SHALL answer a file that names a signer that may claim `acceptance`, or
 none that may claim `provenance`, as written, and write nothing into any
@@ -455,3 +518,38 @@ SHALL still be listed.
 
 - **WHEN** that file also has a `[layout]` table and `[channels.edge]` declared by hand
 - **THEN** the policy for `[layout]` and for `edge` are answered as written, and the channels listed are `beta`, `edge` and `stable`
+
+### Requirement: Each required claim is answered with the artifacts it is asked of
+
+The profile SHALL answer each claim `[acceptance]` or a channel requires
+with the artifacts it is asked of, read from its kind alone: a
+provenance, an acceptance and a promotion of every artifact (7, 134); a
+verdict, a test, a review, a rebuild and a carried claim of a built
+artifact alone, since a rendered artifact has no build (134). The file
+SHALL gain no key for it, and `[layout]`'s claims SHALL be asked of
+every artifact.
+
+#### Scenario: Acceptance requires two claims of two kinds
+
+- **WHEN** `[acceptance]` requires provenance from `laptop`, then a verdict of the check `cli:test` from `box`
+- **THEN** the acceptance policy answers the provenance asked of every artifact and the verdict asked of built artifacts alone, in that order
+
+#### Scenario: A given channel's line
+
+- **WHEN** `[channels.stable]` requires a rebuild from `box`
+- **THEN** the policy for `stable` answers the gate's acceptance asked of every artifact, then the rebuild asked of built artifacts alone
+
+#### Scenario: The one host's own given acceptance
+
+- **WHEN** `[signers]` names one signer of kind `provenance` and none of `acceptance`, and the policy for `beta` is asked
+- **THEN** it requires that signer's acceptance, asked of every artifact
+
+#### Scenario: A layout's claims
+
+- **WHEN** `[layout]` requires a verdict of `cli:test` from `box`
+- **THEN** the layout policy answers that verdict asked of every artifact
+
+#### Scenario: A key naming the artifacts
+
+- **WHEN** an entry of `[acceptance]`'s `require` names a key besides `kind`, `check` and `signers`
+- **THEN** the answer is unreadable, naming the file and the table, as for any other unknown key

@@ -299,3 +299,155 @@ fn a_projection_naming_an_undeclared_output_is_unreadable_naming_it() {
     };
     assert!(u.said.unwrap().contains("projections names cli"));
 }
+
+#[test]
+fn an_output_packed_as_notes_is_refused_naming_the_component_and_the_output() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit(
+        "chore: policy",
+        &[(
+            POLICY_FILE,
+            "outputs = [\"site\", \"changelog\"]\n[projections]\nsite = \"file\"\nchangelog = \"notes\"\n",
+        )],
+    );
+    let Err(Not::Refused(r)) = read(&repo) else {
+        panic!("an output packed as notes was read")
+    };
+    assert_eq!(r.why, Why::Said);
+    assert_eq!(r.source.seam, Seam::History);
+    let said = r.said.unwrap();
+    assert!(
+        said.contains("component repository: projections packs changelog as notes"),
+        "{said}"
+    );
+}
+
+#[test]
+fn a_components_output_packed_as_notes_is_refused_naming_both() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    let policy = TWO.replace(
+        "prefix = \"web-v\"\n",
+        "prefix = \"web-v\"\nprojections = { site = \"file\", cli = { ecosystem = \"notes\" } }\n",
+    );
+    repo.commit("chore: policy", &[(POLICY_FILE, &policy)]);
+    let Err(Not::Refused(r)) = read(&repo) else {
+        panic!("a component's output packed as notes was read")
+    };
+    assert_eq!(r.why, Why::Said);
+    let said = r.said.unwrap();
+    assert!(
+        said.contains("component web: projections packs cli as notes"),
+        "{said}"
+    );
+}
+
+// Requirement: No component's tag enters a reserved space
+
+fn reserved(component: &str, what: &str, space: &str) -> Why {
+    Why::Reserved {
+        component: ComponentName::new(component),
+        what: what.into(),
+        space: space.into(),
+    }
+}
+
+fn refused_reading(policy: &str) -> tailrace_seams::Refusal {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit("chore: policy", &[(POLICY_FILE, policy)]);
+    match read(&repo) {
+        Err(Not::Refused(r)) => r,
+        other => panic!("{policy} was read: {other:?}"),
+    }
+}
+
+#[test]
+fn a_prefix_in_the_artifact_space_is_refused_naming_the_component_the_prefix_and_the_space() {
+    let r = refused_reading(&TWO.replace("web-v", "artifact/web-v"));
+    assert_eq!(
+        r.why,
+        reserved("web", "prefix \"artifact/web-v\"", "artifact/")
+    );
+    assert_eq!(r.source.seam, Seam::History);
+    let channel = refused_reading(&TWO.replace("lib-v", "channel/lib-v"));
+    assert_eq!(
+        channel.why,
+        reserved("lib", "prefix \"channel/lib-v\"", "channel/")
+    );
+}
+
+#[test]
+fn the_rules_prefix_in_the_cache_space_is_refused_naming_it() {
+    let r = refused_reading("[version]\nprefix = \"cache/\"\n");
+    assert_eq!(r.why, reserved("repository", "prefix \"cache/\"", "cache/"));
+    let text = r.why.to_string();
+    assert!(
+        text.contains("prefix \"cache/\"") && text.contains("enters cache/"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_prefix_that_only_begins_like_a_space_is_read() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo");
+    repo.commit(
+        "chore: policy",
+        &[(POLICY_FILE, &TWO.replace("web-v", "artifact-v"))],
+    );
+    let declared = read(&repo).unwrap();
+    assert_eq!(declared.components[1].prefix, "artifact-v");
+}
+
+// Requirement: A component's name names one repository
+
+#[test]
+fn a_component_named_for_a_reserved_space_is_refused_naming_it_and_the_space() {
+    let r = refused_reading(&TWO.replace("\"web\"", "\"cache\""));
+    assert_eq!(r.why, reserved("cache", "name \"cache\"", "cache/"));
+    let r = refused_reading(&TWO.replace("\"lib\"", "\"artifact\""));
+    assert_eq!(
+        r.why,
+        reserved("artifact", "name \"artifact\"", "artifact/")
+    );
+}
+
+#[test]
+fn a_component_named_as_the_undeclared_one_is_refused_naming_it() {
+    let r = refused_reading(&TWO.replace("\"web\"", "\"repository\""));
+    let Why::Reserved { component, .. } = &r.why else {
+        panic!("refused for {:?}", r.why)
+    };
+    assert_eq!(component.as_str(), "repository");
+    assert!(r.why.to_string().contains("component repository"));
+}
+
+#[test]
+fn a_component_whose_name_holds_a_slash_or_a_colon_is_refused_naming_it() {
+    for name in ["web/app", "web:app"] {
+        let r = refused_reading(&TWO.replace("\"web\"", &format!("\"{name}\"")));
+        let Why::Reserved {
+            component, what, ..
+        } = &r.why
+        else {
+            panic!("{name} refused for {:?}", r.why)
+        };
+        assert_eq!(component.as_str(), name);
+        assert_eq!(what, &format!("name \"{name}\""));
+    }
+}
+
+#[test]
+fn two_components_whose_names_differ_only_by_case_are_refused_naming_both() {
+    let r = refused_reading(&TWO.replace("\"web\"", "\"Lib\""));
+    assert_eq!(
+        r.why,
+        Why::DeclaredTwice {
+            first: ComponentName::new("lib"),
+            second: ComponentName::new("Lib"),
+            what: "name once lowercased, \"lib\" and \"Lib\"".into(),
+        }
+    );
+}

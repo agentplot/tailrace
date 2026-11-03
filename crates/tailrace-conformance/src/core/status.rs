@@ -1,24 +1,24 @@
 //! The status group: what the host published, answered from its own
-//! record with no seam asked and nothing written (58, 60 to 62); and,
-//! below the marker, status-on-any-machine's channels read from the
-//! ledger beside it, each channel's answer its own, as last read where
-//! the keeper no longer answers, the same with everything kept deleted,
-//! and the environments not yet read, each asking the landing, the
-//! policy and the keeper alone (31, 36, 58 to 61, 63, 101, 105, 125,
-//! 131); and the channels shown from a landing read as last fetched,
-//! saying when (36, 60, 77).
+//! record with no seam asked and nothing written, each version beside its
+//! notes rendered again from git (58, 60 to 62, 134); and, below the marker,
+//! status-on-any-machine's channels read from the ledger beside it, each
+//! channel's answer its own, as last read where the keeper no longer
+//! answers, the same with everything kept deleted, and the environments
+//! not yet read, each asking the landing, the policy and the keeper alone
+//! (31, 36, 58 to 61, 63, 101, 105, 125, 131); and the channels shown from
+//! a landing read as last fetched, saying when (36, 60, 77).
 
 use std::fs;
 
 use serde_json::Value;
 use tailrace_core::{
-    overview, rebuild, status, Channel, ChannelStatus, Entry, Overview, OverviewAsk, Published,
-    RebuildAsk, StatusAsk,
+    overview, rebuild, status, Channel, ChannelStatus, Entry, Noted, Overview, OverviewAsk,
+    Published, RebuildAsk, StatusAsk,
 };
 use tailrace_fakes::{Fault, KeeperOp, StoreOp, Times};
 use tailrace_seams::{
-    channel_name, Branch, ChannelId, ChannelName, ComponentName, IndexMeta, Manifest, Moves, Name,
-    Not, Read, Seam, Signer, SignerId, Source, Store, Version, Why,
+    channel_name, Branch, ChannelId, ChannelName, ComponentName, Held, IndexMeta, Manifest, Moves,
+    Name, Not, Read, Seam, Signer, SignerId, Source, Store, Version, Why,
 };
 
 use crate::core::publish::{one, passing, TAG, VERSION};
@@ -32,7 +32,7 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
         Scenario {
             name: "status after a publish",
             plays: None,
-            cites: &[60, 61],
+            cites: &[60, 61, 134],
             run: status_after_a_publish,
         },
         Scenario {
@@ -97,20 +97,34 @@ fn published(world: &FakeWorld) -> Published {
 
 fn status_after_a_publish(world: &FakeWorld) {
     let published = published(world);
-    let Published::Version { index, store, .. } = &published else {
+    let Published::Version {
+        index,
+        store,
+        notes,
+        ..
+    } = &published
+    else {
         panic!("the head was not published: {published:?}")
+    };
+    let notes = notes.as_ref().expect("the publish answered no notes");
+    let Ok(Held::Bytes(carried)) = world.fakes.store.read(&notes.bytes) else {
+        panic!("{} holds no bytes", notes.bytes)
     };
     let asked = world.asked();
     let record = world.record();
     assert!(!record.is_empty(), "the publish recorded nothing");
 
-    let answer = ok(status(&world.kept(), &StatusAsk::default()), "status");
+    let answer = ok(
+        status(&world.history(), &world.kept(), &StatusAsk::default()),
+        "status",
+    );
     assert_eq!(answer.components.len(), 1, "{answer:?}");
     let versions = &answer.components[0];
     assert_eq!(versions.component, ComponentName::new(COMPONENT));
+    let entries: Vec<&Entry> = versions.versions.iter().map(|s| &s.entry).collect();
     assert_eq!(
-        versions.versions,
-        [Entry {
+        entries,
+        [&Entry {
             component: ComponentName::new(COMPONENT),
             version: tailrace_seams::Version::new(VERSION),
             tag: TAG.into(),
@@ -118,8 +132,18 @@ fn status_after_a_publish(world: &FakeWorld) {
             branch: Branch::new(crate::fixture::MAIN),
             index: index.clone(),
             store: store.clone(),
+            notes: Some(Noted {
+                last: Some("v0.1.0".into()),
+                commits: vec![world.head.clone()],
+            }),
         }],
-        "status answered another version, revision or index than the publish's"
+        "status answered another version, revision or index than the publish's, \
+         or another entry than the commits the notes were rendered from"
+    );
+    assert_eq!(
+        versions.versions[0].notes,
+        Some(Ok(String::from_utf8(carried).expect("the notes are text"))),
+        "status's notes are not the bytes the version carries"
     );
     assert_eq!(world.asked(), asked, "status asked a seam");
     assert_eq!(world.record(), record, "status wrote to the record");
@@ -155,6 +179,11 @@ fn the_record_read_with_a_file_reader(world: &FakeWorld) {
         entry["store"]["seam"], "store",
         "the entry names no store: {text}"
     );
+    assert_eq!(
+        entry["notes"]["commits"],
+        serde_json::json!([world.head.as_str()]),
+        "the entry names other revisions than the notes were rendered from: {text}"
+    );
     for artifact in artifacts {
         assert!(
             !text.contains(artifact.digest.as_str()) && !text.contains(artifact.bytes.as_str()),
@@ -175,7 +204,7 @@ fn the_record_read_with_a_file_reader(world: &FakeWorld) {
 
 fn nothing_kept_and_an_entry_that_cannot_be_read(world: &FakeWorld) {
     let kept = world.kept();
-    match status(&kept, &StatusAsk::default()) {
+    match status(&world.history(), &kept, &StatusAsk::default()) {
         Err(Not::Absent(a)) => assert_eq!(
             a.source,
             Source::host(kept.dir()),
@@ -188,7 +217,7 @@ fn nothing_kept_and_an_entry_that_cannot_be_read(world: &FakeWorld) {
     let bad = kept.dir().join(COMPONENT).join("v9.0.0.json");
     fs::create_dir_all(bad.parent().expect("under the record")).expect("the record is writable");
     fs::write(&bad, "{\"component\": \"repository\", \"version\": 9").expect("writable");
-    match status(&kept, &StatusAsk::default()) {
+    match status(&world.history(), &kept, &StatusAsk::default()) {
         Err(Not::Unreadable(u)) => {
             assert_eq!(u.what, bad.display().to_string(), "{u:?}");
             assert_eq!(u.source, Source::host(kept.dir()));

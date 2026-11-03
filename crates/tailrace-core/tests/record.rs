@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 use tailrace_core::{
-    answer_json, rebuild, Ask, Entry, Filter, Published, RebuildAsk, Rebuilt, Written, BOUND,
+    answer_json, rebuild, Ask, Entry, Filter, Noted, Published, RebuildAsk, Rebuilt, Written, BOUND,
 };
 use tailrace_fakes::{Fault, StoreOp, Times};
 use tailrace_seams::{Branch, Digest, Name, Not, Outcome, Report, Revision, Store, Why};
@@ -128,6 +128,20 @@ fn a_published_versions_entry_deleted_and_rebuilt_is_the_file_publish_wrote() {
     rebuilt.sort_by(|a, b| a.component.cmp(&b.component));
     assert_eq!(rebuilt, entries);
     assert_eq!(bytes(kept.dir()), before, "the rebuilt record differs");
+    let noted: Vec<Option<Noted>> = rebuilt.iter().map(|e| e.notes.clone()).collect();
+    assert_eq!(
+        noted,
+        [
+            Some(Noted {
+                last: Some("lib-v0.1.0".into()),
+                commits: vec![world.head.clone()],
+            }),
+            Some(Noted {
+                last: None,
+                commits: vec![world.start.clone()],
+            }),
+        ]
+    );
 
     let json = answer_json(&Ok::<_, Not>(answer));
     assert_eq!(json["answer"], "ok");
@@ -140,12 +154,54 @@ fn a_published_versions_entry_deleted_and_rebuilt_is_the_file_publish_wrote() {
 }
 
 #[test]
+fn a_version_published_before_notes_is_rebuilt_naming_no_notes() {
+    let world = World::new();
+    world::published_before_notes(&world);
+    let kept = world.kept();
+    let before = bytes(kept.dir());
+    fs::remove_dir_all(kept.dir()).unwrap();
+
+    let answer = rebuilt(&world);
+    assert_eq!(versions(&answer), [("lib", "0.2.0")]);
+    assert_eq!(answer.entries[0].0.notes, None);
+    assert_eq!(bytes(kept.dir()), before, "the rebuilt record differs");
+}
+
+#[test]
+fn each_version_is_found_by_its_components_name_or_its_bare_tag() {
+    let world = World::new();
+    published(&world);
+    fs::remove_dir_all(world.kept().dir()).unwrap();
+    let before = world.fakes.store.calls().len();
+    assert_eq!(
+        versions(&rebuilt(&world)),
+        [("lib", "0.2.0"), ("web", "0.1.0")]
+    );
+    let resolved = world::resolved_since(&world.fakes.store, before);
+    assert!(
+        resolved.contains(&"lib:lib-v0.2.0".to_string())
+            && resolved.contains(&"web:web-v0.1.0".to_string()),
+        "{resolved:?}"
+    );
+
+    let undeclared = World::with_policy(world::UNDECLARED);
+    undeclared.publish_one(&undeclared.ask()).unwrap();
+    fs::remove_dir_all(undeclared.kept().dir()).unwrap();
+    let before = undeclared.fakes.store.calls().len();
+    assert_eq!(versions(&rebuilt(&undeclared)), [("repository", "0.1.0")]);
+    assert_eq!(
+        world::resolved_since(&undeclared.fakes.store, before),
+        ["v0.1.0"]
+    );
+}
+
+#[test]
 fn a_tag_claimed_with_no_name_in_the_store_gives_no_entry() {
     let world = World::new();
     published(&world);
     let kept = world.kept();
     fs::remove_dir_all(kept.dir()).unwrap();
-    world.fakes.store.forget(&Name::new("web-v0.1.0"));
+    world.fakes.store.forget(&Name::new("web:web-v0.1.0"));
 
     let answer = rebuilt(&world);
     assert_eq!(
@@ -170,7 +226,7 @@ fn a_tag_on_a_revision_the_branch_did_not_land_gives_no_entry() {
             .store
             .contents()
             .names
-            .contains_key(&Name::new("web-v0.1.0")),
+            .contains_key(&Name::new("web:web-v0.1.0")),
         "the store names no index for the other branch's version"
     );
 
@@ -352,7 +408,7 @@ fn a_name_at_bytes_is_unreadable_naming_the_tag_and_the_digest_and_writes_no_fil
     fs::remove_dir_all(kept.dir()).unwrap();
     let store_handle = &world.fakes.store;
     let bytes = store_handle.put_bytes(b"not an index").unwrap().digest;
-    let name = Name::new("web-v0.1.0");
+    let name = Name::new("web:web-v0.1.0");
     store_handle
         .name(&name, &bytes, Some(&entries[1].index))
         .unwrap();

@@ -9,21 +9,18 @@ the answers they give.
 ## Requirements
 
 ### Requirement: One interface per seam
-
 Each seam of Part B SHALL be exactly one interface holding that seam's
 operations as the statement names them and no other: the store (66 to
 72), the build (74, 75), the landing (77, 78), the signer (79, 80), the
-policy (82, 131), a projection (84 to 86), a target (88 to 91) and the
-keeper (120, 121). A profile implements one interface and nothing of
+policy (82, 131), a projection (84 to 86, 137, 140), a target (88 to
+91) and the keeper (120, 121). A profile implements one interface and nothing of
 the core (core.2).
 
 #### Scenario: Each seam's operations
-
 - **WHEN** a reader lists the operations of each seam's interface
-- **THEN** the store has put-bytes, put-artifact, attach, claims-of, name, resolve and read; the build has ensure and report; the landing has landed and verdicts-of; the signer has sign and verify; the policy has policy-for and channels; a projection has pack, render and serve; a target has desired, current, apply and report; the keeper has append and chain; and no interface has any other
+- **THEN** the store has put-bytes, put-artifact, attach, claims-of, name, resolve and read; the build has ensure and report; the landing has landed and verdicts-of; the signer has sign and verify; the policy has policy-for and channels; a projection has pack, render, serve, pinned, requires and satisfying; a target has desired, current, apply and report; the keeper has append and chain; and no interface has any other
 
 #### Scenario: The seams name no tool
-
 - **WHEN** the seams' code is searched for the names core.1 rules out
 - **THEN** none appears, and the code imports nothing of any profile
 
@@ -36,14 +33,16 @@ ecosystem name, artifact metadata and index metadata (4, 6), cache
 entry (52), claim and signed envelope (7, 8), verdict (78), signer,
 audience and the policy's requirements (82), the channel a policy
 declares with how it moves (131), a given channel held off with the
-line that would switch it on (C.10), environment and channel. A channel
-SHALL be its component and its name together, its component none where
-the repository declares no component (125). The name of the one
-component of a repository that declares none (123) SHALL be defined
-with the seams, so every profile and the core name it alike. Every such
-type SHALL be readable by a program (57). A cache entry SHALL be named
-by its build identity and its digest alone, and SHALL carry no
-ecosystem, name or version (53).
+line that would switch it on (C.10), environment and channel, and a
+manifest's range and the requirement that pairs an ecosystem name with
+one (140). A channel SHALL be its component and its name together, its
+component none where the repository declares no component (125). The
+name of the one component of a repository that declares none (123)
+SHALL be defined with the seams, so every profile and the core name it
+alike. Every such type SHALL be readable by a program (57). A cache
+entry SHALL be named by its build identity and its digest alone, and
+SHALL carry no ecosystem, name or version (53). A range and a
+requirement SHALL carry the text as the manifest spells it, unchanged.
 
 #### Scenario: A value written and read back
 
@@ -54,6 +53,11 @@ ecosystem, name or version (53).
 
 - **WHEN** a cache entry is written in its machine-readable form
 - **THEN** it names a build identity and a digest and nothing else, and reading it as artifact metadata is rejected
+
+#### Scenario: A requirement keeps the manifest's spelling
+
+- **WHEN** a requirement naming a scoped name and a range with an operator and a prerelease is written in its machine-readable form
+- **THEN** it names that name and that range, character for character, and reads back as the same requirement
 
 #### Scenario: A declared channel names its component
 
@@ -87,7 +91,10 @@ text.
 Artifact metadata SHALL name the ecosystem whose form it takes, its
 name in that ecosystem and its version (4). Index metadata SHALL name
 one component and one version, and an index SHALL name every artifact
-of that component at that version by digest (6, 110).
+of that component at that version by digest (6, 110). Index metadata
+SHALL also name the revision it was published from and the publishing
+repository by its remote's owner and name, each where it has one, and
+index metadata naming neither SHALL still be read (13, 138).
 
 #### Scenario: Metadata with a part missing
 
@@ -98,6 +105,16 @@ of that component at that version by digest (6, 110).
 
 - **WHEN** index metadata is made for a component, a version and a set of artifacts
 - **THEN** it names each artifact's digest and metadata, and every artifact it names carries that version
+
+#### Scenario: An index names where it came from
+
+- **WHEN** index metadata naming a revision and the repository `acme/site` is written in its machine-readable form and read back
+- **THEN** it is the same value, naming that revision and that owner and name
+
+#### Scenario: An index written before it named where it came from
+
+- **WHEN** index metadata in the machine-readable form that names no revision and no repository is read
+- **THEN** it is read, naming neither, and written again it gives the same form
 
 ### Requirement: A claim is about one digest by one signer
 
@@ -179,8 +196,10 @@ the bytes already (66, 5); put-artifact with the artifact's digest
 (67); attach with the attestation held beside its digest (68, 8);
 claims-of with every attestation as attached, or absent (69); name
 with the name moved, or refused naming where it is (70); resolve with
-a digest, or absent (71); and read with what the digest holds, or
-absent (72).
+a digest, or absent (71); read with what the digest holds, or
+absent (72); and the listing, given an ecosystem and a name, with every
+version the store names that name at, an empty list where it names
+none, or unreadable where the listing cannot be read (138, core.19).
 
 #### Scenario: A name moved only from where it is expected
 
@@ -197,17 +216,36 @@ absent (72).
 - **WHEN** read is asked for the digest put-artifact answered
 - **THEN** it answers the artifact's metadata and the digests it names
 
+#### Scenario: A name's versions listed
+
+- **WHEN** the store names `artifact/eco/site@1.0.0`, `artifact/eco/site@1.1.0` and `artifact/eco/site-cli@1.0.0`, and the versions of `eco` `site` and of `eco` `web` are asked
+- **THEN** the first answer is 1.0.0 and 1.1.0 and no other, and the second is the empty list, neither absent nor refused
+
 ### Requirement: The build's contract
 
 The build SHALL answer ensure, given a revision and every output
 declared in one asking, with those outputs present, or refused naming
-each output it could not make (74); and report with the build identity
-an output came from, the build's outcome, and where its files are (75).
+each output it could not make (74); report with the build identity
+an output came from, the build's outcome, and where its files are (75);
+and left, given a checkout, with the build identities whose outputs the
+checkout's own build state holds, each with its tasks, its outcome and
+where its files are, read from the build's own records and from nothing
+of tailrace's (139).
 
 #### Scenario: Outputs that could not be made
 
 - **WHEN** ensure is asked for three outputs and the build can make two
 - **THEN** the answer is refused, naming the one it could not make
+
+#### Scenario: What a checkout left
+
+- **WHEN** left is asked of a checkout whose build state holds the outputs of two build identities
+- **THEN** the answer names both, each with its tasks, its outcome and where its files are, and names no build identity the checkout's build state does not hold
+
+#### Scenario: A checkout that ran nothing
+
+- **WHEN** left is asked of a checkout whose build has recorded no run
+- **THEN** the answer is an empty list, which is neither absent nor unreadable
 
 ### Requirement: The landing's contract
 
@@ -316,40 +354,104 @@ givens apart from channels (136).
 - **THEN** it is the same value, the held given naming the channel, its component or that the repository declares none, how it would move and its line, apart from the channels in force
 
 ### Requirement: A projection's contract
-
-A projection SHALL answer pack, given an output at a build identity and
-the version where the bytes are an artifact's, with the ecosystem's own
-bytes, their metadata only where a version was given, and whether the
-same outputs and version, or the same build identity, pack to the same
-bytes (84, 87, 100); render, given artifacts and their metadata or cache
-entries by build identity, with a consumer layout and the versions or
-build identities it holds (85); and serve, given a layout, with where
-its clients read it (86).
+A projection SHALL answer pack, given an output at a build identity and,
+where the bytes are an artifact's, the version, the component the output
+belongs to, the component's declared outputs as the build left them, and
+a way to ask whether the component's paths hold a path of the
+repository, with the ecosystem's own bytes, their metadata only where a
+version was given, and whether the same outputs and version, or the same
+build identity, pack to the same bytes (84, 87, 100, 110, 123); render,
+given artifacts and their metadata or cache entries by build identity,
+with a consumer layout and the versions or build identities it holds
+(85); serve, given a layout, one request of the ecosystem's own client
+with the base address it reached, and a way to ask the core for a
+version the layout lacks, with the response to that request in the
+client's own protocol, or absent naming serving, for every request, from
+a projection whose ecosystem's clients read files (86, 115); pinned,
+given a checkout, with the ecosystem names and versions its lockfile
+pins as the lockfile spells them, and, for a name its manifest declares
+and no lockfile pins yet, the manifest's range as the manifest spells
+it, or absent where the checkout holds no lockfile of that ecosystem and
+its manifest declares no such range (137); requires, given an artifact
+of its ecosystem a layout holds, with every name its manifest requires
+that the layout serves and the range it requires of it, as the manifest
+spells them, a name the layout serves being one the consuming
+checkout's own configuration of the ecosystem routes to the served
+address (140); and satisfying, given a range and versions, with those
+versions that satisfy the range by the ecosystem's own rules, newest
+first by the ecosystem's own ordering, never by spelling or by the order
+given (23, 140). A projection whose ecosystem has no manifest SHALL
+answer requires and satisfying with none, an empty list, reading
+nothing, and never absent (140). pinned's range and requires' ranges
+SHALL be one type, so the core holds a checkout's range and a held
+version's alike and reads neither. The core SHALL learn what a manifest
+requires and how versions order only through requires and satisfying,
+and SHALL never read a manifest or order versions itself (140, core.1).
+A projection SHALL never reach the store but through the store it is
+handed, nor the policy or a version's claims at all, nor match a
+component's paths itself: a version a served layout lacks is asked of
+the core, which judges it, and whether the component's paths hold a path
+is asked of the core through pack's input (core.2).
 
 #### Scenario: A projection that cannot promise the same bytes
-
 - **WHEN** pack answers bytes it cannot promise to make again
 - **THEN** its answer says so
 
 #### Scenario: An output packed as an artifact
-
 - **WHEN** pack is given an output, a build identity and a version
 - **THEN** its answer carries metadata naming the ecosystem, the name and that version
 
 #### Scenario: An output packed as a cache entry
-
 - **WHEN** a projection that packs cache entries is given an output and a build identity and no version
 - **THEN** its answer carries the bytes and no artifact metadata, so nothing about it makes an offer
 
 #### Scenario: A layout of cache entries
-
 - **WHEN** a projection that packs cache entries renders a layout from cache entries
 - **THEN** the answer names the build identities the layout holds, and no version
 
 #### Scenario: A projection that packs no cache entries
-
 - **WHEN** a projection that packs no cache entries is asked to pack an output with no version, or to render cache entries
 - **THEN** each answer is absent naming cache entries, never refused and never unreadable
+
+#### Scenario: A checkout with no lockfile
+- **WHEN** pinned is asked of a checkout holding no lockfile of the projection's ecosystem and no manifest declaring a range
+- **THEN** the answer is absent naming the lockfile, never refused and never an empty list of pins
+
+#### Scenario: A pin written and read back
+- **WHEN** a pin, an ecosystem name and a version, and a range, an ecosystem name and a range's text, are each written in its machine-readable form and read back
+- **THEN** each is the same as written
+
+#### Scenario: What a held version requires
+- **WHEN** requires is asked of an artifact whose manifest requires two names the layout serves, each with a range
+- **THEN** the answer is those two names, each with its range as the manifest spells it
+
+#### Scenario: Versions that satisfy a range, newest first
+- **WHEN** satisfying is given a range and versions listed in neither the ecosystem's order nor spelling order
+- **THEN** the answer is the versions that satisfy the range, newest first by the ecosystem's ordering, and no other
+
+#### Scenario: An ecosystem with no manifest
+- **WHEN** a projection whose ecosystem has no manifest is asked requires of an artifact, or satisfying of a range
+- **THEN** each answer is none, an empty list, never absent, refused or unreadable
+
+#### Scenario: An output packed with its component
+- **WHEN** pack is given an output with the version, the component the output belongs to, the component's declared outputs and a way to ask whether the component's paths hold a path
+- **THEN** the file, image and moon cache projections each answer the same bytes and metadata they answer given that version alone
+
+#### Scenario: A request served
+- **WHEN** a projection whose clients read no files is asked to serve a request for a version its layout holds
+- **THEN** it answers the response its client reads, and asks the core for nothing
+
+#### Scenario: A request for a version the layout lacks
+- **WHEN** a projection is asked to serve a request for a version its layout lacks
+- **THEN** it asks the core for that one version, by its ecosystem name and version, and answers the core's answer in its client's protocol: the version's response where the core rendered it, and otherwise a response carrying the refusal, the absence or the unreadable answer in the source's own words
+
+#### Scenario: A projection whose clients read files
+- **WHEN** a projection whose ecosystem's clients read files is asked to serve any request
+- **THEN** the answer is absent naming serving, and the core is asked for nothing
+
+#### Scenario: A request and a response written and read back
+- **WHEN** a request and a response are written in their machine-readable form and read back
+- **THEN** each is the same, a response's bytes included
 
 ### Requirement: A target's contract
 
@@ -416,6 +518,39 @@ targets by environment (92), and SHALL reach no seam except through it
 
 - **WHEN** a binding is made with two projections and one target
 - **THEN** each projection is found by its ecosystem and the target by its environment, and the binding holds one store, one landing and one keeper
+
+### Requirement: The publisher's layout policy is a kind of claim
+The claim kinds SHALL include the publisher's layout policy: a claim
+about a version's index whose body is the claims a layout must require,
+each with the signers that may make it and what each may claim, as the
+publishing repository declared them at the revision the claim names
+(113). It SHALL be written under its own predicate type as every other
+kind is.
+
+#### Scenario: A layout-policy claim written and read back
+- **WHEN** a layout-policy claim is made about an index, signed and read back from its envelope
+- **THEN** it is a claim of the layout-policy kind about that index, naming the revision and no build identity, with the required claims as made
+
+### Requirement: The policy for a layout says whether it is given
+The policy's answer for a layout SHALL say whether the repository's file
+writes it or it is the given laid beneath a file that writes none, so a
+consumer stacks the publisher's policy above the given and never above
+its own line (113, C.10). No other audience's answer SHALL carry it.
+
+#### Scenario: A given layout policy written and read back
+- **WHEN** a policy for a layout marked as given is written in its machine-readable form and read back
+- **THEN** it is the same policy, still marked as given, and a written one reads back unmarked
+
+### Requirement: The policy for a layout carries the file's signers
+The policy's answer for a layout SHALL carry the signers the file names,
+each with what it may claim, so a consumer reads a claim through its
+file's signers alone where the file names one for it, and through its
+host's trusted signers only where the file names none (C.10, 118). No
+other audience's answer SHALL carry them.
+
+#### Scenario: A layout policy's signers written and read back
+- **WHEN** a policy for a layout carrying the file's signers is written in its machine-readable form and read back
+- **THEN** it carries the same signers, and one carrying none reads back carrying none
 
 ### Requirement: The promotion claim's body
 
@@ -484,3 +619,75 @@ JSON form as in the text (14, 57, 58, 59, 77).
 
 - **WHEN** the landing answers landed from its copy as last fetched
 - **THEN** the revision is landed, and the landed revision says it was read from the copy and when
+
+### Requirement: A required claim names the artifacts it is asked of
+
+Each claim the policy's answer requires, for every audience, SHALL name
+the artifacts it is asked of: every artifact a version names, or a
+built artifact alone, leaving a rendered artifact unasked (82, 134), so
+the core reads it from the policy and decides none of it (core.7). Its
+machine-readable form SHALL read a required claim naming none as asked
+of every artifact, and write one so asked as it wrote it before (57).
+
+#### Scenario: A required claim written and read back
+
+- **WHEN** a claim required of built artifacts alone, and one required of every artifact, are written in their machine-readable form and read back
+- **THEN** each is the same value, the first naming built artifacts and the second naming nothing of the artifacts it is asked of
+
+#### Scenario: A layout-policy claim written before
+
+- **WHEN** a layout-policy claim's body whose required claims name nothing of the artifacts they are asked of is read
+- **THEN** each required claim reads as asked of every artifact
+
+### Requirement: An artifact's store name is spelled once
+
+The store name of an artifact's version SHALL be spelled
+`artifact/<ecosystem>/<name>@<version>` by one function of the seams,
+and read back into its ecosystem, name and version by its one inverse,
+which every writer and reader of the name uses (138).
+
+#### Scenario: A scoped name read back
+
+- **WHEN** the store name of ecosystem `npm`, name `@acme/site` and version `1.3.0+b.1` is spelled and read back
+- **THEN** it is `artifact/npm/@acme/site@1.3.0+b.1`, and reading it back answers that ecosystem, name and version
+
+#### Scenario: A name outside the artifact space
+
+- **WHEN** `cache/b7e1`, `artifact/npm` or `artifact/npm/site@` is read back as an artifact's store name
+- **THEN** each answers none
+
+### Requirement: A version's store name names its declared component
+
+The store name of a version SHALL be spelled by one function of the
+seams from its component and its tag: the tag alone for the one
+component of a repository that declares none, and `<component>:<tag>`
+for a declared component; its one inverse SHALL read a name back into
+the component and the tag, and every writer and reader of a version's
+name SHALL use them (22, 123, 125, C.1, core.37).
+
+#### Scenario: A declared component's version
+
+- **WHEN** the store name of the component `lib`'s tag `lib-v1.2.0` is spelled and read back
+- **THEN** it is `lib:lib-v1.2.0`, and reading it back answers `lib` and `lib-v1.2.0`
+
+#### Scenario: A repository that declares no component
+
+- **WHEN** the store name of the undeclared component's tag `v1.2.0` is spelled and read back
+- **THEN** it is `v1.2.0`, and reading it back answers none
+
+#### Scenario: Names that hold a colon elsewhere
+
+- **WHEN** `cache/sha256:ab`, `artifact/eco/site@1:2`, `:v1` or `lib:` is read back as a version's store name
+- **THEN** each answers none
+
+### Requirement: An output whose cache entry the store lacks is a refusal of its own
+
+The refusal a publish gives for an output whose build identity's cache
+entry the store does not hold SHALL name the output and the build
+identity, and SHALL round-trip through the machine-readable form as
+every other refusal does (57, 58).
+
+#### Scenario: The refusal round-trips
+
+- **WHEN** the refusal naming an output and a build identity whose entry the store lacks is written as JSON and read back
+- **THEN** it reads as the same refusal, naming the same output and build identity

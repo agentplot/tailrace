@@ -8,7 +8,7 @@ use clap::Parser;
 use serde_json::{json, Value};
 use tailrace::bindings::Teller;
 use tailrace::commands::serve::host::{name, Host};
-use tailrace::commands::serve::respond_with;
+use tailrace::commands::serve::{address, respond_with};
 use tailrace::{run, Binding, Cli};
 use tailrace_conformance::core::surfaces::{self, Question, Surface};
 use tailrace_conformance::not_applicable;
@@ -23,6 +23,7 @@ fn binding(world: &FakeWorld) -> Binding {
         store: world.store(),
         signer: Some(world.host.clone()),
         gate: Teller::Job(JOB.into()),
+        trust: Vec::new(),
     }
 }
 
@@ -154,18 +155,16 @@ impl Surface for Page {
             Question::Status | Question::Channels { .. } => {}
         }
         let response = respond_with(
+            address(),
             &self.host,
-            &|_| Ok(binding(&self.world)),
+            &|_, _| Ok(binding(&self.world)),
             "GET",
             "/o/r/status.json",
         );
-        assert_eq!(response.status, 200, "{}", response.body);
-        let served: Value = serde_json::from_str(&response.body).unwrap_or_else(|e| {
-            panic!(
-                "{question:?} served no JSON document ({e}): {}",
-                response.body
-            )
-        });
+        let body = String::from_utf8_lossy(&response.body);
+        assert_eq!(response.status, 200, "{body}");
+        let served: Value = serde_json::from_str(&body)
+            .unwrap_or_else(|e| panic!("{question:?} served no JSON document ({e}): {body}"));
         match question {
             Question::Status => served["value"]["published"].clone(),
             _ => served,

@@ -175,6 +175,7 @@ fn no_file_reads_as_an_empty_file() {
         ledger: None,
         gate: None,
         signing: None,
+        trust: Vec::new(),
     };
     assert_eq!(host.read(), Ok(empty.clone()));
     host.write("");
@@ -271,7 +272,7 @@ fn what_the_repository_binds_and_no_table_of_the_file_are_unreadable_naming_the_
         ),
         (
             "targets",
-            "[targets] is no table of the bindings file, which binds [store], [landing], [ledger], [signing] and [gate]",
+            "[targets] is no table of the bindings file, which binds [store], [landing], [ledger], [signing], [gate] and [trust]",
         ),
     ] {
         host.write(&format!("[store]\nlayout = \"/layout\"\n\n[{table}]\nx = 1\n"));
@@ -349,6 +350,36 @@ fn a_registry_binds_a_store_named_by_its_repository() {
             )
         ),
         other => panic!("a registry nothing listens for answered {other:?}"),
+    }
+}
+
+#[test]
+fn a_pushs_store_puts_bytes_into_the_cache_repository_and_no_other_commands_does() {
+    use crate::profiles::store::registry::stub::{Behaviour, Stub};
+    let stub = Stub::start(Behaviour::default(), &[]);
+    let host = Host::new();
+    host.write(&format!(
+        "[store]\nregistry = \"{}\"\n\n[landing]\nbranch = {{}}\n",
+        stub.repository("acme/store")
+    ));
+    for (command, repository) in [
+        (For::Push, "acme/store/cache/moon"),
+        (For::Left, "acme/store/cache/moon"),
+        (For::Publish, "acme/store"),
+        (For::Sync, "acme/store"),
+    ] {
+        let binding = host.bind(host.dir.path(), command).unwrap();
+        let before = stub.asked().len();
+        let bytes = format!("{command:?}'s bytes");
+        binding.seams.store.put_bytes(bytes.as_bytes()).unwrap();
+        let asked: Vec<_> = stub.asked()[before..]
+            .iter()
+            .map(|a| a.repository().map(str::to_string))
+            .collect();
+        assert!(
+            !asked.is_empty() && asked.iter().all(|r| r.as_deref() == Some(repository)),
+            "{command:?}: {asked:?}"
+        );
     }
 }
 
@@ -501,7 +532,7 @@ fn a_file_naming_no_ledger_binds_the_git_ref_in_the_repository() {
         .keys()
         .map(|e| e.as_str())
         .collect();
-    assert_eq!(ecosystems, ["file", "image", "moon-cache"]);
+    assert_eq!(ecosystems, ["cargo", "file", "image", "moon-cache", "npm"]);
 }
 
 /// A repository in the host's directory, made with git, and its path.
@@ -785,6 +816,244 @@ fn a_profile_no_family_reads_is_unreadable_and_makes_nothing() {
         other => panic!("answered {:?}", other.err()),
     }
     assert!(!layout.exists(), "a file that cannot bind made the layout");
+}
+
+/// The host's key for the gate, as `[trust.gate]` names it.
+const GATE_KEY: &str = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGt gate@box";
+
+#[test]
+fn a_signer_trusted_is_named_with_its_key_and_no_claim_of_its_own() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[trust.gate]\nssh = \"{GATE_KEY}\"\n",
+        layout.display()
+    ));
+    let gate = NamedSigner {
+        id: SignerId::new("gate"),
+        verified_by: GATE_KEY.into(),
+        kinds: vec![],
+        checks: vec![],
+    };
+    assert_eq!(host.read().unwrap().trust, std::slice::from_ref(&gate));
+    let binding = host.bind(host.dir.path(), For::Sync).unwrap();
+    assert_eq!(binding.trust, [gate]);
+}
+
+#[test]
+fn a_file_naming_no_trust_trusts_no_signer_and_binds_as_before() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    assert_eq!(bound(&host, &layout, true, For::Publish).unwrap().trust, []);
+    assert_eq!(host.read().unwrap().trust, []);
+    assert_eq!(bound(&host, &layout, true, For::Verify).unwrap().trust, []);
+}
+
+/// A fresh host key's public half written beside `[signing] key` as
+/// [`bound`] names it, `~/.config/tailrace/signing.pub`; answers its line.
+fn own_public_half(host: &Host) -> String {
+    use ssh_key::rand_core::OsRng;
+    use ssh_key::{Algorithm, PrivateKey};
+    let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).unwrap();
+    let line = format!("{} laptop@host", key.public_key().to_openssh().unwrap());
+    let public = host.home().join(".config/tailrace/signing.pub");
+    fs::create_dir_all(public.parent().unwrap()).unwrap();
+    fs::write(&public, format!("{line}\n")).unwrap();
+    line
+}
+
+#[test]
+fn a_sync_trusts_the_hosts_own_signer_by_its_public_half_before_the_files() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let line = own_public_half(&host);
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+         [signing]\nsigner = \"laptop\"\nkey = \"~/.config/tailrace/signing\"\n\n\
+         [trust.gate]\nssh = \"{GATE_KEY}\"\n",
+        layout.display()
+    ));
+    let binding = host.bind(host.dir.path(), For::Sync).unwrap();
+    let trusted: Vec<(&str, &str)> = binding
+        .trust
+        .iter()
+        .map(|t| (t.id.as_str(), t.verified_by.as_str()))
+        .collect();
+    assert_eq!(trusted, [("laptop", line.as_str()), ("gate", GATE_KEY)]);
+    assert!(binding.trust.iter().all(|t| t.kinds.is_empty()));
+    let publish = host.bind(host.dir.path(), For::Publish).unwrap();
+    assert_eq!(
+        publish
+            .trust
+            .iter()
+            .map(|t| t.id.as_str())
+            .collect::<Vec<_>>(),
+        ["gate"],
+        "a command that reads through no trusted signer read the host's own"
+    );
+}
+
+#[test]
+fn sync_with_no_public_half_beside_the_signing_key_is_unreadable_and_makes_nothing() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    match bound(&host, &layout, true, For::Sync) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Signer);
+            assert!(
+                u.what.contains(".config/tailrace/signing.pub"),
+                "{}",
+                u.what
+            );
+            assert!(u.what.contains("own signer laptop"), "{}", u.what);
+        }
+        other => panic!("answered {:?}", other.err()),
+    }
+    assert!(!layout.exists(), "sync made {}", layout.display());
+    own_public_half(&host);
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound(&host, &layout, true, For::Sync).unwrap();
+    assert_eq!(binding.trust.len(), 1);
+}
+
+#[test]
+fn a_trust_table_naming_no_key_two_or_no_string_is_unreadable_naming_it() {
+    let host = Host::new();
+    host.write("[trust.gate]\nssh = \"ssh-ed25519 AAAA\"\nkms = \"a key's name\"\n");
+    assert_eq!(
+        host.unreadable(Some("[trust.gate]")),
+        "[trust.gate] names kms, ssh, and a signer is verified by one key"
+    );
+    host.write("[trust.gate]\n");
+    assert_eq!(
+        host.unreadable(Some("[trust.gate]")),
+        "[trust.gate] names no key that verifies it"
+    );
+    host.write("[trust.gate]\nssh = 7\n");
+    assert_eq!(
+        host.unreadable(Some("[trust.gate]")),
+        "[trust.gate] ssh is not a string"
+    );
+    host.write("[trust]\ngate = \"ssh-ed25519 AAAA\"\n");
+    assert!(host
+        .unreadable(Some("[trust.gate]"))
+        .starts_with("[trust.gate] is not a table"));
+}
+
+#[test]
+fn sync_on_a_broken_trust_table_is_unreadable_and_makes_nothing() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n\
+         [trust.gate]\nssh = \"ssh-ed25519 AAAA\"\nkms = \"a key's name\"\n",
+        layout.display()
+    ));
+    match host.bind(host.dir.path(), For::Sync) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::host(host.file()));
+            assert_eq!(u.what, format!("{}, [trust.gate]", host.file().display()));
+        }
+        other => panic!("answered {:?}", other.err()),
+    }
+    assert!(!layout.exists(), "sync made {}", layout.display());
+}
+
+#[test]
+fn a_push_before_a_landing_binds_with_a_store_alone() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layouts").join("job");
+    host.write(&format!("[store]\nlayout = \"{}\"\n", layout.display()));
+    let binding = host.bind(host.dir.path(), For::Left).unwrap();
+    assert!(!layout.exists(), "binding the push made the layout");
+    assert_eq!(binding.signer, None);
+    let absent = Not::absent(
+        &Source::new(Seam::Landing, "unbound"),
+        "binding of the landing",
+    );
+    let main = tailrace_seams::Branch::new("main");
+    let revision = tailrace_seams::Revision::new("4f2a9c1");
+    assert_eq!(
+        binding.seams.landing.landed(&main, &revision),
+        Err(absent.clone())
+    );
+    assert_eq!(binding.seams.landing.verdicts_of(&revision), Err(absent));
+    let digest = binding.seams.store.put_bytes(b"an archive").unwrap().digest;
+    assert_eq!(digest, Digest::of(b"an archive"));
+    assert!(
+        profiles::store::layout::Layout::open(&layout).is_ok(),
+        "the push before a landing made no layout"
+    );
+    assert!(
+        binding
+            .seams
+            .projection(&tailrace_seams::Ecosystem::new("moon-cache"))
+            .is_some(),
+        "the moon cache is not bound"
+    );
+}
+
+#[test]
+fn a_registry_alone_binds_a_push_before_a_landing() {
+    let host = Host::new();
+    host.write("[store]\nregistry = \"localhost:5000/tailrace\"\n");
+    let binding = host.bind(host.dir.path(), For::Left).unwrap();
+    assert_eq!(
+        binding.store,
+        Source::new(Seam::Store, "registry localhost:5000/tailrace")
+    );
+}
+
+#[test]
+fn a_push_before_a_landing_binds_where_the_given_landing_cannot_and_no_other_command_does() {
+    let host = Host::new();
+    let (repo, _) = with_remotes(&host, &["github", "gitlab"]);
+    host.write("[store]\nregistry = \"localhost:5000/tailrace\"\n");
+    for command in [
+        For::Push,
+        For::Verify,
+        For::Sync,
+        For::Rebuild,
+        For::Publish,
+    ] {
+        match host.bind(&repo, command) {
+            Err(Not::Unreadable(u)) => assert_eq!(u.source, branch(), "{command:?}"),
+            other => panic!("{command:?} answered {:?}", other.err()),
+        }
+    }
+    let binding = host.bind(&repo, For::Left).unwrap();
+    assert_eq!(
+        binding.seams.landing.landed(
+            &tailrace_seams::Branch::new("main"),
+            &tailrace_seams::Revision::new("4f2a9c1")
+        ),
+        Err(Not::absent(
+            &Source::new(Seam::Landing, "unbound"),
+            "binding of the landing"
+        ))
+    );
+}
+
+#[test]
+fn a_push_before_a_landing_on_a_file_naming_a_landing_binds_it() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    let binding = bound(&host, &layout, false, For::Left).unwrap();
+    let answer = binding.seams.landing.landed(
+        &tailrace_seams::Branch::new("main"),
+        &tailrace_seams::Revision::new("4f2a9c1"),
+    );
+    assert_ne!(
+        answer,
+        Err(Not::absent(
+            &Source::new(Seam::Landing, "unbound"),
+            "binding of the landing"
+        )),
+        "the file's landing was not bound"
+    );
 }
 
 /// A file binding the layout at `layout`, a branch with no remote, the

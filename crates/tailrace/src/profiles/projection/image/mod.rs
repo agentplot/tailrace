@@ -11,12 +11,17 @@
 //!
 //! It packs no cache entries: a pack with no version and a render of
 //! cache entries answer absent naming them, and read and write nothing
-//! (84, 85). Its render of artifacts and serve are not built and answer
-//! absent.
+//! (84, 85). Its render of artifacts is not built and answers absent.
+//! Its clients read files, so serve answers absent naming serving for
+//! every request and asks the core nothing (86). An image has no lockfile, so pinned answers absent naming the
+//! lockfile for every checkout, and reads nothing (137). An image has no
+//! manifest either, so requires and satisfying answer none, an empty
+//! list, and read nothing (140).
 
 use tailrace_seams::{
-    no_cache_entries, Answer, BuildId, Contents, Layout, Not, Output, Packed, Projection, Rendered,
-    Seam, Serving, Source, Version, Why,
+    no_cache_entries, no_lockfile, no_serving, Answer, Artifact, BuildId, Contents, Layout, Miss,
+    Not, Output, PackAt, Packed, Pin, Projection, Range, Rendered, Request, Requirement, Response,
+    Seam, Source, Version, Why,
 };
 
 use super::{meta, not_built, one_file, read};
@@ -180,9 +185,9 @@ impl Projection for ImageProjection {
     /// the version, packing the same again at every build identity;
     /// refused naming the output and what the file holds instead; absent
     /// for a cache entry, which it packs none of.
-    fn pack(&self, output: &Output, _: &BuildId, version: Option<&Version>) -> Answer<Packed> {
+    fn pack(&self, output: &Output, _: &BuildId, version: Option<&PackAt<'_>>) -> Answer<Packed> {
         let source = ImageProjection::source();
-        let Some(version) = version else {
+        let Some(&PackAt { version, .. }) = version else {
             return Err(no_cache_entries(&source));
         };
         let file = one_file(output, &source, ECOSYSTEM)?;
@@ -224,8 +229,28 @@ impl Projection for ImageProjection {
         }
     }
 
-    fn serve(&self, _: &Layout) -> Answer<Serving> {
-        Err(not_built("serve", ECOSYSTEM, &ImageProjection::source()))
+    /// 86: absent naming serving for every request, since the
+    /// ecosystem's clients read files; the core is asked nothing.
+    fn serve(&self, _: &Layout, _: &Request, _: Miss<'_>) -> Answer<Response> {
+        Err(no_serving(&ImageProjection::source()))
+    }
+
+    /// 137: absent naming the lockfile for every checkout, since an image
+    /// has no lockfile.
+    fn pinned(&self, _: &str) -> Answer<Vec<Pin>> {
+        Err(no_lockfile(&ImageProjection::source()))
+    }
+
+    /// 140: none for every artifact, since an image has no manifest; it
+    /// reads nothing.
+    fn requires(&self, _: &Artifact) -> Answer<Vec<Requirement>> {
+        Ok(Vec::new())
+    }
+
+    /// 140: none for any range and any versions, since an image has no
+    /// manifest to require a range.
+    fn satisfying(&self, _: &Range, _: &[Version]) -> Answer<Vec<Version>> {
+        Ok(Vec::new())
     }
 }
 
@@ -234,7 +259,10 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use tailrace_seams::{ArtifactMeta, CacheEntry, Digest, Ecosystem, EcosystemName, OutputName};
+    use tailrace_fakes::Alone;
+    use tailrace_seams::{
+        ArtifactMeta, CacheEntry, Digest, Ecosystem, EcosystemName, OutputName, Pinned,
+    };
     use tempfile::TempDir;
 
     use super::*;
@@ -255,7 +283,7 @@ mod tests {
 
     /// `output` packed at `b7e1` with `version`.
     fn pack(output: &Output, version: &str) -> Answer<Packed> {
-        ImageProjection.pack(output, &b7e1(), Some(&Version::new(version)))
+        ImageProjection.pack(output, &b7e1(), Some(&Alone::new(output, version).at()))
     }
 
     /// The words of a refusal of `output`, once it names this profile.
@@ -380,17 +408,70 @@ mod tests {
     }
 
     #[test]
-    fn render_and_serve_are_absent() {
+    fn the_pins_of_a_checkout_are_absent_naming_the_lockfile() {
+        let dir = TempDir::new().unwrap();
+        let output = api(dir.path(), &fixture::archive());
+        let absent = Not::absent(&ImageProjection::source(), "lockfile");
+        for checkout in [dir.path().to_path_buf(), dir.path().join("no checkout")] {
+            assert_eq!(
+                ImageProjection.pinned(checkout.to_str().unwrap()),
+                Err(absent.clone()),
+                "the pins of {}",
+                checkout.display()
+            );
+        }
+        assert!(Path::new(&output.files[0]).exists());
+        let held: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(held.len(), 1, "pinned wrote into the checkout");
+    }
+
+    #[test]
+    fn what_an_artifact_requires_and_which_versions_satisfy_a_range_are_none() {
+        let dir = TempDir::new().unwrap();
+        let output = api(dir.path(), &fixture::archive());
+        let held = Artifact {
+            digest: Digest::of(&fixture::archive()),
+            meta: ArtifactMeta::new(
+                Ecosystem::new("image"),
+                EcosystemName::new("api"),
+                Version::new("0.3.0"),
+            )
+            .unwrap(),
+        };
+        assert_eq!(ImageProjection.requires(&held), Ok(vec![]));
+        let versions = [Version::new("0.3.0"), Version::new("0.10.0")];
+        assert_eq!(
+            ImageProjection.satisfying(&Range::new("^0.3"), &versions),
+            Ok(vec![])
+        );
+        assert_eq!(fs::read(&output.files[0]).unwrap(), fixture::archive());
+        let held: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+        assert_eq!(held.len(), 1, "requires or satisfying wrote");
+    }
+
+    #[test]
+    fn render_is_absent_and_serve_absent_naming_serving() {
         let layout = Layout {
             at: "layouts/image".into(),
         };
-        assert_eq!(
-            ImageProjection.serve(&layout),
-            Err(Not::absent(
-                &ImageProjection::source(),
-                "serve of the image projection"
-            ))
-        );
+        let asked = std::cell::Cell::new(0);
+        for path in ["", "web", "web@1.4.0"] {
+            let request = Request {
+                method: "GET".into(),
+                path: path.into(),
+                base: "http://127.0.0.1:7420/o/r/image".into(),
+            };
+            let miss = |_: &Pinned| {
+                asked.set(asked.get() + 1);
+                Ok(())
+            };
+            assert_eq!(
+                ImageProjection.serve(&layout, &request, &miss),
+                Err(Not::absent(&ImageProjection::source(), "serving")),
+                "{path}"
+            );
+        }
+        assert_eq!(asked.get(), 0, "the core was asked for a version");
         assert_eq!(
             ImageProjection.render(Contents::Artifacts(&[]), "layouts/image"),
             Err(Not::absent(

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ArtifactMeta, Branch, BuildId, ChannelId, Check, ClaimKind, ComponentName, Digest, Moved,
-    Outcome, OutputName, Revision, SignerId,
+    Outcome, OutputName, RequiredClaim, Revision, SignerId,
 };
 
 /// What every seam operation answers: what was asked, or [`Not`].
@@ -224,6 +224,15 @@ pub enum Why {
         second: ComponentName,
         what: String,
     },
+    /// 138, C.1: the component `component` declares `what`, its prefix or
+    /// its name and the text, which would enter `space`, a space of the
+    /// store's own or another component's, so its names would not be its
+    /// own.
+    Reserved {
+        component: ComponentName,
+        what: String,
+        space: String,
+    },
     /// 22: the version's name `name` is held by `other`, not by
     /// `revision`, where it was claimed.
     NameHeld {
@@ -295,6 +304,20 @@ pub enum Why {
         asker: SignerId,
         approvers: Vec<SignerId>,
     },
+    /// 47, 99: `version`, whose index is `index`, lacks `wanting`, the
+    /// first claim in the policy's order that no claim attached to the
+    /// index or the artifact satisfies; `checked` the signers it was
+    /// checked against.
+    VersionWanting {
+        version: ArtifactMeta,
+        index: Digest,
+        wanting: RequiredClaim,
+        checked: Vec<SignerId>,
+    },
+    /// 15, 16, 135: `output` came from `build`, whose cache entry the
+    /// store does not hold, so a publish of a landing with verdicts has
+    /// no bytes the landing's checks built to offer for it.
+    NotInStore { output: OutputName, build: BuildId },
     /// A refusal that names nothing beyond the source's own words.
     Said,
 }
@@ -386,6 +409,14 @@ impl fmt::Display for Why {
                 second,
                 what,
             } => write!(f, "the components {first} and {second} declare one {what}"),
+            Why::Reserved {
+                component,
+                what,
+                space,
+            } => write!(
+                f,
+                "the component {component} declares the {what}, which enters {space}, and no component's names may"
+            ),
             Why::NameHeld {
                 name,
                 revision,
@@ -467,6 +498,32 @@ impl fmt::Display for Why {
                 "{asker} may not ask for {channel}; ask one of {}",
                 list(approvers)
             ),
+            Why::VersionWanting {
+                version,
+                index,
+                wanting,
+                checked,
+            } => {
+                write!(
+                    f,
+                    "{} {} {} at {index} wants a claim of {}",
+                    version.ecosystem(),
+                    version.name(),
+                    version.version(),
+                    wanting.kind
+                )?;
+                if let Some(check) = &wanting.check {
+                    write!(f, " for the check {check}")?;
+                }
+                write!(
+                    f,
+                    ", made by none of the signers checked: {}",
+                    list(checked)
+                )
+            }
+            Why::NotInStore { output, build } => {
+                write!(f, "{output} from {build}: no cache entry in the store")
+            }
             Why::Said => write!(f, "it refused"),
         }
     }
@@ -624,6 +681,15 @@ mod tests {
                 "lib and web declare one prefix \"v\"".into(),
             ),
             (
+                Why::Reserved {
+                    component: ComponentName::new("web"),
+                    what: "prefix \"artifact/web-v\"".into(),
+                    space: "artifact/".into(),
+                },
+                "the component web declares the prefix \"artifact/web-v\", which enters artifact/"
+                    .into(),
+            ),
+            (
                 Why::NameHeld {
                     name: "lib-v1.3.0".into(),
                     revision: Revision::new("4f2a9c1"),
@@ -714,6 +780,23 @@ mod tests {
     }
 
     #[test]
+    fn an_output_whose_entry_the_store_lacks_names_the_output_and_build_through_json() {
+        let not = Not::refused(
+            &Source::new(Seam::Store, "bound"),
+            Why::NotInStore {
+                output: OutputName::new("site"),
+                build: BuildId::new("b7e1"),
+            },
+            None,
+        );
+        assert_eq!(round_trip(&not), not);
+        let json = serde_json::to_value(&not).unwrap();
+        let why = &json["refused"]["why"]["not_in_store"];
+        assert_eq!(why["output"], "site", "{json}");
+        assert_eq!(why["build"], "b7e1", "{json}");
+    }
+
+    #[test]
     fn the_history_answers_as_a_source_with_gits_words() {
         const GIT: &str = " ! [rejected]        lib-v1.3.0 -> lib-v1.3.0 (already exists)\n\
                            error: failed to push some refs to '/srv/shared.git'\n\
@@ -781,6 +864,72 @@ mod tests {
         );
         let json = serde_json::to_value(&record).unwrap();
         assert_eq!(json["seam"], "host");
+    }
+
+    #[test]
+    fn a_version_wanting_a_claim_names_it_and_the_signers_checked() {
+        let version = ArtifactMeta::new(
+            crate::Ecosystem::new("eco"),
+            crate::EcosystemName::new("pkg"),
+            crate::Version::new("1.3.0"),
+        )
+        .unwrap();
+        let index = Digest::of(b"index");
+        let named = |id: &str| crate::NamedSigner {
+            id: SignerId::new(id),
+            verified_by: format!("{id}'s key"),
+            kinds: vec![crate::ClaimKind::Verdict],
+            checks: vec![crate::Check::new("test")],
+        };
+        let wanting = RequiredClaim {
+            kind: crate::ClaimKind::Verdict,
+            check: Some(crate::Check::new("test")),
+            signers: vec![named("landing"), named("gate")],
+            asked_of: crate::AskedOf::Every,
+        };
+        let why = Why::VersionWanting {
+            version,
+            index: index.clone(),
+            wanting,
+            checked: vec![SignerId::new("landing"), SignerId::new("gate")],
+        };
+        assert_eq!(
+            why.to_string(),
+            format!(
+                "eco pkg 1.3.0 at {index} wants a claim of verdict for the check test, \
+                 made by none of the signers checked: landing, gate"
+            )
+        );
+        let not = Not::refused(&Source::new(Seam::Policy, "bound"), why.clone(), None);
+        assert_eq!(round_trip(&not), not);
+        let json = serde_json::to_value(&not).unwrap();
+        let wanting = &json["refused"]["why"]["version_wanting"];
+        assert_eq!(wanting["version"]["version"], "1.3.0", "{json}");
+        assert_eq!(wanting["index"], index.to_string(), "{json}");
+        assert_eq!(wanting["wanting"]["kind"], "verdict", "{json}");
+        assert_eq!(wanting["checked"], serde_json::json!(["landing", "gate"]));
+
+        let Why::VersionWanting { version, .. } = why else {
+            unreachable!()
+        };
+        let none = Why::VersionWanting {
+            version,
+            index: index.clone(),
+            wanting: RequiredClaim {
+                kind: crate::ClaimKind::Acceptance,
+                check: None,
+                signers: vec![],
+                asked_of: crate::AskedOf::Every,
+            },
+            checked: vec![],
+        };
+        assert_eq!(
+            none.to_string(),
+            format!(
+                "eco pkg 1.3.0 at {index} wants a claim of acceptance, \
+                 made by none of the signers checked: none"
+            )
+        );
     }
 
     #[test]
@@ -852,6 +1001,14 @@ mod tests {
                     path: "/srv/repo.git/tailrace/published/lib/lib-v1.3.0.json".into(),
                 },
                 "lib/lib-v1.3.0.json already holds another entry".into(),
+            ),
+            (
+                store(),
+                Why::NotInStore {
+                    output: OutputName::new("site"),
+                    build: BuildId::new("b7e1"),
+                },
+                "site from b7e1: no cache entry in the store".into(),
             ),
             (
                 Source::host("/srv/repo/.config/tailrace.toml"),

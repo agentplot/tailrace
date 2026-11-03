@@ -1,9 +1,8 @@
 //! What moon recorded of a run, read from its run report, and where a
 //! task says its outputs are, read from `moon task <target> --json`
-//! (75, C.3; design D4). sluice reads the same field of the same report
-//! for the key it signs (C.5).
+//! (75, 139, C.3; design D4). sluice reads the same field of the same
+//! report for the key it signs (C.5).
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -11,6 +10,11 @@ use tailrace_seams::Outcome;
 
 /// The run report, relative to the workspace's root.
 pub(super) const RUN_REPORT: &str = ".moon/cache/runReport.json";
+
+/// moon's outputs directory, relative to the workspace's root: an
+/// archive per task hash that passed, `<hash>.tar.gz`, which moon
+/// replays a task from (C.3).
+pub(super) const OUTPUTS: &str = ".moon/cache/outputs";
 
 /// What the run report records of one task's action.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,11 +40,11 @@ impl Action {
     }
 }
 
-/// The tasks a run report records, by target: only `RunTask` actions are
-/// a task's run.
+/// The tasks a run report records, by target in the report's order: only
+/// `RunTask` actions are a task's run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RunReport {
-    tasks: BTreeMap<String, Action>,
+    tasks: Vec<(String, Action)>,
 }
 
 impl RunReport {
@@ -51,7 +55,7 @@ impl RunReport {
         let actions = report["actions"]
             .as_array()
             .ok_or("the run report holds no list of actions")?;
-        let mut tasks = BTreeMap::new();
+        let mut tasks = Vec::new();
         for action in actions {
             let Some(label) = action["label"].as_str() else {
                 continue;
@@ -74,14 +78,22 @@ impl RunReport {
                 .and_then(|op| op["meta"]["hash"].as_str())
                 .map(str::to_string);
             let status = action["status"].as_str().unwrap_or_default().to_string();
-            tasks.insert(target, Action { status, hash });
+            tasks.push((target, Action { status, hash }));
         }
         Ok(RunReport { tasks })
     }
 
     /// The action of the task `target`, where the run holds one.
     pub fn task(&self, target: &str) -> Option<&Action> {
-        self.tasks.get(target)
+        self.tasks
+            .iter()
+            .find(|(t, _)| t == target)
+            .map(|(_, action)| action)
+    }
+
+    /// Every task the run holds, with its action, in the report's order.
+    pub fn tasks(&self) -> impl Iterator<Item = (&str, &Action)> {
+        self.tasks.iter().map(|(t, action)| (t.as_str(), action))
     }
 }
 
@@ -144,14 +156,14 @@ impl Declared {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::fs;
 
     use super::*;
 
     /// moon 2.6.1's run report of `web:build` passing, `app:test` failing
     /// and a workspace sync, its actions captured whole.
-    const RAN: &str = r#"{"actions": [
+    pub(in crate::profiles::build::moon) const RAN: &str = r#"{"actions": [
         {"allowFailure":false,"createdAt":"2026-10-24T03:21:11.720162","duration":{"secs":0,"nanos":14716333},"expectFailure":false,"finishedAt":"2026-10-24T03:21:11.734884","flaky":false,"label":"SyncWorkspace","node":{"action":"sync-workspace"},"nodeIndex":0,"operations":[{"duration":{"secs":0,"nanos":14407833},"finishedAt":"2026-10-24T03:21:11.734745","id":"config-schemas","meta":{"type":"sync-operation"},"startedAt":"2026-10-24T03:21:11.720338","status":"passed"}],"startedAt":"2026-10-24T03:21:11.720168","status":"passed"},
         {"allowFailure":false,"createdAt":"2026-10-24T03:21:11.735435","duration":{"secs":0,"nanos":66764542},"expectFailure":false,"finishedAt":"2026-10-24T03:21:11.802200","flaky":false,"label":"RunTask(web:build)","node":{"action":"run-task","params":{"args":[],"env":{},"interactive":false,"persistent":false,"priority":2,"target":"web:build","id":624690443369036665}},"nodeIndex":2,"operations":[{"duration":{"secs":0,"nanos":28314292},"finishedAt":"2026-10-24T03:21:11.764782","meta":{"type":"hash-generation","hash":"2d0b92021fe57b605be721ea3e1c2cf94ae717484f6068f2ff7253d372dbcc0c"},"startedAt":"2026-10-24T03:21:11.736468","status":"passed"},{"duration":{"secs":0,"nanos":19916},"finishedAt":"2026-10-24T03:21:11.764863","meta":{"type":"output-hydration"},"startedAt":"2026-10-24T03:21:11.764843","status":"skipped"},{"duration":{"secs":0,"nanos":33566208},"finishedAt":"2026-10-24T03:21:11.798547","meta":{"type":"task-execution","command":"sh -c \"mkdir -p dist && echo site > dist/site.txt\"","exitCode":0},"startedAt":"2026-10-24T03:21:11.764981","status":"passed"},{"duration":{"secs":0,"nanos":2460375},"finishedAt":"2026-10-24T03:21:11.801360","meta":{"type":"archive-creation"},"startedAt":"2026-10-24T03:21:11.798900","status":"passed"}],"startedAt":"2026-10-24T03:21:11.735436","status":"passed"},
         {"allowFailure":false,"createdAt":"2026-10-24T03:21:11.736381","duration":{"secs":0,"nanos":87354292},"error":"Task app:test failed to run.","expectFailure":false,"finishedAt":"2026-10-24T03:21:11.823737","flaky":false,"label":"RunTask(app:test)","node":{"action":"run-task","params":{"args":[],"env":{},"interactive":false,"persistent":false,"priority":2,"target":"app:test","id":12387781639968458340}},"nodeIndex":4,"operations":[{"duration":{"secs":0,"nanos":55268334},"finishedAt":"2026-10-24T03:21:11.793479","meta":{"type":"hash-generation","hash":"1fddf98dab8c928b12bf9fd0bf43b7b453d58708b3faa30e75c2c67fd54f5ba5"},"startedAt":"2026-10-24T03:21:11.738210","status":"passed"},{"duration":{"secs":0,"nanos":29375},"finishedAt":"2026-10-24T03:21:11.793562","meta":{"type":"output-hydration"},"startedAt":"2026-10-24T03:21:11.793533","status":"skipped"},{"duration":{"secs":0,"nanos":29456000},"finishedAt":"2026-10-24T03:21:11.823137","meta":{"type":"task-execution","command":"sh -c \"mkdir -p out && echo app > out/app.txt && exit 1\"","exitCode":1},"startedAt":"2026-10-24T03:21:11.793682","status":"failed"}],"startedAt":"2026-10-24T03:21:11.736383","status":"failed"}
@@ -162,8 +174,10 @@ mod tests {
         {"allowFailure":false,"createdAt":"2026-10-24T03:21:29.077693","duration":{"secs":0,"nanos":65809792},"expectFailure":false,"finishedAt":"2026-10-24T03:21:29.143504","flaky":false,"label":"RunTask(web:build)","node":{"action":"run-task","params":{"args":[],"env":{},"interactive":false,"persistent":false,"priority":2,"target":"web:build","id":624690443369036665}},"nodeIndex":2,"operations":[{"duration":{"secs":0,"nanos":64043917},"finishedAt":"2026-10-24T03:21:29.143214","meta":{"type":"hash-generation","hash":"2d0b92021fe57b605be721ea3e1c2cf94ae717484f6068f2ff7253d372dbcc0c"},"startedAt":"2026-10-24T03:21:29.079170","status":"passed"},{"duration":{"secs":0,"nanos":90084},"finishedAt":"2026-10-24T03:21:29.143370","meta":{"type":"output-hydration","command":"sh -c \"mkdir -p dist && echo site > dist/site.txt\"","exitCode":0},"startedAt":"2026-10-24T03:21:29.143280","status":"cached"}],"startedAt":"2026-10-24T03:21:29.077694","status":"cached"}
     ]}"#;
 
-    const WEB_BUILD: &str = "2d0b92021fe57b605be721ea3e1c2cf94ae717484f6068f2ff7253d372dbcc0c";
-    const APP_TEST: &str = "1fddf98dab8c928b12bf9fd0bf43b7b453d58708b3faa30e75c2c67fd54f5ba5";
+    pub(in crate::profiles::build::moon) const WEB_BUILD: &str =
+        "2d0b92021fe57b605be721ea3e1c2cf94ae717484f6068f2ff7253d372dbcc0c";
+    pub(in crate::profiles::build::moon) const APP_TEST: &str =
+        "1fddf98dab8c928b12bf9fd0bf43b7b453d58708b3faa30e75c2c67fd54f5ba5";
 
     #[test]
     fn a_task_that_passed_and_one_that_failed() {
@@ -194,6 +208,19 @@ mod tests {
             hash: None,
         };
         assert_eq!(skipped.outcome(), None);
+    }
+
+    #[test]
+    fn the_tasks_in_the_reports_order() {
+        let report = RunReport::read(RAN.as_bytes()).unwrap();
+        let ran: Vec<(&str, Option<&str>)> = report
+            .tasks()
+            .map(|(t, a)| (t, a.hash.as_deref()))
+            .collect();
+        assert_eq!(
+            ran,
+            [("web:build", Some(WEB_BUILD)), ("app:test", Some(APP_TEST))]
+        );
     }
 
     #[test]

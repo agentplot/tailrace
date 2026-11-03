@@ -11,6 +11,7 @@ pub mod gate;
 pub mod recorder;
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
@@ -139,6 +140,27 @@ pub fn on_path(name: &str) -> PathBuf {
         .unwrap_or_else(|| {
             panic!("{name} is not on PATH: the tools layer runs in the devenv shell, which pins it")
         })
+}
+
+/// A script at `dir/bin/cargo` running the shell's cargo with `CARGO_HOME`
+/// and `HOME` under `dir`, so nothing of the host's home is read.
+pub fn sealed_cargo(dir: &Path) -> PathBuf {
+    let home = dir.join("home");
+    fs::create_dir_all(home.join("cargo")).unwrap();
+    let bin = dir.join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let script = bin.join("cargo");
+    fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\nCARGO_HOME='{home}/cargo' HOME='{home}' exec '{cargo}' \"$@\"\n",
+            home = home.display(),
+            cargo = on_path("cargo").display()
+        ),
+    )
+    .unwrap();
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+    script
 }
 
 /// The pinned tool the devenv shell names in `variable`; panics naming it
@@ -359,6 +381,35 @@ pub fn policy_file(repo: &Repo, outputs: &[(&str, &str)], extra: &str) {
         ));
     }
     repo.write(POLICY_FILE, &text);
+}
+
+/// moon run over `targets` in `dir` itself in one `moon exec`,
+/// continuing past a task that fails, as a check job runs a candidate's
+/// checks, with none of the `MOON_*` variables of a moon task that may be
+/// running these tests; panics where moon left no run report.
+pub fn moon_exec(dir: &Path, targets: &[&str]) {
+    let mut command = Command::new(on_path("moon"));
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("MOON_") {
+            command.env_remove(&name);
+        }
+    }
+    for name in GIT_REPOSITORY_ENV {
+        command.env_remove(name);
+    }
+    let out = command
+        .arg("exec")
+        .args(targets)
+        .args(["--on-failure", "continue"])
+        .current_dir(dir)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .expect("moon runs");
+    assert!(
+        dir.join(".moon/cache/runReport.json").is_file(),
+        "moon left no run report: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
 }
 
 /// The hash moon gives `target` when it runs it in `dir` itself, read

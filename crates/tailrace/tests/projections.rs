@@ -2,10 +2,14 @@
 //! projection group over the file and image projections, each output a
 //! file in a temporary directory of its own (design D4, D5, D7).
 //!
-//! Only the group's pack scenarios run, and the scenario of a projection
-//! that packs no cache entries, which neither does. Neither projection
-//! renders or serves yet, so the render and serve scenarios are not run
-//! over them:
+//! Only the group's pack scenarios run, the scenario of a projection
+//! that packs no cache entries, which neither does, the pinned
+//! scenarios, whose lockfile one is not applicable, since neither
+//! ecosystem has a lockfile, and the manifest scenarios, whose two of a
+//! manifest are not applicable beside it, since neither ecosystem has a
+//! manifest either; and the serve scenarios, each not applicable, since
+//! both ecosystems' clients read files. Neither projection renders yet,
+//! so the render scenarios are not run over them:
 //! a departure from core.33, which asks every profile to pass the one
 //! suite, stated in design D7. It ends with the unit that builds their
 //! render (bolt 5's render under a policy, phase 2's layouts).
@@ -20,17 +24,58 @@ use tailrace::profiles::projection::image::ImageProjection;
 use tailrace_conformance::seams::projection::{self, ProjectionRig};
 use tailrace_conformance::{run, Rig, Scenario};
 use tailrace_seams::{
-    Artifact, ArtifactMeta, Digest, Ecosystem, EcosystemName, Output, OutputName, Projection,
-    Version,
+    Artifact, ArtifactMeta, Digest, Ecosystem, EcosystemName, Output, OutputName, Pinned,
+    Projection, Range, Requirement, Version,
 };
 use tempfile::TempDir;
 
 /// The scenarios of pack, the only operation these projections build,
-/// and of a projection that packs no cache entries.
-const PACK: [&str; 3] = [
+/// of a projection that packs no cache entries, of pinned, of requires
+/// and satisfying, and of serve.
+const PACK: [&str; 12] = [
     "packed the same again",
     "a projection that cannot be reached",
     "a projection that packs no cache entries",
+    "pinned as the lockfile spells it",
+    "no lockfile, absent",
+    "required as the manifest spells it",
+    "satisfied by the ecosystem's own ordering",
+    "no manifest, none",
+    "a version held, served",
+    "a version lacked, asked of the core",
+    "a refusal in the response",
+    "one base, two places",
+];
+
+/// What the group's report names not applicable over a projection whose
+/// ecosystem has no lockfile and no manifest, and whose clients read
+/// files.
+const NO_LOCKFILE_OR_MANIFEST: [(&str, &str); 7] = [
+    (
+        "pinned as the lockfile spells it",
+        "the ecosystem has no lockfile",
+    ),
+    (
+        "required as the manifest spells it",
+        "the ecosystem has no manifest",
+    ),
+    (
+        "satisfied by the ecosystem's own ordering",
+        "the ecosystem has no manifest",
+    ),
+    (
+        "a version held, served",
+        "the ecosystem's clients read files",
+    ),
+    (
+        "a version lacked, asked of the core",
+        "the ecosystem's clients read files",
+    ),
+    (
+        "a refusal in the response",
+        "the ecosystem's clients read files",
+    ),
+    ("one base, two places", "the ecosystem's clients read files"),
 ];
 
 fn pack_scenarios() -> Vec<Scenario<dyn ProjectionRig>> {
@@ -42,7 +87,7 @@ fn pack_scenarios() -> Vec<Scenario<dyn ProjectionRig>> {
 
 /// A projection, and the one file of the output it packs.
 struct FileRig {
-    _dir: TempDir,
+    dir: TempDir,
     path: PathBuf,
     ecosystem: &'static str,
     projection: Box<dyn Projection>,
@@ -54,7 +99,7 @@ impl FileRig {
         let path = dir.path().join("output");
         fs::write(&path, bytes).unwrap();
         FileRig {
-            _dir: dir,
+            dir,
             path,
             ecosystem,
             projection,
@@ -106,12 +151,36 @@ impl ProjectionRig for FileRig {
             .collect()
     }
 
+    fn has_manifest(&self) -> bool {
+        false
+    }
+
+    /// An artifact of the ecosystem, which requires nothing, since the
+    /// ecosystem has no manifest.
+    fn held(&self) -> (Artifact, Vec<Requirement>) {
+        (self.artifacts(1).remove(0), Vec::new())
+    }
+
+    /// None: the ecosystem has no manifest to spell a range in.
+    fn ranged(&self) -> (Range, Vec<Version>, Vec<Version>) {
+        (Range::new(""), Vec::new(), Vec::new())
+    }
+
     fn serves(&self) -> bool {
         false
     }
 
     fn caches(&self) -> bool {
         false
+    }
+
+    fn has_lockfile(&self) -> bool {
+        false
+    }
+
+    /// The output's directory, which holds no lockfile of any ecosystem.
+    fn checkout(&self, _: bool) -> (String, Vec<Pinned>) {
+        (self.dir.path().display().to_string(), Vec::new())
     }
 
     /// The output's file removed, and the operating system's words for
@@ -129,7 +198,12 @@ fn the_pack_scenarios_over_the_file_projection() {
     });
     assert_eq!((report.profile.as_str(), report.ran), ("file", PACK.len()));
     report.assert();
-    assert_eq!(report.not_applicable, [], "{report}");
+    let inapplicable: Vec<(&str, &str)> = report
+        .not_applicable
+        .iter()
+        .map(|n| (n.scenario, n.why.as_str()))
+        .collect();
+    assert_eq!(inapplicable, NO_LOCKFILE_OR_MANIFEST, "{report}");
 }
 
 #[test]
@@ -139,5 +213,10 @@ fn the_pack_scenarios_over_the_image_projection() {
     });
     assert_eq!((report.profile.as_str(), report.ran), ("image", PACK.len()));
     report.assert();
-    assert_eq!(report.not_applicable, [], "{report}");
+    let inapplicable: Vec<(&str, &str)> = report
+        .not_applicable
+        .iter()
+        .map(|n| (n.scenario, n.why.as_str()))
+        .collect();
+    assert_eq!(inapplicable, NO_LOCKFILE_OR_MANIFEST, "{report}");
 }
