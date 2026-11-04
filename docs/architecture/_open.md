@@ -16,5 +16,4 @@ Deleted when empty.
 ## Decisions waiting
 
 - **Clause 54 and a registry's lifecycle rule.** A rule expiring untagged manifests may take an accepted version's attestations, which are untagged referrers; ADR 0015 left it unread.
-- **C.1's spaces and a read by digest.** The registry profile holds a component's names, `cache/<build>` and `artifact/<ecosystem>/<name>` in three repositories under the declared one, and puts every byte, artifact, index and claim in the declared repository, where read and claims-of find each digest (`crates/tailrace/src/profiles/store/registry/mod.rs`). ADR 0023 records it, proposed to the user; accepted only on their yes.
 - **A claim already signed under tailrace's own type for a catalogued kind.** What verify answers for a provenance, an acceptance or a rebuild signed before ADR 0022's change, under `https://agentplot.github.io/tailrace/claim/<kind>/v1`, waits on the unit that moves the types (10, 141).
