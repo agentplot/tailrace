@@ -1,13 +1,15 @@
 ---
 number: 23
 title: A registry keeps a component's names, its artifacts' names and its cache entries in spaces of their own
-status: proposed
+status: accepted
 date: 2026-10-27
 decision-makers:
 - Chuck Swanberg
 ---
 
 # A registry keeps a component's names, its artifacts' names and its cache entries in spaces of their own
+
+Status: accepted by the user on 2026-11-04, on their card.
 
 Deciders: proposed by the the-store-names-an-artifact-by-ecosystem-name-and-version unit of phase 1's bolt 5, which lets a consumer find what its lockfile pins by ecosystem, name and version alone (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 5), on the design agent's batch 25, 26, 27 and 29 rulings, for the user to accept with the change.
 Sources: statement clauses 1, 3, 8, 52, 54, 58, 59, 61, 70, 109, 125, 135, 138 and C.1, as amended at blueprints f90f5fd; proposals 153 and 155; ADRs 0003, 0014 and 0015; rules core.1, core.2, core.5, core.6, core.14, core.19, core.20; the change's design, D8 to D13 and D18.
