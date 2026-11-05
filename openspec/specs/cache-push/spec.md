@@ -95,7 +95,7 @@ cache (52, C.3).
 
 #### Scenario: Every task the landing ran replays
 
-- **WHEN** sluice lands a revision on one host whose checks run moon tasks with and without declared outputs, the push runs there, and a clone on a second host sharing the store runs `tailrace sync` for that revision and then moon over the same tasks
+- **WHEN** sluice lands a revision on one host whose checks run moon tasks with and without declared outputs, the push runs there, and a clone on a second host sharing the store runs `timber sync` for that revision and then moon over the same tasks
 - **THEN** moon's run report on the second host names every task the landing ran as cached, and each declared output holds the bytes the first host's build wrote
 
 ### Requirement: A push before the landing writes what the checkout's run left

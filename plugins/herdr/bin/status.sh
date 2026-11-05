@@ -45,7 +45,7 @@ document() {
     return 1
   fi
   jq -e 'type == "object" and (.answer | type == "string")' "$pane/doc" >/dev/null 2>&1 && return 0
-  echo "http://$address$1 answered HTTP $code, which is no answer of tailrace's:"
+  echo "http://$address$1 answered HTTP $code, which is no answer of timber's:"
   verbatim <"$pane/doc"
   return 1
 }
@@ -53,7 +53,7 @@ document() {
 # The frame's lines, as words.jq makes them, in $pane/body, and of every
 # repository, the rows that open, in their numbers' order, in $pane/rows.
 body() {
-  if [ -n "$repo" ]; then heading=$repo; else heading="tailrace · every repository on this host"; fi
+  if [ -n "$repo" ]; then heading=$repo; else heading="timber · every repository on this host"; fi
   if [ -n "$repo" ] && ! printf '%s\n' "$repo" | grep -qx '[^/ ][^/]*/[^/ ][^/]*'; then
     echo "--repo names a repository as <owner>/<name>, not $repo" >"$pane/said"
   elif find_or_start >"$pane/said" && document "${repo:+/$repo}/status.json" >"$pane/said"; then

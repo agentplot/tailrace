@@ -5,6 +5,6 @@ channels: refused — the landing (branch, origin) refused: not landed as fetche
 
 environments: absent — the target (unread) holds no environment of agentplot/beta
 
-published on this host: refused — the host (/srv/beta/.git/tailrace/published) refused: kept other: path app/1.0.0.json
+published on this host: refused — the host (/srv/beta/.git/timber/published) refused: kept other: path app/1.0.0.json
 
 b back · r ask again · q close

@@ -2,7 +2,7 @@
 
 ## Purpose
 The signer seam (B.4) bound to a key file on the host, held as sluice's
-signers hold theirs (C.8): claims signed as the host running tailrace,
+signers hold theirs (C.8): claims signed as the host running timber,
 told apart by the public key the policy lists, with no credential kept.
 
 ## Requirements
@@ -14,7 +14,7 @@ Ed25519 private key in OpenSSH's format with no passphrase, the form
 sluice signs with (C.8). A key file whose mode lets anyone but its owner
 read it SHALL be refused with the words `which lets others read it` and
 `chmod 600`, and nothing signed; a key with a passphrase SHALL be
-refused saying tailrace signs with none to type.
+refused saying timber signs with none to type.
 
 #### Scenario: A key others may read
 
@@ -24,7 +24,7 @@ refused saying tailrace signs with none to type.
 #### Scenario: A key with a passphrase
 
 - **WHEN** a claim is signed with a key file encrypted under a passphrase
-- **THEN** sign is refused naming the file and saying tailrace signs with no passphrase to type
+- **THEN** sign is refused naming the file and saying timber signs with no passphrase to type
 
 #### Scenario: A key of another algorithm
 
@@ -38,12 +38,12 @@ asked to sign as any other identity, it SHALL answer absent naming that
 identity, and nothing is signed (79, 11, core.8). The envelope SHALL
 hold the claim's payload, its payload type, the bound signer's name and
 one SSH signature over the DSSE pre-authentication encoding of the two,
-in tailrace's own signature namespace.
+in timber's own signature namespace.
 
 #### Scenario: Signed as the host
 
 - **WHEN** the profile bound as `host` signs a provenance claim as `host`
-- **THEN** the envelope holds that claim, names `host`, and its signature is an armored SSH signature that verifies against the key's public half in tailrace's namespace over the envelope's pre-authentication encoding, and in no other namespace
+- **THEN** the envelope holds that claim, names `host`, and its signature is an armored SSH signature that verifies against the key's public half in timber's namespace over the envelope's pre-authentication encoding, and in no other namespace
 
 #### Scenario: Asked to sign as another
 
@@ -95,7 +95,7 @@ absent and never refused (58, 59, core.19).
 ### Requirement: verify tells a claim by the public key the policy lists
 
 verify SHALL answer the first signer given, in order, whose verifier is
-an SSH public key that made a valid signature in tailrace's namespace
+an SSH public key that made a valid signature in timber's namespace
 over exactly the envelope's payload and payload type (80, C.8). It SHALL
 read no key file and reach nothing. The name the envelope gives its
 signer SHALL decide nothing (core.7).
@@ -217,7 +217,7 @@ no file read (79, 80, 64).
 
 ### Requirement: The given host key is made on first use
 
-A host key bound as the given one, at `tailrace/host/signing.key` in the
+A host key bound as the given one, at `timber/host/signing.key` in the
 user's data directory (`$XDG_DATA_HOME`, or `~/.local/share` where that
 variable is unset or empty), SHALL, on a sign that finds no key file
 there, make its directory with mode 0700 where it makes it, make an
@@ -229,7 +229,7 @@ is there SHALL be read as any bound key is, never replaced.
 #### Scenario: The first sign
 
 - **WHEN** the given host key is asked to sign a claim as the host's name and no file is at its path
-- **THEN** `tailrace/host` is made under the data directory with mode 0700, the key and `signing.key.pub` are made in it, the key's mode is 0600, the envelope verifies against the public half `signing.key.pub` holds, and that line, read as a policy listing, tells the envelope as made by the host's name
+- **THEN** `timber/host` is made under the data directory with mode 0700, the key and `signing.key.pub` are made in it, the key's mode is 0600, the envelope verifies against the public half `signing.key.pub` holds, and that line, read as a policy listing, tells the envelope as made by the host's name
 
 #### Scenario: The second sign
 

@@ -1,0 +1,28 @@
+[package]
+name = "timber-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "What timber does with its seams: Part A of the statement, naming no tool (rule core.1)."
+
+[dependencies]
+timber-seams = { path = "../timber-seams" }
+anyhow.workspace = true
+git-cliff-core.workspace = true
+git2.workspace = true
+glob.workspace = true
+regex.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+timber-fakes = { path = "../timber-fakes" }
+tempfile.workspace = true
+
+[lib]
+doctest = false
+
+[lints]
+workspace = true

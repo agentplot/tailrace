@@ -44,7 +44,7 @@ const style = `
 .${P} .${P}-badt{fill:var(--d-bad);font-size:11.5px;font-weight:600}
 `;
 
-const title = "tailrace: a channel moves and its environments converge";
+const title = "timber: a channel moves and its environments converge";
 const desc =
   "The stable channel moves from 1.4.1 to 1.4.2 by a signed promotion, recorded in the ledger. Three environments follow stable. A static site moves on its own: a push reconciler syncs the bundle, and it reports running 1.4.2. A CloudFormation stack waits: it follows its own channel prod, bound to stable, and runs 1.4.1 until an approver promotes prod. A Kubernetes cluster pulls: Flux watches the channel tag, verifies the gate’s signature and applies it, and a watcher reports 1.4.2. Each reports what it runs beside what it should run, and where the two differ the status says so.";
 

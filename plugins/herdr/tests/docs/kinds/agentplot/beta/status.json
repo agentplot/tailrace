@@ -35,7 +35,7 @@
       "refused": {
         "source": {
           "seam": "host",
-          "profile": "/srv/beta/.git/tailrace/published"
+          "profile": "/srv/beta/.git/timber/published"
         },
         "why": {
           "kept_other": {

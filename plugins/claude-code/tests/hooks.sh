@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # The guard on scratch repositories: in a repository whose HEAD holds
-# .config/tailrace.toml it refuses every publish command of its table,
-# naming `tailrace publish` and nothing it derived, whether or not the host
-# has `tailrace`; everything else, and everywhere else, it lets through
+# .config/timber.toml it refuses every publish command of its table,
+# naming `timber publish` and nothing it derived, whether or not the host
+# has `timber`; everything else, and everywhere else, it lets through
 # with no output. git runs isolated from the user's config and
 # credentials, so nothing reaches a network or asks anyone anything.
 
@@ -11,7 +11,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 guard=$here/../scripts/guard.sh
 
 # Under sluice's sandbox only SLUICE_TMP is writable beside the checkout.
-scratch=$(mktemp -d "${SLUICE_TMP:-${TMPDIR:-/tmp}}/tailrace-plugin-hooks.XXXXXX")
+scratch=$(mktemp -d "${SLUICE_TMP:-${TMPDIR:-/tmp}}/timber-plugin-hooks.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 scratch=$(cd "$scratch" && pwd -P)
 
@@ -25,11 +25,11 @@ package() { # dir
   printf '{ "name": "@acme/ui", "version": "1.4.0" }\n' >"$1/package.json"
 }
 
-# A tailrace repository: HEAD holds the policy file.
+# A timber repository: HEAD holds the policy file.
 repo=$scratch/repo
 git init -q -b main "$repo"
 mkdir -p "$repo/.config"
-printf '[store]\n' >"$repo/.config/tailrace.toml"
+printf '[store]\n' >"$repo/.config/timber.toml"
 package "$repo"
 package "$repo/packages/ui"
 git -C "$repo" add -A
@@ -49,14 +49,14 @@ package "$uncommitted"
 git -C "$uncommitted" add -A
 git -C "$uncommitted" commit -qm root
 mkdir -p "$uncommitted/.config"
-printf '[store]\n' >"$uncommitted/.config/tailrace.toml"
+printf '[store]\n' >"$uncommitted/.config/timber.toml"
 
 # No repository at all.
 nowhere=$scratch/nowhere
 package "$nowhere"
 
-# The tools the guard runs, and no `tailrace`; and beside them a stand-in
-# `tailrace` that fails, and says so, if anything calls it.
+# The tools the guard runs, and no `timber`; and beside them a stand-in
+# `timber` that fails, and says so, if anything calls it.
 tools=$scratch/tools
 mkdir -p "$tools"
 for t in bash jq git grep awk cat; do
@@ -64,12 +64,12 @@ for t in bash jq git grep awk cat; do
 done
 stand=$scratch/stand
 mkdir -p "$stand"
-cat >"$stand/tailrace" <<EOF
+cat >"$stand/timber" <<EOF
 #!/bin/sh
-touch "$scratch/tailrace-called"
+touch "$scratch/timber-called"
 exit 1
 EOF
-chmod +x "$stand/tailrace"
+chmod +x "$stand/timber"
 
 failures=0
 
@@ -77,11 +77,11 @@ run_guard() { # dir command
   jq -n --arg c "$2" --arg d "$1" '{tool_name: "Bash", tool_input: {command: $c}, cwd: $d}' | "$guard"
 }
 
-# A deny names `tailrace publish` and neither the package's version nor
+# A deny names `timber publish` and neither the package's version nor
 # its name.
 denied() { # output
   printf '%s' "$1" | jq -e '.hookSpecificOutput.hookEventName == "PreToolUse" and .hookSpecificOutput.permissionDecision == "deny"' >/dev/null 2>&1 &&
-    printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisionReason' | grep -q 'tailrace publish' &&
+    printf '%s' "$1" | jq -r '.hookSpecificOutput.permissionDecisionReason' | grep -q 'timber publish' &&
     ! printf '%s' "$1" | grep -Eq '1\.4\.0|acme'
 }
 
@@ -141,21 +141,21 @@ allows "$repo" 'cargo build'
 allows "$repo" 'cargo package --no-verify'
 allows "$repo" 'docker build .'
 allows "$repo" 'git push origin unit/x'
-allows "$repo" 'tailrace publish HEAD --json'
+allows "$repo" 'timber publish HEAD --json'
 allows "$repo" 'echo "npm publish"'
 allows "$repo" 'ls -la'
 allows "$plain" 'npm publish' 'HEAD holds no policy file'
 allows "$uncommitted" 'npm publish' 'the policy file uncommitted'
 allows "$nowhere" 'npm publish' 'no repository'
 
-# The same refusal with no `tailrace` on the host as with one, which is
+# The same refusal with no `timber` on the host as with one, which is
 # never called.
 none=$(PATH=$tools run_guard "$repo" 'npm publish')
 with=$(PATH=$stand:$tools run_guard "$repo" 'npm publish')
-if denied "$none" && [ "$none" = "$with" ] && [ ! -e "$scratch/tailrace-called" ]; then
-  echo "ok    the refusal is the same with no tailrace on PATH, and never calls it"
+if denied "$none" && [ "$none" = "$with" ] && [ ! -e "$scratch/timber-called" ]; then
+  echo "ok    the refusal is the same with no timber on PATH, and never calls it"
 else
-  echo "FAIL  with no tailrace: ${none:-nothing}; with one: ${with:-nothing}; called: $([ -e "$scratch/tailrace-called" ] && echo yes || echo no)"
+  echo "FAIL  with no timber: ${none:-nothing}; with one: ${with:-nothing}; called: $([ -e "$scratch/timber-called" ] && echo yes || echo no)"
   failures=$((failures + 1))
 fi
 

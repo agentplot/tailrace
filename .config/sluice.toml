@@ -1,5 +1,5 @@
-# tailrace's gate: sluice gates every merge into a bolt and onto main
-# (kit:gate.1) on the checks moon tags, in tailrace's devenv shell
+# timber's gate: sluice gates every merge into a bolt and onto main
+# (kit:gate.1) on the checks moon tags, in timber's devenv shell
 # (kit:gate.2). main and the bolts live on GitHub: every round fetches them
 # from origin and forms on what it holds, and a landing is a leased push as
 # the host's [forge] app (kit:gate.4). crew makes each bolt there with

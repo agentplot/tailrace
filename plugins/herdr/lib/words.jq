@@ -53,7 +53,7 @@ def not_lines($lead; $indent):
   | (if $kind == "absent" then "absent — \($not.source | source_words) holds no \($not.what | clean)"
      elif $kind == "refused" then "refused — \($not.source | source_words) refused: \($not.why | why_words)"
      elif $kind == "unreadable" then "unreadable — \($not.source | source_words) could not read \($not.what | clean)"
-     else "an answer of no kind tailrace gives: \(tojson | clean)" end) as $first
+     else "an answer of no kind timber gives: \(tojson | clean)" end) as $first
   | [{text: $lead + $first}]
     + [($not.said // null) | strings | rtrimstr("\n") | split("\n") | .[] | {text: "\($indent)  \(clean)"}];
 
@@ -91,14 +91,14 @@ def row_lines($n; $cursor; $width):
 # order; a row that is not a value is said where its number would be,
 # and has none, since it names no repository to open.
 def every($cursor):
-  if .answer != "ok" then [{text: "tailrace · every repository on this host"}, {text: ""}] + not_lines(""; "")
+  if .answer != "ok" then [{text: "timber · every repository on this host"}, {text: ""}] + not_lines(""; "")
   else .value as $v
   | ($v.repositories | length) as $count
   | ([$v.repositories[] | select(.answer == "ok") | .value.repository | name_of | length] | max // 0) as $width
-  | [{text: "tailrace · \(if $count == 0 then "no repository" elif $count == 1 then "1 repository" else "\($count) repositories" end) · as of \($v.asked_at | utc)"}, {text: ""}]
+  | [{text: "timber · \(if $count == 0 then "no repository" elif $count == 1 then "1 repository" else "\($count) repositories" end) · as of \($v.asked_at | utc)"}, {text: ""}]
     + if $count == 0 then
-        [{text: "This host knows no repository yet. A repository appears once a tailrace"},
-         {text: "command run in a checkout of it names it, as tailrace status --page does."}]
+        [{text: "This host knows no repository yet. A repository appears once a timber"},
+         {text: "command run in a checkout of it names it, as timber status --page does."}]
       else
         reduce $v.repositories[] as $r ({n: 0, lines: []};
           if $r.answer == "ok" then (.n + 1) as $n | .n = $n | .lines += ($r | row_lines($n; $cursor; $width))
@@ -176,7 +176,7 @@ def published_lines:
   end;
 
 # 57, 132: one repository whole, as the process answers it at its path,
-# what `tailrace status --json` prints in its checkout: the branch and
+# what `timber status --json` prints in its checkout: the branch and
 # the landed revision its policy was read at, each channel, the
 # environments, and what this host published.
 def one($repo):

@@ -1,7 +1,7 @@
 # attestation-verification Specification
 
 ## Purpose
-What `tailrace verify` tells of a version: which signer the policy names
+What `timber verify` tells of a version: which signer the policy names
 made each attestation attached to its index and artifacts, and each
 verdict those attestations carry, whether it counts, and that it writes
 nothing.

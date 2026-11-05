@@ -116,7 +116,7 @@ Status SHALL answer the same with the store unreachable (S10).
 
 ### Requirement: Everything kept deleted answers the same
 
-With everything tailrace keeps deleted but the record of claimed
+With everything timber keeps deleted but the record of claimed
 versions, status SHALL answer the same channels and chains from the
 ledger and git, and the same record once rebuilt (63, S12).
 
@@ -224,7 +224,7 @@ notes.
 
 #### Scenario: On the command line
 
-- **WHEN** `tailrace status` is asked as text and with `--json` after a promotion
+- **WHEN** `timber status` is asked as text and with `--json` after a promotion
 - **THEN** the text prints the notes of the version the promotion moved to indented beneath the promotion's line, and the JSON carries each version's notes beside the channel in the one answer form
 
 ### Requirement: The changelog's notes are rendered from git on any machine

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # PreToolUse on Bash: in a repository whose HEAD holds
-# .config/tailrace.toml, refuse an ecosystem's own publish command, naming
-# `tailrace publish` for a landed revision instead. The plugin is a surface
+# .config/timber.toml, refuse an ecosystem's own publish command, naming
+# `timber publish` for a landed revision instead. The plugin is a surface
 # kept outside the core (section 9), so it names the commands it refuses
 # and nothing of the core does (core.1). It answers nothing the core does
 # not (56, core.31): it reads only whether HEAD holds the file, never its
 # contents, and the refusal names the command to run and nothing derived.
-# It never runs `tailrace`, so it refuses on a host that has none.
+# It never runs `timber`, so it refuses on a host that has none.
 # Anything it cannot read is let through.
 #
 # bash 3.2. Nothing of the command is evaluated: it is split on
@@ -47,7 +47,7 @@ is_publish() {
 
 deny() { # the refused command, as its program and verb
   local reason
-  reason="This repository publishes through tailrace alone: \`$1\` would put bytes in a registry that no landing's verdicts named and no gate accepted. Land the work first, then run \`tailrace publish <revision>\` for the landed revision; tailrace derives the version, packs and offers every component's artifacts and attaches their claims."
+  reason="This repository publishes through timber alone: \`$1\` would put bytes in a registry that no landing's verdicts named and no gate accepted. Land the work first, then run \`timber publish <revision>\` for the landed revision; timber derives the version, packs and offers every component's artifacts and attaches their claims."
   jq -n --arg r "$reason" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $r}}'
   exit 0
 }
@@ -87,7 +87,7 @@ while IFS= read -r seg; do
   for a in "${w[@]:i}"; do
     a=$(unquote "$a")
     is_publish "$prog" "$a" || continue
-    git -C "$dir" cat-file -e HEAD:.config/tailrace.toml 2>/dev/null || continue
+    git -C "$dir" cat-file -e HEAD:.config/timber.toml 2>/dev/null || continue
     deny "$prog $a"
   done
 done <<EOF

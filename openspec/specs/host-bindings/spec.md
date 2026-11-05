@@ -3,7 +3,7 @@
 ## Purpose
 The operator's bindings for a host: one file beside the landing's own
 that names the store, the landing and the signer, and the binding
-`tailrace publish` and `tailrace verify` are bound to from it, so a
+`timber publish` and `timber verify` are bound to from it, so a
 person on a laptop publishes with the installed binary and a second
 machine verifies what it published.
 
@@ -12,20 +12,20 @@ machine verifies what it published.
 ### Requirement: The host's bindings are one file beside the landing's own
 
 The operator's bindings for a host SHALL be kept in one TOML file at
-`$XDG_CONFIG_HOME/tailrace/config.toml`, or `~/.config/tailrace/config.toml`
+`$XDG_CONFIG_HOME/timber/config.toml`, or `~/.config/timber/config.toml`
 where that variable is unset or empty, beside sluice's own
 `config.toml` under the same directory and in the same form, readable
-with a file reader and with no tailrace process running (118, 62).
+with a file reader and with no timber process running (118, 62).
 
 #### Scenario: The file beside sluice's
 
-- **WHEN** `XDG_CONFIG_HOME` names a directory holding `sluice/config.toml` and `tailrace/config.toml`
-- **THEN** `tailrace publish` binds the seams the second names, and both are TOML files a plain file reader opens
+- **WHEN** `XDG_CONFIG_HOME` names a directory holding `sluice/config.toml` and `timber/config.toml`
+- **THEN** `timber publish` binds the seams the second names, and both are TOML files a plain file reader opens
 
 #### Scenario: No variable set
 
-- **WHEN** `XDG_CONFIG_HOME` is unset and `~/.config/tailrace/config.toml` names a layout, a landing and a signer
-- **THEN** `tailrace verify` is bound to what that file names
+- **WHEN** `XDG_CONFIG_HOME` is unset and `~/.config/timber/config.toml` names a layout, a landing and a signer
+- **THEN** `timber verify` is bound to what that file names
 
 ### Requirement: The file names the store, the landing and the signer
 
@@ -56,7 +56,7 @@ absolute or begin with `~/`.
 
 #### Scenario: A registry
 
-- **WHEN** the file names `[store] registry` with a repository such as `localhost:5000/tailrace`
+- **WHEN** the file names `[store] registry` with a repository such as `localhost:5000/timber`
 - **THEN** publish writes into that repository and verify reads from it, neither makes a repository, and the file names no credential
 
 #### Scenario: A registry named by something that is not a repository
@@ -85,7 +85,7 @@ nothing: a file that is there is never guessed past.
 
 #### Scenario: No file
 
-- **WHEN** `tailrace verify <version>` runs on a host with no bindings file
+- **WHEN** `timber verify <version>` runs on a host with no bindings file
 - **THEN** it is bound to the given layout, the landing the repository is set up for over the given landing remote, the git ref ledger on that remote and the host key verify-only, and no bindings file is written
 
 #### Scenario: Two landings named
@@ -165,7 +165,7 @@ packed as a file and one as an image (S1, S2, 14 to 20).
 
 #### Scenario: S1 from the binary
 
-- **WHEN** sluice lands a revision and the built binary runs `tailrace publish <revision> --json`
+- **WHEN** sluice lands a revision and the built binary runs `timber publish <revision> --json`
 - **THEN** the answer names the version the history derives, the index's digest, both artifacts' digests and ecosystem names, the provenance on each signed by the host's key and sluice's verdicts carried in it; the layout holds no name but the version's, so no channel moved
 
 #### Scenario: S2 from the binary
@@ -183,7 +183,7 @@ policy lets that signer claim it (80, 9, 61).
 
 #### Scenario: verify from a copy
 
-- **WHEN** the layout is copied to another directory, the repository cloned beside it, and the built binary runs `tailrace verify <version> --json` there under a bindings file naming the copy, sluice with the clone's remote, and no `[signing]` table
+- **WHEN** the layout is copied to another directory, the repository cloned beside it, and the built binary runs `timber verify <version> --json` there under a bindings file naming the copy, sluice with the clone's remote, and no `[signing]` table
 - **THEN** every provenance on the index's artifacts is made by the publishing host and counts under an acceptance policy requiring provenance from it, and each of sluice's verdicts is reported as carried in the provenance that holds it
 
 ### Requirement: The host trusts its own signer
@@ -297,7 +297,7 @@ to, written or given, or with no remote where the landing has none
 #### Scenario: A git ref ledger with a remote
 
 - **WHEN** the file names `[ledger] git_ref = { remote = "origin" }`
-- **THEN** a promotion pushes its claim to `refs/tailrace/ledger/<channel>` on `origin`, and the file names no credential
+- **THEN** a promotion pushes its claim to `refs/timber/ledger/<channel>` on `origin`, and the file names no credential
 
 #### Scenario: A store ledger
 
@@ -316,8 +316,8 @@ to, written or given, or with no remote where the landing has none
 
 #### Scenario: No ledger table
 
-- **WHEN** the file names no `[ledger]` and `tailrace promote` runs, the landing bound to the remote `origin`
-- **THEN** the promotion is pushed to `refs/tailrace/ledger/<channel>` on `origin`, after the chain is fetched from it
+- **WHEN** the file names no `[ledger]` and `timber promote` runs, the landing bound to the remote `origin`
+- **THEN** the promotion is pushed to `refs/timber/ledger/<channel>` on `origin`, after the chain is fetched from it
 
 ### Requirement: Status is bound with nothing written
 
@@ -360,9 +360,9 @@ The bindings file SHALL name what tells the host's gate of an offered
 version in a `[gate]` table, by one key, in the form every other table
 of the file takes (118, 130, C.16): `publish = {}`, the host's own
 publish step tells the host's own gate; or `job = "<words>"`, a job
-outside tailrace, woken by a store's or a forge's event, tells a gate
+outside timber, woken by a store's or a forge's event, tells a gate
 elsewhere, and the words say which. The core SHALL name neither (130).
-tailrace SHALL run nothing for `job`, and SHALL carry its words as
+timber SHALL run nothing for `job`, and SHALL carry its words as
 written. A `[gate]` naming no key, two keys, a key other than these, a
 `publish` that is not an empty table, or a `job` that is not a string
 with words in it SHALL be unreadable naming the file and the table, and
@@ -377,7 +377,7 @@ SHALL leave nothing written for every command that reads the file (58,
 #### Scenario: A job tells a separated gate
 
 - **WHEN** the bindings file holds `[gate]` with `job = "the release job a push to main wakes"`
-- **THEN** the binding says a job tells the gate, carrying those words as written, and nothing of tailrace starts or reaches that job
+- **THEN** the binding says a job tells the gate, carrying those words as written, and nothing of timber starts or reaches that job
 
 #### Scenario: Two tellers
 
@@ -423,17 +423,17 @@ placed.
 
 #### Scenario: Publish with nothing written
 
-- **WHEN** `tailrace publish <revision>` runs on a host with no bindings file, in a repository whose branch has landed the revision
+- **WHEN** `timber publish <revision>` runs on a host with no bindings file, in a repository whose branch has landed the revision
 - **THEN** the version is offered into the given layout, signed by the given host key, the host's record names the store as `layout <path>` with the given layout's full path, and the same run tells the host's own gate of the version, the gate signing as the host's name
 
 #### Scenario: Status with nothing written
 
-- **WHEN** `tailrace status` runs on a host with no bindings file
-- **THEN** it reads the landing the repository is set up for, over the given landing remote, and each channel's chain from `refs/tailrace/ledger/...` fetched from that same remote into the repository's copy, and makes no layout, no key and no file, writing nothing but the fetched refs
+- **WHEN** `timber status` runs on a host with no bindings file
+- **THEN** it reads the landing the repository is set up for, over the given landing remote, and each channel's chain from `refs/timber/ledger/...` fetched from that same remote into the repository's copy, and makes no layout, no key and no file, writing nothing but the fetched refs
 
 #### Scenario: Two machines of one repository with nothing written
 
-- **WHEN** one machine with no bindings file, in a clone whose one remote is `origin`, publishes a version its policy accepts as one host, and a second machine with no bindings file, in another clone of `origin` that never published, runs `tailrace status`
+- **WHEN** one machine with no bindings file, in a clone whose one remote is `origin`, publishes a version its policy accepts as one host, and a second machine with no bindings file, in another clone of `origin` that never published, runs `timber status`
 - **THEN** the second machine shows `beta` at the version the first moved it to, with the same chain
 
 #### Scenario: An empty file
@@ -451,16 +451,16 @@ placed.
 Each of `[store]`, `[landing]`, `[ledger]`, `[signing]` and `[gate]` the
 file names SHALL bind what it names, exactly as written; each it leaves
 out SHALL bind its given binding (118): the store the layout at
-`$XDG_DATA_HOME/tailrace/layout`, or `~/.local/share/tailrace/layout`
+`$XDG_DATA_HOME/timber/layout`, or `~/.local/share/timber/layout`
 (C.2); the ledger the git ref on the landing's remote, written or
 given, or the repository's own refs where it has none (C.13); the
-signer the given host key at `tailrace/host/signing.key` under the same
+signer the given host key at `timber/host/signing.key` under the same
 data directory (C.8); the gate told by the host's own publish (130).
 
 #### Scenario: A registry and nothing else
 
 - **WHEN** the file names `[store] registry` and no other table
-- **THEN** publish writes into that registry, reads the landing the repository is set up for, signs with the given host key, tells the host's own gate, and the gate's promotions are appended to `refs/tailrace/ledger/...` on the given landing remote
+- **THEN** publish writes into that registry, reads the landing the repository is set up for, signs with the given host key, tells the host's own gate, and the gate's promotions are appended to `refs/timber/ledger/...` on the given landing remote
 
 #### Scenario: A key service and nothing else
 
@@ -470,16 +470,16 @@ data directory (C.8); the gate told by the host's own publish (130).
 #### Scenario: The data directory set
 
 - **WHEN** `XDG_DATA_HOME` names a directory and the file names no `[store]` and no `[signing]`
-- **THEN** the store is the layout at `tailrace/layout` under that directory, and a publish's given host key is `tailrace/host/signing.key` under it
+- **THEN** the store is the layout at `timber/layout` under that directory, and a publish's given host key is `timber/host/signing.key` under it
 
 #### Scenario: A promote with no ledger table
 
-- **WHEN** the file names no `[ledger]` and `tailrace promote` runs in a checkout whose one remote is `origin`
+- **WHEN** the file names no `[ledger]` and `timber promote` runs in a checkout whose one remote is `origin`
 - **THEN** the channel's chain is fetched from `origin` and the promotion is pushed to the channel's git ref there, fast-forward only
 
 #### Scenario: A checkout with no remote and no ledger table
 
-- **WHEN** the file names no `[ledger]` and `tailrace promote` runs in a checkout with no remote
+- **WHEN** the file names no `[ledger]` and `timber promote` runs in a checkout with no remote
 - **THEN** the promotion is appended to the channel's git ref in the repository the command runs in, and nothing is pushed
 
 #### Scenario: A written landing with no remote
@@ -568,17 +568,17 @@ provenance (S1, 80, 95, 108, 118, C.10).
 
 #### Scenario: beta moves on the next landing
 
-- **WHEN** the repository's policy then lists the host's name with the line `signing.key.pub` holds, for provenance only, names no other signer and writes no channel, a later revision that changes the component lands, and the built binary runs `tailrace publish` on the same host
-- **THEN** the same run accepts that version, the acceptance saying one host offered and accepted, `beta`'s chain in `refs/tailrace/ledger/` holds one promotion to its index, the repository's remote holds the same chain, and the exit code is 0
+- **WHEN** the repository's policy then lists the host's name with the line `signing.key.pub` holds, for provenance only, names no other signer and writes no channel, a later revision that changes the component lands, and the built binary runs `timber publish` on the same host
+- **THEN** the same run accepts that version, the acceptance saying one host offered and accepted, `beta`'s chain in `refs/timber/ledger/` holds one promotion to its index, the repository's remote holds the same chain, and the exit code is 0
 
 #### Scenario: Verify after listing the made key
 
-- **WHEN** the built binary then runs `tailrace verify <that version> --json` on the same host
+- **WHEN** the built binary then runs `timber verify <that version> --json` on the same host
 - **THEN** every provenance is made by the host's name and counts under the acceptance policy, read at that version's revision
 
 ### Requirement: A push before the landing binds with a store alone
 
-`tailrace push --left` SHALL bind from the host's file with `[store]`
+`timber push --left` SHALL bind from the host's file with `[store]`
 alone: a file naming no `[landing]` and no `[signing]` SHALL bind, the
 landing answering absent naming its binding for every operation; it
 SHALL make the layout the file names as push does. Every other command
@@ -586,10 +586,10 @@ SHALL still answer absent naming `[landing]` where the file names none.
 
 #### Scenario: A check job's file
 
-- **WHEN** the file names `[store] registry` and nothing else, and `tailrace push --left` runs
+- **WHEN** the file names `[store] registry` and nothing else, and `timber push --left` runs
 - **THEN** the push binds and writes the checkout's entries into that repository, and the file names no credential
 
 #### Scenario: The same file for a publish
 
-- **WHEN** the same file is read for `tailrace publish`
+- **WHEN** the same file is read for `timber publish`
 - **THEN** publish answers absent naming `[signing]`, and nothing is read or written

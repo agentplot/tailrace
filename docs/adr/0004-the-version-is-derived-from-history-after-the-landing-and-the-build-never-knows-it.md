@@ -10,7 +10,7 @@ decision-makers:
 # The version is derived from history after the landing, and the build never knows it
 
 Deciders: the user, 2026-10-21, in the exploration of how a publish fits a merge queue ("build creates the files, but we don't push until we get a version").
-Sources: `agentplot/blueprints:design/tailrace/requirements.md` clauses 21 to 24, 15, 18; git-cliff over conventional commits as the family's version rule (section 9); the family's record that a release is versioned by git-cliff (switchboard-kit ADR, record 0074).
+Sources: `agentplot/blueprints:design/timber/requirements.md` clauses 21 to 24, 15, 18; git-cliff over conventional commits as the family's version rule (section 9); the family's record that a release is versioned by git-cliff (switchboard-kit ADR, record 0074).
 
 ## Context and problem statement
 

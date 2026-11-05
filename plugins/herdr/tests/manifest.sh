@@ -1,6 +1,6 @@
 #!/bin/sh
 # herdr-plugin.toml as herdr will read it: every line parses, the top-level
-# keys herdr requires are there and the id is agentplot.tailrace, every
+# keys herdr requires are there and the id is agentplot.timber, every
 # command names a script that exists, and every action that opens a pane
 # names one declared here. $1 is the manifest (default: the plugin's own);
 # the plugin's directory is its.
@@ -62,7 +62,7 @@ BEGIN { table = ""; no = 0 }
 END {
   split("id name version min_herdr_version", need, " ")
   for (i in need) if (!(need[i] in top)) { printf "%s: no %s\n", FILENAME, need[i]; bad = 1 }
-  if (("id" in top) && top["id"] != "\"agentplot.tailrace\"") { printf "%s: the id is %s, not \"agentplot.tailrace\"\n", FILENAME, top["id"]; bad = 1 }
+  if (("id" in top) && top["id"] != "\"agentplot.timber\"") { printf "%s: the id is %s, not \"agentplot.timber\"\n", FILENAME, top["id"]; bad = 1 }
   for (i = 1; i <= no; i++)
     if (!(opens[i] in panes)) { printf "%s:%d: an action opens a pane this plugin does not declare: \"%s\"\n", FILENAME, opens_line[i], opens[i]; bad = 1 }
   exit bad

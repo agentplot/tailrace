@@ -3,7 +3,7 @@
 ## Purpose
 The build seam bound to moon (C.3): which moon task makes each declared
 output, how one asking runs them, and how the task hash becomes the
-build identity a landing's verdicts and tailrace's provenance share.
+build identity a landing's verdicts and timber's provenance share.
 
 ## Requirements
 
@@ -39,7 +39,7 @@ checkout the build is bound over, as every checkout on a host shares it,
 continuing past a task that fails, and replaying what moon has cached
 (74, C.3). It SHALL answer the outputs present, or refused naming every
 output whose task declared files the run left absent or whose task did
-not run. tailrace SHALL never run an output's command itself (15,
+not run. timber SHALL never run an output's command itself (15,
 core.10).
 
 #### Scenario: Three outputs in one asking
@@ -128,7 +128,7 @@ Left SHALL answer, for a checkout, each task moon's run report in that
 checkout records with a hash whose archive moon's outputs directory
 holds, grouped by hash: the hash as the build identity, the tasks with
 that hash, a pass, and the files the tasks declare that are there; it
-SHALL read nothing of tailrace's and run no task (139, C.3). A checkout
+SHALL read nothing of timber's and run no task (139, C.3). A checkout
 with no run report SHALL answer an empty list.
 
 #### Scenario: A run that passed one task and failed another

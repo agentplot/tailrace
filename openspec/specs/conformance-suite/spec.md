@@ -646,7 +646,7 @@ exactly what the core answers. It SHALL run over the command line.
 
 The landing's group SHALL hold a landing that records verdicts to
 answer each verdict's signer by the name the landing gives that signer,
-the one name tailrace's policy names it by, and never by a second name
+the one name timber's policy names it by, and never by a second name
 (104). For a landing that records no verdicts, the scenario SHALL be
 not applicable. With this scenario, 104 SHALL leave the register
 (core.33).

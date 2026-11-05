@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-tailrace signs only as the party running it and only what that party
+timber signs only as the party running it and only what that party
 observed; a claim another party made is carried as made, never
 re-signed. A signer's identity is bound to the party that holds it and
 expires with that party's standing; a signature by an identity that has
@@ -14,7 +14,7 @@ expired is reported as such, never as valid and never as absent (81).
 ## The contract
 
 The seam is two operations (79, 80). **sign** takes a claim and the
-identity of the party running tailrace and answers the claim signed, or
+identity of the party running timber and answers the claim signed, or
 that no identity is at hand. **verify** takes an attestation and the
 signers a policy names and answers which signer made it, or that none
 of them did. A claim counts for a verdict only through a signer the
@@ -46,7 +46,7 @@ ssh-keygen -t ed25519 -N '' -f <path>
 A key others may read, one with a passphrase or one of another
 algorithm is refused, saying which. A claim is signed as an SSH
 signature over the envelope's DSSE pre-authentication encoding, in the
-namespace `tailrace-claim`, so no signature made for git or for sluice
+namespace `timber-claim`, so no signature made for git or for sluice
 verifies as a claim.
 
 To verify, the policy lists for the signer its public key, in
@@ -61,11 +61,11 @@ an envelope gives its signer decides nothing.
 The host key is bound by the host's bindings file's `[signing]` table,
 sluice's own shape: `signer`, the identity it signs as, and `key`, the
 key file's path, absolute or beginning `~/` (see
-[self-hosting](/tailrace/guides/self-hosting/)). A key file the table
+[self-hosting](/timber/guides/self-hosting/)). A key file the table
 names that is not there is absent, naming the identity and the path.
 
 A host with no file, or a file with no `[signing]`, publishes and
-promotes with the given host key, `~/.local/share/tailrace/host/signing.key`,
+promotes with the given host key, `~/.local/share/timber/host/signing.key`,
 under `$XDG_DATA_HOME` where it is set (118, C.8). The first claim it
 signs makes it: an Ed25519 key in OpenSSH's form with no passphrase,
 readable by its owner alone, the form sluice signs with, its directory
@@ -84,7 +84,7 @@ To list the made key, print its public half and copy the one line into
 the policy under the name it gives, for provenance:
 
 ```sh
-cat ~/.local/share/tailrace/host/signing.key.pub
+cat ~/.local/share/timber/host/signing.key.pub
 # ssh-ed25519 AAAA… laptop
 ```
 
@@ -105,7 +105,7 @@ on its disk. Make one in the account the fleet runs in:
 
 ```sh
 aws kms create-key --key-spec ECC_NIST_P256 --key-usage SIGN_VERIFY \
-  --description "tailrace signer for the build fleet"
+  --description "timber signer for the build fleet"
 ```
 
 A key of another spec or usage is refused, naming it, and so is a key
@@ -127,7 +127,7 @@ Grant, in the key's policy:
 The host signs through its own AWS credentials, found as the AWS tools
 find them at each signature: the environment, the AWS profile and its
 SSO session, web identity, the container's or the instance's role.
-tailrace keeps none of them (64). A claim is signed by KMS with
+timber keeps none of them (64). A claim is signed by KMS with
 `ECDSA_SHA_256` over the SHA-256 of the envelope's DSSE
 pre-authentication encoding, so cosign and other verifiers that take a
 KMS key read the same envelope.

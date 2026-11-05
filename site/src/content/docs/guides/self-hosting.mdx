@@ -1,32 +1,32 @@
 ---
 title: Self-hosting
-description: What a self-hosted tailrace is, what one laptop needs and what a team needs, and what stays yours.
+description: What a self-hosted timber is, what one laptop needs and what a team needs, and what stays yours.
 ---
 
-tailrace is designed, not built, and this page says what running it
-yourself will be. There is no hosted tailrace: self-hosted is the only
+timber is designed, not built, and this page says what running it
+yourself will be. There is no hosted timber: self-hosted is the only
 kind. Everything here follows
-[the statement](https://github.com/agentplot/blueprints/blob/main/design/tailrace/requirements.md),
-whose [Part C](https://github.com/agentplot/blueprints/blob/main/design/tailrace/requirements.md#part-c-profiles)
+[the statement](https://github.com/agentplot/blueprints/blob/main/design/timber/requirements.md),
+whose [Part C](https://github.com/agentplot/blueprints/blob/main/design/timber/requirements.md#part-c-profiles)
 names the profiles a host binds.
 
-## What a self-hosted tailrace is
+## What a self-hosted timber is
 
-- **One binary.** `tailrace` runs where the agents run: a laptop, an
-  agent host, a build machine. There is no server of tailrace's own to
-  keep up: `tailrace serve` answers on localhost, started by the first
+- **One binary.** `timber` runs where the agents run: a laptop, an
+  agent host, a build machine. There is no server of timber's own to
+  keep up: `timber serve` answers on localhost, started by the first
   asker that finds none and ended when idle, for the status pages and
   the ecosystems that read over HTTP.
 - **A store you own.** An OCI registry you already have, Amazon ECR,
   GitHub's registry, Harbor, zot or the reference distribution, or an OCI
   image layout in a directory on disk, read and written with no server.
-  The [stores](/tailrace/guides/integrations/stores/) guide lists them.
+  The [stores](/timber/guides/integrations/stores/) guide lists them.
 - **A signer you hold.** A key in a key service your host's cloud
   identity may use and never export, a key file on the host as sluice's
   signers keep theirs, or a short-lived certificate from your own identity
-  provider, keyless. The [signers](/tailrace/guides/integrations/signers/)
+  provider, keyless. The [signers](/timber/guides/integrations/signers/)
   guide says which fits where.
-- **The policy in the repository.** `.config/tailrace.toml` at the landed
+- **The policy in the repository.** `.config/timber.toml` at the landed
   revision says what the repository publishes and through which
   projections, the signers and what each may claim, what each audience
   requires, the channels, and the environments with their targets.
@@ -34,8 +34,8 @@ names the profiles a host binds.
   wherever you trust a signer to stand: a laptop for one person, a
   machine of its own for a team. A machine an agent runs on writes the
   cache and quarantine, and never promotes.
-- **sluice beside it.** tailrace reads sluice's refs for the landed
-  revision and its signed verdicts; sluice does not know tailrace exists.
+- **sluice beside it.** timber reads sluice's refs for the landed
+  revision and its signed verdicts; sluice does not know timber exists.
   A branch sluice does not run is landed by its history alone, with no
   verdicts.
 
@@ -44,15 +44,15 @@ names the profiles a host binds.
 A solo user needs the binary and the policy file in the repository, and
 writes nothing else: the first publish makes the store, an OCI image
 layout in the user's data directory, and a host key beside it (118).
-sluice lands, tailrace pushes into the layout on disk, the same laptop
-accepts and promotes, and `tailrace sync` fills the laptop's own npm
+sluice lands, timber pushes into the layout on disk, the same laptop
+accepts and promotes, and `timber sync` fills the laptop's own npm
 cache, Cargo registry or Python index from the store. The layout syncs
 to a registry later, or never.
 
 ## The host's bindings
 
 The operator's bindings for a host are one file,
-`~/.config/tailrace/config.toml`, or under `$XDG_CONFIG_HOME` where it
+`~/.config/timber/config.toml`, or under `$XDG_CONFIG_HOME` where it
 is set, beside sluice's own `config.toml` and in the same form, readable
 with any file reader (118). A host needs none: the file is for pointing
 a host at a registry, a key service or a shared ledger. It names the
@@ -61,7 +61,7 @@ nothing the repository binds (92):
 
 ```toml
 [store]
-layout = "~/.local/share/tailrace/layout"   # C.2
+layout = "~/.local/share/timber/layout"   # C.2
                                  # or: registry = "<host>/<repository>", C.1
 
 [landing]
@@ -74,7 +74,7 @@ git_ref = { remote = "origin" }  # C.13; or: store = {}, C.14, the chain in [sto
 
 [signing]                         # sluice's own table, C.8
 signer = "laptop"
-key = "~/.config/tailrace/signing"
+key = "~/.config/timber/signing"
                                  # or a key in AWS KMS, C.7, alone:
                                  # kms = "arn:aws:kms:<region>:<account>:key/<key id>"
 
@@ -86,8 +86,8 @@ publish = {}                      # also with no [gate], 118
 With no file, and for each table a file leaves out, the host is bound
 to the given ones (118):
 
-- **The store**: an OCI layout at `~/.local/share/tailrace/layout`, or
-  `tailrace/layout` under `$XDG_DATA_HOME` where it is set (C.2), named
+- **The store**: an OCI layout at `~/.local/share/timber/layout`, or
+  `timber/layout` under `$XDG_DATA_HOME` where it is set (C.2), named
   in the host's record by that path in full.
 - **The landing**: sluice where the repository's `HEAD` commit holds
   `.config/sluice.toml`, read from the commit and never from the working
@@ -102,10 +102,10 @@ to the given ones (118):
   nothing written; the repository's own refs where the landing has no
   remote (C.13).
 - **The signer**: for a publish or a promote, the host key at
-  `tailrace/host/signing.key` under the same data directory, made by the
+  `timber/host/signing.key` under the same data directory, made by the
   first claim it signs, its public half beside it as `signing.key.pub`,
   signing as the host's short name, which that public half fixes (C.8;
-  see [signers](/tailrace/guides/integrations/signers/)). Every other
+  see [signers](/timber/guides/integrations/signers/)). Every other
   command signs nothing.
 - **What tells the gate**: the host's own publish, as `[gate] publish =
   {}` binds it (130).
@@ -119,13 +119,13 @@ empty file is no file.
 
 - Each seam's table names its profile by its one key; a table naming
   none or two is refused, naming it. A path is absolute or begins `~/`.
-- `tailrace publish`, `verify`, `sync`, `push`, `rebuild`, `promote` and
+- `timber publish`, `verify`, `sync`, `push`, `rebuild`, `promote` and
   `status` read it, or bind the given tables where there is none. A file
   that is not well formed is unreadable in the parser's own words, and
   binds nothing given in its place: a file that is there is never guessed
   past. Only where no given path can be placed, neither
   `XDG_CONFIG_HOME` nor `HOME` set, is the binding absent, naming both.
-  `tailrace status` binds no signer and makes nothing, its fetch of the
+  `timber status` binds no signer and makes nothing, its fetch of the
   ledger's refs into the repository's copy aside (60); a file it cannot
   read is its channels' answer, and the host's record still answers
   beside it.
@@ -139,14 +139,14 @@ empty file is no file.
   verify, sync and rebuild never make or write one, and answer a layout
   that is not there unreadable, naming its path.
 - The host's record of the versions it published is a file per version
-  under the repository's common git directory, `tailrace/published/`,
-  which status reads. It can be deleted and rebuilt with `tailrace
+  under the repository's common git directory, `timber/published/`,
+  which status reads. It can be deleted and rebuilt with `timber
   rebuild`, which writes it again from the store and git: one entry for
   each tag the branch landed whose name the store resolves to that
   component's index.
 - `[store] registry` names one repository of a registry, such as
-  `123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace` or
-  `localhost:5000/tailrace`, the declared repository the store's spaces
+  `123456789012.dkr.ecr.us-east-1.amazonaws.com/timber` or
+  `localhost:5000/timber`, the declared repository the store's spaces
   hang under (see [a registry's repositories](#a-registrys-repositories)).
   No binding makes a repository. The credential is never the file's: it
   is the host's Docker configuration and the credential helper it names
@@ -164,13 +164,13 @@ empty file is no file.
   signers, the one its `[signing]` names signing and the other
   verify-only, so it tells a host key's claims and a KMS key's alike.
 - `[ledger]` names where each channel's chain is held. `git_ref` keeps
-  it in the repository's refs, `refs/tailrace/ledger/<channel>`, or
-  `refs/tailrace/ledger/<component>/<channel>` where the repository
+  it in the repository's refs, `refs/timber/ledger/<channel>`, or
+  `refs/timber/ledger/<component>/<channel>` where the repository
   declares components (C.13, 125), pushed to and fetched from the remote
   it names with the host's own git credentials, kept nowhere (64);
   `store` keeps it as the promotion claims in the store `[store]` names,
   walked from the channel's name there, `channel/<channel>` or
-  `channel/<component>/<channel>` (C.14), opened and never made. `tailrace
+  `channel/<component>/<channel>` (C.14), opened and never made. `timber
   promote` signs with the host's `[signing]`, or the given key where the
   file names none, and appends to the ledger `[ledger]` names, or the
   given git ref on the landing's remote; promote never makes the layout.
@@ -178,8 +178,8 @@ empty file is no file.
   offered, by one key (130). `publish = {}` is this host's own publish:
   once the publish has answered, the same run tells the gate of each
   version it offered, and prints the gate's answer beside the version's.
-  `job = "…"` names in your own words a job outside tailrace that a
-  forge's or a store's event wakes; tailrace runs nothing for it, and a
+  `job = "…"` names in your own words a job outside timber that a
+  forge's or a store's event wakes; timber runs nothing for it, and a
   publish says the version is offered and the gate is told by those
   words. A file with no `[gate]` binds `publish`, the host's default
   (118), so a host whose gate is elsewhere names its `job`. A `[gate]`
@@ -203,9 +203,9 @@ versions and channels as tags of the declared repository, as before.
 
 A registry that makes a repository on its first push, zot, the
 reference distribution and GitHub's registry among them, makes each of
-these as tailrace first writes into it. One that makes repositories only
+these as timber first writes into it. One that makes repositories only
 by a creation template, Amazon ECR among them, refuses a push into a
-repository nobody made, and tailrace answers that refusal in the
+repository nobody made, and timber answers that refusal in the
 registry's words, naming the repository it was for, and asks nothing
 again. Before the first publish to such a registry, make:
 
@@ -231,7 +231,7 @@ A credential needs to write only where its job writes:
 So a credential scoped to one component's repository makes that
 component's versions and moves its channels and no other component's.
 
-After upgrading to a tailrace that keeps these spaces, a store holding a
+After upgrading to a timber that keeps these spaces, a store holding a
 declared component's versions from before:
 
 - **Carry each channel.** A declared component's channel tags written
@@ -254,19 +254,19 @@ by nothing and may be removed; an entry gone is a build again (54).
 
 ## The host's serving process
 
-One `tailrace serve` answers a host, at `http://127.0.0.1:7420` (114).
-No one is told to start it: `tailrace status --page` finds it, or
+One `timber serve` answers a host, at `http://127.0.0.1:7420` (114).
+No one is told to start it: `timber status --page` finds it, or
 starts it detached from the asker's terminal where none answers, and it
 ends once nothing has asked it for ten minutes. A host may also run
-`tailrace serve` as a service of its own; a second one finds the first
+`timber serve` as a service of its own; a second one finds the first
 holding the lock, says where it answers, and ends.
 
-What it keeps is in the host's state directory, `~/.local/state/tailrace`,
-or `tailrace` under `$XDG_STATE_HOME` where it is set:
+What it keeps is in the host's state directory, `~/.local/state/timber`,
+or `timber` under `$XDG_STATE_HOME` where it is set:
 
 - `repositories`, the repositories a checkout named: a TOML table per
   repository, keyed by its owner and name, naming the checkout that last
-  named it, written by `tailrace status --page` and read on each
+  named it, written by `timber status --page` and read on each
   request. A repository no checkout named answers absent, and a
   checkout that is gone is its row's unreadable answer, naming the path.
   Deleted, it is written again by the next `--page` in each checkout.
@@ -320,7 +320,7 @@ a checkout (65).
 
 ### The channels
 
-The given channels are a policy fragment shipped with tailrace, written
+The given channels are a policy fragment shipped with timber, written
 in the policy file's own form and laid beneath your file (C.10):
 
 ```toml
@@ -477,7 +477,7 @@ than `auto` or `manual`, a made channel named as any channel the
 fragment holds, held or not, environments named in `after` that follow
 two channels, an environment not declared, or one that comes after
 itself, is unreadable naming the table. Nothing moves an `after`
-channel, or converges an environment, until a target is bound; `tailrace
+channel, or converges an environment, until a target is bound; `timber
 promote` moves them as any channel.
 
 The policy lists a repository's channels, each with its component and
@@ -486,7 +486,7 @@ two never disagree (131).
 
 ### What is in force
 
-`tailrace policy` shows the one table in force at the branch's landed
+`timber policy` shows the one table in force at the branch's landed
 head, the givens beside your own lines: what acceptance and a layout
 require, then every channel in force, with how it moves, whether it
 takes prereleases, the claims its versions must carry, who promotes it
@@ -499,14 +499,14 @@ shown so, after its signers (134). Each part is its own answer, so a
 missing `[layout]` is shown as absent beside the rest:
 
 ```text
-$ tailrace policy
+$ timber policy
 main at 4f2a9c1…
 
 acceptance
   provenance by laptop
   verdict of cli:test by box, of built artifacts alone
 layout
-  the policy (policy file) holds no policy for layout in .config/tailrace.toml
+  the policy (policy file) holds no policy for layout in .config/timber.toml
 
 channels
   alpha, each publish, prereleases too
@@ -614,12 +614,12 @@ says the version is not accepted until the policy lists it. List it,
 land the policy, and the next landing's publish is accepted:
 
 1. Print the key's public half, one line naming the host:
-   `cat ~/.local/share/tailrace/host/signing.key.pub`, or
-   `$XDG_DATA_HOME/tailrace/host/signing.key.pub` where that is set.
+   `cat ~/.local/share/timber/host/signing.key.pub`, or
+   `$XDG_DATA_HOME/timber/host/signing.key.pub` where that is set.
 2. Copy the line as it stands into the policy under
    `[signers.<name>]`, the name the line ends with, as `ssh = "<line>"`
    with `kinds = ["provenance"]`.
-3. Land the policy; from the next landing on, `tailrace publish`
+3. Land the policy; from the next landing on, `timber publish`
    accepts as one host and moves `beta`.
 
 Beside that policy, the laptop's bindings file needs no `[gate]` for
@@ -631,7 +631,7 @@ Beside that policy, the laptop's bindings file needs no `[gate]` for
 publish = {}
 ```
 
-`beta` then moves on each publish, in the same run: `tailrace publish`
+`beta` then moves on each publish, in the same run: `timber publish`
 offers the version, the gate accepts it as the laptop's signer, its
 `[signing]` or the given key, and the promotion is held in the ledger
 before `beta`'s name moves. The answer shows the acceptance and `beta`'s
@@ -650,7 +650,7 @@ publish = {}
 ```
 
 `beta` then moves on each release a publish offers, in the same run:
-`tailrace publish` offers the version, the gate accepts it as the
+`timber publish` offers the version, the gate accepts it as the
 laptop's `[signing]` signer, and the promotion, the gate's own act, is
 held in the ledger `[ledger]` names before `beta`'s name moves. A
 prerelease is accepted the same way and moves only the channels that
@@ -664,7 +664,7 @@ naming it.
 
 ### Promoting
 
-`tailrace promote 0.2.0 --to stable` moves `stable` to 0.2.0 of the one
+`timber promote 0.2.0 --to stable` moves `stable` to 0.2.0 of the one
 component, or of the one `--component` names, under the policy for that
 component's `stable` as it stands at the branch's landed head; a channel
 the policy does not list for the component is absent, naming both (125,
@@ -685,12 +685,12 @@ The promotion is held in the ledger before `stable`'s name moves in the
 store (33). `--from 0.1.0` says where you expect `stable`, and a channel
 that has moved since is refused naming where it is (35); a promotion
 another host made between your read and your append is refused naming
-it, never retried. `tailrace promote --back --to stable` moves `stable`
+it, never retried. `timber promote --back --to stable` moves `stable`
 back to the version it moved from, one more promotion (34).
 
 ## After a landing
 
-sluice runs nothing after a landing, and tailrace starts nothing of its
+sluice runs nothing after a landing, and timber starts nothing of its
 own: whatever learns that the work landed pushes and publishes it. Which
 of two ways is yours depends on where your checks run.
 
@@ -700,8 +700,8 @@ waiting. Once it learns the work landed, it runs, on the host that ran
 the checks, the push and then the publish:
 
 ```sh
-tailrace push <revision>
-tailrace publish <revision>
+timber push <revision>
+timber publish <revision>
 ```
 
 The push puts the archives of the landing's passing checks in the
@@ -718,9 +718,9 @@ after it. That takes four pieces.
 ### The run job's push
 
 Add one step to the run job of the pool's workflow, after the step that
-runs `sluice job run`. It installs `tailrace` from its GitHub release,
+runs `sluice job run`. It installs `timber` from its GitHub release,
 names the registry and nothing else in its bindings file, reaches the
-registry through Docker's credential helper for ECR, and runs `tailrace
+registry through Docker's credential helper for ECR, and runs `timber
 push --left` in the checkout the checks ran in, whether they passed or
 not, since only the tasks that passed are pushed. The run job holds no
 identity token, which sluice's pool keeps out of the job that runs
@@ -734,20 +734,20 @@ not a role assumed by OIDC.
   # The checkout `sluice job run` ran the checks in.
   working-directory: ${{ github.workspace }}
   env:
-    AWS_ACCESS_KEY_ID: ${{ secrets.TAILRACE_CACHE_KEY_ID }}
-    AWS_SECRET_ACCESS_KEY: ${{ secrets.TAILRACE_CACHE_SECRET_KEY }}
+    AWS_ACCESS_KEY_ID: ${{ secrets.TIMBER_CACHE_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.TIMBER_CACHE_SECRET_KEY }}
     AWS_REGION: us-east-1
     GH_TOKEN: ${{ github.token }}
   run: |
-    gh release download --repo agentplot/tailrace \
-      --pattern tailrace-x86_64-linux.tar.gz --output - | tar -xz -C "$RUNNER_TEMP"
+    gh release download --repo agentplot/timber \
+      --pattern timber-x86_64-linux.tar.gz --output - | tar -xz -C "$RUNNER_TEMP"
     sudo apt-get install -y amazon-ecr-credential-helper
-    mkdir -p ~/.docker ~/.config/tailrace
+    mkdir -p ~/.docker ~/.config/timber
     echo '{"credHelpers":{"123456789012.dkr.ecr.us-east-1.amazonaws.com":"ecr-login"}}' \
       > ~/.docker/config.json
     printf '[store]\nregistry = "%s"\n' \
-      123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace > ~/.config/tailrace/config.toml
-    "$RUNNER_TEMP/tailrace" push --left --json
+      123456789012.dkr.ecr.us-east-1.amazonaws.com/timber > ~/.config/timber/config.toml
+    "$RUNNER_TEMP/timber" push --left --json
 ```
 
 ### The cache key's scope
@@ -771,7 +771,7 @@ key can write cache entries and never offer, accept or move a name (96,
         "ecr:PutImage",
         "ecr:BatchGetImage"
       ],
-      "Resource": "arn:aws:ecr:us-east-1:123456789012:repository/tailrace/cache/*"
+      "Resource": "arn:aws:ecr:us-east-1:123456789012:repository/timber/cache/*"
     },
     {
       "Effect": "Allow",
@@ -783,28 +783,28 @@ key can write cache entries and never offer, accept or move a name (96,
 ```
 
 ECR makes a repository on push only through a creation template, so the
-operator makes the repository `tailrace/cache/moon` once, before the
+operator makes the repository `timber/cache/moon` once, before the
 first push, and the key needs no `ecr:CreateRepository` (C.1).
 
 ### The publish workflow
 
-`.github/workflows/tailrace.yml` is the repository's own, and runs once
+`.github/workflows/timber.yml` is the repository's own, and runs once
 for each landing: sluice lands with a GitHub App's push, which starts a
 `push` workflow, as a push made with `GITHUB_TOKEN` would not. It
 publishes one landing at a time and never cancels one. Its store
 credential is a role it assumes by OIDC, since this job runs no check,
 and the publisher's host key is a secret of the GitHub environment
-`tailrace`, which this job alone uses.
+`timber`, which this job alone uses.
 
 ```yaml
-name: tailrace
+name: timber
 
 on:
   push:
     branches: [main]
 
 concurrency:
-  group: tailrace
+  group: timber
   cancel-in-progress: false
 
 permissions:
@@ -814,7 +814,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: tailrace
+    environment: timber
     steps:
       - uses: actions/checkout@v5
         with:
@@ -822,34 +822,34 @@ jobs:
       - run: git fetch --no-tags origin '+refs/sluice/*:refs/sluice/*'
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::123456789012:role/tailrace-publish
+          role-to-assume: arn:aws:iam::123456789012:role/timber-publish
           aws-region: us-east-1
       # The repository's own toolchain, so moon runs.
       - uses: moonrepo/setup-toolchain@v0
       - name: Publish the landing
         env:
           GH_TOKEN: ${{ github.token }}
-          SIGNING_KEY: ${{ secrets.TAILRACE_SIGNING_KEY }}
+          SIGNING_KEY: ${{ secrets.TIMBER_SIGNING_KEY }}
         run: |
-          gh release download --repo agentplot/tailrace \
-            --pattern tailrace-x86_64-linux.tar.gz --output - | tar -xz -C "$RUNNER_TEMP"
+          gh release download --repo agentplot/timber \
+            --pattern timber-x86_64-linux.tar.gz --output - | tar -xz -C "$RUNNER_TEMP"
           sudo apt-get install -y amazon-ecr-credential-helper
-          mkdir -p ~/.docker ~/.config/tailrace
+          mkdir -p ~/.docker ~/.config/timber
           echo '{"credHelpers":{"123456789012.dkr.ecr.us-east-1.amazonaws.com":"ecr-login"}}' \
             > ~/.docker/config.json
-          (umask 077 && printf '%s\n' "$SIGNING_KEY" > ~/.config/tailrace/signing)
-          cat > ~/.config/tailrace/config.toml <<'EOF'
+          (umask 077 && printf '%s\n' "$SIGNING_KEY" > ~/.config/timber/signing)
+          cat > ~/.config/timber/config.toml <<'EOF'
           [store]
-          registry = "123456789012.dkr.ecr.us-east-1.amazonaws.com/tailrace"
+          registry = "123456789012.dkr.ecr.us-east-1.amazonaws.com/timber"
 
           [landing]
           sluice = { remote = "origin" }
 
           [signing]
           signer = "ci"
-          key = "~/.config/tailrace/signing"
+          key = "~/.config/timber/signing"
           EOF
-          "$RUNNER_TEMP/tailrace" publish "$GITHUB_SHA" --json
+          "$RUNNER_TEMP/timber" publish "$GITHUB_SHA" --json
 ```
 
 ### The publisher in the policy
@@ -860,7 +860,7 @@ for provenance alone, and names it among the signers of the provenance
 
 ```toml
 [signers.ci]
-ssh = "ssh-ed25519 AAAA… tailrace@ci"
+ssh = "ssh-ed25519 AAAA… timber@ci"
 kinds = ["provenance"]
 
 [acceptance]
@@ -878,7 +878,7 @@ it, and the next landing publishes.
 
 One thing this way rests on is still being built: the step needs room
 in the pool's run job and to know where its checkout is, which sluice's
-Actions pool keeps; sluice's template names no tailrace.
+Actions pool keeps; sluice's template names no timber.
 
 ## A team
 
@@ -889,7 +889,7 @@ no agent writes to. Each developer's laptop and each agent host pushes
 to quarantine with a signer the policy admits for that; only the gate's
 signer may accept and promote. Environments subscribe to the channels the
 gate moves, and converge through the
-[targets](/tailrace/guides/integrations/targets/) the repository binds.
+[targets](/timber/guides/integrations/targets/) the repository binds.
 
 A host that only offers must name the job that tells the gate: without
 a `[gate]`, its publish asks its own gate, which refuses the version
@@ -902,12 +902,12 @@ each publish says where the version went to be judged:
 job = "the release job a push to main wakes"
 ```
 
-tailrace runs nothing for the job and carries its words as written, and
+timber runs nothing for the job and carries its words as written, and
 the publish asks the gate nothing.
 
 ## What stays yours
 
-- Every byte: the store is your registry or your disk, and tailrace keeps
+- Every byte: the store is your registry or your disk, and timber keeps
   no copy.
 - Every signature: made by a signer you hold, bound to an identity you
   issued.

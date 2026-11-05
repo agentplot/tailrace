@@ -5,7 +5,7 @@ The npm profile of the projection seam (B.6, C.11): an npm package packed
 with npm's own packager, a lockfile's pins read as npm spells them, a
 registry read layout of tarballs and packuments, and npm's registry
 protocol served from that layout, so a consumer's `npm install` reads the
-family's packages from what tailrace rendered under the policy, with
+family's packages from what timber rendered under the policy, with
 every family package they require, and no lockfile written by hand (46,
 49, 84 to 87, 99, 114, 115, 137, 140).
 
@@ -175,7 +175,7 @@ words verbatim (99, 58, 59).
 
 #### Scenario: A package no layout holds
 - **WHEN** npm asks for the packument of a name the layout holds no version of
-- **THEN** the answer is `404` with an `error` naming the package, saying the layout holds no version of it and that `tailrace sync` holds a name `package.json` declares, and the core was asked for nothing
+- **THEN** the answer is `404` with an `error` naming the package, saying the layout holds no version of it and that `timber sync` holds a name `package.json` declares, and the core was asked for nothing
 
 ### Requirement: A lockfile npm writes names no host
 A family package installed from a served layout SHALL be recorded in the
@@ -188,8 +188,8 @@ host and in every checkout of the repository (49, 114, core.18).
 - **THEN** both lockfiles record `resolved` as `http://127.0.0.1:7420/<owner>/<name>/npm/@family/widget/-/widget-1.4.0.tgz` with the same integrity, and neither names a home, a checkout or a store
 
 #### Scenario: A first install with no lockfile
-- **WHEN** a consumer with no lockfile, whose `package.json` declares `@family/widget` at `^1.2.0` and whose `.npmrc` names the served address for `@family`, runs `tailrace sync` and `npm install`, the store holding `@family/widget` `1.2.0`, `1.3.0` and `1.5.0`, of which the policy refuses `1.5.0`, and `1.3.0` requiring `@family/base` at `^2.0.0`
-- **THEN** the install succeeds, the lockfile npm writes pins `@family/widget` at `1.3.0` and `@family/base` at the newest admitted `2.x` at the served address, `tailrace sync` printed `1.5.0` refused naming the claim found wanting, and no other registry was asked for any `@family` package
+- **WHEN** a consumer with no lockfile, whose `package.json` declares `@family/widget` at `^1.2.0` and whose `.npmrc` names the served address for `@family`, runs `timber sync` and `npm install`, the store holding `@family/widget` `1.2.0`, `1.3.0` and `1.5.0`, of which the policy refuses `1.5.0`, and `1.3.0` requiring `@family/base` at `^2.0.0`
+- **THEN** the install succeeds, the lockfile npm writes pins `@family/widget` at `1.3.0` and `@family/base` at the newest admitted `2.x` at the served address, `timber sync` printed `1.5.0` refused naming the claim found wanting, and no other registry was asked for any `@family` package
 
 #### Scenario: Installed only from the layout
 - **WHEN** a consumer whose `.npmrc` names the served address for the `@family` scope runs `npm install` with a version the store does not name in its lockfile

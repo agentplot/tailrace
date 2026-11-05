@@ -194,7 +194,7 @@ from a chain read as last read.
 The channel's state SHALL be answered from its chain through the ledger
 seam alone: its head's version and index, the version it moved from,
 and every promotion in order with what its claim records; a head that
-holds no promotion claim of tailrace's form SHALL be unreadable naming
+holds no promotion claim of timber's form SHALL be unreadable naming
 it. Where the ledger answered the chain as last read, the answer SHALL
 say when and carry the source's words, an empty channel as any other
 (60 as amended at agentplot/blueprints b64d367). Reading a channel

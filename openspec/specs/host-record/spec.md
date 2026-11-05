@@ -2,7 +2,7 @@
 
 ## Purpose
 What a host keeps of the versions it published, readable with a file
-reader and no tailrace process, and `tailrace status` answered from it
+reader and no timber process, and `timber status` answered from it
 alone, reaching no store, signer or target and writing nothing.
 
 ## Requirements
@@ -42,7 +42,7 @@ core.20, core.21).
 
 Each entry SHALL be a file of its own on the host, in a form a program
 reads, shared by every checkout of the repository on the host and
-readable with no tailrace process running (62, core.20). A publish
+readable with no timber process running (62, core.20). A publish
 whose entry already holds the same content SHALL write nothing.
 
 #### Scenario: Read with a file reader
@@ -57,7 +57,7 @@ whose entry already holds the same content SHALL write nothing.
 
 ### Requirement: Status answers from the record alone
 
-`tailrace status` SHALL answer, as the record's part of its answer and
+`timber status` SHALL answer, as the record's part of its answer and
 beside the channels, for each component, the versions this host
 published, each with its revision, branch, index's digest and store,
 and its notes where its entry names them, from the host's record and
@@ -204,5 +204,5 @@ answer SHALL stand (58, 60, 132, 134, core.19).
 
 #### Scenario: Notes on the command line
 
-- **WHEN** `tailrace status` is asked as text and with `--json` after a publish
+- **WHEN** `timber status` is asked as text and with `--json` after a publish
 - **THEN** the text prints the notes indented beneath the version's line, and the JSON carries the notes beside the version in the one answer form, `answer` naming `ok` with the text

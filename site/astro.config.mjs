@@ -1,5 +1,5 @@
 // The site, built by Astro with Starlight and published to GitHub Pages at
-// https://agentplot.github.io/tailrace by .github/workflows/pages.yml.
+// https://agentplot.github.io/timber by .github/workflows/pages.yml.
 
 import starlight from "@astrojs/starlight";
 import { defineConfig } from "astro/config";
@@ -7,19 +7,19 @@ import starlightLinksValidator from "starlight-links-validator";
 
 export default defineConfig({
   site: "https://agentplot.github.io",
-  base: "/tailrace",
+  base: "/timber",
   integrations: [
     starlight({
-      title: "tailrace",
+      title: "timber",
       description: "Build once, sign everything, promote with proof, in your own account.",
       logo: {
         light: "./src/assets/mark-light.svg",
         dark: "./src/assets/mark-dark.svg",
-        alt: "tailrace",
+        alt: "timber",
       },
       favicon: "/favicon.svg",
       // The family's header, status banner and footer from
-      // @agentplot/site-theme, which find tailrace by the title above; the
+      // @agentplot/site-theme, which find timber by the title above; the
       // start page's hero, with the pipeline drawn under it, where every
       // other page keeps Starlight's.
       components: {
@@ -34,8 +34,8 @@ export default defineConfig({
         "./src/styles/diagrams.css",
         "./src/styles/screenshots.css",
       ],
-      social: [{ icon: "github", label: "GitHub", href: "https://github.com/agentplot/tailrace" }],
-      editLink: { baseUrl: "https://github.com/agentplot/tailrace/edit/main/site/" },
+      social: [{ icon: "github", label: "GitHub", href: "https://github.com/agentplot/timber" }],
+      editLink: { baseUrl: "https://github.com/agentplot/timber/edit/main/site/" },
       plugins: [starlightLinksValidator()],
       sidebar: [
         { label: "Start", link: "/" },

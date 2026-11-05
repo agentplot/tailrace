@@ -3296,92 +3296,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tailrace"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "aws-config",
- "aws-credential-types",
- "aws-sdk-kms",
- "aws-smithy-http-client",
- "base64 0.22.1",
- "clap",
- "docker_credential",
- "flate2",
- "glob",
- "http 1.5.0",
- "libc",
- "nodejs-semver",
- "p256",
- "semver",
- "serde",
- "serde_json",
- "sha1",
- "sha2 0.10.9",
- "ssh-key",
- "tailrace-conformance",
- "tailrace-core",
- "tailrace-fakes",
- "tailrace-seams",
- "tar",
- "tempfile",
- "tokio",
- "toml 0.9.12+spec-1.1.0",
- "toml_edit",
- "ureq",
-]
-
-[[package]]
-name = "tailrace-conformance"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "serde_json",
- "tailrace-core",
- "tailrace-fakes",
- "tailrace-seams",
- "tempfile",
-]
-
-[[package]]
-name = "tailrace-core"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "git-cliff-core",
- "git2",
- "glob",
- "regex",
- "semver",
- "serde",
- "serde_json",
- "tailrace-fakes",
- "tailrace-seams",
- "tempfile",
- "toml 0.9.12+spec-1.1.0",
-]
-
-[[package]]
-name = "tailrace-fakes"
-version = "0.0.0"
-dependencies = [
- "semver",
- "serde",
- "serde_json",
- "tailrace-seams",
-]
-
-[[package]]
-name = "tailrace-seams"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "serde",
- "serde_json",
- "sha2 0.10.9",
-]
-
-[[package]]
 name = "tar"
 version = "0.4.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3465,6 +3379,92 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.9",
+]
+
+[[package]]
+name = "timber"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-kms",
+ "aws-smithy-http-client",
+ "base64 0.22.1",
+ "clap",
+ "docker_credential",
+ "flate2",
+ "glob",
+ "http 1.5.0",
+ "libc",
+ "nodejs-semver",
+ "p256",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha1",
+ "sha2 0.10.9",
+ "ssh-key",
+ "tar",
+ "tempfile",
+ "timber-conformance",
+ "timber-core",
+ "timber-fakes",
+ "timber-seams",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "toml_edit",
+ "ureq",
+]
+
+[[package]]
+name = "timber-conformance"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "serde_json",
+ "tempfile",
+ "timber-core",
+ "timber-fakes",
+ "timber-seams",
+]
+
+[[package]]
+name = "timber-core"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "git-cliff-core",
+ "git2",
+ "glob",
+ "regex",
+ "semver",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "timber-fakes",
+ "timber-seams",
+ "toml 0.9.12+spec-1.1.0",
+]
+
+[[package]]
+name = "timber-fakes"
+version = "0.0.0"
+dependencies = [
+ "semver",
+ "serde",
+ "serde_json",
+ "timber-seams",
+]
+
+[[package]]
+name = "timber-seams"
+version = "0.0.0"
+dependencies = [
+ "base64 0.22.1",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

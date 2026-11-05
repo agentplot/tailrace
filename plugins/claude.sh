@@ -8,7 +8,7 @@
 set -u
 
 # Under sluice's sandbox only SLUICE_TMP is writable beside the checkout.
-scratch=$(mktemp -d "${SLUICE_TMP:-${TMPDIR:-/tmp}}/tailrace-claude.XXXXXX")
+scratch=$(mktemp -d "${SLUICE_TMP:-${TMPDIR:-/tmp}}/timber-claude.XXXXXX")
 trap 'rm -rf "$scratch"' EXIT
 mkdir -p "$scratch/home"
 for k in $(env | grep -Eo '^(CLAUDE|ANTHROPIC_)[A-Z_]*=' | tr -d =); do

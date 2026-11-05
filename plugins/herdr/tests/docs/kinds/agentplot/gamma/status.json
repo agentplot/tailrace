@@ -25,7 +25,7 @@
     "published": {
       "answer": "ok",
       "value": {
-        "record": "/srv/gamma/.git/tailrace/published",
+        "record": "/srv/gamma/.git/timber/published",
         "components": []
       }
     }

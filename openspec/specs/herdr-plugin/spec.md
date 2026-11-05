@@ -22,7 +22,7 @@ them.
 #### Scenario: A host that knows no repository
 
 - **WHEN** the process answers an empty list of repositories
-- **THEN** the pane says the host knows no repository yet, and that a repository appears once a tailrace command run in a checkout of it names it
+- **THEN** the pane says the host knows no repository yet, and that a repository appears once a timber command run in a checkout of it names it
 
 ### Requirement: A row shows every channel's head and the environments' counts
 
@@ -100,31 +100,31 @@ again on a key, and on its own every few seconds while it is open.
 ### Requirement: The pane starts the process where none answers, as any asker does
 
 Before reading, the pane SHALL ask the process to name itself. Where
-nothing answers, the pane SHALL start `tailrace serve` once. The new
+nothing answers, the pane SHALL start `timber serve` once. The new
 process is detached from the pane's terminal and signals, and its
 working directory is never a checkout. The pane then asks again until
-the process answers, up to a limit. Where something other than tailrace
+the process answers, up to a limit. Where something other than timber
 answers, the pane SHALL say so with what answered, and start nothing
 (114).
 
 #### Scenario: No process answers
 
 - **WHEN** the pane opens and nothing answers at the core's address
-- **THEN** the pane starts `tailrace serve` exactly once, and shows every repository once the process answers
+- **THEN** the pane starts `timber serve` exactly once, and shows every repository once the process answers
 
 #### Scenario: A process answers
 
-- **WHEN** the pane opens and tailrace's process answers
+- **WHEN** the pane opens and timber's process answers
 - **THEN** the pane starts nothing
 
 #### Scenario: Something else holds the address
 
-- **WHEN** something that is not tailrace's process answers at the core's address
+- **WHEN** something that is not timber's process answers at the core's address
 - **THEN** the pane shows that something else answers there, with what it answered, and starts nothing
 
 #### Scenario: The process never answers
 
-- **WHEN** the pane started `tailrace serve` and nothing answers within the limit
+- **WHEN** the pane started `timber serve` and nothing answers within the limit
 - **THEN** the pane says the process it started did not answer, and starts no second one
 
 #### Scenario: Two panes on one host
@@ -137,8 +137,8 @@ answers, the pane SHALL say so with what answered, and start nothing
 The plugin SHALL render the documents the process answers and nothing
 else. It SHALL NOT count environments, read a channel's head from its
 chain, compare versions, or turn one answer into another. It SHALL NOT
-read a store, a ledger, a policy or git, or run any tailrace command but
-`tailrace serve` (56, core.31, core.32).
+read a store, a ledger, a policy or git, or run any timber command but
+`timber serve` (56, core.31, core.32).
 
 #### Scenario: Counts come from the answer
 
@@ -148,7 +148,7 @@ read a store, a ledger, a policy or git, or run any tailrace command but
 #### Scenario: Nothing but the process is asked
 
 - **WHEN** the pane draws every repository and one repository with the process answering
-- **THEN** it has run no `git`, no tailrace command and no store client, and has asked only the core's address
+- **THEN** it has run no `git`, no timber command and no store client, and has asked only the core's address
 
 ### Requirement: The plugin is kept outside the core
 
@@ -166,7 +166,7 @@ core.25).
 
 On a machine that never published, a repository's view SHALL show every
 part of the answer the process gives at its path. That answer is what
-`tailrace status --json` prints in its checkout. The root answer the
+`timber status --json` prints in its checkout. The root answer the
 pane renders SHALL be the one the process makes for the same host (57,
 132).
 

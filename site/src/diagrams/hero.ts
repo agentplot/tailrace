@@ -1,5 +1,5 @@
-// The start page's diagram, still: the whole of tailrace in one picture.
-// sluice lands a commit; tailrace publish versions what the build left from
+// The start page's diagram, still: the whole of timber in one picture.
+// sluice lands a commit; timber publish versions what the build left from
 // history, packs and signs it, and offers it into the store, in the user's
 // own account, where its attestations hang off its digest as referrers. The
 // gate reads the policy, in the repo, and stamps the offered artifact
@@ -88,9 +88,9 @@ const style = `
 .${P} .${P}-okt{fill:var(--d-ok);font-weight:600} .${P} .${P}-badt{fill:var(--d-bad);font-weight:600}
 `;
 
-const title = "tailrace: from a landing, through the gate, to the environments";
+const title = "timber: from a landing, through the gate, to the environments";
 const desc =
-  "sluice lands commit 9f3e21c on main. tailrace publish derives the version from history, packs and signs what the build left, and offers it into the store, in your own account. There the artifact app 1.4.2 holds its attestations as referrers of its digest: the build provenance, sluice’s verdict and the tests. The gate reads the policy, which lives in the repo, and stamps the offered artifact accepted. Two channels point at accepted versions, beta at 1.4.2 and stable at 1.4.1; only a promotion moves a channel, and every move is written to the ledger first: stable 1.4.0 to 1.4.1 by an approver, beta 1.4.1 to 1.4.2 by the gate. Two paths leave the store. Consumers read: tailrace sync and tailrace serve fill npm, Maven and pip layouts for a laptop and a build, under the policy, which is where a developer’s or an agent’s install reads from. Environments converge: from each channel, reconcilers carry the version to the environments that follow it, and sync and serve are not on that path. A laptop follows beta, pushed to, on its own, and runs 1.4.2; staging follows beta, pulling with Flux, on its own, and runs 1.4.2; production follows stable, pushed to once an approver says so, and runs 1.4.1. A reconciler converges each, pushed to or pulling, now or after an approval, and verifies before it applies; each reports what it runs, and tailrace status shows what it should run, what it runs, and where the two differ. The bytes that passed the gate are the bytes that run; your hands are on the policy and the promotions.";
+  "sluice lands commit 9f3e21c on main. timber publish derives the version from history, packs and signs what the build left, and offers it into the store, in your own account. There the artifact app 1.4.2 holds its attestations as referrers of its digest: the build provenance, sluice’s verdict and the tests. The gate reads the policy, which lives in the repo, and stamps the offered artifact accepted. Two channels point at accepted versions, beta at 1.4.2 and stable at 1.4.1; only a promotion moves a channel, and every move is written to the ledger first: stable 1.4.0 to 1.4.1 by an approver, beta 1.4.1 to 1.4.2 by the gate. Two paths leave the store. Consumers read: timber sync and timber serve fill npm, Maven and pip layouts for a laptop and a build, under the policy, which is where a developer’s or an agent’s install reads from. Environments converge: from each channel, reconcilers carry the version to the environments that follow it, and sync and serve are not on that path. A laptop follows beta, pushed to, on its own, and runs 1.4.2; staging follows beta, pulling with Flux, on its own, and runs 1.4.2; production follows stable, pushed to once an approver says so, and runs 1.4.1. A reconciler converges each, pushed to or pulling, now or after an approval, and verifies before it applies; each reports what it runs, and timber status shows what it should run, what it runs, and where the two differ. The bytes that passed the gate are the bytes that run; your hands are on the policy and the promotions.";
 
 const envs: Array<{ name: string; channel: string; how: string; runs: string; should: string }> = [
   { name: "laptop", channel: "beta", how: "push · auto", runs: "1.4.2", should: "1.4.2" },
@@ -118,10 +118,10 @@ const envCard = (o: string[], x: number, y: number, w: number, e: (typeof envs)[
   o.push(text(x + 14, y + 40, "xs m", e.how));
   o.push(runs(x + 14, y + 57, e.runs, e.should));
 };
-/** The status chip: tailrace status reads the reports. */
+/** The status chip: timber status reads the reports. */
 const statusChip = (o: string[], x: number, y: number, w: number) => {
   o.push(rect(x, y, w, 44, "chip", 10));
-  o.push(text(x + w / 2, y + 18, "chipt mono", "tailrace status", "middle"));
+  o.push(text(x + w / 2, y + 18, "chipt mono", "timber status", "middle"));
   o.push(text(x + w / 2, y + 34, "xxs m", "should run · runs · differ", "middle"));
 };
 
@@ -143,9 +143,9 @@ function wide(): string {
   o.push(text(36, 120, "xs mono m", "9f3e21c"));
   o.push(path("M150,93 H163") + head(170, 93, "r"));
 
-  // tailrace publish.
+  // timber publish.
   o.push(rect(170, 58, 150, 70, "box"));
-  o.push(text(184, 82, "sm b mono", "tailrace publish"));
+  o.push(text(184, 82, "sm b mono", "timber publish"));
   o.push(text(184, 100, "xs m", "version from history"));
   o.push(text(184, 116, "xs m", "pack · sign · offered"));
   o.push(path("M320,93 H333") + head(340, 93, "r"));
@@ -189,7 +189,7 @@ function wide(): string {
 
   // The consumer path: sync and serve, to a laptop and a build, under the policy.
   o.push(rect(684, 58, 196, 86, "box"));
-  o.push(text(698, 82, "xs b mono", "tailrace sync · serve"));
+  o.push(text(698, 82, "xs b mono", "timber sync · serve"));
   o.push(text(698, 100, "xs m", "to a laptop and a build:"));
   o.push(text(698, 116, "xs m", "npm · Maven · pip layouts,"));
   o.push(text(698, 132, "xs m", "under the policy"));
@@ -238,9 +238,9 @@ function tall(): string {
   o.push(text(x + 16, 82, "xs m", "lands 9f3e21c on main"));
   o.push(path(`M${mid},92 V105`) + head(mid, 112, "d"));
 
-  // tailrace publish.
+  // timber publish.
   o.push(rect(x, 112, w, 56, "box"));
-  o.push(text(x + 16, 136, "sm b mono", "tailrace publish"));
+  o.push(text(x + 16, 136, "sm b mono", "timber publish"));
   o.push(text(x + 16, 156, "xs m", "version from history · pack · sign · offered"));
   o.push(path(`M${mid},168 V181`) + head(mid, 188, "d"));
 
@@ -289,7 +289,7 @@ function tall(): string {
 
   // The consumer path: sync and serve, to a laptop and a build, under the policy.
   o.push(rect(x, 542, 270, 84, "box"));
-  o.push(text(x + 16, 566, "xs b mono", "tailrace sync · serve"));
+  o.push(text(x + 16, 566, "xs b mono", "timber sync · serve"));
   o.push(text(x + 16, 582, "xs m", "to a laptop and a build:"));
   o.push(text(x + 16, 598, "xs m", "npm · Maven · pip layouts,"));
   o.push(text(x + 16, 614, "xs m", "under the policy"));

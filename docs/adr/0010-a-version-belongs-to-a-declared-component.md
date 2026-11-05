@@ -9,7 +9,7 @@ decision-makers:
 
 # A version belongs to a declared component
 
-Deciders: the user, 2026-10-23, ruling through Pending You (`agentplot/blueprints:design/tailrace/models/rulings.md`).
+Deciders: the user, 2026-10-23, ruling through Pending You (`agentplot/blueprints:design/timber/models/rulings.md`).
 Sources: statement clauses 21, 22, 110, 123 to 125, C.10, the givens, scenario S15.
 
 ## Context and problem statement

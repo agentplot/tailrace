@@ -1,0 +1,11 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'rust'
+dependsOn: [seams]
+
+tasks:
+  test:
+    command: 'cargo test -p timber-fakes'
+    inputs: ['/crates/timber-fakes/**/*', '/crates/timber-seams/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock']
+    tags: [cargo-test, check-fast]
+    options: {runFromWorkspaceRoot: true}

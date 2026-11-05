@@ -52,7 +52,7 @@ rendered all the same, and an absence SHALL not count against the sync
 (51, 58).
 
 #### Scenario: A third-party pin
-- **WHEN** a lockfile pins a family version the store names and a package tailrace never published
+- **WHEN** a lockfile pins a family version the store names and a package timber never published
 - **THEN** the family version is held, the other pin is answered absent naming its name, and the sync answers no refusal
 
 ### Requirement: The consumer's own layout line at its landed revision
@@ -208,7 +208,7 @@ checkout's own git directory naming the ecosystem, the place, when it
 was rendered, the policy it was rendered under, each version held with
 its index's and artifact's digests, and each refused with its claim
 found wanting; the file SHALL be readable with a file reader and no
-tailrace process, and hold no credential (61, 62, 64, core.20).
+timber process, and hold no credential (61, 62, 64, core.20).
 
 #### Scenario: The record read with a file reader
 - **WHEN** a layout has been rendered
@@ -228,14 +228,14 @@ lockfiles, but for the time of the render (63, S12).
 - **THEN** the record holds the same versions, refusals and policy as before, and the layout the same files
 
 ### Requirement: A layout's place is in its checkout and names no host
-Each ecosystem's layout SHALL be rendered at `.tailrace/layouts/<ecosystem>/`
+Each ecosystem's layout SHALL be rendered at `.timber/layouts/<ecosystem>/`
 under the checkout's working tree, a place the same on every host, and
-`.tailrace/` SHALL ignore itself to git, so the consumer's configuration
+`.timber/` SHALL ignore itself to git, so the consumer's configuration
 names the layout once and its lockfile names no host (49, S4, core.18).
 
 #### Scenario: The place of a layout
 - **WHEN** a checkout is synced on two hosts at different paths
-- **THEN** each layout is at `.tailrace/layouts/<ecosystem>/` relative to the working tree on both, and `git status` shows nothing under `.tailrace/`
+- **THEN** each layout is at `.timber/layouts/<ecosystem>/` relative to the working tree on both, and `git status` shows nothing under `.timber/`
 
 ### Requirement: A range is held at the newest admitted version within it
 For a range pinned answers, sync SHALL list the name's versions in the
@@ -277,7 +277,7 @@ read a manifest itself (core.1).
 ### Requirement: A version a served layout lacks is rendered on the request
 When a served layout's client asks for a version the layout lacks, the
 core SHALL resolve that one version as a pin is resolved, judge it under
-the policy `tailrace sync` with no argument would use in the checkout the
+the policy `timber sync` with no argument would use in the checkout the
 layout belongs to, found as a sync finds it: the consuming repository's
 own where its file writes one, else the publisher's layout policy the
 version's index carries, else the given (113, C.10); and, where the

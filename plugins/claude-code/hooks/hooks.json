@@ -1,5 +1,5 @@
 {
-  "description": "Refuse an ecosystem's own publish command in a tailrace repository, naming tailrace publish instead.",
+  "description": "Refuse an ecosystem's own publish command in a timber repository, naming timber publish instead.",
   "hooks": {
     "PreToolUse": [
       {

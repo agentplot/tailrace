@@ -1,7 +1,7 @@
 #!/bin/sh
 # rustc compiles through the compile server the host's sluice settings
 # declare, their `[[caches]]` entry whose variables set RUSTC_WRAPPER, and
-# through nothing of tailrace's: sluice hands a run the server's variables
+# through nothing of timber's: sluice hands a run the server's variables
 # (sluice 0.43.0), and a session's own shell inherits them from the host,
 # which exports them into every shell (clause 133; devenv.nix). It checks
 # the shell it runs in: the gate's runs check a run's, and a session's
