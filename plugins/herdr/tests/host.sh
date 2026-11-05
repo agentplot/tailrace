@@ -2,10 +2,10 @@
 # shellcheck disable=SC2016 # within's conditions expand where they are evaluated.
 # The pane against the real serving process at the core's address, by
 # hand: plugin-herdr's host task, tagged check-host and in no gate, since
-# `tailrace serve` always binds the core's port, which is the host's own
+# `timber serve` always binds the core's port, which is the host's own
 # (114). It refuses to run where anything answers there. It builds
-# tailrace, names a scratch repository to a scratch state with
-# `tailrace status --page`, and ends the process that call started; then
+# timber, names a scratch repository to a scratch state with
+# `timber status --page`, and ends the process that call started; then
 # two panes opened at once, where nothing answers, find one process, and
 # draw one frame. It ends the process before it exits.
 
@@ -27,10 +27,10 @@ if ! nothing_answers; then
 fi
 
 target=$(cd "$tree" && cargo metadata --format-version 1 --no-deps | jq -r .target_directory) || exit 1
-(cd "$tree" && cargo build -q -p tailrace) || exit 1
+(cd "$tree" && cargo build -q -p timber) || exit 1
 bin=$target/debug
 
-s=$(mktemp -d "${TMPDIR:-/tmp}/tailrace-herdr-host.XXXXXX")
+s=$(mktemp -d "${TMPDIR:-/tmp}/timber-herdr-host.XXXXXX")
 s=$(cd "$s" && pwd -P)
 pids=
 # Each process this proof started, ended, and the scratch removed.
@@ -50,10 +50,10 @@ cwd_of() {
   fi
 }
 
-# Every tailrace serve running in this proof's scratch directory, which
+# Every timber serve running in this proof's scratch directory, which
 # is where each it started works: the state directory, never a checkout.
 serves() {
-  ps -eo pid=,args= | awk '$2 ~ /(^|\/)tailrace$/ && $3 == "serve" && NF == 3 { print $1 }' |
+  ps -eo pid=,args= | awk '$2 ~ /(^|\/)timber$/ && $3 == "serve" && NF == 3 { print $1 }' |
     while read -r p; do
       case $(cwd_of "$p") in "$s"/*) echo "$p" ;; esac
     done
@@ -94,7 +94,7 @@ unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 git init -q --bare -b main "$s/remote.git"
 git init -q -b main "$s/repo"
 mkdir -p "$s/repo/.config"
-printf '[channels.beta]\nrequire = []\n\n[channels.stable]\nbound_to = "beta"\nrequire = []\n' >"$s/repo/.config/tailrace.toml"
+printf '[channels.beta]\nrequire = []\n\n[channels.stable]\nbound_to = "beta"\nrequire = []\n' >"$s/repo/.config/timber.toml"
 git -C "$s/repo" add -A
 git -C "$s/repo" commit -q -m "feat: the channels"
 named=https://example.com/agentplot/scratch.git
@@ -102,8 +102,8 @@ git -C "$s/repo" remote add origin "$named"
 git -C "$s/repo" config "url.$s/remote.git.insteadOf" "$named"
 git -C "$s/repo" push -q origin main
 
-page=$(cd "$s/repo" && "$bin/tailrace" status --page) || {
-  echo "host: tailrace status --page failed: $page" >&2
+page=$(cd "$s/repo" && "$bin/timber" status --page) || {
+  echo "host: timber status --page failed: $page" >&2
   exit 1
 }
 [ "$page" = "http://$address/agentplot/scratch/status" ] || fail "status --page printed: $page"
@@ -127,9 +127,9 @@ case $pid in
 '' | *[!0-9]*) fail "/serving.json names no one pid: $pid" ;;
 esac
 # The second serve, finding the lock held, ends at once.
-within 5 '[ "$(serves | wc -l | tr -d " ")" = 1 ]' || fail "not one tailrace serve runs: $(serves | tr '\n' ' ')"
-[ "$(serves)" = "$pid" ] || fail "the tailrace serve running, $(serves | tr '\n' ' '), is not the one answering, $pid"
-[ -f "$s/state/tailrace/serve.lock" ] || fail "the process holds no lock in the scratch state"
+within 5 '[ "$(serves | wc -l | tr -d " ")" = 1 ]' || fail "not one timber serve runs: $(serves | tr '\n' ' ')"
+[ "$(serves)" = "$pid" ] || fail "the timber serve running, $(serves | tr '\n' ' '), is not the one answering, $pid"
+[ -f "$s/state/timber/serve.lock" ] || fail "the process holds no lock in the scratch state"
 # Both frames drew the one process's answer; the moment each asked aside.
 for n in 1 2; do sed 's/ · as of [^ ]*$//' "$s/frame$n" >"$s/drawn$n"; done
 diff -u "$s/drawn1" "$s/drawn2" >"$s/diff" || fail "the two frames differ: $(cat "$s/diff")"

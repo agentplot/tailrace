@@ -1,5 +1,5 @@
 /* The diagram's palette: the family theme's tokens (@agentplot/site-theme's
-   tokens.css) and tailrace's accent, --ap-accent, so the drawing follows
+   tokens.css) and timber's accent, --ap-accent, so the drawing follows
    the theme and its toggle. A landing or a passed verification takes the
    theme's ok colour, --ap-ok; a version a policy refuses takes --ap-warn. */
 :root {

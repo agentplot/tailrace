@@ -1,25 +1,25 @@
 #!/bin/sh
 # shellcheck disable=SC2016 # jq programs name their own $variables.
-# The herdr plugin's scripts against stand-in curl, tailrace, herdr and git
+# The herdr plugin's scripts against stand-in curl, timber, herdr and git
 # first on PATH: the documents the serving process answers, from files,
 # and every URL asked and command run recorded and checked. Nothing here
-# reaches a network, a running tailrace or a running herdr.
+# reaches a network, a running timber or a running herdr.
 
 set -u
 here=$(cd "$(dirname "$0")" && pwd -P)
 plugin=$(dirname "$here")
 
 # Under sluice's sandbox only SLUICE_TMP is writable beside the checkout.
-scratch=$(mktemp -d "${SLUICE_TMP:-${TMPDIR:-/tmp}}/tailrace-herdr.XXXXXX")
+scratch=$(mktemp -d "${SLUICE_TMP:-${TMPDIR:-/tmp}}/timber-herdr.XXXXXX")
 scratch=$(cd "$scratch" && pwd -P)
 trap 'rm -rf "$scratch"' EXIT
 
 unset HERDR_PLUGIN_CONTEXT_JSON HERDR_SOCKET_PATH HERDR_ENV LINES
-# TAILRACE_HERDR_SH names the shell every script runs under as `sh`, as
+# TIMBER_HERDR_SH names the shell every script runs under as `sh`, as
 # herdr runs them: dash, as Debian's /bin/sh is, or the system's.
-if [ -n "${TAILRACE_HERDR_SH:-}" ]; then
+if [ -n "${TIMBER_HERDR_SH:-}" ]; then
   mkdir -p "$scratch/sh"
-  ln -s "$(command -v "$TAILRACE_HERDR_SH")" "$scratch/sh/sh"
+  ln -s "$(command -v "$TIMBER_HERDR_SH")" "$scratch/sh/sh"
   export PATH="$scratch/sh:$PATH"
 fi
 echo "scripts run under $(command -v sh) -> $(readlink "$(command -v sh)" || echo itself)"
@@ -38,7 +38,7 @@ fresh() {
   t=$scratch/t$count
   mkdir -p "$t/state" "$t/fake/http"
   export HERDR_PLUGIN_STATE_DIR="$t/state" FAKE="$t/fake"
-  for log in curl-calls tailrace-calls herdr-calls git-calls; do : >"$FAKE/$log"; done
+  for log in curl-calls timber-calls herdr-calls git-calls; do : >"$FAKE/$log"; done
 }
 
 fail() {
@@ -51,9 +51,9 @@ pass() {
   return 0
 }
 
-# tailrace's process answering /serving.json.
+# timber's process answering /serving.json.
 answering() {
-  printf '{"serving":"tailrace","revision":"test","pid":1}\n' >"$FAKE/http/serving.json"
+  printf '{"serving":"timber","revision":"test","pid":1}\n' >"$FAKE/http/serving.json"
 }
 
 # The documents of docs/$1, served at their paths.
@@ -70,10 +70,10 @@ lines() {
   wc -l <"$FAKE/$1" | tr -d ' '
 }
 
-# PATH without the stand-in tailrace and any other: the stand-ins but
-# tailrace linked into a directory of their own, then every entry of PATH
-# holding no tailrace.
-without_tailrace() {
+# PATH without the stand-in timber and any other: the stand-ins but
+# timber linked into a directory of their own, then every entry of PATH
+# holding no timber.
+without_timber() {
   mkdir -p "$t/bin"
   for f in curl herdr git; do ln -sf "$here/fake/$f" "$t/bin/$f"; done
   p=$t/bin
@@ -81,7 +81,7 @@ without_tailrace() {
   IFS=:
   for d in $PATH; do
     [ "$d" = "$here/fake" ] && continue
-    [ -x "$d/tailrace" ] && continue
+    [ -x "$d/timber" ] && continue
     p=$p:$d
   done
   IFS=$old_ifs
@@ -90,11 +90,11 @@ without_tailrace() {
 
 # The --once frame of the documents of docs/$1, of every repository or,
 # with $2, of that one, compared byte for byte with the frame committed
-# for it in docs/frames, or written there with TAILRACE_HERDR_FRAMES=write.
+# for it in docs/frames, or written there with TIMBER_HERDR_FRAMES=write.
 framed() {
   file=$here/docs/frames/$1${2:+.$(printf '%s' "$2" | tr / .)}.frame
   if [ -n "${2:-}" ]; then status --once --repo "$2" >"$t/frame"; else status --once >"$t/frame"; fi
-  if [ "${TAILRACE_HERDR_FRAMES:-}" = write ]; then
+  if [ "${TIMBER_HERDR_FRAMES:-}" = write ]; then
     mkdir -p "$here/docs/frames"
     cp "$t/frame" "$file"
     return
@@ -120,7 +120,7 @@ within() {
 
 fresh 'open: the action opens the pane through herdr'
 sh "$plugin/bin/open.sh" status >/dev/null
-grep -qxF 'plugin pane open --plugin agentplot.tailrace --entrypoint status' "$FAKE/herdr-calls" ||
+grep -qxF 'plugin pane open --plugin agentplot.timber --entrypoint status' "$FAKE/herdr-calls" ||
   fail "herdr was asked: $(cat "$FAKE/herdr-calls")"
 pass
 
@@ -128,7 +128,7 @@ fresh 'manifest: the plugin'"'"'s manifest is read as herdr reads it'
 sh "$here/manifest.sh" >"$t/out" 2>&1 || fail "$(cat "$t/out")"
 mkdir -p "$t/bad/bin"
 cp "$plugin/bin/open.sh" "$t/bad/bin/"
-sed -e 's/"agentplot.tailrace"/"agentplot.other"/' -e 's/"bin\/open.sh", "status"/"bin\/open.sh", "nowhere"/' \
+sed -e 's/"agentplot.timber"/"agentplot.other"/' -e 's/"bin\/open.sh", "status"/"bin\/open.sh", "nowhere"/' \
   -e 's/bin\/status.sh/bin\/gone.sh/' "$plugin/herdr-plugin.toml" >"$t/bad/herdr-plugin.toml"
 if sh "$here/manifest.sh" "$t/bad/herdr-plugin.toml" >"$t/out" 2>&1; then fail "a bad manifest passed"; fi
 for said in 'the id is "agentplot.other"' 'opens a pane this plugin does not declare: "nowhere"' 'runs bin/gone.sh'; do
@@ -146,27 +146,27 @@ fresh 'start: a process answering starts nothing'
 answering
 documents never-published
 status --once >"$t/out"
-[ "$(lines tailrace-calls)" = 0 ] || fail "tailrace ran: $(cat "$FAKE/tailrace-calls")"
-grep -q '^tailrace · 2 repositories · as of ' "$t/out" || fail "no frame: $(cat "$t/out")"
+[ "$(lines timber-calls)" = 0 ] || fail "timber ran: $(cat "$FAKE/timber-calls")"
+grep -q '^timber · 2 repositories · as of ' "$t/out" || fail "no frame: $(cat "$t/out")"
 pass
 
-fresh 'start: none answering starts tailrace serve once, outside any checkout'
+fresh 'start: none answering starts timber serve once, outside any checkout'
 documents never-published
 mkdir -p "$t/checkout/.git"
 (cd "$t/checkout" && status --once) >"$t/out"
 printf '%s\tserve\n' "$t/state" >"$t/want"
-diff "$t/want" "$FAKE/tailrace-calls" >/dev/null || fail "tailrace ran as: $(cat "$FAKE/tailrace-calls")"
-grep -q '^tailrace · 2 repositories · as of ' "$t/out" || fail "no frame once it answered: $(cat "$t/out")"
+diff "$t/want" "$FAKE/timber-calls" >/dev/null || fail "timber ran as: $(cat "$FAKE/timber-calls")"
+grep -q '^timber · 2 repositories · as of ' "$t/out" || fail "no frame once it answered: $(cat "$t/out")"
 pass
 
 fresh 'start: something else answering starts nothing and is shown with its words'
 printf '<html>a\tdashboard\033[2J</html>\n' >"$FAKE/http/serving.json"
 echo 200 >"$FAKE/http/serving.json.code"
 status --once >"$t/out"
-grep -qF "Something other than tailrace's serving process answers at http://127.0.0.1:7420." "$t/out" ||
+grep -qF "Something other than timber's serving process answers at http://127.0.0.1:7420." "$t/out" ||
   fail "not said: $(cat "$t/out")"
 grep -qxF '<html>a dashboard[2J</html>' "$t/out" || fail "its words are not shown verbatim: $(cat "$t/out")"
-[ "$(lines tailrace-calls)" = 0 ] || fail "tailrace ran: $(cat "$FAKE/tailrace-calls")"
+[ "$(lines timber-calls)" = 0 ] || fail "timber ran: $(cat "$FAKE/timber-calls")"
 grep -q 'status.json$' "$FAKE/curl-calls" && fail "a document was asked of it"
 pass
 
@@ -174,13 +174,13 @@ fresh 'start: a start that never answers is said and not repeated'
 : >"$FAKE/mute"
 printf 'rq' | status >"$t/out"
 [ "$(grep -c 'did not answer in five seconds' "$t/out")" = 2 ] || fail "not said in both frames: $(cat "$t/out")"
-[ "$(lines tailrace-calls)" = 1 ] || fail "tailrace serve ran again: $(cat "$FAKE/tailrace-calls")"
+[ "$(lines timber-calls)" = 1 ] || fail "timber serve ran again: $(cat "$FAKE/timber-calls")"
 pass
 
-fresh 'start: tailrace missing from PATH is said'
+fresh 'start: timber missing from PATH is said'
 documents never-published
-PATH=$(without_tailrace) status --once >"$t/out"
-grep -qF 'Nothing answers at http://127.0.0.1:7420, and tailrace is not on PATH to start tailrace serve.' "$t/out" ||
+PATH=$(without_timber) status --once >"$t/out"
+grep -qF 'Nothing answers at http://127.0.0.1:7420, and timber is not on PATH to start timber serve.' "$t/out" ||
   fail "not said: $(cat "$t/out")"
 pass
 
@@ -195,12 +195,12 @@ wait "$first" "$second"
 diff "$t/one" "$t/two" >"$t/diff" || fail "the frames differ: $(cat "$t/diff")"
 pass
 
-fresh 'asks: only the core'"'"'s address is asked, and no command but tailrace serve runs'
+fresh 'asks: only the core'"'"'s address is asked, and no command but timber serve runs'
 documents never-published
 status --once >"$t/out"
 grep -v '^http://127\.0\.0\.1:7420/' "$FAKE/curl-calls" && fail "another address was asked"
 [ "$(lines curl-calls)" -gt 1 ] || fail "nothing was asked: $(cat "$FAKE/curl-calls")"
-cut -f2 "$FAKE/tailrace-calls" | grep -vx serve && fail "a tailrace command but serve ran"
+cut -f2 "$FAKE/timber-calls" | grep -vx serve && fail "a timber command but serve ran"
 [ "$(lines git-calls)" = 0 ] || fail "git ran: $(cat "$FAKE/git-calls")"
 [ "$(lines herdr-calls)" = 0 ] || fail "herdr was asked: $(cat "$FAKE/herdr-calls")"
 pass
@@ -210,7 +210,7 @@ echo '28 Operation timed out after 2001 milliseconds with 0 bytes received' >"$F
 status --once >"$t/out"
 grep -qF 'http://127.0.0.1:7420/serving.json could not be asked:' "$t/out" || fail "not said: $(cat "$t/out")"
 grep -qF 'curl: (28) Operation timed out after 2001 milliseconds' "$t/out" || fail "not curl's words: $(cat "$t/out")"
-[ "$(lines tailrace-calls)" = 0 ] || fail "tailrace ran: $(cat "$FAKE/tailrace-calls")"
+[ "$(lines timber-calls)" = 0 ] || fail "timber ran: $(cat "$FAKE/timber-calls")"
 pass
 
 fresh 'frames: the binary'"'"'s documents, of a machine that never published'
@@ -268,7 +268,7 @@ fresh 'one: nothing published is absent, never an empty list'
 answering
 documents never-published
 status --once --repo agentplot/widget >"$t/out"
-grep -qxF 'published on this host: absent — the host (/scratch/widget/repo/.git/tailrace/published) holds no version it published' "$t/out" ||
+grep -qxF 'published on this host: absent — the host (/scratch/widget/repo/.git/timber/published) holds no version it published' "$t/out" ||
   fail "not said: $(cat "$t/out")"
 pass
 
@@ -299,9 +299,9 @@ fresh 'keys: a repository answered absent is said, and b goes back'
 answering
 documents kinds
 printf 'b' | status --repo agentplot/delta >"$t/out"
-nth 1 | grep -qxF 'absent — the host (/home/a/.local/state/tailrace/repositories) holds no repository agentplot/delta: no command run in a checkout of it on this host has named it' ||
+nth 1 | grep -qxF 'absent — the host (/home/a/.local/state/timber/repositories) holds no repository agentplot/delta: no command run in a checkout of it on this host has named it' ||
   fail "not said: $(nth 1)"
-nth 2 | head -1 | grep -qF 'tailrace · 6 repositories' || fail "b did not go to every repository: $(nth 2)"
+nth 2 | head -1 | grep -qF 'timber · 6 repositories' || fail "b did not go to every repository: $(nth 2)"
 pass
 
 fresh 'keys: --repo names an owner and a name'
@@ -339,12 +339,12 @@ done
 nth 3 | grep -q '^▸ \[3\] agentplot/gamma' || fail "the cursor's row is not drawn: $(nth 3)"
 pass
 
-fresh 'every: a body that is no answer of tailrace'"'"'s is shown as it came'
+fresh 'every: a body that is no answer of timber'"'"'s is shown as it came'
 answering
 printf '<html>Bad Gateway</html>\n' >"$FAKE/http/status.json"
 echo 502 >"$FAKE/http/status.json.code"
 status --once >"$t/out"
-grep -qxF "http://127.0.0.1:7420/status.json answered HTTP 502, which is no answer of tailrace's:" "$t/out" || fail "not said: $(cat "$t/out")"
+grep -qxF "http://127.0.0.1:7420/status.json answered HTTP 502, which is no answer of timber's:" "$t/out" || fail "not said: $(cat "$t/out")"
 grep -qxF '<html>Bad Gateway</html>' "$t/out" || fail "its words: $(cat "$t/out")"
 pass
 

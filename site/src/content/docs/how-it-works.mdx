@@ -1,37 +1,37 @@
 ---
 title: How it works
-description: How tailrace packages and signs what the merge queue lands, keeps it in a store you own, moves channels by proof, and serves consumers under a policy.
+description: How timber packages and signs what the merge queue lands, keeps it in a store you own, moves channels by proof, and serves consumers under a policy.
 ---
 
 import Figure from '../../components/Figure.astro';
 import { environmentsSvg } from '../../diagrams/environments';
 
-tailrace answers one question about a landed change: what did it produce,
+timber answers one question about a landed change: what did it produce,
 and where may it run. It pushes, it attests, it promotes, and it serves.
 Where the design pack proposes a mechanism Chuck has not yet ruled on, this
-page calls it the direction; [the design](/tailrace/design/) says which is
+page calls it the direction; [the design](/timber/design/) says which is
 which.
 
 ## After the landing
 
-sluice lands a commit on `main`. tailrace reads sluice's refs for the
+sluice lands a commit on `main`. timber reads sluice's refs for the
 landed commit and moon's task hashes for what the build left, and gives the
-result a version. `tailrace publish` packages the outputs as OCI
+result a version. `timber publish` packages the outputs as OCI
 artifacts, one manifest each with the payload as layer blobs and the
 metadata as annotations, signs each one, and offers it by digest in the
 registry. Its answer is machine-readable: the digest, the version and
 each attestation's reference, so another system can take it as its
-input. Neither sluice nor moon knows tailrace exists.
+input. Neither sluice nor moon knows timber exists.
 
-`tailrace push`, run by whoever drives the landing on the host that ran
+`timber push`, run by whoever drives the landing on the host that ran
 its checks, puts that landing's archives in the store's cache: each task
 the landing passed becomes a cache entry under its task hash, which any
 host whose build identity matches replays. sluice runs nothing after a
 landing, so the driver, or a person by hand, runs it. A check job on a
-runner that keeps nothing runs `tailrace push --left` instead, before the
+runner that keeps nothing runs `timber push --left` instead, before the
 landing is decided, and pushes what its own run left.
 
-Where the landing carries verdicts, `tailrace publish` reads the
+Where the landing carries verdicts, `timber publish` reads the
 landing's outputs from those cache entries: before moon is asked, it
 renders the entry of each task the landing passed into the checkout it
 runs in, so moon replays what the landing's checks built, and it refuses
@@ -51,11 +51,11 @@ tag series, and a channel belongs to one component.
 
 ## Attestations hang off the digest
 
-Everything tailrace knows about an artifact is a signed statement attached
+Everything timber knows about an artifact is a signed statement attached
 to the artifact's digest as an OCI referrer: the build's provenance, with
 the commit, the builder's identity, the machine and the inputs; sluice's
 signed check verdicts for the landed commit; the test results; and, later,
-an independent rebuild that matched and a review's approval. `tailrace
+an independent rebuild that matched and a review's approval. `timber
 attest` adds one. A referrer travels with its subject on a referrers-aware
 copy, so an artifact carries its evidence wherever it goes, and a policy
 reads it there.
@@ -77,7 +77,7 @@ and environment definitions packaged from git. A machine an agent runs on
 writes only to the cache and to quarantine. A poisoned upload sits in
 quarantine and goes nowhere.
 
-`tailrace publish` offers what a landing made: for a revision the branch
+`timber publish` offers what a landing made: for a revision the branch
 has landed, it puts each output's artifact in the store with one
 provenance signed in the publisher's own identity, carrying the landing's
 verdicts for that build exactly as the landing made them, and puts the
@@ -85,11 +85,11 @@ version's index last, once every artifact and its claims are held. Each
 version carries its notes: git-cliff, the version rule's own tool,
 renders the commits the version was derived from under the repository's
 own `cliff.toml` at that revision, or git-cliff's default where it keeps
-none, since tailrace imposes no template, and the notes are an artifact
+none, since timber imposes no template, and the notes are an artifact
 the index names, with one provenance of the publisher's.
-`tailrace publish`, `tailrace status` and `tailrace verify` show them
+`timber publish`, `timber status` and `timber verify` show them
 beside the version. A publish accepts nothing and moves no channel;
-acceptance is the gate's. `tailrace verify` reads a version's
+acceptance is the gate's. `timber verify` reads a version's
 attestations back and says which signer the policy names made each one,
 and counts none that another signer made, for anyone who wants to read
 the evidence.
@@ -100,10 +100,10 @@ A channel such as `beta` or `stable` is a mutable pointer, a name in the
 store, `channel/stable`, to a version. Every component has both with no
 line written, and where the repository declares components a channel
 is its component and its name, `channel/lib/stable` in the store and
-`refs/tailrace/ledger/lib/stable` in the git ref ledger, so two
+`refs/timber/ledger/lib/stable` in the git ref ledger, so two
 components' channels never share a chain (125, C.13, C.14). A landing
 on `main` makes a version, and the gate, once it accepts it, moves
-`beta`; `tailrace promote <version> --to stable` moves `stable` to a
+`beta`; `timber promote <version> --to stable` moves `stable` to a
 version `beta` has held, once the version's index carries the gate's
 acceptance and every claim `stable`'s policy requires, and the host's
 signer is one of the channel's promoters, the gate's for `stable`. Every promotion is a
@@ -115,11 +115,11 @@ registry beside the versions they moved; the ledger holds a move before
 the store does, and the store is rewritten from the ledger. The ledger
 is the audit trail. `--from <version>` names where the asker expects the
 channel, and a channel that has moved since is refused naming where it
-is. A wrong move is undone by `tailrace promote --back --to stable`,
+is. A wrong move is undone by `timber promote --back --to stable`,
 one more promotion, to the version the channel moved from: the version
 left stays accepted and readable by its digest.
 
-**Where each channel is, and why.** On any machine, `tailrace status`
+**Where each channel is, and why.** On any machine, `timber status`
 shows each channel the policy declares at its version or empty, and
 under it the chain of promotions that put it there, newest first: the
 version each moved from, who asked, and when. It reads the channels
@@ -137,10 +137,10 @@ digest is one more attestation, and two signatures before `stable` moves.
 
 ## Consumers read under a policy
 
-`tailrace sync` fills each ecosystem's own local layout from the store: an
+`timber sync` fills each ecosystem's own local layout from the store: an
 npm cache, a Maven repository, a PyPI index, a Go module cache, a Cargo
 registry, a NuGet feed, a container image layout, a directory of
-CloudFormation templates or site bundles. `tailrace serve` is a localhost
+CloudFormation templates or site bundles. `timber serve` is a localhost
 server speaking the read protocol of the ecosystems that need HTTP, npm
 first. Both read under a policy: a version is served only when its
 attestations satisfy it, so a developer's install and an agent's build see
@@ -165,24 +165,24 @@ production move and when.
 
 **Push or pull.** Whether an environment is pushed to or pulls is the
 target's own, and the ledger, the channel and the policy are the same
-either way. Where no good pull tool stands, tailrace brings a reconciler:
+either way. Where no good pull tool stands, timber brings a reconciler:
 a package registry such as CodeArtifact or npmjs is pushed the version's
 projection; a static site is synced by digest; a CloudFormation stack
 gets one stack operation with the environment's parameters; a function
 is pointed at the version's image. Where a pull tool already watches,
-tailrace adds nothing but a watcher: a Kubernetes cluster's Flux or Argo
+timber adds nothing but a watcher: a Kubernetes cluster's Flux or Argo
 follows the channel's tag and verifies the gate's signature before it
 applies; a Nix fleet's machines realise the release assigned to them from
-the cache. [The targets](/tailrace/guides/integrations/targets/) lists
+the cache. [The targets](/timber/guides/integrations/targets/) lists
 each.
 
 **Verify before apply.** A reconciler reads the version's bytes by digest
 and verifies the claims its policy requires before it applies anything.
 It runs with the environment's own credentials in the environment's own
-place; tailrace holds no credential that reaches a target.
+place; timber holds no credential that reaches a target.
 
 **What runs where.** Every reconciler reports what the environment runs,
-by digest, and when it last converged. `tailrace status` answers, for
+by digest, and when it last converged. `timber status` answers, for
 every environment, what it should run, what it runs, and that the two
 differ where they do; an environment whose state cannot be read is
 reported unread with the reason, never as converged. Until a target is
@@ -195,16 +195,16 @@ same convergence in reverse.
 | level | means | who writes it |
 |---|---|---|
 | a cache hit | someone built this | any machine an agent runs on |
-| an artifact | the merge queue built and signed it, and the gate accepted it | sluice, tailrace, then the gate |
+| an artifact | the merge queue built and signed it, and the gate accepted it | sluice, timber, then the gate |
 | a release | it was promoted, with proof | a promotion under the policy |
 
 The bytes that passed the gate are the bytes that run. Trust is
 centralized only as a thin layer: identity, policy and the signed ledger.
 Execution stays on the machines the agents run on.
 
-## What tailrace keeps
+## What timber keeps
 
-The family's tools keep their state in git, and tailrace's small things
+The family's tools keep their state in git, and timber's small things
 go there: manifests, signatures, attestations and the ledger. Large blobs
 do not: the direction is a file-based OCI layout on disk, synced to object
 storage, that git only points at by digest. Policies and environment

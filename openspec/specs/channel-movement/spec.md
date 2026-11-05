@@ -54,7 +54,7 @@ slash and its name.
 ### Requirement: The givens are a fragment beneath the file
 
 The given channels SHALL be a policy fragment in the policy file's own
-form, shipped with tailrace as data in the policy profile's directory
+form, shipped with timber as data in the policy profile's directory
 and laid beneath the repository's file, the two read as one table in
 force by every answer the profile gives (C.10). The fragment SHALL hold
 `beta`, moving on each accepted publish with releases alone, and

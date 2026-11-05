@@ -10,7 +10,7 @@ decision-makers:
 # Offering is never trusting: three states and one accepting credential
 
 Deciders: the user, 2026-10-22 (inception T1, T2, P2: centralize trust, not execution; edges can never promote; a gate promotes by copying the same digest).
-Sources: `agentplot/blueprints:design/tailrace/requirements.md` clauses 20, 25 to 30, 32 to 39, I2; the inception pack's threat model (`05-trust-and-security.md`) and gate (`06-gate-and-promotion.md`).
+Sources: `agentplot/blueprints:design/timber/requirements.md` clauses 20, 25 to 30, 32 to 39, I2; the inception pack's threat model (`05-trust-and-security.md`) and gate (`06-gate-and-promotion.md`).
 
 ## Context and problem statement
 

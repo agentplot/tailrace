@@ -2,7 +2,7 @@
 
 ## Purpose
 One in-memory fake for each seam, keeping the contract its seam states
-and scriptable per test, so tailrace's core and its conformance suite
+and scriptable per test, so timber's core and its conformance suite
 run with no registry, task runner, merge queue, key or target on the
 host.
 

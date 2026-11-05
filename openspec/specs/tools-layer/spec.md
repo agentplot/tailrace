@@ -83,4 +83,4 @@ with, SHALL be the host's, named in its `devenv.local.nix`.
 #### Scenario: The KMS keys are the host's
 
 - **WHEN** the KMS check runs
-- **THEN** it signs with the key `env.TAILRACE_TOOLS_KMS_KEY` names and uses the key `env.TAILRACE_TOOLS_KMS_STRANGER` names as the stranger, both from the host's `devenv.local.nix`, and with no other key
+- **THEN** it signs with the key `env.TIMBER_TOOLS_KMS_KEY` names and uses the key `env.TIMBER_TOOLS_KMS_STRANGER` names as the stranger, both from the host's `devenv.local.nix`, and with no other key

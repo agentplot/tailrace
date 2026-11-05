@@ -1,7 +1,7 @@
 # seam-contracts Specification
 
 ## Purpose
-The eight seams of Part B as the one interface each by which tailrace's
+The eight seams of Part B as the one interface each by which timber's
 core reaches a store, a build, a landing, a signer, a policy, a
 projection, a target and a keeper, with the values that cross them and
 the answers they give.
@@ -122,9 +122,9 @@ A claim SHALL be about exactly one digest, SHALL name its kind and the
 revision it was made for, and SHALL name the build identity where it
 has one (7, 13). A signed envelope SHALL have a digest of its own by
 which a promotion names its predecessor (105, 120). An envelope holding
-a claim of tailrace's form SHALL hold exactly one claim and the
+a claim of timber's form SHALL hold exactly one claim and the
 signature of exactly one signer, and one holding any other number of
-signatures SHALL be read as no claim of tailrace's form (7). An
+signatures SHALL be read as no claim of timber's form (7). An
 envelope carried from another party SHALL hold every signature it was
 made with, each with its signer and its key id as made, and the payload
 and its type byte for byte (12, C.5).
@@ -149,10 +149,10 @@ and its type byte for byte (12, C.5).
 - **WHEN** a claim carries an envelope signed twice, each signature with its own key id
 - **THEN** reading the claim back answers both signatures with their key ids, in the order made
 
-#### Scenario: Tailrace's form with two signatures
+#### Scenario: Timber's form with two signatures
 
-- **WHEN** an envelope holding a claim of tailrace's form carries two signatures
-- **THEN** it is read as no claim of tailrace's form
+- **WHEN** an envelope holding a claim of timber's form carries two signatures
+- **THEN** it is read as no claim of timber's form
 
 ### Requirement: Four answers, and no other
 
@@ -177,12 +177,12 @@ profile that answered.
 A refusal SHALL name what Part B says that refusal names, and an
 unreadable answer SHALL name what could not be read; each SHALL carry
 the refusing or failing source's own words verbatim, where it gave
-any, beside tailrace's own (59, core.19).
+any, beside timber's own (59, core.19).
 
 #### Scenario: The source's words kept
 
 - **WHEN** a store refuses with words of its own
-- **THEN** the refusal carries those words unchanged, byte for byte, beside the reason tailrace gives
+- **THEN** the refusal carries those words unchanged, byte for byte, beside the reason timber gives
 
 #### Scenario: What each refusal names
 
@@ -230,7 +230,7 @@ an output came from, the build's outcome, and where its files are (75);
 and left, given a checkout, with the build identities whose outputs the
 checkout's own build state holds, each with its tasks, its outcome and
 where its files are, read from the build's own records and from nothing
-of tailrace's (139).
+of timber's (139).
 
 #### Scenario: Outputs that could not be made
 
@@ -283,7 +283,7 @@ two ways a chain says it was read (59, 60, 61, 77, C.5, C.6).
 ### Requirement: The signer's contract
 
 The signer SHALL answer sign with the claim signed in the identity of
-the party running tailrace, or absent when no identity is at hand
+the party running timber, or absent when no identity is at hand
 (79); and verify with which of the signers given made an attestation,
 or refused when none did (80). A signature by an identity that has
 expired SHALL be answered as made by that signer and expired, never as
@@ -561,7 +561,7 @@ moves from or none for the channel's first, the digest of the promotion
 it follows or none, who asked, the revision the channel's policy was
 read at and the digests of the claims that satisfied it, and when, in
 seconds since the Unix epoch (33, 39, 105). Reading a claim's body SHALL
-answer none for a claim that is not a promotion of tailrace's form.
+answer none for a claim that is not a promotion of timber's form.
 
 #### Scenario: A promotion's body read back
 
@@ -605,7 +605,7 @@ never a subject of its chain (37).
 
 A revision the landing answers not landed from the host's copy SHALL
 be refused naming the branch, the revision and the time the copy was
-fetched, carrying the remote's words verbatim beside tailrace's and
+fetched, carrying the remote's words verbatim beside timber's and
 saying to ask again once the remote answers; it SHALL be told apart
 from a revision the landing answers not landed from its remote, in the
 JSON form as in the text (14, 57, 58, 59, 77).

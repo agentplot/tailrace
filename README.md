@@ -1,15 +1,15 @@
-# tailrace
+# timber
 
 **Designed; the scaffold is built and nothing of the design yet.** The
 design is settled in
 [agentplot/blueprints](https://github.com/agentplot/blueprints); the
-[roadmap](https://agentplot.github.io/tailrace/roadmap/) says what each
+[roadmap](https://agentplot.github.io/timber/roadmap/) says what each
 bolt delivers.
 
 **Build once, sign everything, promote with proof, in your own account.**
 
-tailrace delivers what the merge queue lands. After
-[sluice](https://github.com/agentplot/sluice) lands a change, tailrace
+timber delivers what the merge queue lands. After
+[sluice](https://github.com/agentplot/sluice) lands a change, timber
 versions, packages, signs and pushes what the build left as OCI artifacts
 into a registry you own: ECR, GHCR, Harbor, zot, or a file-based OCI
 layout on disk. To each artifact's digest it attaches attestations as OCI
@@ -19,10 +19,10 @@ a build cache, an artifact repository and a release system, and the bytes
 that passed the gate are the bytes that run. Your artifacts, in your
 account.
 
-- **The site:** https://agentplot.github.io/tailrace
-- **The design book:** https://agentplot.github.io/blueprints/tailrace/
-- **The statement**, tailrace's invariants as numbered clauses, is
-  `design/tailrace/requirements.md` in agentplot/blueprints, being
+- **The site:** https://agentplot.github.io/timber
+- **The design book:** https://agentplot.github.io/blueprints/timber/
+- **The statement**, timber's invariants as numbered clauses, is
+  `design/timber/requirements.md` in agentplot/blueprints, being
   written now.
 
 ## What it does
@@ -60,18 +60,14 @@ the machines the agents run on.
 The givens name Rust as its language, as sluice's. The first crate comes
 with the first ADR.
 
-tailrace is one of a family: headwater reports releases, eddy lists
+timber is one of a family: headwater reports releases, eddy lists
 meetings, millpond keeps the inbox, flume launches the work, sounding
 works a question, sluice lands each change, and
-[Flywheel](https://github.com/agentplot/flywheel-web) runs the teams
+[Boomdrive](https://github.com/agentplot/boomdrive-web) runs the teams
 that make them. Headwater and eddy feed millpond, millpond feeds flume,
-flume's agents submit to sluice, sluice lands, and tailrace delivers to
-the environments. tailrace reads sluice's refs and moon's task hashes;
-neither of them knows tailrace exists.
-
-In a watermill the tailrace is the channel that carries water away from
-the wheel after it has done its work. tailrace carries what the merge
-queue landed out to where it runs.
+flume's agents submit to sluice, sluice lands, and timber delivers to
+the environments. timber reads sluice's refs and moon's task hashes;
+neither of them knows timber exists.
 
 ## This repository
 
@@ -85,7 +81,7 @@ queue landed out to where it runs.
 
 ```sh
 devenv shell -- moon run site:build   # the site, with every internal link checked
-devenv shell -- site-dev              # http://localhost:4321/tailrace/
+devenv shell -- site-dev              # http://localhost:4321/timber/
 ```
 
 ## License

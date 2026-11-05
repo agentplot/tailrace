@@ -199,7 +199,7 @@ A provenance claim SHALL carry every verdict of the landing that names
 the artifact's build identity, each envelope byte for byte as the
 landing recorded it with every signature and key id it holds, and say
 where it was found: the landing, the revision it was asked for, and
-where the landing says it found the verdict. tailrace SHALL never
+where the landing says it found the verdict. timber SHALL never
 re-sign another party's verdict as its own (12, core.8, C.5).
 
 #### Scenario: A verdict carried byte for byte

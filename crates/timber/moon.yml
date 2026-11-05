@@ -1,0 +1,49 @@
+$schema: 'https://moonrepo.dev/schemas/project.json'
+
+language: 'rust'
+dependsOn: [seams, core, fakes, conformance]
+
+tasks:
+  # The crate's tests over the fakes and git alone, herdr_documents among
+  # them, which compares the herdr plugin's documents with the binary's.
+  test:
+    command: 'cargo test -p timber'
+    inputs: ['/crates/timber/**/*', '/crates/timber-seams/**/*', '/crates/timber-core/**/*', '/crates/timber-fakes/**/*', '/crates/timber-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/plugins/herdr/tests/docs/**/*']
+    tags: [cargo-test, check-fast]
+    options: {runFromWorkspaceRoot: true}
+  # The profiles' tests that run moon, sluice and ssh-keygen against
+  # scratch repositories, the registry store's against a zot and a
+  # reference distribution each started for the test, the Cargo
+  # projection's and its served registry's proof with the shell's cargo,
+  # and the npm projection's pack and npm installing from a served layout
+  # with the npm devenv.lock pins, behind the `tools` feature: the tools
+  # layer.
+  tools:
+    command: 'cargo test -p timber --features tools --test build_moon --test landing_sluice --test landings_end_to_end --test laptop --test moon_cache --test registry_store --test push_after_landing --test one_host --test pool_run_publish --test cargo_projection --test cargo_served --test npm_projection --test npm_served'
+    inputs: ['/crates/timber/**/*', '/crates/timber-seams/**/*', '/crates/timber-core/**/*', '/crates/timber-fakes/**/*', '/crates/timber-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools']
+    tags: [check-tools]
+    options: {runFromWorkspaceRoot: true}
+  # The registry store's group and the cache manifest's scenarios against
+  # the ECR repository the host names in devenv.local.nix
+  # (env.TIMBER_TOOLS_ECR), behind the `tools` feature; it refuses to
+  # run, naming the setting, on a host that names none. It needs a
+  # person's live AWS session, so it runs outside the gate under a tag of
+  # its own, by hand with `moon run ':#check-ecr'` and a live session, or
+  # by a job that holds an identity of its own (core.38).
+  tools-ecr:
+    command: 'cargo test -p timber --features tools --test registry_ecr'
+    inputs: ['/crates/timber/**/*', '/crates/timber-seams/**/*', '/crates/timber-core/**/*', '/crates/timber-fakes/**/*', '/crates/timber-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '$TIMBER_TOOLS_ECR']
+    tags: [check-ecr]
+    options: {runFromWorkspaceRoot: true}
+  # The key service signer's group against the KMS keys the host names in
+  # devenv.local.nix (env.TIMBER_TOOLS_KMS_KEY, and
+  # env.TIMBER_TOOLS_KMS_STRANGER as the stranger), behind the `tools`
+  # feature; it refuses to run, naming both settings, on a host that names
+  # neither. It needs a person's live AWS session, so it runs outside the
+  # gate under a tag of its own, by hand with `moon run ':#check-kms'` and a
+  # live session, or by a job that holds an identity of its own (core.38).
+  kms:
+    command: 'cargo test -p timber --features tools --test kms_account'
+    inputs: ['/crates/timber/**/*', '/crates/timber-seams/**/*', '/crates/timber-core/**/*', '/crates/timber-fakes/**/*', '/crates/timber-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '$TIMBER_TOOLS_KMS_KEY', '$TIMBER_TOOLS_KMS_STRANGER']
+    tags: [check-kms]
+    options: {runFromWorkspaceRoot: true}

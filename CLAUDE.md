@@ -1,12 +1,12 @@
-# tailrace
+# timber
 
 Delivers what the merge queue lands: versions, packages, signs and pushes
 the build's output as OCI artifacts with attestations into a registry the
 user owns, keeps channels and environments, and serves consumers under a
 policy. The design is the statement of invariants in agentplot/blueprints,
-`design/tailrace/requirements.md`; this repository cites its clauses by
+`design/timber/requirements.md`; this repository cites its clauses by
 number and never restates them. The design book is at
-https://agentplot.github.io/blueprints/tailrace/.
+https://agentplot.github.io/blueprints/timber/.
 
 The scaffold is built and nothing of the design yet (ADR 0011): five
 crates as sluice's under `crates/`, the gate, the flake and the release
@@ -35,7 +35,7 @@ Run a repository tool through the shell per command,
 
 ## The site
 
-`site/` is the Starlight site at https://agentplot.github.io/tailrace,
+`site/` is the Starlight site at https://agentplot.github.io/timber,
 published by `.github/workflows/pages.yml`. `site/README.md` says where
 its pages and diagram live.
 

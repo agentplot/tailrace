@@ -238,7 +238,7 @@
     "published": {
       "answer": "ok",
       "value": {
-        "record": "/srv/alpha/.git/tailrace/published",
+        "record": "/srv/alpha/.git/timber/published",
         "components": [
           {
             "component": "app",

@@ -16,14 +16,14 @@ body = """
 {% for commit in commits %}
 - {% if commit.scope %}**{{ commit.scope }}**: {% endif %}\
 {{ commit.message | split(pat="\n") | first | trim | upper_first }} \
-([{{ commit.id | truncate(length=7, end="") }}](https://github.com/agentplot/tailrace/commit/{{ commit.id }}))\
+([{{ commit.id | truncate(length=7, end="") }}](https://github.com/agentplot/timber/commit/{{ commit.id }}))\
 {% endfor %}
 {% endfor %}
 """
 footer = ""
 trim = true
 postprocessors = [
-  { pattern = '\(#([0-9]+)\)', replace = "([#${1}](https://github.com/agentplot/tailrace/issues/${1}))" },
+  { pattern = '\(#([0-9]+)\)', replace = "([#${1}](https://github.com/agentplot/timber/issues/${1}))" },
 ]
 
 [git]

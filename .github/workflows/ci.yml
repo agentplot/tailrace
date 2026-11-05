@@ -1,6 +1,6 @@
-# tailrace on GitHub: the flake builds on macOS and Linux, the fast layer
+# timber on GitHub: the flake builds on macOS and Linux, the fast layer
 # runs in the devenv shell a session uses, and each push to main that
-# git-cliff finds a new version in is released (cliff.toml). tailrace's own
+# git-cliff finds a new version in is released (cliff.toml). timber's own
 # gate is sluice (.config/sluice.toml); this is the public build.
 name: ci
 
@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
       - run: nix build .#default --print-build-logs
-      - run: ./result/bin/tailrace --version
+      - run: ./result/bin/timber --version
 
   fast:
     strategy:
@@ -105,15 +105,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
-      - run: TAILRACE_VERSION="${TAG#v}" nix build --impure .#default --print-build-logs
+      - run: TIMBER_VERSION="${TAG#v}" nix build --impure .#default --print-build-logs
         env:
           TAG: ${{ needs.version.outputs.tag }}
-      - run: ./result/bin/tailrace --version
-      - run: tar -czf "tailrace-${{ matrix.system }}.tar.gz" -C result/bin tailrace
+      - run: ./result/bin/timber --version
+      - run: tar -czf "timber-${{ matrix.system }}.tar.gz" -C result/bin timber
       - uses: actions/upload-artifact@v4
         with:
-          name: tailrace-${{ matrix.system }}
-          path: tailrace-${{ matrix.system }}.tar.gz
+          name: timber-${{ matrix.system }}
+          path: timber-${{ matrix.system }}.tar.gz
 
   # Tags the pushed commit and publishes the binaries with git-cliff's
   # notes for the range. Nothing is committed back to main.
@@ -135,7 +135,7 @@ jobs:
           nix shell --inputs-from . nixpkgs#git-cliff -c \
             git-cliff --unreleased --tag "$TAG" --strip all > notes.md
           gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" \
-            --notes-file notes.md tailrace-*.tar.gz
+            --notes-file notes.md timber-*.tar.gz
         env:
           TAG: ${{ needs.version.outputs.tag }}
           GH_TOKEN: ${{ github.token }}

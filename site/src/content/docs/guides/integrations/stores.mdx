@@ -51,7 +51,7 @@ The index names the revision it was published from and the publishing
 repository by the owner and name of its landed branch's remote, as the
 remote's address is written, in the annotations
 `org.opencontainers.image.revision` and
-`io.github.agentplot.tailrace.repository`; an index whose repository has
+`io.github.agentplot.timber.repository`; an index whose repository has
 no such remote names none, and one put before indexes named them keeps
 its bytes and its digest (13).
 
@@ -67,8 +67,8 @@ its bytes and its digest (13).
 | an OCI layout on disk | C.2, an OCI image layout | a directory, every operation a file write under the digest's path; an artifact is an OCI manifest, an attestation an entry of `index.json` annotated with its subject, and a name an entry with a ref name, moved only from where it is | built |
 
 A registry holds the store under the one repository the host names, such
-as `<account>.dkr.ecr.<region>.amazonaws.com/tailrace` or
-`localhost:5000/tailrace`, and the store never makes a repository. The
+as `<account>.dkr.ecr.<region>.amazonaws.com/timber` or
+`localhost:5000/timber`, and the store never makes a repository. The
 declared repository holds every blob, artifact, index and attestation,
 addressed by digest, and the tags of a repository that declares no
 component; under it, three spaces a credential can be scoped to apart
@@ -94,12 +94,12 @@ component the distribution protocol allows, `@acme/site` written
 A registry that makes repositories only by a creation template, ECR
 among them, refuses a put into one nobody made, and the refusal names
 the repository in the registry's own words (see
-[self-hosting](/tailrace/guides/self-hosting/)). An artifact is an OCI manifest whose artifact type names
+[self-hosting](/timber/guides/self-hosting/)). An artifact is an OCI manifest whose artifact type names
 the ecosystem, whose layers are the ecosystem's own bytes and whose
 config is its own metadata, in exactly the bytes the layout writes, so
 one artifact has one digest in both (1). An attestation is a DSSE
 envelope holding an in-toto statement, attached as a referrer of the
-digest it is about: a manifest typed by tailrace's envelope type, its one
+digest it is about: a manifest typed by timber's envelope type, its one
 layer the envelope, the statement's predicate type in its
 `in-toto.io/predicate-type` annotation. claims-of lists the subject's
 referrers of that type by the referrers API, or, where a registry has
@@ -130,9 +130,9 @@ records what ECR answered.
 
 The layout is bound for a host by its bindings file, `[store] layout =
 "<path>"`, and a registry by `[store] registry = "<host>/<repository>"`
-(see [self-hosting](/tailrace/guides/self-hosting/)). A host with no
+(see [self-hosting](/timber/guides/self-hosting/)). A host with no
 file, or a file with no `[store]`, binds the layout at
-`~/.local/share/tailrace/layout`, under `$XDG_DATA_HOME` where it is
+`~/.local/share/timber/layout`, under `$XDG_DATA_HOME` where it is
 set, and names it in its record by that path in full (118, C.2). A
 publish makes the layout, the given one with its parents, the first time
 it asks the store anything, where the path is missing or an empty

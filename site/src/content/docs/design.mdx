@@ -1,11 +1,11 @@
 ---
 title: Design
-description: Where tailrace's design lives, what is settled and what is the direction, and the questions its statement must answer.
+description: Where timber's design lives, what is settled and what is the direction, and the questions its statement must answer.
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-tailrace's design lives in [agentplot/blueprints](https://github.com/agentplot/blueprints).
+timber's design lives in [agentplot/blueprints](https://github.com/agentplot/blueprints).
 The code cites the statement by clause number and never restates it. The
 rules this repository holds to are `docs/architecture/core.md`, with the
 decisions behind them in `docs/adr/`, one record each.
@@ -14,18 +14,18 @@ decisions behind them in `docs/adr/`, one record each.
   <LinkCard
     title="The design book"
     description="The design, chapter by chapter, with the statement as its appendix."
-    href="https://agentplot.github.io/blueprints/tailrace/"
+    href="https://agentplot.github.io/blueprints/timber/"
   />
   <LinkCard
     title="The statement of invariants"
-    description="What tailrace must always do and never do, in numbered clauses. Being written."
-    href="https://github.com/agentplot/blueprints/blob/main/design/tailrace/requirements.md"
+    description="What timber must always do and never do, in numbered clauses. Being written."
+    href="https://github.com/agentplot/blueprints/blob/main/design/timber/requirements.md"
   />
 </CardGrid>
 
 ## What is settled
 
-- tailrace is one tool, organized around three concepts: artifacts, what
+- timber is one tool, organized around three concepts: artifacts, what
   was built; channels, what is released; environments, where it runs.
 - It takes the place of a package manager's backend, Artifactory or GitHub
   Packages, with an OCI store: `push` after the merge queue, and consumers
@@ -60,7 +60,7 @@ otherwise:
 - Policies and environment definitions edited in git and packaged on
   landing; promotions as signed events, never edits.
 - No reconciler for Kubernetes, where Flux and Argo consume the channel
-  tags; reconcilers of tailrace's own where no good pull tool exists.
+  tags; reconcilers of timber's own where no good pull tool exists.
 - Small things in git and large blobs in a file-based OCI layout synced to
   object storage, pointed at by digest.
 
@@ -73,13 +73,13 @@ otherwise:
 | I3 | Every attestation is a signed statement attached to its subject's digest, and travels with it. |
 | I4 | A channel moves only by a signed promotion, recorded append-only. |
 | I5 | A consumer is served a version only when its attestations satisfy the policy. |
-| I6 | The artifacts and the ledger stay in the user's account; tailrace keeps no copy. |
+| I6 | The artifacts and the ledger stay in the user's account; timber keeps no copy. |
 
 ## What it leaves to others
 
-tailrace lands nothing: sluice decides what lands, and tailrace takes the
+timber lands nothing: sluice decides what lands, and timber takes the
 landing as given. It builds nothing: moon and the repository's own tools
-do, and tailrace packages what they left. It proves that bytes match
+do, and timber packages what they left. It proves that bytes match
 their source, never that the source is benign; bad source is caught at
 the merge, by signed commits and review in sluice. And it runs nothing
 itself: an environment's target does, once the reconciler hands it the
@@ -87,7 +87,7 @@ version.
 
 ## Questions the statement must answer
 
-- Whether tailrace serves Nix store paths itself or layers on Attic.
+- Whether timber serves Nix store paths itself or layers on Attic.
 - The policy language: Rego, CUE, Cedar, or in-toto layouts.
 - The promotion record's schema, shared with any platform that keeps its
   own channels.

@@ -1,26 +1,26 @@
 ---
-title: tailrace
+title: timber
 description: Build once, sign everything, promote with proof, in your own account.
 template: splash
 hero:
-  tagline: tailrace delivers what the merge queue lands. Signed OCI artifacts with attestations, channels moved only by a signed promotion, and environments that converge on them, in a registry you own.
+  tagline: timber delivers what the merge queue lands. Signed OCI artifacts with attestations, channels moved only by a signed promotion, and environments that converge on them, in a registry you own.
   actions:
     - text: How it works
-      link: /tailrace/how-it-works/
+      link: /timber/how-it-works/
       icon: right-arrow
     - text: Read the design
-      link: https://agentplot.github.io/blueprints/tailrace/
+      link: https://agentplot.github.io/blueprints/timber/
       icon: external
       variant: secondary
     - text: GitHub
-      link: https://github.com/agentplot/tailrace
+      link: https://github.com/agentplot/timber
       icon: external
       variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-After [sluice](https://agentplot.github.io/sluice/) lands a change, tailrace
+After [sluice](https://agentplot.github.io/sluice/) lands a change, timber
 versions, packages, signs and pushes what the build left as OCI artifacts
 into a registry you own: ECR, GHCR, Harbor, zot, or a file-based OCI layout
 on disk. To each artifact's digest it attaches attestations as OCI
@@ -28,12 +28,12 @@ referrers: the build's provenance, sluice's signed check verdicts for the
 landed commit, and the test results. The bytes that passed the gate are the
 bytes that run. Your artifacts, in your account.
 
-[The roadmap](/tailrace/roadmap/) orders the work of building it.
+[The roadmap](/timber/roadmap/) orders the work of building it.
 
 ## One store, three jobs
 
 A cache hit, an artifact and a release are the same content-addressed bytes
-at three levels of trust. tailrace keeps them in one store, so nothing is
+at three levels of trust. timber keeps them in one store, so nothing is
 rebuilt on its way to production.
 
 <CardGrid>
@@ -60,12 +60,12 @@ rebuilt on its way to production.
 
 ## What it never does
 
-tailrace never rebuilds an artifact on its way to a release: the digest the
+timber never rebuilds an artifact on its way to a release: the digest the
 merge queue signed is the digest a channel points at. A machine an agent
 runs on writes only to the cache and to quarantine, and never promotes.
 A consumer is never served a version whose attestations fail the policy.
-And tailrace never holds your artifacts: the registry is yours, and
-tailrace keeps no copy of it.
+And timber never holds your artifacts: the registry is yours, and
+timber keeps no copy of it.
 
 ## Where you meet it
 
@@ -78,27 +78,27 @@ every environment runs.
   <Card title="Command line" icon="seti:shell">
     `push`, `attest`, `publish`, `verify`, `sync`, `serve`, `promote` and
     `status`, each with a machine-readable answer, so another system can
-    take tailrace's result as its input.
+    take timber's result as its input.
   </Card>
   <Card title="Claude Code" icon="puzzle">
-    A hook that refuses `npm publish` and its kin and names `tailrace
+    A hook that refuses `npm publish` and its kin and names `timber
     publish`; the publish's answer read back after a landing; `sync` in a
-    fresh worktree before an install. [The plugin](/tailrace/guides/claude-code/).
+    fresh worktree before an install. [The plugin](/timber/guides/claude-code/).
   </Card>
   <Card title="herdr" icon="list-format">
     A sidebar row per repository, a popup with channels, environments and
     the last refusals, a toast when a channel moves, and one key to
-    promote as the approver. [The plugin](/tailrace/guides/herdr/).
+    promote as the approver. [The plugin](/timber/guides/herdr/).
   </Card>
-  <Card title="Flywheel" icon="random">
+  <Card title="Boomdrive" icon="random">
     An adapter that prints a capture for each publish and each refusal,
-    which millpond lands once. [How it fits](/tailrace/how-it-fits/).
+    which millpond lands once. [How it fits](/timber/how-it-fits/).
   </Card>
 </CardGrid>
 
 ## Its first user
 
-The family's own repositories, which sluice already lands, run tailrace
+The family's own repositories, which sluice already lands, run timber
 first: a file-based OCI layout on disk, ECR as the registry, moon's remote
 cache backed by the store, and `beta` and `stable` channels moved from the
 command line with signed promotion records.

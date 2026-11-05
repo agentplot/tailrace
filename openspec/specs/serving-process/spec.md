@@ -7,17 +7,17 @@ TBD - created by archiving change status-on-any-machine. Update Purpose after ar
 
 ### Requirement: One process answers a host at one fixed address
 
-`tailrace serve` SHALL answer HTTP at `127.0.0.1` port `7420`, the
+`timber serve` SHALL answer HTTP at `127.0.0.1` port `7420`, the
 core's name and port, which no setting, flag or variable moves, on
 every host (114, core.36). It SHALL answer `GET /serving.json` with a
-JSON document naming itself as tailrace's serving process, its revision
+JSON document naming itself as timber's serving process, its revision
 and its process id, asking no repository, so an asker tells it from
 anything else on the port.
 
 #### Scenario: The address on every host
 
-- **WHEN** `tailrace serve` runs on a host
-- **THEN** it answers `GET http://127.0.0.1:7420/serving.json` with a document naming tailrace, its revision and its process id, and no flag or setting is read that would move the address
+- **WHEN** `timber serve` runs on a host
+- **THEN** it answers `GET http://127.0.0.1:7420/serving.json` with a document naming timber, its revision and its process id, and no flag or setting is read that would move the address
 
 ### Requirement: The repository is in the path, by its remote's owner and name
 
@@ -30,19 +30,19 @@ repository unnamed, unreadable naming the remote and its address.
 
 #### Scenario: An HTTPS and an SSH remote
 
-- **WHEN** the landing's remote is `https://example.com/agentplot/tailrace.git`, and in another checkout `git@example.com:agentplot/tailrace`
-- **THEN** both are named `agentplot/tailrace`
+- **WHEN** the landing's remote is `https://example.com/agentplot/timber.git`, and in another checkout `git@example.com:agentplot/timber`
+- **THEN** both are named `agentplot/timber`
 
 #### Scenario: A remote that names no owner
 
-- **WHEN** the landing's remote is `/srv/tailrace.git`
+- **WHEN** the landing's remote is `/srv/timber.git`
 - **THEN** the repository is unreadable naming the remote and that address, and no entry is written
 
 ### Requirement: The process answers the repositories a checkout named
 
 The host SHALL keep one file of the repositories named to its serving
-process, at `$XDG_STATE_HOME/tailrace/repositories`, or
-`~/.local/state/tailrace/repositories` where that variable is unset or
+process, at `$XDG_STATE_HOME/timber/repositories`, or
+`~/.local/state/timber/repositories` where that variable is unset or
 empty, readable with any file reader, one entry per repository naming
 its owner and name and the path of the checkout that last named it
 (62, 132). The process SHALL read the file on each request, SHALL
@@ -52,7 +52,7 @@ is gone unreadable naming the path (58).
 
 #### Scenario: A repository none named
 
-- **WHEN** `GET /agentplot/tailrace/status.json` is asked and the file names no `agentplot/tailrace`
+- **WHEN** `GET /agentplot/timber/status.json` is asked and the file names no `agentplot/timber`
 - **THEN** the answer is absent, status 404, naming the repository and saying no checkout on this host has named it
 
 #### Scenario: The last checkout to name it
@@ -63,7 +63,7 @@ is gone unreadable naming the path (58).
 ### Requirement: A repository's page and its JSON are its status answer
 
 The process SHALL answer `GET /<owner>/<name>/status.json` with the
-status answer the core gives in the named checkout, as `tailrace
+status answer the core gives in the named checkout, as `timber
 status --json` prints it there, and `GET /<owner>/<name>/status` with a page
 rendering that answer whole: each channel with its component, how it
 moves, its version or that it is empty, its chain with each promotion's
@@ -127,14 +127,14 @@ no store, signer or target (60).
 
 ### Requirement: The first asker that finds none starts it, and one lock keeps it one
 
-`tailrace status --page` SHALL name the checkout's repository in the
+`timber status --page` SHALL name the checkout's repository in the
 host's file, find the serving process at the core's address by its
-`/serving.json`, start `tailrace serve` detached from its terminal and
+`/serving.json`, start `timber serve` detached from its terminal and
 from the checkout where none answers, wait for it to answer, and print
 the address of the repository's own page; a port that answers as
 something else SHALL be unreadable naming the address (114). The
-process SHALL hold the host's one lock, `tailrace/serve.lock` beside
-the file of repositories, for as long as it runs: a `tailrace serve`
+process SHALL hold the host's one lock, `timber/serve.lock` beside
+the file of repositories, for as long as it runs: a `timber serve`
 that finds the lock held SHALL exit 0 saying the host's process answers
 at the address, and no asker SHALL start a second (114, as sluice 129).
 The process SHALL end when nothing has asked it for ten minutes and no
@@ -151,7 +151,7 @@ as a service of its own, and nothing SHALL tell a person to start one.
 
 #### Scenario: A second serve
 
-- **WHEN** `tailrace serve` runs while another holds the lock
+- **WHEN** `timber serve` runs while another holds the lock
 - **THEN** it exits 0 naming the address the first answers at, and binds nothing
 
 #### Scenario: Idle
@@ -176,8 +176,8 @@ as a service of its own, and nothing SHALL tell a person to start one.
 
 #### Scenario: Something else on the port
 
-- **WHEN** the port answers `GET /serving.json` with something other than tailrace's document
-- **THEN** `tailrace status --page` is unreadable naming the address, and starts nothing
+- **WHEN** the port answers `GET /serving.json` with something other than timber's document
+- **THEN** `timber status --page` is unreadable naming the address, and starts nothing
 
 ### Requirement: The process serves each served layout under its repository's path
 The host's one serving process SHALL answer a request under

@@ -9,12 +9,12 @@ decision-makers:
 
 # Record architecture decisions
 
-Deciders: the user, in the tailrace exploration of 2026-10-21 and 2026-10-22.
-Sources: `agentplot/blueprints:design/tailrace/requirements.md`; `agentplot/blueprints:design/requirements-style.md`; sluice's `docs/adr/0001` as the model for the form; the inception pack of 2026-10-22, which tags each claim decided, leaning, proposed or open.
+Deciders: the user, in the timber exploration of 2026-10-21 and 2026-10-22.
+Sources: `agentplot/blueprints:design/timber/requirements.md`; `agentplot/blueprints:design/requirements-style.md`; sluice's `docs/adr/0001` as the model for the form; the inception pack of 2026-10-22, which tags each claim decided, leaning, proposed or open.
 
 ## Context and problem statement
 
-tailrace starts with a statement of invariants and no code. The decisions that shaped the statement were made in two conversations and an inception pack, and a decision in a conversation alone is not recorded. Where do the decisions live, how do the rules cite them, and what is kept out of this public repository?
+timber starts with a statement of invariants and no code. The decisions that shaped the statement were made in two conversations and an inception pack, and a decision in a conversation alone is not recorded. Where do the decisions live, how do the rules cite them, and what is kept out of this public repository?
 
 ## Considered options
 

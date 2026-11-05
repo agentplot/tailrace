@@ -1,36 +1,36 @@
 # claude-code-plugin Specification
 
 ## Purpose
-tailrace's surface in a Claude Code session: a plugin kept outside the
+timber's surface in a Claude Code session: a plugin kept outside the
 core, as sluice keeps its plugins (section 9), whose hook keeps a session
-from publishing a tailrace repository any way but `tailrace publish`, and
+from publishing a timber repository any way but `timber publish`, and
 which answers nothing the one core does not (56, core.31).
 
 ## Requirements
 
-### Requirement: An ecosystem's own publish command is refused in a tailrace repository
+### Requirement: An ecosystem's own publish command is refused in a timber repository
 
 Before a Bash call in a repository whose HEAD holds
-`.config/tailrace.toml`, the plugin's hook SHALL refuse a command that
+`.config/timber.toml`, the plugin's hook SHALL refuse a command that
 runs an ecosystem's own publish command, the command a package manager
 or image tool offers to put a package or image in a registry, and SHALL
 give as its reason that the repository publishes only through
-`tailrace publish`, for a landed revision.
+`timber publish`, for a landed revision.
 
 #### Scenario: npm publish
 
-- **WHEN** a session in a repository whose HEAD holds `.config/tailrace.toml` runs `npm publish`
-- **THEN** the call is refused with a reason naming `tailrace publish`
+- **WHEN** a session in a repository whose HEAD holds `.config/timber.toml` runs `npm publish`
+- **THEN** the call is refused with a reason naming `timber publish`
 
 #### Scenario: cargo publish
 
 - **WHEN** the same session runs `cargo publish -p family-crate`
-- **THEN** the call is refused with a reason naming `tailrace publish`
+- **THEN** the call is refused with a reason naming `timber publish`
 
 #### Scenario: The other ecosystems
 
 - **WHEN** the same session runs `pnpm publish`, `yarn npm publish`, `bun publish`, `mvn clean deploy`, `./gradlew publish`, `uv publish`, `twine upload dist/*`, `poetry publish`, `dotnet nuget push x.nupkg`, `docker push acme/api:1` or `podman push acme/api:1`
-- **THEN** each call is refused with a reason naming `tailrace publish`
+- **THEN** each call is refused with a reason naming `timber publish`
 
 #### Scenario: A publish inside a longer command
 
@@ -41,22 +41,22 @@ give as its reason that the repository publishes only through
 
 The hook SHALL let through, with no output, every command that runs no
 ecosystem's publish command, and every command in a repository whose
-HEAD holds no `.config/tailrace.toml` or in a directory that is no git
+HEAD holds no `.config/timber.toml` or in a directory that is no git
 repository.
 
 #### Scenario: Building and packing
 
-- **WHEN** a session in a tailrace repository runs `npm install`, `npm pack`, `cargo build`, `cargo package --no-verify`, `docker build .`, `git push origin unit/x` or `tailrace publish HEAD --json`
+- **WHEN** a session in a timber repository runs `npm install`, `npm pack`, `cargo build`, `cargo package --no-verify`, `docker build .`, `git push origin unit/x` or `timber publish HEAD --json`
 - **THEN** each call goes through and the hook prints nothing
 
 #### Scenario: A publish only quoted
 
-- **WHEN** a session in a tailrace repository runs `echo "npm publish"`
+- **WHEN** a session in a timber repository runs `echo "npm publish"`
 - **THEN** the call goes through
 
-#### Scenario: Not a tailrace repository
+#### Scenario: Not a timber repository
 
-- **WHEN** a session in a repository whose HEAD holds no `.config/tailrace.toml` runs `npm publish`
+- **WHEN** a session in a repository whose HEAD holds no `.config/timber.toml` runs `npm publish`
 - **THEN** the call goes through and the hook prints nothing
 
 ### Requirement: The plugin answers nothing the core does not
@@ -64,20 +64,20 @@ repository.
 The plugin SHALL compute no verdict, version, component or channel, and
 SHALL read no store, no host record and no policy's contents (56,
 core.31): its only reading of the repository is whether HEAD holds
-`.config/tailrace.toml`, and its only answer is the refusal, which names
+`.config/timber.toml`, and its only answer is the refusal, which names
 the command to run and nothing it derived.
 
-#### Scenario: A refusal with no tailrace on the host
+#### Scenario: A refusal with no timber on the host
 
-- **WHEN** the hook refuses `npm publish` in a tailrace repository on a host with no `tailrace` binary on `PATH`, in a package whose `package.json` names version `1.4.0`
+- **WHEN** the hook refuses `npm publish` in a timber repository on a host with no `timber` binary on `PATH`, in a package whose `package.json` names version `1.4.0`
 - **THEN** the refusal is the same as on a host with the binary, and names no version, component or channel
 
 ### Requirement: The plugin is installed from the repository's marketplace
 
 The repository's root SHALL hold a Claude Code marketplace named
-`tailrace` listing one plugin, `tailrace`, whose source is
-`plugins/claude-code`, so `/plugin marketplace add agentplot/tailrace`
-then `/plugin install tailrace@tailrace` installs it; the marketplace and
+`timber` listing one plugin, `timber`, whose source is
+`plugins/claude-code`, so `/plugin marketplace add agentplot/timber`
+then `/plugin install timber@timber` installs it; the marketplace and
 the plugin's manifest SHALL pass the pinned Claude Code's `plugin
 validate --strict` in the gate's fast layer (core.25, core.26).
 

@@ -8,4 +8,4 @@ if ! command -v dash >/dev/null 2>&1; then
   echo "== dash is not installed here; skipped"
   exit 0
 fi
-TAILRACE_HERDR_SH=dash exec sh "$here/run.sh"
+TIMBER_HERDR_SH=dash exec sh "$here/run.sh"

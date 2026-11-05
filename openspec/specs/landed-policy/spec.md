@@ -1,7 +1,7 @@
 # landed-policy Specification
 
 ## Purpose
-What tailrace reads of a repository at a revision its branch has landed:
+What timber reads of a repository at a revision its branch has landed:
 the authors' components and version rule from the policy file at that
 revision, and the policy for an audience, never from a checkout.
 

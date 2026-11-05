@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>tailrace in Claude Code</title>
+<title>timber in Claude Code</title>
 <link rel="stylesheet" href="shared.css">
 <style>
   .frame { display: grid; grid-template-rows: 1fr auto auto; }
@@ -43,11 +43,11 @@
         <div class="lines">
           <div><b>Claude Code</b> <span class="dim2">v2.1.296</span></div>
           <div class="dim2">Opus 5.5 · Claude Max</div>
-          <div class="dim2">/private/tmp/tailrace-demo/acme-kit-wt/ui-polish</div>
+          <div class="dim2">/private/tmp/timber-demo/acme-kit-wt/ui-polish</div>
         </div>
       </div>
-      <pre class="start">tailrace: acme-kit publishes @acme/ui and acme-api · last landing reached beta 1.4.3
-tailrace: prod follows stable and runs 1.4.0 · laptop and staging follow beta</pre>
+      <pre class="start">timber: acme-kit publishes @acme/ui and acme-api · last landing reached beta 1.4.3
+timber: prod follows stable and runs 1.4.0 · laptop and staging follow beta</pre>
       <div class="turns">
         <div class="turn"><span class="dim">❯</span> <span class="user">land this and publish what lands</span></div>
         <div class="turn">
@@ -56,7 +56,7 @@ tailrace: prod follows stable and runs 1.4.0 · laptop and staging follow beta</
 #7 landed as 9f3e21c</pre></div>
         </div>
         <div class="turn">
-          <div class="call"><span class="dot">●</span><span><b>Bash</b><span class="dim">(tailrace publish 9f3e21c --json)</span></span></div>
+          <div class="call"><span class="dot">●</span><span><b>Bash</b><span class="dim">(timber publish 9f3e21c --json)</span></span></div>
           <div class="out"><span class="elbow">⎿</span><pre><span class="ok">published 1.5.0</span> from 9f3e21c
 index      sha256:4f2a9c7e1b…d31a
 @acme/ui   npm tgz   sha256:7c1e0d4a92…9f02
@@ -66,18 +66,18 @@ claims     provenance (fleet) · verdict (sluice, carried) · tests
         </div>
         <div class="turn">
           <div class="call"><span class="dot">●</span><span><b>Bash</b><span class="dim">(npm publish --access public)</span></span></div>
-          <div class="out refused"><span class="elbow">⎿</span><pre><span class="bad">tailrace is bound here: publish with `tailrace publish`, which offers only a landed revision.</span>
-<span class="dim">hook tailrace:publish refused the command</span></pre></div>
+          <div class="out refused"><span class="elbow">⎿</span><pre><span class="bad">timber is bound here: publish with `timber publish`, which offers only a landed revision.</span>
+<span class="dim">hook timber:publish refused the command</span></pre></div>
         </div>
         <div class="turn">
-          <div class="reply"><span class="dot">●</span><span>1.5.0 is published from 9f3e21c and beta moved to it by rule. Both artifacts carry the fleet's provenance, sluice's verdict and the tests. The npm publish was refused: nothing leaves here except through tailrace. prod stays on 1.4.0 until an approver promotes.</span></div>
+          <div class="reply"><span class="dot">●</span><span>1.5.0 is published from 9f3e21c and beta moved to it by rule. Both artifacts carry the fleet's provenance, sluice's verdict and the tests. The npm publish was refused: nothing leaves here except through timber. prod stays on 1.4.0 until an approver promotes.</span></div>
         </div>
       </div>
-      <div class="band">tailrace · beta → 1.5.0 · prod waits on an approver ·… <b>[hide]</b> [-]</div>
+      <div class="band">timber · beta → 1.5.0 · prod waits on an approver ·… <b>[hide]</b> [-]</div>
     </div>
     <div class="pane">
       <span class="close">×</span>
-      <div class="path">/private/tmp/tailrace-demo/acme-kit/.git · ghcr.io/acme</div>
+      <div class="path">/private/tmp/timber-demo/acme-kit/.git · ghcr.io/acme</div>
       <div><b>acme-kit · beta 1.5.0 · stable 1.4.0 · 3 envs · 1 behind</b></div>
       <div class="sec">CHANNELS</div>
       <div class="row"><span>beta</span><span>1.5.0</span><span class="dim2">2 min ago · by rule</span></div>
@@ -95,7 +95,7 @@ claims     provenance (fleet) · verdict (sluice, carried) · tests
   </div>
   <div class="prompt"><span class="dim2">❯</span><span class="cursor"></span></div>
   <div class="status">
-    <div class="warn-line"><span class="tag">⚠</span>tailrace: acme-kit · beta 1.5.0 · stable 1.4.0 · prod waits on an approver</div>
+    <div class="warn-line"><span class="tag">⚠</span>timber: acme-kit · beta 1.5.0 · stable 1.4.0 · prod waits on an approver</div>
     <div class="dim2"><span class="tag">⏸</span>manual mode on · ? for shortcuts · ← for agents</div>
   </div>
 </div>

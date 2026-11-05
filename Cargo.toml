@@ -1,15 +1,15 @@
 [workspace]
 resolver = "2"
 members = [
-  "crates/tailrace-seams",
-  "crates/tailrace-core",
-  "crates/tailrace-fakes",
-  "crates/tailrace-conformance",
-  "crates/tailrace",
+  "crates/timber-seams",
+  "crates/timber-core",
+  "crates/timber-fakes",
+  "crates/timber-conformance",
+  "crates/timber",
 ]
 
 [workspace.package]
-# The released version is the tag's, given to the flake as TAILRACE_VERSION
+# The released version is the tag's, given to the flake as TIMBER_VERSION
 # and never to the binary: a binary names the revision it was built from
 # and the build that made it (statement 24, C.11).
 version = "0.0.0"

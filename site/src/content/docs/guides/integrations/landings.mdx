@@ -6,9 +6,9 @@ sidebar:
 ---
 
 A landing is the event by which a revision reaches a branch through the
-repository's own gate, sluice or its like, which is not tailrace's gate.
-tailrace publishes only landed revisions, and reads exactly one landing
-(92). The landing does not know tailrace exists.
+repository's own gate, sluice or its like, which is not timber's gate.
+timber publishes only landed revisions, and reads exactly one landing
+(92). The landing does not know timber exists.
 
 ## The contract
 
@@ -29,7 +29,7 @@ names.
 | a plain git branch | C.6 | where sluice does not run a branch, a revision is landed when the branch's history contains it, and there are no verdicts | built |
 
 The landing is bound for a host by its bindings file (see
-[self-hosting](/tailrace/guides/self-hosting/)): `[landing] sluice = {
+[self-hosting](/timber/guides/self-hosting/)): `[landing] sluice = {
 remote = "origin" }` or `branch = { remote = "origin" }`, the remote
 optional. With a remote, sluice's records or the branches are read from
 it; without one, from the repository's own refs and files.
@@ -45,7 +45,7 @@ answers every command unreadable, naming each remote and `[landing]`
 remote in the bindings file, the one line that picks one. A written
 `[landing]` binds exactly what it names: one with no `remote` reads the
 repository's own refs, `origin` or not. The given ledger is kept on the
-same remote the landing reads (see [ledgers](/tailrace/guides/integrations/ledgers/)).
+same remote the landing reads (see [ledgers](/timber/guides/integrations/ledgers/)).
 
 ## Read as last fetched
 
@@ -63,17 +63,17 @@ it held when fetched it holds now. A no from the copy is refused as not
 landed as last fetched, naming the branch, the revision and when the
 copy was fetched, with the remote's words, and saying to ask again once
 the remote answers; a program tells it apart by
-`refused.why.not_landed_as_fetched` in the JSON. tailrace never asks
+`refused.why.not_landed_as_fetched` in the JSON. timber never asks
 again by itself. A question the copy cannot answer, because nothing of
 it was ever fetched, is unreadable with the remote's words.
 
-The copy is tailrace's own refs in the repository, beside its own and
-never in place of them: `refs/tailrace/landing/heads/<branch>` for a
-plain branch, and `refs/tailrace/landing/sluice/state/<branch>` and
-`refs/tailrace/landing/sluice/runs/<signer>` for sluice, remade at each
+The copy is timber's own refs in the repository, beside its own and
+never in place of them: `refs/timber/landing/heads/<branch>` for a
+plain branch, and `refs/timber/landing/sluice/state/<branch>` and
+`refs/timber/landing/sluice/runs/<signer>` for sluice, remade at each
 fetch so each ref's reflog says when. No remote-tracking ref,
 `FETCH_HEAD` or branch is written. Any git reader sees the copy with no
-tailrace process running, and the next read that reaches the remote
+timber process running, and the next read that reaches the remote
 makes it again (62, 63).
 
 ## Adding one

@@ -11,6 +11,6 @@ stable empty, bound to beta
 
 environments: unreadable — the target (unread) could not read the environments: what each environment should run and runs is read from a target, and no target is read
 
-published on this host: absent — the host (/scratch/widget/repo/.git/tailrace/published) holds no version it published
+published on this host: absent — the host (/scratch/widget/repo/.git/timber/published) holds no version it published
 
 b back · r ask again · q close

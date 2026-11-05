@@ -1,16 +1,16 @@
 {
-  "name": "tailrace",
+  "name": "timber",
   "owner": {
     "name": "agentplot"
   },
   "metadata": {
-    "description": "Claude Code plugin for tailrace, which delivers what the merge queue lands."
+    "description": "Claude Code plugin for timber, which delivers what the merge queue lands."
   },
   "plugins": [
     {
-      "name": "tailrace",
+      "name": "timber",
       "source": "./plugins/claude-code",
-      "description": "Keep a session publishing a tailrace repository only through tailrace publish: an ecosystem's own publish command is refused."
+      "description": "Keep a session publishing a timber repository only through timber publish: an ecosystem's own publish command is refused."
     }
   ]
 }

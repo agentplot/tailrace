@@ -12,7 +12,7 @@ import { chromium } from "playwright";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = resolve(here, "../dist");
-const base = "/tailrace";
+const base = "/timber";
 const [out = resolve(here, "../shots"), ...only] = process.argv.slice(2);
 const pages = {
   start: "/",

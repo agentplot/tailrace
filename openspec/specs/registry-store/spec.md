@@ -74,7 +74,7 @@ answered held already and not put again (5).
 
 ### Requirement: An attestation is a referrer of its subject
 
-attach SHALL push a referrer of tailrace's envelope type whose subject
+attach SHALL push a referrer of timber's envelope type whose subject
 is the digest and whose one layer is the envelope, with the statement's
 predicate type annotated, and answer the envelope's own digest;
 claims-of SHALL answer every envelope so attached, byte for byte (8,
@@ -93,8 +93,8 @@ repository does not hold, and attach SHALL write nothing then.
 
 #### Scenario: Another tool's referrer
 
-- **WHEN** a digest has a referrer of another artifact type, such as a signature another tool pushed, beside tailrace's attestations
-- **THEN** claims-of answers only tailrace's attestations, and the other referrer is left as it was
+- **WHEN** a digest has a referrer of another artifact type, such as a signature another tool pushed, beside timber's attestations
+- **THEN** claims-of answers only timber's attestations, and the other referrer is left as it was
 
 ### Requirement: The referrers tag where the registry has no referrers API
 
@@ -151,7 +151,7 @@ core.6). A name SHALL be escaped into a valid tag, one name to one tag.
 ### Requirement: A cache entry's bytes are named through a cache manifest
 
 To name a digest held only as bytes, the registry store SHALL tag a
-manifest of tailrace's cache-entry type whose one layer is those bytes,
+manifest of timber's cache-entry type whose one layer is those bytes,
 and every reading of that tag, by resolve, by name's check and read
 back, and in a refusal, SHALL answer the bytes' digest (52, 70, 71,
 100, C.1, ADR 0014). The cache manifest is no artifact: read SHALL
@@ -211,7 +211,7 @@ name none in the bindings file (64, core.21).
 #### Scenario: A registry behind a credential helper
 
 - **WHEN** the host's Docker configuration names a credential helper for the registry and an artifact is put
-- **THEN** the store asks the helper for the credential when the registry asks for one, and no file tailrace writes holds it
+- **THEN** the store asks the helper for the credential when the registry asks for one, and no file timber writes holds it
 
 #### Scenario: No credential for a registry that asks for one
 
@@ -252,7 +252,7 @@ names no ECR repository, rather than pass without running.
 ### Requirement: What ECR answered is recorded
 
 An ADR SHALL record what a push against a real ECR repository
-answered on each open issue the profile rests on: tailrace's artifact
+answered on each open issue the profile rests on: timber's artifact
 manifest and image index, a referrer with a subject, the referrers
 list filtered by artifact type, a manifest put by digest alone, the
 cache manifest, a media type with a parameter, and tag immutability

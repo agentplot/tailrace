@@ -1,4 +1,4 @@
-tailrace · 6 repositories · as of 2026-10-26T07:35:00Z
+timber · 6 repositories · as of 2026-10-26T07:35:00Z
 
   [1] agentplot/alpha  app beta 1.2.0 · app stable refused · app edge empty · app nightly absent · app canary unreadable
       app stable: refused — the keeper (git ref, origin) refused: fork: predecessor sha256:bbbbbbbbbbbb, claims sha256:cccccccccccc, sha256:dddddddddddd
@@ -14,7 +14,7 @@ tailrace · 6 repositories · as of 2026-10-26T07:35:00Z
   [3] agentplot/gamma  no channel declared
       environments: unreadable — the target (kubernetes, prod) could not read the environments of agentplot/gamma
         Unauthorized
-  absent — the host (/home/a/.local/state/tailrace/repositories) holds no repository agentplot/delta: no command run in a checkout of it on this host has named it
+  absent — the host (/home/a/.local/state/timber/repositories) holds no repository agentplot/delta: no command run in a checkout of it on this host has named it
   refused — the policy (file) refused: it refused
       the policy file names a seam this host does not bind
   unreadable — the host (/srv/epsilon) could not read the checkout of agentplot/epsilon at /srv/epsilon

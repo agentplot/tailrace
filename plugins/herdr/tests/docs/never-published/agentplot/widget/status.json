@@ -163,7 +163,7 @@
       "absent": {
         "source": {
           "seam": "host",
-          "profile": "/scratch/widget/repo/.git/tailrace/published"
+          "profile": "/scratch/widget/repo/.git/timber/published"
         },
         "what": "version it published"
       }

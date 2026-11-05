@@ -11,7 +11,7 @@ decision-makers:
 
 Status: accepted by the user on 2026-11-04, on their card.
 
-Deciders: proposed by the the-gate-judges-each-artifact-by-its-kind unit of phase 1's bolt 5, which takes main's gate into the bolt that carries a version's notes (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 5), for the user to accept with the change.
+Deciders: proposed by the the-gate-judges-each-artifact-by-its-kind unit of phase 1's bolt 5, which takes main's gate into the bolt that carries a version's notes (`agentplot/blueprints:design/timber/models/phase-1-bolts.md`, Bolt 5), for the user to accept with the change.
 Sources: statement clauses 7, 13, 25, 28, 29, 82, 95, 134 and C.10, as amended at blueprints 955c25a; ADR 0007; rules core.7, core.28, core.31; the change's design, D1 to D4.
 
 ## Context and problem statement
@@ -49,7 +49,7 @@ The gate tells a rendered artifact by option 1 (13, 29, 134, core.7). The making
 
 - A version whose outputs carry their verdicts is accepted beside notes that carry none, and its acceptance names the notes' provenance among the claims that satisfied the policy; `beta` moves on it where its own claims of built artifacts count.
 - A rendered artifact still needs every claim asked of every artifact: notes the store answers no provenance of refuse the version whole, naming the notes (28).
-- `tailrace policy` shows a claim asked of built artifacts alone as such, and `--json` carries it as the core answers it (core.31).
+- `timber policy` shows a claim asked of built artifacts alone as such, and `--json` carries it as the core answers it (core.31).
 - The publisher's provenance decides that an artifact is asked no build's claims. A stolen publisher key could mark an artifact rendered and so offer it without a verdict; it could already offer any bytes with the same word, and 134 trusts that signer alone for a rendered artifact. Only its counted word counts, and every verdict a built artifact needs is still asked of each output.
 - Consumer layouts and `verify` do not read the making: a layout holds one ecosystem's artifact and never the notes, and `verify` reports which claims count without refusing.
 - A key with which the authors choose for themselves which artifacts a claim is asked of waits on C.10's form for it.

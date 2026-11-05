@@ -1,7 +1,7 @@
 # policy-file Specification
 
 ## Purpose
-The policy seam over `.config/tailrace.toml` at a landed revision: the
+The policy seam over `.config/timber.toml` at a landed revision: the
 signers the repository's authors name, what each may claim, and the
 claims acceptance, a layout or a channel requires (C.10).
 
@@ -9,7 +9,7 @@ claims acceptance, a layout or a channel requires (C.10).
 
 ### Requirement: The policy is read from the file at the revision asked
 
-The profile SHALL read `.config/tailrace.toml` from the tree of the
+The profile SHALL read `.config/timber.toml` from the tree of the
 revision it is asked about, in the repository's history, and never from
 a working tree (65, core.22).
 
@@ -91,7 +91,7 @@ parser's own words (59).
 
 #### Scenario: No policy file
 
-- **WHEN** the revision's tree holds no `.config/tailrace.toml`
+- **WHEN** the revision's tree holds no `.config/timber.toml`
 - **THEN** the policy for a layout is absent, naming the audience
 
 #### Scenario: A malformed file
