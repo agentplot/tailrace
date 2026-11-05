@@ -13,6 +13,19 @@ crates as sluice's under `crates/`, the gate, the flake and the release
 workflow. The language is Rust. Every cargo and moon command runs inside
 `devenv shell`.
 
+## The family
+
+**The family.** This tool works with the others of the Boomdrive family:
+sluice (the merge queue), Flume (places and their agents), Boomdrive (the
+runner), timber, weir and boom. Each tool's statement is in
+agentplot/blueprints, `design/<tool>/requirements.md`. Before designing or
+fixing a behavior here, look at how the related tools do the same thing,
+in their code and their statements: readiness, configuration,
+credentials, retries, what a place is. Where two tools do one thing,
+reconcile them into one design with one owner the others call or cite,
+and say so in the design. Never fix one tool alone when the cause is that
+the tools differ.
+
 ## Rules
 
 The rules a change here must keep are in `docs/architecture/`. A design
