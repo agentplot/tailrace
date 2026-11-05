@@ -1,13 +1,15 @@
 ---
 number: 24
 title: The policy names the artifacts each claim is asked of and the gate tells a rendered artifact by its provenance
-status: proposed
+status: accepted
 date: 2026-10-27
 decision-makers:
 - Chuck Swanberg
 ---
 
 # The policy names the artifacts each claim is asked of and the gate tells a rendered artifact by its provenance
+
+Status: accepted by the user on 2026-11-04, on their card.
 
 Deciders: proposed by the the-gate-judges-each-artifact-by-its-kind unit of phase 1's bolt 5, which takes main's gate into the bolt that carries a version's notes (`agentplot/blueprints:design/tailrace/models/phase-1-bolts.md`, Bolt 5), for the user to accept with the change.
 Sources: statement clauses 7, 13, 25, 28, 29, 82, 95, 134 and C.10, as amended at blueprints 955c25a; ADR 0007; rules core.7, core.28, core.31; the change's design, D1 to D4.
