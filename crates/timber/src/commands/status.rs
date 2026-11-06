@@ -399,7 +399,8 @@ fn counts(out: &mut dyn Write, counts: &EnvironmentCounts) -> io::Result<()> {
 /// what its channel moves on, and where its reports were read from the
 /// host's copy, when they were fetched; then, beneath, the store's words,
 /// each answer given in place of one of those with its source's words,
-/// and the notes of every version between (58, 59, 60; design D10).
+/// once where several are one answer, and the notes of every version
+/// between (58, 59, 60; design D10).
 fn environment(
     out: &mut dyn Write,
     environment: &EnvironmentStatus,
@@ -460,8 +461,14 @@ fn environment(
         Err(_) => None,
     };
     if let Err(not) = &environment.state {
-        if !reasons.contains(&not) {
-            reasons.push(not);
+        reasons.push(not);
+    }
+    // One reason said once: a chain that cannot be read is what the
+    // environment should run, what it runs and its state alike.
+    let mut once: Vec<&Not> = Vec::new();
+    for not in reasons {
+        if !once.contains(&not) {
+            once.push(not);
         }
     }
     write!(
@@ -480,7 +487,7 @@ fn environment(
         words(out, said)?;
     }
     let indent = " ".repeat(width + 4);
-    for not in reasons {
+    for not in once {
         render::not(out, &indent, not)?;
     }
     match &environment.between {
