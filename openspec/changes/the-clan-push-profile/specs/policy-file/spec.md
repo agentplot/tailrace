@@ -18,6 +18,18 @@ the one host 108 admits gains no report by being the gate (C.10, 116).
 - **WHEN** `[signers.laptop]` names `kinds = ["provenance"]` alone, the one host 108 admits
 - **THEN** `laptop` may claim acceptance and promotion and no report
 
+### Requirement: A require names no report
+
+A `require` entry of kind `report` SHALL make the file unreadable naming
+its table. An entry has no key to name the environment a report is of,
+and a report is required only of the environments an `after` names
+(C.10).
+
+#### Scenario: A report a require names
+
+- **WHEN** `[channels.us]` writes `require = [{ kind = "report", signers = ["deployer"] }]`
+- **THEN** the policy file is unreadable naming `[channels.us]` and the report
+
 ### Requirement: A channel an after makes lists its environments
 
 The profile SHALL list a channel an environment's `after` makes as

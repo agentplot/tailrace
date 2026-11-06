@@ -34,6 +34,10 @@
 //! kinds = ["verdict", "rebuild"]
 //! checks = ["cli:test"]
 //!
+//! [signers.deployer]
+//! ssh = "ssh-ed25519 DDDD… deployer@box"
+//! kinds = ["report"]
+//!
 //! [acceptance]
 //! require = [
 //!   { kind = "provenance", signers = ["laptop"] },
@@ -63,6 +67,12 @@
 //!
 //! [environments.web.prod.target.pushed]
 //! at = "a place of the target's own"
+//!
+//! # eu comes after prod: its own channel, eu, bound to prod, moving only
+//! # to what prod last reported, a report deployer may make.
+//! [environments.web.eu]
+//! channel = "stable"
+//! after = ["prod"]
 //! ```
 //!
 //! A signer's table names exactly one key besides `kinds` and `checks`,
@@ -73,14 +83,18 @@
 //!
 //! Each claim `[acceptance]` or a channel requires, the given channels'
 //! acceptance among them, is answered with the artifacts it is asked of,
-//! read from its kind alone (134): a provenance, an acceptance and a
-//! promotion of every artifact, the publisher's word and the claims about
-//! the version as a whole, which a claim on the index satisfies (7); a
+//! read from its kind alone (134): a provenance, an acceptance, a
+//! promotion and a report of every artifact, the publisher's word and the
+//! claims about the version as a whole, which a claim on the index
+//! satisfies (7); a
 //! verdict, a test, a review, a rebuild and a carried claim of a built
 //! artifact alone, since a rendered artifact has no build. `[layout]`'s
 //! claims are asked of every artifact. C.10 writes no form for it, so the
 //! file gains no key: an entry naming any key besides `kind`, `check` and
-//! `signers` is unreadable naming its table.
+//! `signers` is unreadable naming its table, and so is an entry of kind
+//! `report`, which has no key to name its environment: a report is
+//! required of the environments an `after` names, by the channel it makes
+//! (C.10).
 //!
 //! The given channels are a fragment in this same form, `givens.toml`
 //! beside this module, laid beneath the repository's file as one table in
@@ -131,7 +145,11 @@
 //! The policy for a given or made channel requires the gate's
 //! acceptance, by every signer `[signers]` lets claim acceptance, then
 //! its line's claims, and names those signers, the gate, as the ones
-//! whose promotion of it counts, whatever the line names (32, C.10); a
+//! whose promotion of it counts, whatever the line names (32, C.10). A
+//! channel an `after` makes then requires a report of each environment
+//! it comes after, in `after`'s order, by every signer `[signers]` lets
+//! claim a report, and by no signer where it lets none, so no version is
+//! judged to carry one and the channel never moves (83, 116, C.10). A
 //! channel declared by hand is promoted by the signers its `require`
 //! names that may claim a promotion. A channel's table may name
 //! `approvers`, signers `[signers]` holds, the only ones that may then ask
@@ -144,9 +162,10 @@
 //! claim provenance, that signer may claim acceptance too in everything
 //! this profile answers but a layout's policy: the one host 108 admits,
 //! the repository's gate for acceptance and the promoter of its given and
-//! made channels, its acceptance saying one host (118, 108, C.10). The gate reads this from
-//! the answer and decides nothing of it (rule core.7), and the file is
-//! never rewritten. A file that lets a signer claim acceptance, or none
+//! made channels, its acceptance saying one host (118, 108, C.10), and
+//! never a reporter: being the gate lets it claim no report (116). The
+//! gate reads this from the answer and decides nothing of it (rule
+//! core.7), and the file is never rewritten. A file that lets a signer claim acceptance, or none
 //! claim provenance, is answered as written. Where it lets several claim
 //! provenance and none acceptance, 108 admits no host: the policy for
 //! acceptance, and for every given or made channel, is refused, wanting
@@ -365,6 +384,17 @@ struct Resolved {
     table: String,
     require: Vec<Entry>,
     approvers: Vec<SignerId>,
+}
+
+/// 41, 97, C.10: a channel an environment's words make: the
+/// environment's table, the channel it is bound to, who may ask for it,
+/// the environment's approvers, and the environments it comes after, in
+/// `after`'s order, none where a manual environment makes it.
+struct Made {
+    table: String,
+    to: ChannelName,
+    approvers: Vec<SignerId>,
+    after: Vec<EnvironmentName>,
 }
 
 /// The table in force resolved in one pass: every channel by its
@@ -905,7 +935,7 @@ fn resolve(table: &InForce) -> Result<Resolution, String> {
         &components,
     )?;
     let mut follows: Vec<(String, Option<ComponentName>, ChannelName)> = Vec::new();
-    let mut made: BTreeMap<ChannelId, (String, ChannelName, Vec<SignerId>)> = BTreeMap::new();
+    let mut made: BTreeMap<ChannelId, Made> = BTreeMap::new();
     let mut declared: Vec<DeclaredEnvironment> = Vec::new();
     for scope in &scopes {
         let of: BTreeMap<&str, (&String, &EnvironmentTable)> = environments
@@ -958,7 +988,12 @@ fn resolve(table: &InForce) -> Result<Resolution, String> {
                     let own = ChannelId::new(scope.clone(), ChannelName::new(*name));
                     made.insert(
                         own.clone(),
-                        ((*env_table).clone(), bound, approvers.clone()),
+                        Made {
+                            table: (*env_table).clone(),
+                            to: bound,
+                            approvers: approvers.clone(),
+                            after: env.after.iter().map(EnvironmentName::new).collect(),
+                        },
                     );
                     own
                 }
@@ -981,7 +1016,12 @@ fn resolve(table: &InForce) -> Result<Resolution, String> {
     let off: BTreeSet<ChannelId> = table.off.iter().map(|(id, ..)| id.clone()).collect();
     let mut lines: BTreeMap<ChannelId, (String, Vec<Entry>)> = BTreeMap::new();
     for (id, full, keys, moves) in tables_of {
-        if let Some((env_table, to, _)) = made.get(&id) {
+        if let Some(Made {
+            table: env_table,
+            to,
+            ..
+        }) = made.get(&id)
+        {
             let restates = keys.bound_to.as_ref().is_none_or(|b| b == to)
                 && keys.on_each_publish != Some(true);
             if !restates {
@@ -1015,12 +1055,21 @@ fn resolve(table: &InForce) -> Result<Resolution, String> {
             },
         );
     }
-    for (id, (env_table, to, approvers)) in made {
+    for (
+        id,
+        Made {
+            table: env_table,
+            to,
+            approvers,
+            after,
+        },
+    ) in made
+    {
         let (table, require) = lines.remove(&id).unwrap_or((env_table, Vec::new()));
         resolved.insert(
             id,
             Resolved {
-                moves: Moves::Bound { to, after: vec![] },
+                moves: Moves::Bound { to, after },
                 origin: Origin::Made,
                 table,
                 require,
@@ -1225,7 +1274,8 @@ fn after(
 /// The claims `entries` require, each signer as `[signers]` names it and
 /// each asked of the artifacts `asked` answers for its kind, for `table`;
 /// the words that make the file unreadable where one names a signer it
-/// does not hold.
+/// does not hold, or is a report, which names its environment and is
+/// required by an `after` alone (C.10).
 fn claims_of(
     table: &str,
     entries: &[Entry],
@@ -1234,6 +1284,11 @@ fn claims_of(
 ) -> Result<Vec<RequiredClaim>, String> {
     let mut claims = Vec::new();
     for entry in entries {
+        if entry.kind == ClaimKind::Report {
+            return Err(format!(
+                "{table} requires a report, and a report names its environment: it is required of the environments an after names, by the channel it makes (C.10)"
+            ));
+        }
         let mut named = Vec::new();
         for id in &entry.signers {
             let held = signers.get(id.as_str()).ok_or_else(|| {
@@ -1337,11 +1392,13 @@ fn may_claim<'a>(
 
 /// 32, 82, 83, C.10: the policy for the channel `resolved`: for one
 /// given or made, the gate's acceptance by every signer that may claim
-/// acceptance, then its line's claims, promoted by those same signers;
-/// for one declared by hand, its table's claims, promoted by the signers
-/// they name that may claim a promotion; and for any, the approvers its
-/// table names, or for one made its environment's, each as `[signers]`
-/// names it.
+/// acceptance, then its line's claims, promoted by those same signers,
+/// and for one an `after` makes, then a report of each environment it
+/// comes after, in `after`'s order, by every signer that may claim a
+/// report, none where none may (116); for one declared by hand, its
+/// table's claims, promoted by the signers they name that may claim a
+/// promotion; and for any, the approvers its table names, or for one
+/// made its environment's, each as `[signers]` names it.
 fn channel_policy(
     resolved: &Resolved,
     signers: &BTreeMap<String, NamedSigner>,
@@ -1358,6 +1415,16 @@ fn channel_policy(
                 asked_of: AskedOf::Every,
             }];
             all.extend(claims);
+            if let Moves::Bound { after, .. } = &resolved.moves {
+                let reporters = may_claim(signers.values(), ClaimKind::Report);
+                all.extend(after.iter().map(|environment| RequiredClaim {
+                    kind: ClaimKind::Report,
+                    check: None,
+                    environment: Some(environment.clone()),
+                    signers: reporters.clone(),
+                    asked_of: asked_of(ClaimKind::Report),
+                }));
+            }
             (all, gate)
         }
         Origin::Declared => {

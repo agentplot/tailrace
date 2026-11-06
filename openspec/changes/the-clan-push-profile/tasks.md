@@ -12,7 +12,7 @@
   - Add `after: Vec<EnvironmentName>` to `Moves::Bound` in `policy.rs`, skipped in JSON where it is empty.
   Give each a JSON round-trip test, and add a test that a bound channel written with no `after` reads back the same.
 - [x] 2.2 Let the fake policy script a bound channel that comes after the environments a test names, and a policy for it requiring a report of each, with each call recorded and faultable (seam-fakes spec). Verify with a case in `crates/timber-fakes/src/policy.rs` under `moon run fakes:test`.
-- [ ] 2.3 In `crates/timber/src/profiles/policy/file/`, take `report` among a signer's `kinds`. List a channel an `after` makes with its environments in `after`'s order. Make its policy require, after acceptance and its line's claims, a report of each environment by every signer whose kinds hold `report`. Give the one host 108 admits no report (policy-file spec, design D7, D9). Verify with `tests.rs` cases for `eu` after `us`, the deployer that may report, nobody may report, and the one host, under `moon run cli:test`, and with the policy group over the profile.
+- [x] 2.3 In `crates/timber/src/profiles/policy/file/`, take `report` among a signer's `kinds`. List a channel an `after` makes with its environments in `after`'s order. Make its policy require, after acceptance and its line's claims, a report of each environment by every signer whose kinds hold `report`. Give the one host 108 admits no report (policy-file spec, design D7, D9). Verify with `tests.rs` cases for `eu` after `us`, the deployer that may report, nobody may report, and the one host, under `moon run cli:test`, and with the policy group over the profile.
 
 ## 3. A converged apply records a report
 
