@@ -193,7 +193,14 @@ fn text(out: &mut dyn Write, overview: &Overview) -> io::Result<()> {
     }
     writeln!(out)?;
     writeln!(out, "environments")?;
-    environments(out, &overview.environments)?;
+    environments(
+        out,
+        &overview
+            .environments
+            .as_ref()
+            .map(|e| e.counts.clone())
+            .map_err(Clone::clone),
+    )?;
     writeln!(out)?;
     writeln!(out, "published from this host")?;
     published(out, &overview.published)

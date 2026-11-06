@@ -9,9 +9,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use timber_core::{
-    overview, row, status, Ask, Channel, ChannelStatus, Entry, Filter, Head, HeadAt, History, Kept,
-    Logged, Noted, Overview, OverviewAsk, Published, RepositoryName, Shown, StatusAsk, Written,
-    LOCAL, NOTES,
+    overview, row, status, Ask, Channel, ChannelStatus, Entry, EnvironmentCounts, Filter, Head,
+    HeadAt, History, Kept, Logged, Noted, Overview, OverviewAsk, Published, RepositoryName, Shown,
+    StatusAsk, Written, LOCAL, NOTES,
 };
 use timber_fakes::{FakeSigner, Fault, KeeperOp, LandingOp, StoreOp, Times};
 use timber_seams::{
@@ -826,8 +826,12 @@ fn a_landing_that_cannot_be_read_is_the_channels_unreadable_answer_and_the_rest_
     );
     assert_eq!(answer.published, before.published);
     assert!(answer.published.is_ok(), "{:?}", answer.published);
-    assert_eq!(answer.environments, before.environments);
-    unread(&answer.environments);
+    assert_eq!(
+        answer.environments.as_ref().err(),
+        Some(&Not::Unreadable(u.clone())),
+        "the environments are not the landing's answer"
+    );
+    assert!(before.environments.is_ok(), "{:?}", before.environments);
     assert_eq!(
         world.fakes.keeper.calls().len(),
         asked_of_keeper,
@@ -923,10 +927,11 @@ fn a_head_not_landed_as_last_fetched_refuses_the_channels_and_the_record_still_a
     assert_eq!(published.components[0].versions[0].entry.version, version);
 }
 
-// Requirement: Asking reaches no store, signer or target and writes nothing
+// Requirement: Asking reaches no signer or target and writes nothing but
+// the host's copy
 
 #[test]
-fn status_asks_no_store_signer_target_or_projection_and_writes_nothing() {
+fn status_declaring_no_environment_asks_no_store_signer_target_or_projection_and_writes_nothing() {
     let mut world = World::new();
     let production = world.fakes.target(&TargetProfile::new("fake"));
     declare(&world, &beta(), None);
@@ -1249,41 +1254,654 @@ fn a_commit_the_history_no_longer_holds_leaves_the_notes_unreadable_naming_it() 
     );
 }
 
-// Requirement: Status names the environments it cannot yet read
+// Requirement (environment-status): Status shows every environment the
+// policy declares
 
-/// 98: the environments' part is unreadable from the target seam, saying
-/// no target is read.
-fn unread(answer: &timber_seams::Answer<timber_core::EnvironmentCounts>) {
-    let Err(Not::Unreadable(u)) = answer else {
-        panic!("the environments answered {answer:?}")
-    };
-    assert_eq!(u.source.seam, Seam::Target);
-    assert!(u.what.contains("environments"), "{u:?}");
-    assert!(u.what.contains("no target is read"), "{u:?}");
+/// The signer whose reports count, which the policy lets claim one.
+fn deployer() -> timber_seams::NamedSigner {
+    timber_seams::NamedSigner {
+        id: SignerId::new(DEPLOYER),
+        verified_by: format!("{DEPLOYER}'s key"),
+        kinds: vec![timber_seams::ClaimKind::Report],
+        checks: vec![],
+    }
+}
+
+/// The policy for a layout lists the deployer, letting it claim a report
+/// (116).
+fn lets_report(world: &World) {
+    world.fakes.policy.require(
+        Audience::Layout,
+        Required::Layout {
+            claims: vec![],
+            given: false,
+            signers: vec![deployer()],
+        },
+    );
+}
+
+/// `name` declared at the head, following `channel`, waiting on
+/// `approvers` where `waits`, with no target.
+fn declares(world: &World, name: &str, channel: &ChannelId, waits: bool, approvers: &[&str]) {
+    world.fakes.policy.declares_at(
+        &world.head,
+        timber_seams::DeclaredEnvironment {
+            name: env(name),
+            channel: channel.clone(),
+            waits,
+            approvers: approvers.iter().map(|a| SignerId::new(*a)).collect(),
+            target: None,
+        },
+    );
+}
+
+/// `channel` promoted to each version in turn, each version's index held
+/// in the fake store: every promotion with its envelope's digest.
+fn held_chain(world: &World, channel: &ChannelId, versions: &[&str]) -> Vec<(Digest, Promotion)> {
+    for version in versions {
+        held_index(world, &format!("{version}'s index"));
+    }
+    promoted(world, channel, versions)
+}
+
+/// The environments' part of `overview`, answered.
+fn environments_of(overview: &Overview) -> &timber_core::Environments {
+    match &overview.environments {
+        Ok(environments) => environments,
+        Err(not) => panic!("the environments answered {not:?}"),
+    }
+}
+
+/// The environment `name` of `overview`'s environments.
+fn one<'o>(overview: &'o Overview, name: &str) -> &'o timber_core::EnvironmentStatus {
+    environments_of(overview)
+        .environments
+        .iter()
+        .find(|e| e.environment == env(name))
+        .unwrap_or_else(|| panic!("no environment {name} in {:?}", overview.environments))
+}
+
+fn counts(converged: usize, behind: usize, waiting: usize, unreadable: usize) -> EnvironmentCounts {
+    EnvironmentCounts {
+        converged,
+        behind,
+        waiting,
+        unreadable,
+    }
+}
+
+/// What a head at `version` of the fake chains answers.
+fn at(version: &str) -> HeadAt {
+    let moved = moved(version);
+    HeadAt::At {
+        version: moved.version,
+        index: moved.index,
+    }
+}
+
+/// The absent answer `answer` carries, naming what is not there.
+fn absent_what<T: std::fmt::Debug>(answer: &timber_seams::Answer<T>) -> String {
+    match answer {
+        Err(Not::Absent(a)) => a.what.clone(),
+        other => panic!("answered {other:?}, not absent"),
+    }
 }
 
 #[test]
-fn a_target_bound_and_never_asked_leaves_the_environments_unreadable() {
+fn two_environments_of_one_component_are_named_with_their_channels_and_whom_they_wait_on() {
+    let world = World::new();
+    let desk = of("lib", "desk");
+    declare(&world, &stable(), None);
+    declare(&world, &desk, Some("stable"));
+    declares(&world, "srv", &stable(), false, &[]);
+    declares(&world, "desk", &desk, true, &["ops"]);
+    let answer = asked(&world, &ask(&world));
+    let srv = one(&answer, "srv");
+    assert_eq!(
+        (&srv.component, &srv.channel, srv.waits, &srv.approvers),
+        (
+            &ComponentName::new("lib"),
+            &ChannelName::new("stable"),
+            false,
+            &vec![]
+        )
+    );
+    assert_eq!(srv.moves_on, None);
+    let desk = one(&answer, "desk");
+    assert_eq!(
+        (&desk.channel, desk.waits, &desk.approvers),
+        (&ChannelName::new("desk"), true, &vec![SignerId::new("ops")])
+    );
+    assert_eq!(
+        desk.moves_on,
+        Some(timber_core::MovesOn::Asking {
+            bound_to: ChannelName::new("stable"),
+            at: Ok(HeadAt::Empty),
+        })
+    );
+    let json = serde_json::to_value(&answer).unwrap();
+    let environments = &json["environments"];
+    assert_eq!(environments["answer"], "ok", "{json}");
+    assert_eq!(environments["value"]["unreadable"], 2, "{json}");
+    let srv = &environments["value"]["environments"][1];
+    assert_eq!(srv["environment"], "srv", "{json}");
+    assert!(srv.get("moves_on").is_none(), "{json}");
+    let desk = &environments["value"]["environments"][0];
+    assert_eq!(desk["moves_on"]["by"], "asking", "{json}");
+    assert_eq!(desk["moves_on"]["at"]["value"]["state"], "empty", "{json}");
+}
+
+#[test]
+fn an_environment_running_its_channels_head_is_converged_and_no_target_is_asked() {
     let mut world = World::new();
     let production = world.fakes.target(&TargetProfile::new("fake"));
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    let chain = held_chain(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let (first, second) = (&chain[0].1.to.index, &chain[1].1.to.index);
+    reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.1.0", first), AT);
+    let newest = reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &stable()),
+        ("0.2.0", second),
+        AT + 60,
+    );
+    let signs = || {
+        world
+            .fakes
+            .signer
+            .calls()
+            .iter()
+            .filter(|c| c.op == timber_fakes::SignerOp::Sign)
+            .count()
+    };
+    let signed = signs();
+
+    let answer = asked(&world, &ask(&world));
+    let srv = one(&answer, "srv");
+    assert_eq!(srv.should, Ok(at("0.2.0")));
+    let Ok(Channel::At { head, .. }) = &channels_of(&answer)[0].at else {
+        panic!("stable answered {:?}", channels_of(&answer)[0].at)
+    };
+    assert_eq!(
+        srv.should,
+        Ok(HeadAt::At {
+            version: head.to.version.clone(),
+            index: head.to.index.clone()
+        })
+    );
+    assert_eq!(
+        srv.runs,
+        Ok(timber_core::Runs {
+            version: Version::new("0.2.0"),
+            index: second.clone(),
+            converged_at: "2026-10-31T09:00:00Z".into(),
+            at: AT + 60,
+            claim: newest.digest(),
+            signer: SignerId::new(DEPLOYER),
+            read: Read::Source,
+        })
+    );
+    assert_eq!(srv.state, Ok(timber_core::State::Converged));
+    assert_eq!(environments_of(&answer).counts, counts(1, 0, 0, 0));
+    assert!(production.calls().is_empty(), "status asked the target");
+    assert_eq!(signs(), signed, "status signed");
+    let json = serde_json::to_value(&answer).unwrap();
+    let srv = &json["environments"]["value"]["environments"][0];
+    assert_eq!(
+        srv["state"],
+        serde_json::json!({ "answer": "ok", "value": "converged" })
+    );
+    assert_eq!(srv["runs"]["value"]["read"], "source", "{json}");
+    assert_eq!(json["environments"]["value"]["converged"], 1, "{json}");
+}
+
+#[test]
+fn an_environment_whose_newest_counted_report_names_another_index_is_behind() {
+    let world = World::new();
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    let chain = held_chain(&world, &stable(), &["0.1.0", "0.2.0"]);
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &stable()),
+        ("0.1.0", &chain[0].1.to.index),
+        AT,
+    );
+    let answer = asked(&world, &ask(&world));
+    let srv = one(&answer, "srv");
+    assert_eq!(srv.should, Ok(at("0.2.0")));
+    assert_eq!(
+        srv.runs.as_ref().map(|r| r.version.clone()),
+        Ok(Version::new("0.1.0"))
+    );
+    assert_eq!(srv.state, Ok(timber_core::State::Behind));
+    assert_eq!(environments_of(&answer).counts, counts(0, 1, 0, 0));
+}
+
+#[test]
+fn a_waiting_environment_whose_own_channel_is_behind_the_one_it_is_bound_to_is_waiting() {
+    let world = World::new();
+    let desk = of("lib", "desk");
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declare(&world, &desk, Some("stable"));
+    declares(&world, "desk", &desk, true, &["ops"]);
+    held_chain(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let own = held_chain(&world, &desk, &["0.1.0"]);
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("desk", &desk),
+        ("0.1.0", &own[0].1.to.index),
+        AT,
+    );
+    let answer = asked(&world, &ask(&world));
+    let desk_status = one(&answer, "desk");
+    assert_eq!(desk_status.should, Ok(at("0.1.0")));
+    assert_eq!(desk_status.state, Ok(timber_core::State::Waiting));
+    assert_eq!(
+        desk_status.moves_on,
+        Some(timber_core::MovesOn::Asking {
+            bound_to: ChannelName::new("stable"),
+            at: Ok(at("0.2.0")),
+        })
+    );
+    assert_eq!(desk_status.approvers, [SignerId::new("ops")]);
+    assert_eq!(environments_of(&answer).counts, counts(0, 0, 1, 0));
+
+    // Its own channel moved on, its converge due, it is behind and waits
+    // on no one.
+    let (_, envelope) = sealed_to(
+        &world,
+        &desk,
+        &moved("0.2.0"),
+        Some(&moved("0.1.0")),
+        Some(&own[0].0),
+        AT + 1,
+    );
+    world
+        .fakes
+        .keeper
+        .append(&desk, &envelope, Some(&own[0].0))
+        .unwrap();
+    let answer = asked(&world, &ask(&world));
+    assert_eq!(one(&answer, "desk").state, Ok(timber_core::State::Behind));
+}
+
+#[test]
+fn an_environment_after_another_runs_what_it_should_and_is_never_waiting() {
+    let world = World::new();
+    let (first, second) = (of("lib", "first"), of("lib", "second"));
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declare(&world, &first, Some("stable"));
+    world.fakes.policy.after(
+        &second,
+        &[env("first")],
+        &[deployer()],
+        Required::Channel {
+            claims: vec![],
+            bound_to: Some(ChannelName::new("first")),
+            promoted_by: vec![],
+            approvers: vec![],
+        },
+    );
+    declares(&world, "first", &first, true, &["ops"]);
+    declares(&world, "second", &second, false, &[]);
+    held_chain(&world, &first, &["0.1.0", "0.2.0"]);
+    let own = held_chain(&world, &second, &["0.1.0"]);
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("second", &second),
+        ("0.1.0", &own[0].1.to.index),
+        AT,
+    );
+    let answer = asked(&world, &ask(&world));
+    let after = one(&answer, "second");
+    assert_eq!(
+        after.moves_on,
+        Some(timber_core::MovesOn::Reports {
+            after: vec![env("first")]
+        })
+    );
+    assert_eq!(after.state, Ok(timber_core::State::Converged));
+    let json = serde_json::to_value(after).unwrap();
+    assert_eq!(
+        json["moves_on"],
+        serde_json::json!({ "by": "reports", "after": ["first"] })
+    );
+}
+
+#[test]
+fn an_environment_whose_channel_is_empty_is_unread_saying_so() {
+    let world = World::new();
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    let before = world.fakes.store.calls().len();
+    let answer = asked(&world, &ask(&world));
+    let srv = one(&answer, "srv");
+    assert_eq!(srv.should, Ok(HeadAt::Empty));
+    let what = absent_what(&srv.runs);
+    assert!(what.contains("environment srv of lib"), "{what}");
+    assert!(what.contains("its channel lib/stable is empty"), "{what}");
+    assert_eq!(srv.state.as_ref().err(), srv.runs.as_ref().err());
+    assert!(matches!(&srv.state, Err(Not::Absent(_))), "{:?}", srv.state);
+    assert_eq!(environments_of(&answer).counts, counts(0, 0, 0, 1));
+    assert_eq!(
+        world.fakes.store.calls().len(),
+        before,
+        "an empty chain's reports were fetched"
+    );
+}
+
+#[test]
+fn an_environment_no_counted_report_names_is_unread_naming_it() {
+    let world = World::new();
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    let chain = held_chain(&world, &stable(), &["0.1.0"]);
+    let theirs = reported_by(
+        &world,
+        "desk",
+        ("srv", &stable()),
+        ("0.1.0", &chain[0].1.to.index),
+        AT,
+    );
+    let answer = asked(&world, &ask(&world));
+    let srv = one(&answer, "srv");
+    let what = absent_what(&srv.runs);
+    assert!(
+        what.contains("a counted report of environment srv of lib"),
+        "{what}"
+    );
+    assert!(!what.contains("lets no signer"), "{what}");
+    assert_eq!(srv.state.as_ref().err(), srv.runs.as_ref().err());
+    assert_eq!(environments_of(&answer).counts, counts(0, 0, 0, 1));
+    let copy: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(copy_of(&world).path(&env("srv"), &stable())).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        copy["reports"][0]["envelope"],
+        serde_json::json!(theirs),
+        "the copy does not keep the report uncounted"
+    );
+}
+
+#[test]
+fn a_policy_letting_no_signer_report_leaves_every_environment_unread_saying_so() {
+    let world = World::new();
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    declares(&world, "eu", &stable(), false, &[]);
+    let chain = held_chain(&world, &stable(), &["0.1.0"]);
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &stable()),
+        ("0.1.0", &chain[0].1.to.index),
+        AT,
+    );
+    let answer = asked(&world, &ask(&world));
+    for name in ["srv", "eu"] {
+        let what = absent_what(&one(&answer, name).runs);
+        assert!(
+            what.contains(&format!("environment {name} of lib")),
+            "{what}"
+        );
+        assert!(
+            what.contains("the policy lets no signer claim a report"),
+            "{what}"
+        );
+    }
+    assert_eq!(environments_of(&answer).counts, counts(0, 0, 0, 2));
+}
+
+#[test]
+fn one_component_asked_shows_its_environments_alone_and_counts_them() {
+    let world = World::new();
+    let site = of("web", "stable");
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declare(&world, &site, None);
+    declares(&world, "srv", &stable(), false, &[]);
+    declares(&world, "edge", &site, false, &[]);
+    let answer = asked(
+        &world,
+        &OverviewAsk {
+            component: Some(ComponentName::new("web")),
+            ..ask(&world)
+        },
+    );
+    let names: Vec<_> = environments_of(&answer)
+        .environments
+        .iter()
+        .map(|e| e.environment.clone())
+        .collect();
+    assert_eq!(names, [env("edge")]);
+    assert_eq!(environments_of(&answer).counts, counts(0, 0, 0, 1));
+    let everything = asked(&world, &ask(&world));
+    assert_eq!(environments_of(&everything).environments.len(), 2);
+}
+
+#[test]
+fn a_policy_declaring_no_environment_answers_an_empty_list_with_four_counts_of_none() {
+    let world = World::new();
     declare(&world, &stable(), None);
     promoted(&world, &stable(), &["0.1.0"]);
     let answer = asked(&world, &ask(&world));
-    unread(&answer.environments);
-    assert_eq!(channels_of(&answer).len(), 1);
-    assert!(matches!(channels_of(&answer)[0].at, Ok(Channel::At { .. })));
-    assert!(production.calls().is_empty(), "status asked the target");
-    let json = serde_json::to_value(&answer).unwrap();
-    assert_eq!(json["environments"]["answer"], "unreadable", "{json}");
-
-    let history = world.history();
-    let unbound = timber_core::overview_unbound(
-        Not::absent(&Source::new(Seam::Host, "bindings"), "the bindings"),
-        &history,
-        &Kept::at(&history),
-        &ask(&world),
+    assert_eq!(
+        answer.environments,
+        Ok(timber_core::Environments {
+            counts: counts(0, 0, 0, 0),
+            environments: vec![],
+        })
     );
-    unread(&unbound.environments);
+    let json = serde_json::to_value(&answer).unwrap();
+    assert_eq!(
+        json["environments"],
+        serde_json::json!({
+            "answer": "ok",
+            "value": {
+                "converged": 0, "behind": 0, "waiting": 0, "unreadable": 0,
+                "environments": [],
+            },
+        })
+    );
+}
+
+#[test]
+fn a_chain_answered_as_last_read_has_its_environments_reports_read_across_it_from_the_store() {
+    let world = World::new();
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    let chain = held_chain(&world, &stable(), &["0.1.0", "0.2.0"]);
+    asked(&world, &ask(&world));
+    world.fakes.keeper.unreachable("fatal: unable to access");
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &stable()),
+        ("0.2.0", &chain[1].1.to.index),
+        AT,
+    );
+    let answer = asked(&world, &ask(&world));
+    assert!(
+        matches!(
+            &channels_of(&answer)[0].at,
+            Ok(Channel::At {
+                read: Read::Kept { .. },
+                ..
+            })
+        ),
+        "{:?}",
+        channels_of(&answer)[0].at
+    );
+    let srv = one(&answer, "srv");
+    assert_eq!(srv.should, Ok(at("0.2.0")));
+    let runs = srv.runs.as_ref().expect("srv's report read");
+    assert_eq!(
+        (&runs.version, &runs.read),
+        (&Version::new("0.2.0"), &Read::Source)
+    );
+    assert_eq!(srv.state, Ok(timber_core::State::Converged));
+}
+
+#[test]
+fn a_chain_that_cannot_be_read_is_what_the_environment_should_run_and_it_is_unread() {
+    let world = World::new();
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    held_chain(&world, &stable(), &["0.1.0"]);
+    world.fakes.keeper.fault(
+        KeeperOp::Chain,
+        Fault::Unreadable("fatal: unable to access".into()),
+        Times::Once,
+    );
+    let answer = asked(&world, &ask(&world));
+    let srv = one(&answer, "srv");
+    assert_eq!(
+        srv.should.as_ref().err(),
+        channels_of(&answer)[0].at.as_ref().err()
+    );
+    let Err(Not::Unreadable(u)) = &srv.state else {
+        panic!("srv's state answered {:?}", srv.state)
+    };
+    assert_eq!(u.said.as_deref(), Some("fatal: unable to access"));
+    assert_eq!(environments_of(&answer).counts, counts(0, 0, 0, 1));
+}
+
+#[test]
+fn four_environments_one_of_each_are_counted_one_one_one_and_one() {
+    let world = World::new();
+    let desk = of("lib", "desk");
+    let beta = beta();
+    lets_report(&world);
+    declare(&world, &beta, None);
+    declare(&world, &stable(), None);
+    declare(&world, &desk, Some("stable"));
+    declares(&world, "srv", &stable(), false, &[]);
+    declares(&world, "eu", &stable(), false, &[]);
+    declares(&world, "desk", &desk, true, &["ops"]);
+    declares(&world, "lab", &beta, false, &[]);
+    let chain = held_chain(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let own = held_chain(&world, &desk, &["0.1.0"]);
+    let (first, second) = (&chain[0].1.to.index, &chain[1].1.to.index);
+    reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.2.0", second), AT);
+    reported_by(&world, DEPLOYER, ("eu", &stable()), ("0.1.0", first), AT);
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("desk", &desk),
+        ("0.1.0", &own[0].1.to.index),
+        AT,
+    );
+    let answer = asked(&world, &ask(&world));
+    assert_eq!(environments_of(&answer).counts, counts(1, 1, 1, 1));
+    let json = serde_json::to_value(&answer).unwrap();
+    let value = &json["environments"]["value"];
+    for (key, n) in [
+        ("converged", 1),
+        ("behind", 1),
+        ("waiting", 1),
+        ("unreadable", 1),
+    ] {
+        assert_eq!(value[key], n, "{json}");
+    }
+}
+
+// Requirement (channel-status): Asking reaches no signer or target and
+// writes nothing but the host's copy
+
+#[test]
+fn status_with_environments_asks_the_store_only_their_claims_and_writes_only_the_copy() {
+    let mut world = World::new();
+    let production = world.fakes.target(&TargetProfile::new("fake"));
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    published(&world);
+    let chain = held_chain(&world, &stable(), &["0.1.0", "0.2.0"]);
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &stable()),
+        ("0.2.0", &chain[1].1.to.index),
+        AT,
+    );
+    let kept = world.kept();
+    let record = files(kept.dir());
+    let common = world.history().common_dir().join("timber");
+    let outside = || -> Vec<_> {
+        files(&common)
+            .into_iter()
+            .filter(|(p, _, _)| !p.starts_with(copy_of(&world).dir()))
+            .collect()
+    };
+    let (untouched, stores, appends, signs) = (
+        outside(),
+        world.fakes.store.calls().len(),
+        world.fakes.keeper.calls().len(),
+        world.fakes.signer.calls().len(),
+    );
+    let answer = asked(&world, &ask(&world));
+    assert_eq!(one(&answer, "srv").state, Ok(timber_core::State::Converged));
+    let asked_of_store: Vec<StoreOp> = world.fakes.store.calls()[stores..]
+        .iter()
+        .map(|c| c.op)
+        .collect();
+    assert_eq!(asked_of_store, [StoreOp::ClaimsOf, StoreOp::ClaimsOf]);
+    assert!(
+        world.fakes.keeper.calls()[appends..]
+            .iter()
+            .all(|c| c.op != KeeperOp::Append),
+        "status appended to the ledger"
+    );
+    assert!(production.calls().is_empty(), "status asked the target");
+    assert!(
+        world.fakes.signer.calls()[signs..]
+            .iter()
+            .all(|c| c.op == timber_fakes::SignerOp::Verify),
+        "status signed"
+    );
+    assert_eq!(files(kept.dir()), record, "status wrote to the record");
+    assert_eq!(outside(), untouched, "status wrote outside the copy");
+    assert!(copy_of(&world).path(&env("srv"), &stable()).is_file());
+}
+
+// Requirement (channel-status): Everything kept deleted answers the same
+
+#[test]
+fn the_reports_copy_deleted_answers_the_same_environments_and_is_written_again() {
+    let world = World::new();
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    let chain = held_chain(&world, &stable(), &["0.1.0", "0.2.0"]);
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &stable()),
+        ("0.1.0", &chain[0].1.to.index),
+        AT,
+    );
+    let before = asked(&world, &ask(&world));
+    let path = copy_of(&world).path(&env("srv"), &stable());
+    let written = fs::read(&path).unwrap();
+    fs::remove_dir_all(copy_of(&world).dir()).unwrap();
+    let again = asked(&world, &ask(&world));
+    assert_eq!(again.environments, before.environments);
+    assert_eq!(fs::read(&path).unwrap(), written);
 }
 
 // Requirement: A repository's row is made from its status
@@ -1293,11 +1911,17 @@ fn repository() -> RepositoryName {
 }
 
 #[test]
-fn a_row_names_every_channels_head_and_the_environments_answer() {
+fn a_row_names_every_channels_head_and_the_environments_counts() {
     let world = World::new();
+    lets_report(&world);
     declare(&world, &beta(), None);
     declare(&world, &stable(), Some("beta"));
-    let chain = promoted(&world, &stable(), &["0.1.0", "0.2.0"]);
+    declares(&world, "srv", &stable(), false, &[]);
+    declares(&world, "eu", &stable(), false, &[]);
+    let chain = held_chain(&world, &stable(), &["0.1.0", "0.2.0"]);
+    let (first, second) = (&chain[0].1.to.index, &chain[1].1.to.index);
+    reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.2.0", second), AT);
+    reported_by(&world, DEPLOYER, ("eu", &stable()), ("0.1.0", first), AT);
     let answer = asked(&world, &ask(&world));
     let row = row(&repository(), &answer);
     assert_eq!(row.repository, repository());
@@ -1319,12 +1943,38 @@ fn a_row_names_every_channels_head_and_the_environments_answer() {
             },
         ])
     );
-    assert_eq!(row.environments, answer.environments);
-    unread(&row.environments);
+    assert_eq!(row.environments, Ok(counts(1, 1, 0, 0)));
+    assert_eq!(
+        row.environments.as_ref().ok(),
+        answer.environments.as_ref().ok().map(|e| &e.counts)
+    );
     let json = serde_json::to_value(&row).unwrap();
     assert_eq!(json["repository"]["owner"], "o", "{json}");
     assert_eq!(json["heads"]["value"][1]["at"]["value"]["state"], "at");
-    assert_eq!(json["environments"]["answer"], "unreadable", "{json}");
+    assert_eq!(
+        json["environments"],
+        serde_json::json!({
+            "answer": "ok",
+            "value": { "converged": 1, "behind": 1, "waiting": 0, "unreadable": 0 },
+        })
+    );
+
+    // The environments' part's own answer where it gives no counts.
+    world.fakes.policy.fault(
+        timber_fakes::PolicyOp::Environments,
+        Fault::Unreadable("policy file: expected `]`".into()),
+        Times::Once,
+    );
+    let answer = asked(&world, &ask(&world));
+    let row = timber_core::row(&repository(), &answer);
+    let Err(Not::Unreadable(u)) = &row.environments else {
+        panic!("the row's environments answered {:?}", row.environments)
+    };
+    assert_eq!(u.said.as_deref(), Some("policy file: expected `]`"));
+    assert_eq!(
+        row.environments.as_ref().err(),
+        answer.environments.as_ref().err()
+    );
 }
 
 #[test]

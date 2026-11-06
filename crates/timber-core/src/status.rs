@@ -8,36 +8,48 @@
 //! repository's own history (31, 33, 36, 56 to 61, 63, 101, 125, 131,
 //! 132, 134; design D1, D2, D7).
 //!
-//! Status asks the landing, the policy and the ledger alone, the host's
-//! record, and the history its notes are rendered from: it reaches no
-//! store, signer, target or projection, and it writes nothing (60, rule
-//! core.32; design D9). Every reader of one ledger and one history is
-//! answered one version per channel, and the same notes for each version
-//! its chain moved it to, as of when it asked, and a chain the ledger
-//! answers as last read says when (36, 61). Each part, each channel and
-//! each version's notes carries its own answer, so absent, refused and
-//! unreadable are kept apart at every depth (58, 59), and every surface
-//! renders the one answer made here (57, rule core.31).
+//! Status asks the landing, the policy and the ledger, the host's
+//! record, and the history its notes are rendered from; it reaches the
+//! store only to fetch a chain a store ledger holds, or the reports
+//! attached to the indexes an environment's chain moved to, into the
+//! host's copy, and it writes nothing but that copy (60, 61, rule
+//! core.32). It asks no target and no projection, and tells each report
+//! through the signer profiles bound, which status binds to verify
+//! reaching no service (60, C.7). Every reader of one ledger, one store
+//! and one history is answered one version per channel, and the same
+//! notes for each version its chain moved it to, as of when it asked, and
+//! a chain or reports read as last fetched say when (36, 61). Each part,
+//! each channel, each environment and each version's notes carries its
+//! own answer, so absent, refused and unreadable are kept apart at every
+//! depth (58, 59), and every surface renders the one answer made here
+//! (57, rule core.31).
 //!
 //! Beside the channels and the record, the environments are a part of
-//! their own, answered unreadable while no target is read, never empty or
-//! a count of none, and asking no target (58, 60, 98). One repository's
-//! row of every channel's head and its environments' counts is made from
-//! its status answer alone, so the host's serving process shows every
-//! repository it knows together from the one core (132; design D14).
+//! their own: every environment the policy declares at the landed head,
+//! with what it should run, its channel's head as the channels part reads
+//! it, what it runs, its newest counted report, its state and what its
+//! channel moves on, and four counts beside them (98, 132, 136; design
+//! D2, D6, D7, D9). The landed head, the policy and each chain are read
+//! once, and both parts are made from them, so they never disagree on a
+//! head (rule core.50). One repository's row of every channel's head and
+//! its environments' counts is made from its status answer alone, so the
+//! host's serving process shows every repository it knows together from
+//! the one core (132).
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::json;
 use timber_seams::{
-    Answer, Branch, ChannelName, Component, ComponentName, DeclaredChannel, Digest, Landing, Not,
-    Read, Revision, Seam, Seams, Source, Version,
+    Answer, Branch, ChannelId, ChannelName, Component, ComponentName, DeclaredChannel,
+    DeclaredEnvironment, Digest, EnvironmentName, Landing, Moves, NamedSigner, Not, Promotion,
+    Read, Revision, Seam, Seams, SignerId, Source, Version,
 };
 
 use crate::{
-    answer_json, channel, channels_at, notes, Channel, Declared, Entry, Filter, History, Kept,
-    Landed, Noted, RepositoryName, Tag, LOCAL, POLICY_FILE,
+    answer_json, channel, channels_at, newest_of, notes, reporters, Channel, Declared, Entry,
+    Fetch, Filter, History, Kept, Landed, Noted, ReportsCopy, RepositoryName, Tag, BOUND, LOCAL,
+    POLICY_FILE,
 };
 
 /// What status is asked: every version this host published, or those of
@@ -147,8 +159,9 @@ pub struct OverviewAsk {
 }
 
 /// 36, 57: the whole of status, as of `asked_at`: the channels, read
-/// from the ledger, and what this host published, from its record, each
-/// part its own answer.
+/// from the ledger, the environments, read from their channels' chains
+/// and their reports, and what this host published, from its record,
+/// each part its own answer.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Overview {
     pub branch: Branch,
@@ -156,7 +169,7 @@ pub struct Overview {
     #[serde(serialize_with = "one_answer")]
     pub channels: Answer<Channels>,
     #[serde(serialize_with = "one_answer")]
-    pub environments: Answer<EnvironmentCounts>,
+    pub environments: Answer<Environments>,
     #[serde(serialize_with = "one_answer")]
     pub published: Answer<Status>,
 }
@@ -219,41 +232,67 @@ fn record_ask(ask: &OverviewAsk) -> StatusAsk {
     }
 }
 
-/// 31, 101, 125, 131, 134: every channel the policy at the branch's
-/// landed head declares, of `ask.component` where it names one, each with
-/// its chain as the ledger answers it and the notes of every version the
-/// chain moved it to. The head not landed is refused before the policy
-/// is read (65, 77), and refused as not landed as last fetched where the
-/// landing read that from its copy; a head landed as last fetched is
-/// answered as one landed on the remote, saying so. A channel's absent,
-/// refused or unreadable chain is that channel's answer, never the whole
-/// one's (58, 105), and a version's notes that cannot be rendered are
-/// that version's answer, never the channel's (rule core.19; design D3).
-pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<Channels> {
+/// What one ask reads once, which both the channels and the environments
+/// are made from (design D2): the branch's head, landed, and the channels
+/// the policy lists at it of the component asked, each with its chain as
+/// the ledger answers it.
+struct Heads {
+    head: Revision,
+    landed: Landed,
+    listed: Vec<(DeclaredChannel, Answer<Channel>)>,
+}
+
+impl Heads {
+    /// The chain of `channel` as this ask read it, `None` where the
+    /// policy lists no such channel.
+    fn of(&self, channel: &ChannelId) -> Option<&(DeclaredChannel, Answer<Channel>)> {
+        self.listed.iter().find(|(d, _)| d.channel == *channel)
+    }
+}
+
+/// 31, 101, 125, 131: the branch's head, landed, and every channel the
+/// policy at it declares, of `ask.component` where it names one, each with
+/// its chain as the ledger answers it, read once. The head not landed is
+/// refused before the policy is read (65, 77), and refused as not landed
+/// as last fetched where the landing read that from its copy; a head
+/// landed as last fetched is answered as one landed on the remote, saying
+/// so. A channel's absent, refused or unreadable chain is that channel's
+/// answer, never the whole one's (58, 105).
+fn heads(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<Heads> {
     let head = history.head(&ask.branch)?;
     let landed = Landed::check(seams.landing.as_ref(), &ask.branch, &head)?;
-    let declared = channels_at(seams.policy.as_ref(), &landed)?;
-    let mut changelog = Changelog {
-        landing: seams.landing.as_ref(),
-        history,
-        head: &landed,
-        components: Declared::read(history, &landed).map(|d| d.components),
-        tags: BTreeMap::new(),
-        rendered: BTreeMap::new(),
-    };
-    Ok(Channels {
-        revision: head,
-        landing: landed.read().clone(),
-        channels: declared
-            .into_iter()
-            .filter(|c| {
-                ask.component
-                    .as_ref()
-                    .is_none_or(|named| c.channel.component_name() == *named)
-            })
-            .map(|declared| {
-                let at = channel(seams.keeper.as_ref(), &declared.channel);
-                let notes = match &at {
+    let listed = channels_at(seams.policy.as_ref(), &landed)?
+        .into_iter()
+        .filter(|c| {
+            ask.component
+                .as_ref()
+                .is_none_or(|named| c.channel.component_name() == *named)
+        })
+        .map(|declared| {
+            let at = channel(seams.keeper.as_ref(), &declared.channel);
+            (declared, at)
+        })
+        .collect();
+    Ok(Heads {
+        head,
+        landed,
+        listed,
+    })
+}
+
+/// 31, 101, 134: every channel `heads` read, each with its chain and the
+/// notes of every version the chain moved it to, oldest first and each
+/// version once; a version's notes that cannot be rendered are that
+/// version's answer, never the channel's (rule core.19; design D3).
+fn channels_part(heads: &Heads, changelog: &mut Changelog<'_>) -> Channels {
+    Channels {
+        revision: heads.head.clone(),
+        landing: heads.landed.read().clone(),
+        channels: heads
+            .listed
+            .iter()
+            .map(|(declared, at)| {
+                let notes = match at {
                     Ok(Channel::At { chain, .. }) => {
                         let component = declared.channel.component_name();
                         let mut logged: Vec<Logged> = Vec::new();
@@ -276,13 +315,13 @@ pub fn channels(seams: &Seams, history: &History, ask: &OverviewAsk) -> Answer<C
                     Ok(Channel::Empty { .. }) | Err(_) => Vec::new(),
                 };
                 ChannelStatus {
-                    declared,
-                    at,
+                    declared: declared.clone(),
+                    at: at.clone(),
                     notes,
                 }
             })
             .collect(),
-    })
+    }
 }
 
 /// 134: what one ask of the channels reads toward their notes: the
@@ -299,7 +338,20 @@ struct Changelog<'a> {
     rendered: BTreeMap<(ComponentName, Version), Answer<String>>,
 }
 
-impl Changelog<'_> {
+impl<'a> Changelog<'a> {
+    /// What one ask renders its notes with, nothing read yet but the
+    /// components the policy file at the landed `head` declares.
+    fn new(landing: &'a dyn Landing, history: &'a History, head: &'a Landed) -> Changelog<'a> {
+        Changelog {
+            landing,
+            history,
+            head,
+            components: Declared::read(history, head).map(|d| d.components),
+            tags: BTreeMap::new(),
+            rendered: BTreeMap::new(),
+        }
+    }
+
     /// The notes of `component` at `version`, rendered on the first ask
     /// and the same answer on every ask after; unreadable naming them
     /// where the policy file at the landed head declares no such
@@ -405,35 +457,48 @@ fn never_absent(what: &str, not: Not) -> Not {
 }
 
 /// 36, 60: the whole of status, each part its own answer: the channels
-/// over `seams`, the environments, and what this host published from
-/// `kept`.
+/// and the environments over `seams`, made from one read of the landed
+/// head, the policy and each chain, the environments' reports fetched
+/// into the host's copy under `history`'s common directory ([`ReportsCopy`]),
+/// and what this host published from `kept`. Where the landed head or the
+/// policy's channels cannot be read, both parts are that answer.
 pub fn overview(seams: &Seams, history: &History, kept: &Kept, ask: &OverviewAsk) -> Overview {
+    let copy = ReportsCopy::at(history);
+    let (channels, environments) = match heads(seams, history, ask) {
+        Err(not) => (Err(not.clone()), Err(not)),
+        Ok(heads) => {
+            let mut changelog = Changelog::new(seams.landing.as_ref(), history, &heads.landed);
+            let channels = channels_part(&heads, &mut changelog);
+            let environments = environments(seams, ask, &heads, &copy);
+            (Ok(channels), environments)
+        }
+    };
     Overview {
         branch: ask.branch.clone(),
         asked_at: ask.at,
-        channels: channels(seams, history, ask),
-        environments: environments(seams, ask),
+        channels,
+        environments,
         published: status(history, kept, &record_ask(ask)),
     }
 }
 
 /// The whole of status where no binding could be made, for `not`: the
-/// channels' part that answer, the environments' as ever unread, and the
-/// record's part answered as ever.
+/// channels' and the environments' parts that answer, and the record's
+/// part answered as ever.
 pub fn overview_unbound(not: Not, history: &History, kept: &Kept, ask: &OverviewAsk) -> Overview {
     Overview {
         branch: ask.branch.clone(),
         asked_at: ask.at,
-        channels: Err(not),
-        environments: Err(no_target()),
+        channels: Err(not.clone()),
+        environments: Err(not),
         published: status(history, kept, &record_ask(ask)),
     }
 }
 
 /// 98, 132: of a repository's environments, how many run what they
 /// should, how many are behind, how many wait on a person and how many
-/// cannot be read.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+/// cannot be read, each environment in exactly one.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct EnvironmentCounts {
     pub converged: usize,
     pub behind: usize,
@@ -441,29 +506,302 @@ pub struct EnvironmentCounts {
     pub unreadable: usize,
 }
 
-/// What the environments' part answers while no target is read.
-fn no_target() -> Not {
-    Not::unreadable(
-        &Source::new(Seam::Target, "unread"),
-        "the environments: what each environment should run and runs is read from a target, and no target is read",
-        None,
+/// 98, 132, 136: every environment the policy declares at the landed
+/// head, of the component asked, in the policy seam's order, with the four
+/// counts of them flattened beside the list, so the part and a
+/// repository's row read the same keys (57; design D9).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Environments {
+    #[serde(flatten)]
+    pub counts: EnvironmentCounts,
+    pub environments: Vec<EnvironmentStatus>,
+}
+
+/// 41, 97, 98, 132: one environment as status shows it: its name, its
+/// component, the channel it follows, whether it waits and on whom, what
+/// its channel moves on, what it should run, what it runs and its state,
+/// each its own answer (design D9).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct EnvironmentStatus {
+    pub environment: EnvironmentName,
+    pub component: ComponentName,
+    pub channel: ChannelName,
+    pub waits: bool,
+    pub approvers: Vec<SignerId>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moves_on: Option<MovesOn>,
+    #[serde(serialize_with = "one_answer")]
+    pub should: Answer<HeadAt>,
+    #[serde(serialize_with = "one_answer")]
+    pub runs: Answer<Runs>,
+    #[serde(serialize_with = "one_answer")]
+    pub state: Answer<State>,
+}
+
+/// 37, 41, 97, 132: what an environment's channel moves on, where it
+/// does not move on its own (design D7).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "by", rename_all = "snake_case")]
+pub enum MovesOn {
+    /// It waits: its channel moves to what `bound_to` is at only when one
+    /// of its approvers asks (41, 97); `at` is that channel's head as
+    /// this status read it.
+    Asking {
+        bound_to: ChannelName,
+        #[serde(serialize_with = "one_answer")]
+        at: Answer<HeadAt>,
+    },
+    /// It comes after `after`: its channel moves on their reports (37,
+    /// C.10).
+    Reports { after: Vec<EnvironmentName> },
+}
+
+/// 43, 91, 98: what an environment runs, its newest counted report: the
+/// version and index it reports, the time the target says it converged,
+/// the moment of the apply that reported it, the report claim's digest,
+/// the signer that made it, and how its reports were read, from the store
+/// or from the host's copy as last fetched (60; design D3).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Runs {
+    pub version: Version,
+    pub index: Digest,
+    pub converged_at: String,
+    pub at: u64,
+    pub claim: Digest,
+    pub signer: SignerId,
+    pub read: Read,
+}
+
+/// 98: an environment's state where what it should run and what it runs
+/// are answered: running what it should, behind its channel's head, or
+/// waiting on a person (design D6). One that cannot be read is the
+/// unreadable answer in its place, carrying the reason (58).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum State {
+    Converged,
+    Behind,
+    Waiting,
+}
+
+/// 31: where `channel`'s head puts it.
+fn head_at(channel: &Channel) -> HeadAt {
+    match channel {
+        Channel::Empty { .. } => HeadAt::Empty,
+        Channel::At { head, .. } => HeadAt::At {
+            version: head.to.version.clone(),
+            index: head.to.index.clone(),
+        },
+    }
+}
+
+fn store() -> Source {
+    Source::new(Seam::Store, BOUND)
+}
+
+/// 98, 136: the environments' part: every environment the policy declares
+/// at the landed head `heads` read, of `ask.component` where it names one,
+/// each answered from the chains `heads` holds and its reports, fetched
+/// once per index into `copy` ([`Fetch`]) and counted through the signers
+/// the policy lets claim a report (116); the policy's own answer where it
+/// cannot list its environments, and an empty list with four counts of
+/// none where it declares none (58).
+fn environments(
+    seams: &Seams,
+    ask: &OverviewAsk,
+    heads: &Heads,
+    copy: &ReportsCopy,
+) -> Answer<Environments> {
+    let declared: Vec<DeclaredEnvironment> = seams
+        .policy
+        .environments(heads.landed.revision())?
+        .into_iter()
+        .filter(|e| {
+            ask.component
+                .as_ref()
+                .is_none_or(|named| e.channel.component_name() == *named)
+        })
+        .collect();
+    let reporters = if declared.is_empty() {
+        Ok(Vec::new())
+    } else {
+        reporters(seams, &heads.landed)
+    };
+    let mut fetch = Fetch::new(seams.store.as_ref(), copy, ask.at);
+    let environments: Vec<EnvironmentStatus> = declared
+        .iter()
+        .map(|declared| environment(seams, heads, &reporters, &mut fetch, declared))
+        .collect();
+    let mut counts = EnvironmentCounts::default();
+    for environment in &environments {
+        match environment.state {
+            Ok(State::Converged) => counts.converged += 1,
+            Ok(State::Behind) => counts.behind += 1,
+            Ok(State::Waiting) => counts.waiting += 1,
+            Err(_) => counts.unreadable += 1,
+        }
+    }
+    Ok(Environments {
+        counts,
+        environments,
+    })
+}
+
+/// 40, 41, 88, 97, 98: one environment `declared`: what it should run,
+/// its channel's head as `heads` read it (rule core.50); what it runs, its
+/// newest counted report across that chain's indexes, as last read
+/// included; what its channel moves on; and its state from them.
+fn environment(
+    seams: &Seams,
+    heads: &Heads,
+    reporters: &Answer<Vec<NamedSigner>>,
+    fetch: &mut Fetch<'_>,
+    declared: &DeclaredEnvironment,
+) -> EnvironmentStatus {
+    let channel = &declared.channel;
+    let listed = heads.of(channel);
+    let should = match listed {
+        None => Err(unlisted(heads, channel)),
+        Some((_, at)) => at.as_ref().map(head_at).map_err(Not::clone),
+    };
+    let runs = match listed {
+        None => Err(unlisted(heads, channel)),
+        Some((_, Err(not))) => Err(not.clone()),
+        Some((_, Ok(Channel::Empty { .. }))) => Err(empty(declared)),
+        Some((_, Ok(Channel::At { chain, .. }))) => runs(seams, reporters, fetch, declared, chain),
+    };
+    let moves_on = moves_on(heads, declared, listed.map(|(d, _)| d));
+    let state = state(declared, &should, &runs, moves_on.as_ref());
+    EnvironmentStatus {
+        environment: declared.name.clone(),
+        component: channel.component_name(),
+        channel: channel.name.clone(),
+        waits: declared.waits,
+        approvers: declared.approvers.clone(),
+        moves_on,
+        should,
+        runs,
+        state,
+    }
+}
+
+/// 131: a channel an environment follows that the policy does not list,
+/// absent naming it at the landed head.
+fn unlisted(heads: &Heads, channel: &ChannelId) -> Not {
+    Not::absent(
+        &Source::new(Seam::Policy, BOUND),
+        format!(
+            "channel {} of {} at {}",
+            channel.name,
+            channel.component_name(),
+            heads.landed.revision()
+        ),
     )
 }
 
-/// 58, 60, 98: the environments' part of status, unreadable naming the
-/// environments, since what each should run and runs is read from a
-/// target and status reads none. Targets are bound, for apply, and still
-/// status asks no target of `seams`, however many are bound, and no
-/// environment of the policy, until phase 2 builds environments in
-/// status (98); so nothing is counted: a count of none would read as
-/// none behind.
-pub fn environments(_seams: &Seams, _ask: &OverviewAsk) -> Answer<EnvironmentCounts> {
-    Err(no_target())
+/// 98: what an environment whose channel is empty runs: no counted report
+/// names it, and its channel is empty, so nothing ever came to it.
+fn empty(declared: &DeclaredEnvironment) -> Not {
+    Not::absent(
+        &store(),
+        format!(
+            "a counted report of environment {} of {}: its channel {} is empty",
+            declared.name,
+            declared.channel.component_name(),
+            declared.channel
+        ),
+    )
+}
+
+/// 43, 60, 91, 98: what `declared` runs, its newest report across the
+/// indexes `chain` moved to, fetched through `fetch` and counted through
+/// `reporters` (design D3, D4).
+fn runs(
+    seams: &Seams,
+    reporters: &Answer<Vec<NamedSigner>>,
+    fetch: &mut Fetch<'_>,
+    declared: &DeclaredEnvironment,
+    chain: &[(Digest, Promotion)],
+) -> Answer<Runs> {
+    let reporters = reporters.as_ref().map_err(Not::clone)?;
+    let indexes: Vec<Digest> = chain.iter().map(|(_, p)| p.to.index.clone()).collect();
+    let fetched = fetch.reports(&declared.name, &declared.channel, &indexes)?;
+    let counted = newest_of(seams, reporters, &fetched.reports)?;
+    let report = counted.newest.report;
+    Ok(Runs {
+        version: report.version,
+        index: report.index,
+        converged_at: report.converged_at,
+        at: report.at,
+        claim: counted.newest.claim,
+        signer: counted.signer,
+        read: fetched.read,
+    })
+}
+
+/// 37, 41, 97: what the channel `listed` of `declared` moves on: the
+/// environments it comes after, where an `after` made it; for one that
+/// waits, the channel its own is bound to with that channel's head as
+/// `heads` read it; nothing otherwise (design D7).
+fn moves_on(
+    heads: &Heads,
+    declared: &DeclaredEnvironment,
+    listed: Option<&DeclaredChannel>,
+) -> Option<MovesOn> {
+    match listed.map(|d| &d.moves) {
+        Some(Moves::Bound { after, .. }) if !after.is_empty() => Some(MovesOn::Reports {
+            after: after.clone(),
+        }),
+        Some(Moves::Bound { to, .. }) if declared.waits => {
+            let bound = ChannelId::new(declared.channel.component.clone(), to.clone());
+            let at = match heads.of(&bound) {
+                None => Err(unlisted(heads, &bound)),
+                Some((_, at)) => at.as_ref().map(head_at).map_err(Not::clone),
+            };
+            Some(MovesOn::Asking {
+                bound_to: to.clone(),
+                at,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// 98, rule core.4: an environment's state, in the order of design D6:
+/// unread where what it should run or what it runs is not answered,
+/// naming the answer in its place; behind where its newest counted report
+/// names another index than its channel's head; waiting where it waits
+/// and the channel its own is bound to is at another index than its own,
+/// unread naming that channel's answer where its head is not answered;
+/// and running what it should otherwise. One that comes after others
+/// moves on reports and never waits on a person.
+fn state(
+    declared: &DeclaredEnvironment,
+    should: &Answer<HeadAt>,
+    runs: &Answer<Runs>,
+    moves_on: Option<&MovesOn>,
+) -> Answer<State> {
+    let should = should.as_ref().map_err(Not::clone)?;
+    let runs = runs.as_ref().map_err(Not::clone)?;
+    let HeadAt::At { index, .. } = should else {
+        return Err(empty(declared));
+    };
+    if runs.index != *index {
+        return Ok(State::Behind);
+    }
+    match moves_on {
+        Some(MovesOn::Asking { at, .. }) => match at {
+            Ok(HeadAt::At { index: bound, .. }) if bound != index => Ok(State::Waiting),
+            Ok(_) => Ok(State::Converged),
+            Err(not) => Err(not.clone()),
+        },
+        Some(MovesOn::Reports { .. }) | None => Ok(State::Converged),
+    }
 }
 
 /// 132: one repository's row: every channel's head, or the channels'
-/// part's own answer where it gives none, and its environments' counts,
-/// or the answer given in their place.
+/// part's own answer where it gives none, and its environments' four
+/// counts, or the environments' part's own answer in their place.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Row {
     pub repository: RepositoryName,
@@ -509,7 +847,7 @@ fn every_answer<S: Serializer>(answers: &[Answer<Row>], serializer: S) -> Result
 /// 132: `repository`'s row, made from `overview` alone: each channel's
 /// head, its absent, refused or unreadable chain that head's own answer,
 /// or the channels' part's answer in place of the heads; and the
-/// environments as the overview answers them.
+/// environments' part's counts, or its answer where it gives none (58).
 pub fn row(repository: &RepositoryName, overview: &Overview) -> Row {
     Row {
         repository: repository.clone(),
@@ -519,16 +857,14 @@ pub fn row(repository: &RepositoryName, overview: &Overview) -> Row {
                 .map(|channel| Head {
                     component: channel.declared.channel.component_name(),
                     channel: channel.declared.channel.name.clone(),
-                    at: channel.at.as_ref().map_err(Not::clone).map(|at| match at {
-                        Channel::Empty { .. } => HeadAt::Empty,
-                        Channel::At { head, .. } => HeadAt::At {
-                            version: head.to.version.clone(),
-                            index: head.to.index.clone(),
-                        },
-                    }),
+                    at: channel.at.as_ref().map_err(Not::clone).map(head_at),
                 })
                 .collect()
         }),
-        environments: overview.environments.clone(),
+        environments: overview
+            .environments
+            .as_ref()
+            .map(|e| e.counts.clone())
+            .map_err(Not::clone),
     }
 }

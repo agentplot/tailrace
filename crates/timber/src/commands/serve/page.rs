@@ -191,7 +191,13 @@ fn overview_html(body: &mut String, overview: &Overview) {
     let _ = writeln!(
         body,
         "<h2>Environments</h2>\n<p>{}</p>",
-        environments(&overview.environments)
+        environments(
+            &overview
+                .environments
+                .as_ref()
+                .map(|e| e.counts.clone())
+                .map_err(Clone::clone)
+        )
     );
     body.push_str("<h2>Published from this host</h2>\n");
     published(body, &overview.published);
