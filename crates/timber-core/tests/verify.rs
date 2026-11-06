@@ -13,8 +13,9 @@ use timber_core::{verify, Published, Told, Verified, VerifiedNotes, VerifyAsk, N
 use timber_fakes::{Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times};
 use timber_seams::{
     Answer, AskedOf, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
-    Digest, Envelope, Held, IndexMeta, Manifest, Name, NamedSigner, Not, Outcome, Policy,
-    PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store, Version, Why,
+    DeclaredEnvironment, Digest, Envelope, Held, IndexMeta, Manifest, Name, NamedSigner, Not,
+    Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store,
+    Version, Why,
 };
 use world::{build_of, World, HOST, LANDING};
 
@@ -223,6 +224,10 @@ impl Policy for Watched {
 
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         self.inner.channels(revision)
+    }
+
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        self.inner.environments(revision)
     }
 }
 

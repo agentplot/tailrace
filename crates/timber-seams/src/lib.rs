@@ -8,7 +8,7 @@
 //! | the build | [`Build`] | B.2, 74 to 76, 139 |
 //! | the landing | [`Landing`] | B.3, 77, 78 |
 //! | the signer | [`Signer`] | B.4, 79 to 81 |
-//! | the policy | [`Policy`] | B.5, 82, 83, 131 |
+//! | the policy | [`Policy`] | B.5, 82, 83, 131, 136 |
 //! | a projection | [`Projection`] | B.6, 84 to 87, 115, 137, 140 |
 //! | a target | [`Target`] | B.7, 88 to 91 |
 //! | the ledger | [`Keeper`] | B.8, 120 to 122 |
@@ -170,6 +170,9 @@ mod tests {
         fn channels(&self, _: &Revision) -> Answer<PolicyChannels> {
             nothing(Seam::Policy, "channels")
         }
+        fn environments(&self, _: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+            nothing(Seam::Policy, "environments")
+        }
     }
 
     impl Projection for Nowhere {
@@ -297,6 +300,7 @@ mod tests {
             asked(signer.verify(&envelope, &[])),
             asked(policy.policy_for(&rev, &Audience::Acceptance)),
             asked(policy.channels(&rev)),
+            asked(policy.environments(&rev)),
             asked(projection.pack(
                 &site,
                 &BuildId::new("b7e1"),
@@ -362,7 +366,10 @@ mod tests {
         assert_eq!(named(Seam::Build), ["ensure", "report", "left"]);
         assert_eq!(named(Seam::Landing), ["landed", "verdicts-of"]);
         assert_eq!(named(Seam::Signer), ["sign", "verify"]);
-        assert_eq!(named(Seam::Policy), ["policy-for", "channels"]);
+        assert_eq!(
+            named(Seam::Policy),
+            ["policy-for", "channels", "environments"]
+        );
         assert_eq!(
             named(Seam::Projection),
             [

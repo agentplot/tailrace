@@ -1,9 +1,13 @@
-//! B.5 The policy: the authors' rule for an audience, and the channels
-//! it lists with how each moves, read at a landed revision (82, 83, 131).
+//! B.5 The policy: the authors' rule for an audience, the channels it
+//! lists with how each moves, and the environments it declares with
+//! their targets, read at a landed revision (82, 83, 131, 136).
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Answer, ChannelId, ChannelName, Check, ClaimKind, NamedSigner, Revision};
+use crate::{
+    Answer, ChannelId, ChannelName, Check, ClaimKind, EnvironmentName, NamedSigner, Revision,
+    SignerId,
+};
 
 /// Whom a policy is for (82): the gate's acceptance, a channel with its
 /// component (125), or a consumer layout.
@@ -189,6 +193,34 @@ pub struct PolicyChannels {
     pub held: Vec<HeldChannel>,
 }
 
+text! {
+    /// A target profile, by the one key an environment's `target` table
+    /// names it by (92, C.10).
+    TargetProfile
+}
+
+/// C.10: an environment's target: the profile its `target` table names
+/// by its one key, and that key's table as written, the target's own
+/// settings, which the target alone reads (45).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TargetTable {
+    pub profile: TargetProfile,
+    pub settings: serde_json::Value,
+}
+
+/// 136: an environment the policy declares: the channel it follows, with
+/// its component (125), the one made for it where it waits or comes
+/// after another (41, C.10); whether it waits, and whom it waits on
+/// where it does (97); and its target where it names one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeclaredEnvironment {
+    pub name: EnvironmentName,
+    pub channel: ChannelId,
+    pub waits: bool,
+    pub approvers: Vec<SignerId>,
+    pub target: Option<TargetTable>,
+}
+
 pub trait Policy {
     /// 82: the claims `audience` requires, read from the repository at
     /// `revision`, a landed revision of the branch the policy governs
@@ -205,13 +237,20 @@ pub trait Policy {
     /// switched on, with the line that switches it on, an empty list
     /// where it holds none (C.10); one answer, so the two never disagree.
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels>;
+
+    /// 136: every environment the policy at `revision` declares, ordered
+    /// by component and then name, each with the channel it follows,
+    /// whether it waits, whom it waits on and its target with its own
+    /// settings as written (C.10); an empty list, never absent, where it
+    /// declares none.
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>>;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{round_trip, ComponentName, SignerId};
-    use serde_json::json;
+    use crate::{round_trip, ComponentName};
+    use serde_json::{json, Value};
 
     fn gate() -> NamedSigner {
         NamedSigner {
@@ -496,5 +535,46 @@ mod tests {
         }
         round_trip(answer);
         round_trip(PolicyChannels::default());
+    }
+
+    #[test]
+    fn an_environment_reads_back_with_its_targets_settings_or_none() {
+        let prod = DeclaredEnvironment {
+            name: EnvironmentName::new("prod"),
+            channel: ChannelId::new(Some(ComponentName::new("web")), ChannelName::new("prod")),
+            waits: true,
+            approvers: vec![SignerId::new("box")],
+            target: Some(TargetTable {
+                profile: TargetProfile::new("nix_cache"),
+                settings: json!({ "attic": "fleet:web", "closures": ["web-srv"] }),
+            }),
+        };
+        assert_eq!(
+            serde_json::to_value(&prod).unwrap(),
+            json!({
+                "name": "prod",
+                "channel": { "component": "web", "name": "prod" },
+                "waits": true,
+                "approvers": ["box"],
+                "target": {
+                    "profile": "nix_cache",
+                    "settings": { "attic": "fleet:web", "closures": ["web-srv"] },
+                },
+            })
+        );
+        round_trip(prod.clone());
+
+        let beta = DeclaredEnvironment {
+            name: EnvironmentName::new("staging"),
+            channel: ChannelId::new(None, ChannelName::new("beta")),
+            waits: false,
+            approvers: vec![],
+            target: None,
+        };
+        let json = serde_json::to_value(&beta).unwrap();
+        assert_eq!(json["target"], Value::Null, "{json}");
+        round_trip(beta.clone());
+        round_trip(vec![prod, beta]);
+        round_trip(Vec::<DeclaredEnvironment>::new());
     }
 }

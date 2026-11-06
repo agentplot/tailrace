@@ -164,8 +164,8 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use timber_seams::{
     Answer, AskedOf, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName,
-    DeclaredChannel, HeldChannel, Moves, NamedSigner, Not, Policy, PolicyChannels, Required,
-    RequiredClaim, Revision, Seam, SignerId, Source, Why,
+    DeclaredChannel, DeclaredEnvironment, HeldChannel, Moves, NamedSigner, Not, Policy,
+    PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Source, Why,
 };
 use toml::Spanned;
 
@@ -1463,6 +1463,16 @@ impl Policy for PolicyFile {
                 .collect(),
             held,
         })
+    }
+
+    /// 136: unreadable naming the file's environments, which this
+    /// profile does not read yet, never an empty list for them.
+    fn environments(&self, _: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        Err(Not::unreadable(
+            self.source(),
+            format!("the environments in {POLICY_FILE}"),
+            Some("the policy file profile reads no environment yet".into()),
+        ))
     }
 }
 

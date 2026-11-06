@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 use timber_seams::{
-    Answer, Audience, ChannelId, DeclaredChannel, HeldChannel, Moves, Not, Policy, PolicyChannels,
-    Required, Revision, Seam,
+    Answer, Audience, ChannelId, DeclaredChannel, DeclaredEnvironment, HeldChannel, Moves, Not,
+    Policy, PolicyChannels, Required, Revision, Seam,
 };
 
 use crate::Fake;
@@ -20,6 +20,7 @@ use crate::Fake;
 pub enum PolicyOp {
     PolicyFor,
     Channels,
+    Environments,
 }
 
 /// What each audience requires, at every revision and at one, the
@@ -160,6 +161,14 @@ impl Policy for FakePolicy {
                 })
                 .collect();
             Ok(PolicyChannels { in_force, held })
+        })
+    }
+
+    /// 136: an empty list: the fake declares no environment.
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        let given = json!({ "revision": revision });
+        self.ask(PolicyOp::Environments, given, "the environments", |_, _| {
+            Ok(vec![])
         })
     }
 }

@@ -10,8 +10,8 @@ use timber_core::{answer_json, in_force, ChannelInForce, ChannelsInForce, InForc
 use timber_fakes::{FakePolicy, LandingOp, PolicyOp, PROFILE};
 use timber_seams::{
     Answer, AskedOf, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
-    EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim,
-    Revision, Seam, Seams, Source, Why,
+    DeclaredEnvironment, EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels,
+    Required, RequiredClaim, Revision, Seam, Seams, Source, Why,
 };
 use world::World;
 
@@ -166,6 +166,10 @@ impl Policy for OneUnreadable {
 
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         self.inner.channels(revision)
+    }
+
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        self.inner.environments(revision)
     }
 }
 
