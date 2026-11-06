@@ -633,9 +633,11 @@ impl ProjectionRig for FakeProjectionRig {
     }
 }
 
-/// The fake target.
+/// The fake target, which reads `at` of an environment's settings and
+/// no other key, and holds a marker of what it applied or holds none.
 pub struct FakeTargetRig {
     pub target: FakeTarget,
+    marker: bool,
     environments: Cell<u32>,
 }
 
@@ -644,10 +646,30 @@ impl FakeTargetRig {
     /// read.
     pub const REASON: &'static str = "the marker of what was applied is gone";
 
+    /// The one settings key the fake target reads, and the key the rig's
+    /// foreign settings add.
+    pub const READS: &'static str = "at";
+    pub const FOREIGN: &'static str = "token";
+
+    /// A fake target that holds a marker of what it applied.
     pub fn new() -> Self {
+        let target = FakeTarget::new();
+        target.reads([Self::READS]);
         FakeTargetRig {
-            target: FakeTarget::new(),
+            target,
+            marker: true,
             environments: Cell::new(0),
+        }
+    }
+
+    /// A fake target that holds no marker of what it applied, the rig
+    /// telling the fake so (119).
+    pub fn holding_no_marker() -> Self {
+        let rig = Self::new();
+        rig.target.holds_no_marker();
+        FakeTargetRig {
+            marker: false,
+            ..rig
         }
     }
 
@@ -658,7 +680,7 @@ impl FakeTargetRig {
             name: EnvironmentName::new(format!("environment-{n}")),
             channel: ChannelId::new(None, ChannelName::new(format!("channel-{n}"))),
             waits: false,
-            settings: json!({}),
+            settings: json!({ Self::READS: format!("place-{n}") }),
         }
     }
 }
@@ -692,10 +714,25 @@ impl TargetRig for FakeTargetRig {
         self.next()
     }
 
+    /// Where the fake holds no marker, no environment's state can be read,
+    /// and the reason is that it holds none.
     fn unreadable_environment(&self) -> (Environment, String) {
         let environment = self.next();
+        if !self.marker {
+            return (environment, timber_fakes::NO_MARKER.into());
+        }
         self.target.unreadable(&environment.name, Self::REASON);
         (environment, Self::REASON.into())
+    }
+
+    fn holds_marker(&self) -> bool {
+        self.marker
+    }
+
+    fn foreign_settings(&self) -> (Environment, String) {
+        let mut environment = self.next();
+        environment.settings[Self::FOREIGN] = json!("a credential");
+        (environment, Self::FOREIGN.into())
     }
 }
 
