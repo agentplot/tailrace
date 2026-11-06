@@ -2,7 +2,7 @@
 //! with the runner and reported as any profile is (93; design D9).
 
 use timber_conformance::core::{
-    cache, copy, gate, layouts, ledger, naming, publish, record, status, verify, version,
+    apply, cache, copy, gate, layouts, ledger, naming, publish, record, status, verify, version,
 };
 use timber_conformance::fakes::{
     FakeBindingRig, FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig,
@@ -379,4 +379,12 @@ fn one_scenarios_store_is_not_the_nexts() {
         },
     ];
     run(store::GROUP, &scenarios, &|| Box::new(FakeStoreRig::new())).assert();
+}
+
+#[test]
+fn the_core_applies_over_the_fakes() {
+    run(apply::GROUP, &apply::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
 }
