@@ -11,7 +11,7 @@
 //! | the signer | [`FakeSigner`] | the identity at hand, the identities expired |
 //! | the policy | [`FakePolicy`] | what each audience requires, per revision, the channels that follow each publish, and the environments each revision declares |
 //! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes, whether it packs cache entries, the build identities it holds no archive for, each checkout's pins, each render of artifacts |
-//! | a target | [`FakeTarget`] | per environment, its channel's head and what it runs |
+//! | a target | [`FakeTarget`] | per environment, what it runs or why it cannot be read; whether it holds a marker, and the settings keys it reads |
 //! | the keeper | [`FakeKeeper`] | per channel and its component, a chain of promotion claims |
 //!
 //! Each fake is a [`Fake`] over its state and the one [`Script`] every

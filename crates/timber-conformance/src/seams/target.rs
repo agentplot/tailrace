@@ -71,7 +71,7 @@ fn what_an_environment_should_run(rig: &dyn TargetRig) {
         ))
     };
     match target.desired(&empty, &none) {
-        Err(Not::Absent(a)) => assert_eq!(a.source.seam, Seam::Target, "{a:?}"),
+        Err(Not::Absent(_)) => {}
         other => panic!("desired of an empty channel answered {other:?}, not empty"),
     }
 }

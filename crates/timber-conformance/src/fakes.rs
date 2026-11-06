@@ -672,12 +672,10 @@ impl TargetRig for FakeTargetRig {
         Verified::new(digest.clone(), Version::new("1.0.0"))
     }
 
-    fn environment(&self, head: Option<&Digest>) -> Environment {
-        let environment = self.next();
-        if let Some(head) = head {
-            self.target.head(&environment.name, head);
-        }
-        environment
+    /// The fake answers desired with the head the suite hands it, so the
+    /// rig tells it nothing of `head`.
+    fn environment(&self, _head: Option<&Digest>) -> Environment {
+        self.next()
     }
 
     fn unreadable_environment(&self) -> (Environment, String) {
