@@ -1,8 +1,10 @@
 //! The surfaces' group of the conformance suite over the command line and
 //! over the served page: publish, verify and status asked with `--json`,
 //! and a repository's `status.json` asked of the process's own handling
-//! of a request, answer what the one core answers (56, 57, 132; design
-//! D6, and status-on-any-machine's D9).
+//! of a request, answer what the one core answers, every environment
+//! with what it should run and what it runs among it, S11 (56, 57, 98,
+//! 132; design D6, status-on-any-machine's D9, and D12 of the change that
+//! reads environments in status).
 
 use clap::Parser;
 use serde_json::{json, Value};

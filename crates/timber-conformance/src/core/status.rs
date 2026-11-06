@@ -13,7 +13,8 @@
 //! into the host's copy and never asked of the target, with the notes
 //! between where it is behind, as last fetched where the store no longer
 //! answers, the same with the copy deleted, counted on the part and the
-//! row (9, 23, 34, 37, 40, 41, 43, 58 to 61, 63, 91, 97, 98, 132, 134).
+//! row, and S11 (9, 23, 34, 37, 40, 41, 43, 56 to 61, 63, 91, 97, 98, 132,
+//! 134).
 
 use std::fs;
 
@@ -160,6 +161,12 @@ pub fn scenarios() -> Vec<Scenario<FakeWorld>> {
             plays: None,
             cites: &[98, 132],
             run: one_environment_of_each_state_counted_on_the_part_and_the_row,
+        },
+        Scenario {
+            name: "S11 each environment with what it should run and what it runs",
+            plays: Some("S11"),
+            cites: &[56, 57, 98, 132],
+            run: s11_each_environment_with_what_it_should_run_and_what_it_runs,
         },
     ]
 }
@@ -1509,4 +1516,78 @@ fn one_environment_of_each_state_counted_on_the_part_and_the_row(world: &FakeWor
             n
         );
     }
+}
+
+fn s11_each_environment_with_what_it_should_run_and_what_it_runs(world: &FakeWorld) {
+    let [first, _, third] = one_behind_and_one_not(world);
+    let answer = asked(world);
+    let shown: Vec<(
+        &str,
+        &timber_seams::Answer<HeadAt>,
+        Option<&Digest>,
+        Option<State>,
+    )> = environments_of(&answer)
+        .environments
+        .iter()
+        .map(|e| {
+            (
+                e.environment.as_str(),
+                &e.should,
+                e.runs.as_ref().ok().map(|r| &r.index),
+                e.state.as_ref().ok().copied(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            (
+                EU,
+                &Ok(at(&third)),
+                Some(&third.index),
+                Some(State::Converged)
+            ),
+            (
+                SRV,
+                &Ok(at(&third)),
+                Some(&first.index),
+                Some(State::Behind)
+            ),
+        ],
+        "status does not name each environment with what it should run, what it runs \
+         and whether they differ"
+    );
+    // 57: as a program reads it.
+    let json = serde_json::to_value(&answer).expect("status serializes");
+    for (n, (name, runs, state)) in [(EU, &third, "converged"), (SRV, &first, "behind")]
+        .into_iter()
+        .enumerate()
+    {
+        let shown = &json["environments"]["value"]["environments"][n];
+        assert_eq!(shown["environment"], name, "{json}");
+        assert_eq!(shown["should"]["value"]["version"], GROWN, "{json}");
+        assert_eq!(
+            shown["should"]["value"]["index"],
+            third.index.as_str(),
+            "{json}"
+        );
+        assert_eq!(
+            shown["runs"]["value"]["version"],
+            runs.version.as_str(),
+            "{json}"
+        );
+        assert_eq!(
+            shown["runs"]["value"]["index"],
+            runs.index.as_str(),
+            "{json}"
+        );
+        assert_eq!(shown["runs"]["value"]["converged_at"], CONVERGED, "{json}");
+        assert_eq!(shown["state"]["value"], state, "{json}");
+    }
+    // 132: the row made from it.
+    assert_eq!(
+        row(&world.repository(), &answer).environments,
+        Ok(counts(1, 1, 0, 0)),
+        "the row's counts are not one running what it should and one behind"
+    );
 }
