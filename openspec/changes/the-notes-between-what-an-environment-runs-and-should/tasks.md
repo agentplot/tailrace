@@ -2,7 +2,7 @@
 
 ## 1. The renumbered bolt
 
-- [ ] 1.1 Take `bolt/tailrace-the-nix-fleet-pushed` into this branch once it holds `main` and the fix that renumbers its records 0026 and 0027 to 0027 and 0028 with every citation (design D1). Verify that `docs/adr/` holds 0026 (the shell carries bun), 0027 (a Nix closure is one artifact) and 0028 (a pushed machine's report), that rules core.70 to core.73 cite 0027 and 0028, and that `moon run root:adrs` and `moon run ':#check-fast'` pass with nothing of this change written. Where the bolt holds no such fix, stop short with `flume needs`, naming the fix.
+- [x] 1.1 Take `bolt/tailrace-the-nix-fleet-pushed` into this branch once it holds `main` and the fix that renumbers its records 0026 and 0027 to 0027 and 0028 with every citation (design D1). Verify that `docs/adr/` holds 0026 (the shell carries bun), 0027 (a Nix closure is one artifact) and 0028 (a pushed machine's report), that rules core.70 to core.73 cite 0027 and 0028, and that `moon run root:adrs` and `moon run ':#check-fast'` pass with nothing of this change written. Where the bolt holds no such fix, stop short with `flume needs`, naming the fix.
 
 ## 2. The core
 
