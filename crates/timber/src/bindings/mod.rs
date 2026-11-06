@@ -116,6 +116,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
+use timber_core::{History, RepositoryName};
 use timber_seams::{
     Answer, Branch, Digest, Ecosystem, EcosystemName, Envelope, Held, IsLanded, Landing, Manifest,
     Name, NamedSigner, Not, Put, Revision, Seam, Seams, SignerId, Source, Store, Verdicts, Version,
@@ -685,7 +686,11 @@ pub fn bind(
         // Apply judges the claims attached to the head's index, and each
         // target reads through a store of its own; neither is made (42).
         let bound = profiles::store::bind(store, false)?;
-        let targets = profiles::target::bound(profiles::store::bind(store, false)?, repository);
+        let targets = profiles::target::bound(
+            &|| profiles::store::bind(store, false),
+            repository,
+            repository_named(repository, remote.as_deref()),
+        )?;
         let keeper = ledger(store)?;
         (bound, keeper, BTreeMap::new(), targets)
     } else {
@@ -737,6 +742,34 @@ pub fn landing_remote(
         Some(landing) => profiles::landing::remote(landing),
         None => profiles::landing::given_remote(file, repository),
     }
+}
+
+/// 114: the repository the checkout at `checkout` is of, by the owner and
+/// name the address of its landing's remote, `remote`, ends in. Absent
+/// where the landing has no remote or the remote no address, and
+/// unreadable naming the remote and its address where it ends in no owner
+/// and name. It reads the checkout's history and writes nothing.
+pub fn repository_named(checkout: &Path, remote: Option<&str>) -> Answer<RepositoryName> {
+    let remote = remote.ok_or_else(|| {
+        Not::absent(
+            &Source::history(checkout.display()),
+            "remote of the landing, which neither [landing] nor the repository names",
+        )
+    })?;
+    let history = History::open(checkout)?;
+    let url = history.remote_url(remote)?.ok_or_else(|| {
+        Not::absent(
+            &Source::history(remote),
+            format!("address of the remote {remote}"),
+        )
+    })?;
+    RepositoryName::from_remote(&url).ok_or_else(|| {
+        Not::unreadable(
+            &Source::history(remote),
+            format!("an owner and a name in the address of the remote {remote}, {url}"),
+            None,
+        )
+    })
 }
 
 /// The binding for `command` in the repository at `repository`, from the

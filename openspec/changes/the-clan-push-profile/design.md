@@ -119,6 +119,10 @@ colmena or deploy-rs push profile would be a key of its own. The code
 lives in `profiles/target/nix_fleet/push/`, the bolt's directory, which
 keeps room for the pull profile beside it.
 
+A `machine` is letters, digits, `-` and `_`, beginning with a letter
+or a digit, since it is a part of a Nix attribute path and an argument
+of clan's; any other is unreadable naming `machine`.
+
 Not taken: the host or user in the table. clan holds them in the
 fleet's own inventory (`deploy.targetHost`), and the table holds no
 credential and no address (45, C.10).
@@ -133,7 +137,12 @@ from the family's `bound`. Its apply runs these steps:
    (core.60). Find the `file` artifact whose name is the table's
    `closure` and read its bytes by digest. Pass the bytes to
    `nix_closure`; anything other than exactly one root is refused,
-   naming the artifact.
+   naming the artifact. An index naming no `file` artifact of the
+   output is absent, naming the output and the index, since what the
+   apply asks for is not there. An index naming no revision is refused,
+   since no flake can be evaluated where it was published. The index
+   and the closure file are read by the functions of `nix_closure` the
+   Nix cache target reads them by, so neither profile keeps a copy.
 2. **The revision's checkout.** Make a detached worktree of the
    checkout at the revision under `<common>/timber/fleet/<revision>`,
    or reuse it, as the moon build profile makes
@@ -179,6 +188,28 @@ one (119). `at` is the machine's own clock at the write, so it is the
 time the machine converged as the machine says it. `current` and
 `report` read `readlink /run/current-system` and the marker in one
 `clan ssh`, and answer as the spec says.
+
+The `<owner>/<name>` of the path is the repository the checkout is of,
+by the owner and name its landing's remote ends in, as the serving
+process names it (114); the family's `bound` is handed it, and an
+operation that needs the marker answers why it is unread where the
+checkout has none. current and report are asked of an environment
+alone, with no index to read a repository from, so the checkout's is
+the one both apply and they can name. An index naming another
+publishing repository is refused before anything runs, since the
+marker apply would write is one current never reads. Not taken: the
+index's repository at apply and the checkout's at current, which would
+leave a marker no read finds; and a search of the markers directory by
+component and environment, which two repositories deploying one
+machine would make ambiguous.
+
+`clan ssh` hands the command to the machine's login shell as `sh -c
+<script>` and answers no exit of it (its interactive ssh ignores the
+remote command's exit), so each script ends by printing a line of its
+own, and a run whose stdout lacks that line answers unread with clan's
+and ssh's stderr verbatim. Every part of the path is single-quoted in
+the script, and the script holds no backslash pair, so a login shell of
+any kind parses it the same.
 
 The deploy user's directory is used because the Macs deploy as
 `chuck`, srv as `root`, and both can write their own state with no

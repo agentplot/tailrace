@@ -574,7 +574,7 @@ fn an_apply_binds_every_target_built_through_a_store_it_never_makes() {
     let before = files(&layout);
     let binding = bound(&host, &layout, true, For::Apply).unwrap();
     let profiles: Vec<&str> = binding.seams.targets.keys().map(|p| p.as_str()).collect();
-    assert_eq!(profiles, ["nix_cache"]);
+    assert_eq!(profiles, ["clan", "nix_cache"]);
     assert!(binding
         .seams
         .target(&timber_seams::TargetProfile::new("nix_cache"))

@@ -34,6 +34,18 @@ reaches it (45).
 - **WHEN** the table names `machine` alone
 - **THEN** apply is unreadable naming `closure` as required
 
+### Requirement: A machine is named as clan and Nix name one
+
+The table's `machine` SHALL be letters, digits, `-` and `_`, beginning
+with a letter or a digit, since it is a part of a Nix attribute path
+and an argument of clan's. Any other SHALL make every operation
+unreadable naming `machine`, with nothing run.
+
+#### Scenario: A machine named as an option
+
+- **WHEN** the table names `machine = "-swancloud"`
+- **THEN** apply is unreadable naming `machine`, and nothing runs
+
 ### Requirement: desired is the channel's head
 
 The profile SHALL answer desired with the head the core hands it,
@@ -51,18 +63,31 @@ digest through the profile's store binding, and from it the revision
 the index names and the `file` artifact of the table's `closure` output,
 read by its digest (42, rule core.4). The closure SHALL be read through
 the family's closure reader, and it SHALL name exactly one root. A
-missing artifact, or a closure naming no root or several, SHALL refuse
-the apply naming the artifact, with nothing run on the machine.
+closure naming no root or several SHALL refuse the apply naming the
+artifact, with nothing run on the machine.
 
 #### Scenario: A closure of two roots
 
 - **WHEN** the version's `swancloud-srv` artifact names two store paths
 - **THEN** apply is refused naming the artifact and its two roots, and clan is not run
 
+### Requirement: A version with no closure of the output or no revision is not applied
+
+An index naming no `file` artifact of the table's output SHALL answer
+absent, naming the output and the index. An index naming no revision
+SHALL refuse the apply naming the index, since no flake can be
+evaluated where it was published. In either, nothing SHALL run on the
+machine.
+
 #### Scenario: No artifact of the output
 
 - **WHEN** the version's index names no artifact of the output `swancloud-srv`
 - **THEN** apply is absent naming the output and the index
+
+#### Scenario: An index naming no revision
+
+- **WHEN** the version's index was put before indexes named a revision
+- **THEN** apply is refused naming the index, and nothing runs
 
 ### Requirement: Apply runs only what the version's closure names
 
@@ -136,6 +161,20 @@ marker whole.
 
 - **WHEN** apply converges `srv` on version `0.4.0` at index `sha256:aa…`
 - **THEN** the marker for `srv` names `sha256:aa…`, `0.4.0`, the closure's root and the time of the switch
+
+### Requirement: The marker is kept under the checkout's repository
+
+The marker's path SHALL name the repository the checkout is of, by the
+owner and name its landing's remote ends in, at apply, current and
+report alike (114). Where the checkout names none, each SHALL answer
+why, with nothing run. An index naming another publishing repository
+SHALL refuse the apply naming both, with nothing run on the machine
+(core.60).
+
+#### Scenario: A version published from another repository
+
+- **WHEN** the index names the publishing repository `someone/else` and the checkout is of `afterthought/swancloud`
+- **THEN** apply is refused naming both, and nothing runs
 
 ### Requirement: A marker that cannot be written is said
 

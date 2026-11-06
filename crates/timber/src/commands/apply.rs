@@ -788,7 +788,12 @@ mod tests {
             json!({ "attic": "fleet:swancloud", "closures": [COMPONENT] }),
         );
         let mut binding = s.binding();
-        binding.seams.targets = profiles::target::bound(Box::new(s.fakes.store.clone()), &s.repo);
+        let store = || Ok(Box::new(s.fakes.store.clone()) as Box<dyn timber_seams::Store>);
+        let repository = timber_seams::RepositoryName {
+            owner: "afterthought".into(),
+            name: "swancloud".into(),
+        };
+        binding.seams.targets = profiles::target::bound(&store, &s.repo, Ok(repository)).unwrap();
         let before = files(s.dir.path());
         let (_, printed) = s.run_over(&Ok(binding), &["apply", "cache", "--json"]);
         let printed: Value = serde_json::from_str(&printed).unwrap();
