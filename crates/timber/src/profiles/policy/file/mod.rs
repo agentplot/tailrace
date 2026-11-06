@@ -2,10 +2,11 @@
 //! `.config/timber.toml` read with git from the tree of the revision
 //! asked, never from a checkout (65, rule core.22; design D3, D4). It
 //! reads its own tables, the `name` of each `[[component]]`, and of each
-//! environment its `channel`, `policy`, `after` and `approvers`, leaving
-//! its `target` to the target's reader, and leaves the core's other keys
-//! (`outputs`, `[version]`, `[projections]`, the rest of `[[component]]`)
-//! and every other reader's alone:
+//! environment its `channel`, `policy`, `after`, `approvers` and the one
+//! key of its `target`, carrying that key's table to the target as
+//! written, and leaves the core's other keys (`outputs`, `[version]`,
+//! `[projections]`, the rest of `[[component]]`) and every other
+//! reader's alone:
 //!
 //! ```toml
 //! [[component]]
@@ -53,11 +54,15 @@
 //! approvers = ["box"]
 //!
 //! # prod waits on a yes: its own channel, prod, bound to stable, which
-//! # only box may ask to move.
+//! # only box may ask to move. Its target is named by its profile, the
+//! # one key of its target table, whose table is the target's own.
 //! [environments.web.prod]
 //! channel = "stable"
 //! policy = "manual"
 //! approvers = ["box"]
+//!
+//! [environments.web.prod.target.pushed]
+//! at = "a place of the target's own"
 //! ```
 //!
 //! A signer's table names exactly one key besides `kinds` and `checks`,
@@ -106,9 +111,22 @@
 //! `[environments.<component>.<name>]` alike, each holding C.10's words
 //! and no others: `channel`, `policy`, `after`, `target`, and `approvers`
 //! where it is manual, a target's own settings sitting in the target's
-//! table. A file that breaks any of it is unreadable naming the table,
-//! and `approvers` on an environment whose policy is auto, which names
-//! no one who could be asked, naming the field too (C.10).
+//! table. `target` is a table of exactly one key, the profile of the
+//! environment's target, whose value is a table, that target's own
+//! settings, which this profile carries as written, a date or a time as
+//! its text, and reads nothing of (45, 136). A file that breaks any of it
+//! is unreadable naming the table, a `target` of no key, of two, or whose
+//! key names no table naming `target` too, and `approvers` on an
+//! environment whose policy is auto, which names no one who could be
+//! asked, naming the field too (C.10).
+//!
+//! The environments are answered from the same pass, so the channels and
+//! the environments never disagree and refuse a broken table alike (136):
+//! each environment by component and then name, with the channel it
+//! follows, the one made for it where it is manual or names `after`,
+//! whether it waits, its approvers where it is manual, and its target or
+//! none. A revision with no file, or a file with no environment, answers
+//! an empty list.
 //!
 //! The policy for a given or made channel requires the gate's
 //! acceptance, by every signer `[signers]` lets claim acceptance, then
@@ -164,8 +182,9 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use timber_seams::{
     Answer, AskedOf, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName,
-    DeclaredChannel, DeclaredEnvironment, HeldChannel, Moves, NamedSigner, Not, Policy,
-    PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Source, Why,
+    DeclaredChannel, DeclaredEnvironment, EnvironmentName, HeldChannel, Moves, NamedSigner, Not,
+    Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Source,
+    TargetProfile, TargetTable, Why,
 };
 use toml::Spanned;
 
@@ -277,17 +296,16 @@ struct ChannelTable {
 }
 
 /// An environment's table, C.10's words and no others: the channel it
-/// names, its policy, the environments it comes after, its target, whose
-/// value is the target's reader's and read nothing of here, and, where it
-/// is manual, who may say yes to it; any other key is kept to be refused.
+/// names, its policy, the environments it comes after, its target, as
+/// written until [`target_of`] reads its one key, and, where it is
+/// manual, who may say yes to it; any other key is kept to be refused.
 #[derive(Deserialize)]
 struct EnvironmentTable {
     channel: Option<ChannelName>,
     policy: Option<String>,
     #[serde(default)]
     after: Vec<String>,
-    #[serde(rename = "target")]
-    _target: Option<serde::de::IgnoredAny>,
+    target: Option<toml::Value>,
     approvers: Option<Vec<SignerId>>,
     #[serde(flatten)]
     other: BTreeMap<String, toml::Value>,
@@ -347,6 +365,14 @@ struct Resolved {
     table: String,
     require: Vec<Entry>,
     approvers: Vec<SignerId>,
+}
+
+/// The table in force resolved in one pass: every channel by its
+/// identity, and every environment as the policy answers it, by
+/// component and then name (136).
+struct Resolution {
+    channels: BTreeMap<ChannelId, Resolved>,
+    environments: Vec<DeclaredEnvironment>,
 }
 
 fn source() -> Source {
@@ -814,16 +840,17 @@ fn approvers_of(
     }
 }
 
-/// 125, 131, C.10: every channel of the table in force, by its identity,
-/// in one pass shared by the channels listed and one channel's policy
-/// (83), in D4's six steps: the components; the channels' tables; how
-/// each table moves and who may ask for it; the environments and the
-/// channels their words make; a table under a made channel read as a
-/// line under it; and every binding, and every environment's channel,
-/// within its component and in no cycle. A channel held off is no
-/// channel. The first that breaks is the words that make the file
-/// unreadable, naming its table.
-fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
+/// 125, 131, 136, C.10: every channel of the table in force, by its
+/// identity, and every environment as the policy answers it, in one pass
+/// shared by the channels listed, one channel's policy and the
+/// environments (83), in D4's six steps: the components; the channels'
+/// tables; how each table moves and who may ask for it; the environments,
+/// their targets and the channels their words make; a table under a made
+/// channel read as a line under it; and every binding, and every
+/// environment's channel, within its component and in no cycle. A channel
+/// held off is no channel. The first that breaks is the words that make
+/// the file unreadable, naming its table.
+fn resolve(table: &InForce) -> Result<Resolution, String> {
     // 1: the components, or none.
     let components = components(table.file);
     let scopes = scopes(&components);
@@ -879,6 +906,7 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
     )?;
     let mut follows: Vec<(String, Option<ComponentName>, ChannelName)> = Vec::new();
     let mut made: BTreeMap<ChannelId, (String, ChannelName, Vec<SignerId>)> = BTreeMap::new();
+    let mut declared: Vec<DeclaredEnvironment> = Vec::new();
     for scope in &scopes {
         let of: BTreeMap<&str, (&String, &EnvironmentTable)> = environments
             .iter()
@@ -909,24 +937,39 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
                     "{env_table} names approvers, and only a manual environment waits on a yes: no one says yes to an environment whose policy is auto (C.10)"
                 ));
             }
+            let target = target_of(env_table, &env.target)?;
             follows.push(((*env_table).clone(), scope.clone(), channel.clone()));
             let approvers = approvers_of(env_table, &env.approvers, &table.file.signers)?;
             let bound = if !env.after.is_empty() {
-                after(&of, name, env_table, env, scope)?
+                Some(after(&of, name, env_table, env, scope)?)
             } else if manual {
-                channel
+                Some(channel.clone())
             } else {
-                continue;
+                None
             };
-            if table.givens.contains(*name) {
-                return Err(format!(
-                    "{env_table} makes a channel named {name}, which the givens hold, held off or not (C.10)"
-                ));
-            }
-            made.insert(
-                ChannelId::new(scope.clone(), ChannelName::new(*name)),
-                ((*env_table).clone(), bound, approvers),
-            );
+            let followed = match bound {
+                None => ChannelId::new(scope.clone(), channel),
+                Some(bound) => {
+                    if table.givens.contains(*name) {
+                        return Err(format!(
+                            "{env_table} makes a channel named {name}, which the givens hold, held off or not (C.10)"
+                        ));
+                    }
+                    let own = ChannelId::new(scope.clone(), ChannelName::new(*name));
+                    made.insert(
+                        own.clone(),
+                        ((*env_table).clone(), bound, approvers.clone()),
+                    );
+                    own
+                }
+            };
+            declared.push(DeclaredEnvironment {
+                name: EnvironmentName::new(*name),
+                channel: followed,
+                waits: manual,
+                approvers,
+                target,
+            });
         }
     }
 
@@ -1038,7 +1081,89 @@ fn resolve(table: &InForce) -> Result<BTreeMap<ChannelId, Resolved>, String> {
             }
         }
     }
-    Ok(resolved)
+    declared.sort_by(|a, b| (&a.channel.component, &a.name).cmp(&(&b.channel.component, &b.name)));
+    Ok(Resolution {
+        channels: resolved,
+        environments: declared,
+    })
+}
+
+/// The form an environment's `target` takes, as an answer that refuses
+/// one says it (C.10).
+const TARGET_FORM: &str = "an environment's target is a table of one key, its target's profile, whose value is that target's own table (C.10)";
+
+/// 136, C.10: the target the environment's table `table` names in
+/// `target`: the profile its one key names, and that key's table, the
+/// target's own settings, carried as written and read nothing of here,
+/// since the target alone reads them (45, rule core.43); none where it
+/// names no target. A `target` that is no table, that names no profile or
+/// several, or whose profile's value is no table, is the words that make
+/// the file unreadable, naming the table and `target`.
+fn target_of(table: &str, target: &Option<toml::Value>) -> Result<Option<TargetTable>, String> {
+    let Some(target) = target else {
+        return Ok(None);
+    };
+    let target = target
+        .as_table()
+        .ok_or_else(|| format!("{table} names target, which is no table, and {TARGET_FORM}"))?;
+    let keys: Vec<(&String, &toml::Value)> = target.iter().collect();
+    let (profile, value) = match keys.as_slice() {
+        [one] => *one,
+        [] => {
+            return Err(format!(
+                "{table} names target with no profile in it, and {TARGET_FORM}"
+            ))
+        }
+        several => {
+            let named: Vec<String> = several.iter().map(|(k, _)| format!("target.{k}")).collect();
+            return Err(format!(
+                "{table} names {}, and {TARGET_FORM}",
+                named.join(" and ")
+            ));
+        }
+    };
+    if !value.is_table() {
+        return Err(format!(
+            "{table} names target.{profile}, which is no table, and {TARGET_FORM}"
+        ));
+    }
+    Ok(Some(TargetTable {
+        profile: TargetProfile::new(profile),
+        settings: settings_of(table, profile, value)?,
+    }))
+}
+
+/// A target's settings as `target.<profile>` of the table `table` writes
+/// them, in the form the policy answers them: each value as its JSON
+/// one, a date or a time as the text TOML writes it. A float JSON cannot
+/// hold, an infinity or not a number, is the words that make the file
+/// unreadable.
+fn settings_of(
+    table: &str,
+    profile: &str,
+    value: &toml::Value,
+) -> Result<serde_json::Value, String> {
+    use serde_json::Value as Json;
+    let of = |value: &toml::Value| settings_of(table, profile, value);
+    Ok(match value {
+        toml::Value::String(text) => Json::String(text.clone()),
+        toml::Value::Integer(n) => Json::from(*n),
+        toml::Value::Float(n) => serde_json::Number::from_f64(*n)
+            .map(Json::Number)
+            .ok_or_else(|| {
+                format!(
+                    "{table} names target.{profile} holding {n}, a number a target's settings cannot carry"
+                )
+            })?,
+        toml::Value::Boolean(b) => Json::Bool(*b),
+        toml::Value::Datetime(at) => Json::String(at.to_string()),
+        toml::Value::Array(items) => Json::Array(items.iter().map(of).collect::<Result<_, _>>()?),
+        toml::Value::Table(keys) => Json::Object(
+            keys.iter()
+                .map(|(key, value)| Ok((key.clone(), of(value)?)))
+                .collect::<Result<_, String>>()?,
+        ),
+    })
 }
 
 /// 37, C.10: the channel an environment `name`, of the environments
@@ -1357,7 +1482,7 @@ impl Policy for PolicyFile {
                 None => (&File::none(), &BTreeMap::new(), false),
             };
             let resolved = resolve(&in_force(file, self.givens()?)).map_err(unreadable)?;
-            let entry = resolved.get(channel).ok_or_else(absent)?;
+            let entry = resolved.channels.get(channel).ok_or_else(absent)?;
             let required = channel_policy(entry, signers).map_err(unreadable)?;
             if gateless && entry.origin != Origin::Declared {
                 return Err(self.no_gate());
@@ -1455,6 +1580,7 @@ impl Policy for PolicyFile {
         held.sort_by(|a, b| a.channel.channel.cmp(&b.channel.channel));
         Ok(PolicyChannels {
             in_force: resolved
+                .channels
                 .into_iter()
                 .map(|(channel, entry)| DeclaredChannel {
                     channel,
@@ -1465,14 +1591,24 @@ impl Policy for PolicyFile {
         })
     }
 
-    /// 136: unreadable naming the file's environments, which this
-    /// profile does not read yet, never an empty list for them.
-    fn environments(&self, _: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
-        Err(Not::unreadable(
-            self.source(),
-            format!("the environments in {POLICY_FILE}"),
-            Some("the policy file profile reads no environment yet".into()),
-        ))
+    /// 136, C.10: every environment the file at `revision` declares, from
+    /// the table in force the channels are resolved from, so the two never
+    /// disagree, by component and then name: the channel it follows, the
+    /// one made for it where it is manual or names `after`, whether it
+    /// waits, its approvers where it is manual, and its target's profile
+    /// and settings, or none. An empty list where the revision holds no
+    /// file or the file declares no environment; unreadable naming the
+    /// file and the revision, with the words the channels are unreadable
+    /// with, where they are.
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        let read = self.read(revision)?;
+        let file = match &read {
+            Some(Read { file, .. }) => file,
+            None => &File::none(),
+        };
+        let resolved = resolve(&in_force(file, self.givens()?))
+            .map_err(|said| self.unreadable(revision, said))?;
+        Ok(resolved.environments)
     }
 }
 
