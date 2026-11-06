@@ -21,7 +21,7 @@
 ## 5. The core's apply
 
 - [x] 5.1 Add `crates/timber-core/src/apply.rs` with `ApplyAsk { branch, component, environment }`, `Applied` and `apply(seams, history, ask)`, in design D5's order: the landed head and component as `promote` reads them; `environments` at that revision and the environment, its target table and its bound profile, each absent naming what is missing; the chain through `ledger::channel`, an empty one absent naming the channel; `Head` answering the head promotion's index; `desired` checked against it, refused naming both where it differs; `current`, and no apply where it answers the head; the policy for the channel through `policy_at` and `ledger::judge` of the head's index, refused naming the first claim wanting, with the target asked nothing; `Verified::new` with the head's index and version; `apply`; `report`. The answer serializes in the one form (57), the current before and the report after each as its digest or its own answer. Verify: tests in `crates/timber-core/tests/apply.rs` over the fakes for every scenario of the environment-apply delta, the fake target's recorded calls showing no apply before the claims are read
-- [ ] 5.2 Re-export `apply` from `crates/timber-core/src/lib.rs`, and make `status::environments`' comment say targets are now bound and still not read by status, which phase 2 builds (98). Verify: `moon run ':#check-fast'` passes
+- [x] 5.2 Re-export `apply` from `crates/timber-core/src/lib.rs`, and make `status::environments`' comment say targets are now bound and still not read by status, which phase 2 builds (98). Verify: `moon run ':#check-fast'` passes
 
 ## 6. The command
 

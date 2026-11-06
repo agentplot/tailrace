@@ -27,6 +27,7 @@
 //! | [`render`](mod@render) | a consumer layout: each version a checkout's lockfile pins, found by its ecosystem, name and version through the version's index, a name the store does not hold absent, judged under the consumer's layout line, else its publisher's through a signer the host trusts, else the given, rendered at `.timber/layouts/<ecosystem>/` holding only what the policy admits, every read before any write, a layout that cannot be refreshed answered from the host's record of it under the checkout's own git directory; a checkout synced, its cache filled and then each layout its lockfiles pin | 4, 9, 47 to 51, 58, 61 to 63, 81, 99, 113, 116, 117, 118, 138, C.10; core.4, core.7, core.17 to core.20, core.22 |
 //! | [`gate`](mod@gate) | an offered version judged under the policy for acceptance at the governed branch's landed head: accepted whole with one claim of the gate's own on its index, no byte changed, or refused whole naming the artifact and the claim found wanting; the gate never accepting what it offered but on the one host; and each channel of the component that the policy's channels answer says follows each publish promoted by the gate, where the channel's policy names it a promoter, the ledger appended before the name moves | 7, 9, 13, 25 to 30, 32, 33, 35, 39, 94 to 96, 105, 107, 108, 125, 131; core.4, core.6, core.7, core.14, core.15, core.34 |
 //! | [`ledger`] | a channel the policy lists for its component moved by a promotion the host's signer makes, where the channel's policy names it a promoter, judged under the channel's policy and its binding, held by the ledger before the store is written and undone by a promotion back; the store rewritten from the ledger; and a channel read from the ledger alone | 9, 31 to 39, 58, 101, 105, 106, 109, 125, 131; core.4, core.6, core.7, core.15, core.16, core.34 |
+//! | [`apply`](mod@apply) | one environment the policy declares at the branch's landed head converged on its channel's head, read from the ledger's chain: the target bound for its profile handed that head as desired, nothing applied where it runs it already, and the claims the channel's policy requires judged of the head's index before the target is handed the version, verified; its report after, and what it ran before, each its own answer; no name moved and nothing written | 31, 40, 42, 43, 88 to 92, 119, 136; core.4, core.16, core.19, core.29, core.50 |
 //!
 //! Every read and the claim take a [`Landed`], which only the landing
 //! seam's yes makes, and answer an `Answer`: absent, refused and
@@ -36,9 +37,10 @@
 //! a channel or reaches a target (20, rule core.10); status asks the
 //! landing, the policy, the ledger and the history alone, the policy in
 //! force the landing and the policy alone, and status, the policy in
-//! force and verify write nothing (60, rule core.32). Every surface
-//! renders an answer through [`answer_json`]'s one form (57, rule
-//! core.31).
+//! force and verify write nothing (60, rule core.32); apply hands a
+//! target a version only once its claims are judged, and moves no name
+//! (42, rules core.16, core.29). Every surface renders an answer through
+//! [`answer_json`]'s one form (57, rule core.31).
 
 pub mod apply;
 pub mod cache;
@@ -62,6 +64,7 @@ pub mod status;
 pub mod verify;
 pub mod version;
 
+pub use apply::*;
 pub use cache::*;
 pub use copy::*;
 pub use declared::*;

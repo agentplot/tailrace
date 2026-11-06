@@ -10,8 +10,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use serde_json::{json, Value};
-use timber_core::apply::{apply, Applied, ApplyAsk};
-use timber_core::{answer_json, promote, PromoteAsk, Published, To};
+use timber_core::{answer_json, apply, promote, Applied, ApplyAsk, PromoteAsk, Published, To};
 use timber_fakes::{
     FakeStore, FakeTarget, Fault, KeeperOp, SignerOp, StoreOp, TargetOp, Times, NO_MARKER,
 };
