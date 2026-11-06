@@ -48,3 +48,16 @@ tasks:
     inputs: ['/crates/timber/**/*', '/crates/timber-seams/**/*', '/crates/timber-core/**/*', '/crates/timber-fakes/**/*', '/crates/timber-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '$TIMBER_TOOLS_KMS_KEY', '$TIMBER_TOOLS_KMS_STRANGER']
     tags: [check-kms]
     options: {runFromWorkspaceRoot: true}
+  # The clan push profile's target group, and an apply of two versions
+  # and a move back, against the throwaway machine of the clan fleet the
+  # host names in devenv.local.nix (env.TIMBER_TOOLS_FLEET, as
+  # `<checkout>#<machine>`), with the host's clan and Nix, behind the
+  # `tools` feature; it refuses to run, naming the setting, on a host that
+  # names none. It reaches the machine with the host's own key file and
+  # switches it, so it runs outside the gate under a tag of its own, by
+  # hand with `moon run ':#check-fleet'` (core.38).
+  fleet:
+    command: 'cargo test -p timber --features tools --test nix_fleet_push'
+    inputs: ['/crates/timber/**/*', '/crates/timber-seams/**/*', '/crates/timber-core/**/*', '/crates/timber-fakes/**/*', '/crates/timber-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '$TIMBER_TOOLS_FLEET']
+    tags: [check-fleet]
+    options: {runFromWorkspaceRoot: true}
