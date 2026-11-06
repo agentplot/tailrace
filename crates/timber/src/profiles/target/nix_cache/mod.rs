@@ -54,11 +54,10 @@ use std::io;
 use std::path::PathBuf;
 
 use timber_seams::{
-    Answer, Artifact, Digest, Environment, Head, Held, IndexMeta, Manifest, Not, Running, Seam,
-    Source, Store, Target, Verified, Why,
+    Answer, Digest, Environment, Head, Not, Running, Seam, Source, Store, Target, Verified, Why,
 };
 
-use super::nix_closure::{self, ClosureFile, StorePath};
+use super::nix_closure::{self, StorePath};
 use crate::profiles::run::Tool;
 use table::{Named, Table};
 
@@ -113,99 +112,6 @@ impl NixCache {
                 table.attic
             )),
         )
-    }
-
-    /// The index `version` names, read through the store by its digest,
-    /// naming the version verified (42, rule core.4).
-    fn index(&self, version: &Verified) -> Answer<IndexMeta> {
-        let digest = version.index();
-        let meta = match self.store.read(digest) {
-            Ok(Held::Manifest(Manifest::Index(meta))) => meta,
-            Ok(_) => {
-                return Err(self.refused(format!(
-                    "{digest}, the index of version {} as verified, holds no index",
-                    version.version()
-                )))
-            }
-            Err(Not::Absent(_)) => {
-                return Err(Not::unreadable(
-                    &self.source,
-                    format!("the index of version {}", version.version()),
-                    Some(format!("the store holds no {digest}")),
-                ))
-            }
-            Err(not) => return Err(not),
-        };
-        if meta.version() != version.version() {
-            return Err(self.refused(format!(
-                "the index {digest} names version {}, and the version verified is {}",
-                meta.version(),
-                version.version()
-            )));
-        }
-        Ok(meta)
-    }
-
-    /// The bytes of the closure file `artifact`, read through the store
-    /// by the one layer its manifest names and checked against that
-    /// layer's digest (42, rule core.5).
-    fn bytes(&self, artifact: &Artifact) -> Answer<Vec<u8>> {
-        let (digest, file) = (&artifact.digest, ClosureFile(artifact));
-        let unheld = |what: &Digest| {
-            Not::unreadable(
-                &self.source,
-                file.to_string(),
-                Some(format!("the store holds no {what}")),
-            )
-        };
-        let layers = match self.store.read(digest) {
-            Ok(Held::Manifest(Manifest::Artifact { meta, layers })) if meta == artifact.meta => {
-                layers
-            }
-            Ok(Held::Manifest(Manifest::Artifact { meta, .. })) => {
-                return Err(self.refused(format!(
-                    "the store's manifest at {digest} names {} {} {}, and {file}",
-                    meta.ecosystem(),
-                    meta.name(),
-                    meta.version()
-                )))
-            }
-            Ok(_) => {
-                return Err(
-                    self.refused(format!("{digest} holds no artifact's manifest, and {file}"))
-                )
-            }
-            Err(Not::Absent(_)) => return Err(unheld(digest)),
-            Err(not) => return Err(not),
-        };
-        let [layer] = layers.as_slice() else {
-            return Err(self.refused(format!(
-                "{file} names {} layers, and a closure file is one",
-                layers.len()
-            )));
-        };
-        let bytes = match self.store.read(layer) {
-            Ok(Held::Bytes(bytes)) => bytes,
-            Ok(Held::Manifest(_)) => {
-                return Err(self.refused(format!(
-                    "the layer {layer} of {file} holds a manifest and not a file"
-                )))
-            }
-            Err(Not::Absent(_)) => return Err(unheld(layer)),
-            Err(not) => return Err(not),
-        };
-        let answered = Digest::of(&bytes);
-        if &answered != layer {
-            return Err(Not::refused(
-                &self.source,
-                Why::OtherBytes {
-                    expected: layer.clone(),
-                    answered,
-                },
-                None,
-            ));
-        }
-        Ok(bytes)
     }
 
     /// Refused, by this target, for `said`.
@@ -280,12 +186,12 @@ impl Target for NixCache {
     /// read, and attic does not run before every root is held.
     fn apply(&self, environment: &Environment, version: &Verified) -> Answer<()> {
         let table = Table::read(environment, &self.source)?;
-        let index = self.index(version)?;
+        let index = nix_closure::index(self.store.as_ref(), version, &self.source)?;
         let store_dir = nix_closure::store_dir();
         let mut roots: Vec<StorePath> = Vec::new();
         for output in &table.closures {
             let artifact = nix_closure::artifact_of(&index, output, &self.source)?;
-            let bytes = self.bytes(artifact)?;
+            let bytes = nix_closure::bytes(self.store.as_ref(), artifact, &self.source)?;
             for root in nix_closure::roots(artifact, &bytes, &store_dir, &self.source)? {
                 if !roots.contains(&root) {
                     roots.push(root);
