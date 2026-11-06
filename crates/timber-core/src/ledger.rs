@@ -26,7 +26,7 @@ pub use timber_seams::Promotion;
 
 use crate::{
     answer_json, channels_at, chosen, follow, merged, policy_at, tell, Declared, Followed, History,
-    Landed, Provenance, BOUND, LOCAL,
+    Landed, Provenance, Reported, BOUND, LOCAL,
 };
 
 /// Where a promotion moves its channel: to a version of its component,
@@ -355,6 +355,7 @@ fn wanting(wanted: &RequiredClaim) -> Not {
         Why::Wanting {
             kind: wanted.kind,
             check: wanted.check.clone(),
+            environment: wanted.environment.clone(),
             signers: wanted.signers.iter().map(|s| s.id.clone()).collect(),
         },
         None,
@@ -379,12 +380,15 @@ fn of_kind(signers: &[NamedSigner], kind: ClaimKind) -> RequiredClaim {
 /// 9, 31, 58: the digests of the envelopes on `index` that satisfy, in
 /// order, an acceptance that counts under the channel's policy, whether
 /// or not the policy lists one, then each claim the policy requires, its
-/// check where it is a verdict; refused [`Why::Wanting`] naming the first
-/// found wanting and the signers that may make it. Each attestation is
-/// told as verify tells it, under the signers the policy names merged as
-/// verify merges them (rule core.7), and counts for a claim required only
-/// when made by a signer that claim names. Only the index's claims are
-/// judged: a claim about a version is a claim about its index (7).
+/// check where it is a verdict and its environment where it is a report
+/// (C.12); refused [`Why::Wanting`] naming the first found wanting and
+/// the signers that may make it, so a report the policy lets nobody make
+/// is refused naming its environment. Each attestation is told as verify
+/// tells it, under the signers the policy names merged as verify merges
+/// them (rule core.7), and counts for a claim required only when made by
+/// a signer that claim names. Only the index's claims are judged: a claim
+/// about a version is a claim about its index (7), and a report on it
+/// counts only where it reports that index of the environment required.
 pub fn judge(seams: &Seams, required: &Required, index: &Digest) -> Answer<Vec<Digest>> {
     let signers = merged(required);
     let mut told = Vec::new();
@@ -400,34 +404,43 @@ pub fn judge(seams: &Seams, required: &Required, index: &Digest) -> Answer<Vec<D
             None,
         )?;
         let carried_in = one.envelope.clone();
-        told.push(one);
+        let reports = claim.as_ref().and_then(Reported::of).map(|r| r.environment);
+        told.push((one, reports));
         let Some(provenance) = claim.as_ref().and_then(Provenance::of) else {
             continue;
         };
         for carried in &provenance.carried {
-            told.push(tell(
-                seams,
-                &signers,
-                index,
-                &carried.envelope,
-                Some(ClaimKind::Verdict),
-                Some(carried.check.clone()),
-                Some(carried_in.clone()),
-            )?);
+            told.push((
+                tell(
+                    seams,
+                    &signers,
+                    index,
+                    &carried.envelope,
+                    Some(ClaimKind::Verdict),
+                    Some(carried.check.clone()),
+                    Some(carried_in.clone()),
+                )?,
+                None,
+            ));
         }
     }
 
     let acceptance = of_kind(&signers, ClaimKind::Acceptance);
     let mut satisfied: Vec<Digest> = Vec::new();
     for wanted in std::iter::once(&acceptance).chain(required.claims()) {
-        let found = told.iter().find(|t| {
-            t.counts
-                && t.kind == Some(wanted.kind)
-                && (wanted.kind != ClaimKind::Verdict || t.check == wanted.check)
-                && t.made_by
-                    .as_ref()
-                    .is_some_and(|maker| wanted.signers.iter().any(|s| s.id == *maker))
-        });
+        let found = told
+            .iter()
+            .find(|(t, reports)| {
+                t.counts
+                    && t.kind == Some(wanted.kind)
+                    && (wanted.kind != ClaimKind::Verdict || t.check == wanted.check)
+                    && (wanted.kind != ClaimKind::Report
+                        || (wanted.environment.is_some() && *reports == wanted.environment))
+                    && t.made_by
+                        .as_ref()
+                        .is_some_and(|maker| wanted.signers.iter().any(|s| s.id == *maker))
+            })
+            .map(|(t, _)| t);
         match found {
             Some(t) if satisfied.contains(&t.envelope) => {}
             Some(t) => satisfied.push(t.envelope.clone()),

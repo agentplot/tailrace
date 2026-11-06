@@ -1214,6 +1214,7 @@ fn a_following_channel_whose_promoters_exclude_the_gate_is_refused_while_the_acc
         Why::Wanting {
             kind: ClaimKind::Promotion,
             check: None,
+            environment: None,
             signers: vec![SignerId::new("release")],
         }
     );

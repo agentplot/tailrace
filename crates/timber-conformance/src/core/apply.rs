@@ -309,6 +309,7 @@ fn a_wanting_claim_stops_the_apply(world: &FakeWorld) {
             Why::Wanting {
                 kind: ClaimKind::Rebuild,
                 check: None,
+                environment: None,
                 signers: vec![SignerId::new("box")],
             },
             "the apply was refused for another claim than the rebuild by box"

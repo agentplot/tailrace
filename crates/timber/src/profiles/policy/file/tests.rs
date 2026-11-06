@@ -2245,6 +2245,7 @@ fn refused_for_no_gate(answer: Answer<Required>, what: &str) {
             Why::Wanting {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![],
             },
             Some("several publishers and no gate, name an accepting signer".into()),

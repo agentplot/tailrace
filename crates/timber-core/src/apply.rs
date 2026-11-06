@@ -19,10 +19,11 @@
 //! could take the environment back (60). What stops the target is the
 //! answer, in its own words (59, rule core.19).
 
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use timber_seams::{
-    Answer, Audience, Branch, ChannelId, ChannelName, ComponentName, Digest, Environment,
-    EnvironmentName, Not, Read, Running, Seam, Seams, Source, Verified, Version, Why,
+    Answer, Audience, Branch, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest,
+    Environment, EnvironmentName, Not, Read, Revision, Running, Seam, Seams, Source, Verified,
+    Version, Why,
 };
 
 use crate::ledger::judge;
@@ -56,6 +57,51 @@ pub struct Applied {
     pub current: Answer<Digest>,
     #[serde(serialize_with = "one_answer")]
     pub report: Answer<Running>,
+}
+
+/// 43, 91, C.12: the body of a report claim, what the host that ran an
+/// apply observed the target answer once it converged: the environment
+/// and its component, the channel it follows, the version and index
+/// applied, the digest the target reported it runs and the time the
+/// target says it converged, and `at`, the moment of the apply that made
+/// it, in seconds since the Unix epoch, by which an environment's newest
+/// report is ordered (design D6, D8).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reported {
+    pub environment: EnvironmentName,
+    pub component: ComponentName,
+    pub channel: ChannelName,
+    pub version: Version,
+    pub index: Digest,
+    pub runs: Digest,
+    pub converged_at: String,
+    pub at: u64,
+}
+
+impl Reported {
+    /// The report `claim` holds, or `None` for a claim of another kind,
+    /// one whose body is not a report's, or one about another digest than
+    /// the index it reports.
+    pub fn of(claim: &Claim) -> Option<Reported> {
+        if claim.kind != ClaimKind::Report {
+            return None;
+        }
+        let reported: Reported = serde_json::from_value(claim.body.clone()).ok()?;
+        (reported.index == claim.subject).then_some(reported)
+    }
+
+    /// 13, rule core.9: the claim about the index applied, made for
+    /// `revision`, the revision the index names, with no build identity,
+    /// which a report has none of.
+    pub fn claim(&self, revision: Revision) -> Claim {
+        Claim {
+            subject: self.index.clone(),
+            kind: ClaimKind::Report,
+            revision,
+            build: None,
+            body: serde_json::to_value(self).expect("a report is plain data"),
+        }
+    }
 }
 
 /// 57: an answer in the one form every surface renders.

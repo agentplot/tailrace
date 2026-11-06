@@ -479,6 +479,7 @@ impl PolicyFile {
             Why::Wanting {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![],
             },
             Some(NO_GATE.into()),

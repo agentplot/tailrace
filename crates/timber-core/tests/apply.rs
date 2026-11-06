@@ -497,6 +497,7 @@ fn a_head_whose_claim_is_wanting_is_refused_naming_it_and_nothing_is_applied() {
         Why::Wanting {
             kind: ClaimKind::Rebuild,
             check: None,
+            environment: None,
             signers: vec![SignerId::new("box")],
         }
     );

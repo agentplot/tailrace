@@ -548,6 +548,7 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
             Why::Wanting {
                 kind,
                 check: None,
+                environment: None,
                 signers: vec![SignerId::new(signer)],
             },
             "the promotion was not refused naming the {kind} found wanting"
@@ -779,6 +780,7 @@ fn stable_promoted_by_the_gates_signer(world: &FakeWorld) {
         Why::Wanting {
             kind: ClaimKind::Promotion,
             check: None,
+            environment: None,
             signers: vec![SignerId::new(GATE)],
         },
         "a signer the policy does not name promoted stable"

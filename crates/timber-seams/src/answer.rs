@@ -9,8 +9,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArtifactMeta, Branch, BuildId, ChannelId, Check, ClaimKind, ComponentName, Digest, Moved,
-    Outcome, OutputName, RequiredClaim, Revision, SignerId,
+    ArtifactMeta, Branch, BuildId, ChannelId, Check, ClaimKind, ComponentName, Digest,
+    EnvironmentName, Moved, Outcome, OutputName, RequiredClaim, Revision, SignerId,
 };
 
 /// What every seam operation answers: what was asked, or [`Not`].
@@ -277,11 +277,14 @@ pub enum Why {
     /// 123: the repository declares several components, `declared`, and
     /// the question named none of them.
     WhichComponent { declared: Vec<ComponentName> },
-    /// 58: no attestation of `kind`, and for a verdict of `check`, counts
-    /// under the policy, which lets `signers` make it.
+    /// 58: no attestation of `kind`, for a verdict of `check` and for a
+    /// report of `environment` (C.12), counts under the policy, which lets
+    /// `signers` make it.
     Wanting {
         kind: ClaimKind,
         check: Option<Check>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        environment: Option<EnvironmentName>,
         signers: Vec<SignerId>,
     },
     /// 35: `channel`, with its component (125), is at `at`, its head's
@@ -476,11 +479,15 @@ impl fmt::Display for Why {
             Why::Wanting {
                 kind,
                 check,
+                environment,
                 signers,
             } => {
                 write!(f, "no {kind}")?;
                 if let Some(check) = check {
                     write!(f, " of {check}")?;
+                }
+                if let Some(environment) = environment {
+                    write!(f, " of {environment}")?;
                 }
                 write!(
                     f,
@@ -1066,6 +1073,7 @@ mod tests {
                 Why::Wanting {
                     kind: ClaimKind::Acceptance,
                     check: None,
+                    environment: None,
                     signers: vec![SignerId::new("gate")],
                 },
                 "no acceptance counts under the policy, which lets gate make it".to_string(),
@@ -1074,9 +1082,19 @@ mod tests {
                 Why::Wanting {
                     kind: ClaimKind::Verdict,
                     check: Some(Check::new("test")),
+                    environment: None,
                     signers: vec![SignerId::new("landing"), SignerId::new("ci")],
                 },
                 "no verdict of test counts under the policy, which lets landing, ci make it".into(),
+            ),
+            (
+                Why::Wanting {
+                    kind: ClaimKind::Report,
+                    check: None,
+                    environment: Some(EnvironmentName::new("first")),
+                    signers: vec![],
+                },
+                "no report of first counts under the policy, which lets none make it".into(),
             ),
             (
                 Why::ChannelAt {
@@ -1122,6 +1140,27 @@ mod tests {
             };
             assert_eq!(r.said.unwrap().as_bytes(), WORDS.as_bytes());
         }
+    }
+
+    #[test]
+    fn a_wanting_with_no_environment_writes_none_and_reads_back_with_none() {
+        let why = Why::Wanting {
+            kind: ClaimKind::Acceptance,
+            check: None,
+            environment: None,
+            signers: vec![SignerId::new("gate")],
+        };
+        let json = serde_json::to_value(&why).unwrap();
+        assert!(json["wanting"].get("environment").is_none(), "{json}");
+        let report = Why::Wanting {
+            kind: ClaimKind::Report,
+            check: None,
+            environment: Some(EnvironmentName::new("first")),
+            signers: vec![SignerId::new("deployer")],
+        };
+        let json = serde_json::to_value(&report).unwrap();
+        assert_eq!(json["wanting"]["environment"], "first", "{json}");
+        crate::round_trip(report);
     }
 
     #[test]
