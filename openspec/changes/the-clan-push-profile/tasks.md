@@ -58,7 +58,7 @@
 
 ## 7. Integration
 
-- [ ] 7.1 Run `moon run ':#check-fast'` and `moon run ':#check-tools'` in the devenv shell, and verify that both pass and that the coverage check reports 41 and 97 cited and no clause newly uncited.
+- [x] 7.1 Run `moon run ':#check-fast'` and `moon run ':#check-tools'` in the devenv shell, and verify that both pass and that the coverage check reports 41 and 97 cited and no clause newly uncited.
 
 ## Workflow follow-up
 
