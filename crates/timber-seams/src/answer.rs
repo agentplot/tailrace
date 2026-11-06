@@ -9,8 +9,8 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ArtifactMeta, Branch, BuildId, ChannelId, Check, ClaimKind, ComponentName, Digest, Moved,
-    Outcome, OutputName, RequiredClaim, Revision, SignerId,
+    ArtifactMeta, Branch, BuildId, ChannelId, Check, ClaimKind, ComponentName, Digest,
+    EnvironmentName, Moved, Outcome, OutputName, RequiredClaim, Revision, SignerId,
 };
 
 /// What every seam operation answers: what was asked, or [`Not`].
@@ -277,11 +277,14 @@ pub enum Why {
     /// 123: the repository declares several components, `declared`, and
     /// the question named none of them.
     WhichComponent { declared: Vec<ComponentName> },
-    /// 58: no attestation of `kind`, and for a verdict of `check`, counts
-    /// under the policy, which lets `signers` make it.
+    /// 58: no attestation of `kind`, for a verdict of `check` and for a
+    /// report of `environment` (C.12), counts under the policy, which lets
+    /// `signers` make it.
     Wanting {
         kind: ClaimKind,
         check: Option<Check>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        environment: Option<EnvironmentName>,
         signers: Vec<SignerId>,
     },
     /// 35: `channel`, with its component (125), is at `at`, its head's
@@ -303,6 +306,21 @@ pub enum Why {
         channel: ChannelId,
         asker: SignerId,
         approvers: Vec<SignerId>,
+    },
+    /// 32, 108: `signer`, the host's, would move `channel` as the gate's
+    /// own act, and the channel's policy names only `promoters` as the
+    /// signers whose promotion of it counts.
+    NotPromoter {
+        channel: ChannelId,
+        signer: SignerId,
+        promoters: Vec<SignerId>,
+    },
+    /// 37, 43, C.10: `channel` comes after `after`, so the gate alone
+    /// moves it, on those environments' newest reports, and no asker may
+    /// ask it to move (rule core.72).
+    MovesOnReports {
+        channel: ChannelId,
+        after: Vec<EnvironmentName>,
     },
     /// 47, 99: `version`, whose index is `index`, lacks `wanting`, the
     /// first claim in the policy's order that no claim attached to the
@@ -476,11 +494,15 @@ impl fmt::Display for Why {
             Why::Wanting {
                 kind,
                 check,
+                environment,
                 signers,
             } => {
                 write!(f, "no {kind}")?;
                 if let Some(check) = check {
                     write!(f, " of {check}")?;
+                }
+                if let Some(environment) = environment {
+                    write!(f, " of {environment}")?;
                 }
                 write!(
                     f,
@@ -505,6 +527,20 @@ impl fmt::Display for Why {
                 f,
                 "{asker} may not ask for {channel}; ask one of {}",
                 list(approvers)
+            ),
+            Why::NotPromoter {
+                channel,
+                signer,
+                promoters,
+            } => write!(
+                f,
+                "{signer} may not promote {channel}; its promoters are {}",
+                list(promoters)
+            ),
+            Why::MovesOnReports { channel, after } => write!(
+                f,
+                "{channel} comes after {}, and the gate moves it on their reports; no asker may move it",
+                list(after)
             ),
             Why::VersionWanting {
                 version,
@@ -900,6 +936,7 @@ mod tests {
         let wanting = RequiredClaim {
             kind: crate::ClaimKind::Verdict,
             check: Some(crate::Check::new("test")),
+            environment: None,
             signers: vec![named("landing"), named("gate")],
             asked_of: crate::AskedOf::Every,
         };
@@ -934,6 +971,7 @@ mod tests {
             wanting: RequiredClaim {
                 kind: crate::ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![],
                 asked_of: crate::AskedOf::Every,
             },
@@ -1064,6 +1102,7 @@ mod tests {
                 Why::Wanting {
                     kind: ClaimKind::Acceptance,
                     check: None,
+                    environment: None,
                     signers: vec![SignerId::new("gate")],
                 },
                 "no acceptance counts under the policy, which lets gate make it".to_string(),
@@ -1072,9 +1111,19 @@ mod tests {
                 Why::Wanting {
                     kind: ClaimKind::Verdict,
                     check: Some(Check::new("test")),
+                    environment: None,
                     signers: vec![SignerId::new("landing"), SignerId::new("ci")],
                 },
                 "no verdict of test counts under the policy, which lets landing, ci make it".into(),
+            ),
+            (
+                Why::Wanting {
+                    kind: ClaimKind::Report,
+                    check: None,
+                    environment: Some(EnvironmentName::new("first")),
+                    signers: vec![],
+                },
+                "no report of first counts under the policy, which lets none make it".into(),
             ),
             (
                 Why::ChannelAt {
@@ -1108,6 +1157,21 @@ mod tests {
                 },
                 "laptop may not ask for lib/stable; ask one of release, gate".into(),
             ),
+            (
+                Why::NotPromoter {
+                    channel: lib("second"),
+                    signer: SignerId::new("laptop"),
+                    promoters: vec![SignerId::new("deployer")],
+                },
+                "laptop may not promote lib/second; its promoters are deployer".into(),
+            ),
+            (
+                Why::MovesOnReports {
+                    channel: lib("second"),
+                    after: vec![EnvironmentName::new("us"), EnvironmentName::new("asia")],
+                },
+                "lib/second comes after us, asia, and the gate moves it on their reports; no asker may move it".into(),
+            ),
         ];
         for (why, names) in cases {
             let text = why.to_string();
@@ -1120,6 +1184,27 @@ mod tests {
             };
             assert_eq!(r.said.unwrap().as_bytes(), WORDS.as_bytes());
         }
+    }
+
+    #[test]
+    fn a_wanting_with_no_environment_writes_none_and_reads_back_with_none() {
+        let why = Why::Wanting {
+            kind: ClaimKind::Acceptance,
+            check: None,
+            environment: None,
+            signers: vec![SignerId::new("gate")],
+        };
+        let json = serde_json::to_value(&why).unwrap();
+        assert!(json["wanting"].get("environment").is_none(), "{json}");
+        let report = Why::Wanting {
+            kind: ClaimKind::Report,
+            check: None,
+            environment: Some(EnvironmentName::new("first")),
+            signers: vec![SignerId::new("deployer")],
+        };
+        let json = serde_json::to_value(&report).unwrap();
+        assert_eq!(json["wanting"]["environment"], "first", "{json}");
+        crate::round_trip(report);
     }
 
     #[test]

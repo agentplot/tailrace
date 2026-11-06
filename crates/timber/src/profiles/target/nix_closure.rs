@@ -7,17 +7,22 @@
 //! The store holds that artifact and no store path of the closure: the
 //! paths are the Nix binary cache's (section 10).
 //!
-//! A profile finds the artifact of an output in a version's index with
-//! [`artifact_of`], reads its bytes through its own store binding, and
-//! reads them into the closure's roots with [`roots`]; each answers
-//! refused naming what it found wanting, in the asking profile's name.
+//! A profile reads the verified version's index with [`index`], finds the
+//! artifact of an output in it with [`artifact_of`] or [`file_of`], reads
+//! its bytes with [`bytes`], each through the profile's own store binding
+//! by digest (42, rule core.4), and reads them into the closure's roots
+//! with [`roots`]; each answers what it found wanting, in the asking
+//! profile's name.
 //! The profiles share this module so that none calls another (rule
 //! core.2). It is the profile's own code and links no crate of Nix's.
 
 use std::collections::HashMap;
 use std::fmt;
 
-use timber_seams::{Answer, Artifact, IndexMeta, Not, OutputName, Source, Why};
+use timber_seams::{
+    Answer, Artifact, Digest, Held, IndexMeta, Manifest, Not, OutputName, Source, Store, Verified,
+    Why,
+};
 
 /// Where a Nix store holds its paths unless `NIX_STORE_DIR` names
 /// another directory.
@@ -73,6 +78,54 @@ fn store_dir_of(given: Option<String>) -> String {
     }
 }
 
+/// The index `version` names, read through `store` by its digest,
+/// naming the version verified: unreadable where the store holds none,
+/// and refused where the digest holds no index or an index of another
+/// version (42, rule core.4).
+pub fn index(store: &dyn Store, version: &Verified, source: &Source) -> Answer<IndexMeta> {
+    let digest = version.index();
+    let meta = match store.read(digest) {
+        Ok(Held::Manifest(Manifest::Index(meta))) => meta,
+        Ok(_) => {
+            return Err(refused(
+                source,
+                format!(
+                    "{digest}, the index of version {} as verified, holds no index",
+                    version.version()
+                ),
+            ))
+        }
+        Err(Not::Absent(_)) => {
+            return Err(Not::unreadable(
+                source,
+                format!("the index of version {}", version.version()),
+                Some(format!("the store holds no {digest}")),
+            ))
+        }
+        Err(not) => return Err(not),
+    };
+    if meta.version() != version.version() {
+        return Err(refused(
+            source,
+            format!(
+                "the index {digest} names version {}, and the version verified is {}",
+                meta.version(),
+                version.version()
+            ),
+        ));
+    }
+    Ok(meta)
+}
+
+/// The file projection's artifact of `output` among those `index`
+/// names, where it names one.
+pub fn file_of<'a>(index: &'a IndexMeta, output: &OutputName) -> Option<&'a Artifact> {
+    index
+        .artifacts()
+        .iter()
+        .find(|a| a.meta.ecosystem().as_str() == FILE && a.meta.name().as_str() == output.as_str())
+}
+
 /// The file projection's artifact of `output` among those `index`
 /// names, refused naming the output and the version where it names none
 /// (design D8).
@@ -81,21 +134,86 @@ pub fn artifact_of<'a>(
     output: &OutputName,
     source: &Source,
 ) -> Answer<&'a Artifact> {
-    index
-        .artifacts()
-        .iter()
-        .find(|a| a.meta.ecosystem().as_str() == FILE && a.meta.name().as_str() == output.as_str())
-        .ok_or_else(|| {
-            refused(
+    file_of(index, output).ok_or_else(|| {
+        refused(
+            source,
+            format!(
+                "version {} of {} names no {FILE} artifact of the output {output}, \
+                 so it carries no closure of it",
+                index.version(),
+                index.component()
+            ),
+        )
+    })
+}
+
+/// The bytes of the closure file `artifact`, read through `store` by the
+/// one layer its manifest names and checked against that layer's digest
+/// (42, rule core.5): unreadable where the store holds the manifest or
+/// the layer not, and refused where they are not a closure file's.
+pub fn bytes(store: &dyn Store, artifact: &Artifact, source: &Source) -> Answer<Vec<u8>> {
+    let (digest, file) = (&artifact.digest, ClosureFile(artifact));
+    let unheld = |what: &Digest| {
+        Not::unreadable(
+            source,
+            file.to_string(),
+            Some(format!("the store holds no {what}")),
+        )
+    };
+    let layers = match store.read(digest) {
+        Ok(Held::Manifest(Manifest::Artifact { meta, layers })) if meta == artifact.meta => layers,
+        Ok(Held::Manifest(Manifest::Artifact { meta, .. })) => {
+            return Err(refused(
                 source,
                 format!(
-                    "version {} of {} names no {FILE} artifact of the output {output}, \
-                     so it carries no closure of it",
-                    index.version(),
-                    index.component()
+                    "the store's manifest at {digest} names {} {} {}, and {file}",
+                    meta.ecosystem(),
+                    meta.name(),
+                    meta.version()
                 ),
-            )
-        })
+            ))
+        }
+        Ok(_) => {
+            return Err(refused(
+                source,
+                format!("{digest} holds no artifact's manifest, and {file}"),
+            ))
+        }
+        Err(Not::Absent(_)) => return Err(unheld(digest)),
+        Err(not) => return Err(not),
+    };
+    let [layer] = layers.as_slice() else {
+        return Err(refused(
+            source,
+            format!(
+                "{file} names {} layers, and a closure file is one",
+                layers.len()
+            ),
+        ));
+    };
+    let bytes = match store.read(layer) {
+        Ok(Held::Bytes(bytes)) => bytes,
+        Ok(Held::Manifest(_)) => {
+            return Err(refused(
+                source,
+                format!("the layer {layer} of {file} holds a manifest and not a file"),
+            ))
+        }
+        Err(Not::Absent(_)) => return Err(unheld(layer)),
+        Err(not) => return Err(not),
+    };
+    let answered = Digest::of(&bytes);
+    if &answered != layer {
+        return Err(Not::refused(
+            source,
+            Why::OtherBytes {
+                expected: layer.clone(),
+                answered,
+            },
+            None,
+        ));
+    }
+    Ok(bytes)
 }
 
 /// The roots `bytes`, the bytes of `artifact`, name, in the order its

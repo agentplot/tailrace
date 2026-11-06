@@ -176,12 +176,14 @@ fn claims() -> Vec<RequiredClaim> {
         RequiredClaim {
             kind: ClaimKind::Provenance,
             check: None,
+            environment: None,
             signers: vec![named("host", &[ClaimKind::Provenance], &[])],
             asked_of: AskedOf::Every,
         },
         RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("test")),
+            environment: None,
             signers: vec![named("landing", &[ClaimKind::Verdict], &["test"])],
             asked_of: AskedOf::Built,
         },
@@ -298,6 +300,7 @@ fn declared(name: &str, component: Option<&str>, moves: Moves) -> DeclaredChanne
 fn bound(to: &str) -> Moves {
     Moves::Bound {
         to: ChannelName::new(to),
+        after: vec![],
     }
 }
 

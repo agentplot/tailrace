@@ -17,9 +17,9 @@
 use serde::{Serialize, Serializer};
 use timber_seams::{
     channel_name, version_name, Answer, AskedOf, Audience, Branch, Chain, ChannelId, ChannelName,
-    Claim, ClaimKind, ComponentName, DeclaredChannel, Digest, Envelope, Keeper, Moved, NamedSigner,
-    Not, Read, Required, RequiredClaim, Satisfied, Seam, Seams, SignerId, Source, Store, Version,
-    Why,
+    Claim, ClaimKind, Component, ComponentName, DeclaredChannel, Digest, Envelope, Keeper, Moved,
+    Moves, NamedSigner, Not, Read, Required, RequiredClaim, Satisfied, Seam, Seams, SignerId,
+    Source, Store, Version, Why,
 };
 
 pub use timber_seams::Promotion;
@@ -181,15 +181,10 @@ pub(crate) fn promotion_of(channel: &ChannelId, envelope: &Envelope) -> Answer<P
 
 /// 31 to 39, 105: the promotion `ask` names, in the order of design D4:
 /// the channel found among those the policy lists for the component
-/// (125, 131), its policy read at the branch's landed head, the chain's
-/// head read
-/// from the ledger itself, the version's name resolved in the store
-/// before anything of it is read (rule core.4), the channel moved only
-/// from where it is (35) and, where bound, only to a version its bound
-/// channel held (37), judged (D5), signed, and appended naming the head
-/// as predecessor before anything is written to the store (33, rule
-/// core.15). A refusal at any step is the answer, nothing after it is
-/// done, and nothing is retried (rules core.6, core.34).
+/// (125, 131) and its policy read at the branch's landed head, then the
+/// move an asker asks of it ([`moved`]). A refusal at any step is the
+/// answer, nothing after it is done, and nothing is retried (rules
+/// core.6, core.34).
 pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Promoted> {
     // 1: the branch's head, landed (65, 77), and the component it
     // declares.
@@ -202,13 +197,99 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
     // absent naming both where it lists none (125, 131), and its policy
     // at the head; absent where none is declared for it (82).
     let listed = listed(seams, &at_head, &ask.channel, &component.name)?;
-    let channel = &listed.channel;
-    let audience = Audience::Channel(channel.clone());
+    let audience = Audience::Channel(listed.channel.clone());
     let required =
         policy_at(seams.policy.as_ref(), &at_head, &audience).map_err(|not| match not {
             Not::Absent(a) => Not::absent(&a.source, format!("{} at {head}", a.what)),
             other => other,
         })?;
+
+    // 3 to 11: the move, as the asker asks it.
+    moved(
+        seams,
+        history,
+        &Move {
+            branch: &ask.branch,
+            at_head: &at_head,
+            component,
+            listed: &listed,
+            required: &required,
+            asked: Asked::By {
+                to: &ask.to,
+                from: ask.from.as_ref(),
+                asker: &ask.signer,
+            },
+            at: ask.at,
+        },
+    )
+}
+
+/// Who asks a move of a channel, and how the asking is judged (design
+/// D9).
+pub(crate) enum Asked<'a> {
+    /// 32, 34, 35, C.10: a promotion `to` a version or back, the channel
+    /// expected at `from` where given, asked by `asker`, which must be one
+    /// the channel's approvers admit and is recorded as who asked.
+    By {
+        to: &'a To,
+        from: Option<&'a Version>,
+        asker: &'a SignerId,
+    },
+    /// 43, 95, 129, C.10: the gate's own act, `to` the version and index
+    /// the reports of the environments the channel comes after name, the
+    /// version's name resolving to that index; `gate`, the host's signer,
+    /// recorded as who asked, whatever approvers the channel names.
+    Gate { to: &'a Moved, gate: &'a SignerId },
+}
+
+/// A move of a channel once the channel and its policy are read at the
+/// branch's landed head: the branch, the head and the component, the
+/// channel as the policy lists it and the policy for it, who asks, and
+/// the moment of the act.
+pub(crate) struct Move<'a> {
+    pub branch: &'a Branch,
+    pub at_head: &'a Landed,
+    pub component: &'a Component,
+    pub listed: &'a DeclaredChannel,
+    pub required: &'a Required,
+    pub asked: Asked<'a>,
+    pub at: u64,
+}
+
+/// 31 to 39, 105: the one move of a channel a promotion and the gate's
+/// move on reports share (design D9): an asked move of a channel an
+/// `after` makes refused, since the gate alone moves it (rule core.72),
+/// the chain's head read from the
+/// ledger itself, the version's name resolved in the store before
+/// anything of it is read (rule core.4), the channel moved only from
+/// where it is (35) and, where bound, only to a version its bound
+/// channel held (37), the asker one the channel's approvers admit where
+/// an asker asks (32), judged (D5), the host's signer one of the
+/// channel's promoters, signed, and appended naming the head as
+/// predecessor before anything is written to the store (33, rule
+/// core.15), the store brought to the ledger last. A refusal at any step
+/// is the answer, nothing after it is done, and nothing is retried
+/// (rules core.6, core.34).
+pub(crate) fn moved(seams: &Seams, history: &History, m: &Move<'_>) -> Answer<Promoted> {
+    let channel = &m.listed.channel;
+    let component = m.component;
+    let head = m.at_head.revision();
+
+    // 2: a channel an `after` makes moved by no asking but the gate's
+    // own, on the reports of the environments it comes after, refused
+    // before anything of it is read (37, 43, C.10, rule core.72).
+    if let (Asked::By { .. }, Moves::Bound { after, .. }) = (&m.asked, &m.listed.moves) {
+        if !after.is_empty() {
+            return Err(Not::refused(
+                &Source::new(Seam::Policy, BOUND),
+                Why::MovesOnReports {
+                    channel: channel.clone(),
+                    after: after.clone(),
+                },
+                None,
+            ));
+        }
+    }
 
     // 3: the chain, read from the ledger itself, and its head (105, 121).
     let chain = held(seams.keeper.as_ref(), channel)?;
@@ -218,20 +299,37 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
     };
     let at = last.as_ref().map(|(_, p)| p.to.clone());
 
-    // 4: the version, its name resolved in the store (rule core.4), and
-    // its tag's revision, landed (14).
-    let version = match &ask.to {
-        To::Version(version) => version.clone(),
-        To::Back => last
+    // 4: the version, its name resolved in the store (rule core.4), the
+    // index the reports named where the gate moves on them, and its
+    // tag's revision, landed (14).
+    let version = match &m.asked {
+        Asked::By {
+            to: To::Version(version),
+            ..
+        } => version.clone(),
+        Asked::By { to: To::Back, .. } => last
             .as_ref()
             .and_then(|(_, p)| p.from.as_ref())
             .map(|from| from.version.clone())
             .ok_or_else(|| Not::absent(&keeper(), format!("a version {channel} moved from")))?,
+        Asked::Gate { to, .. } => to.version.clone(),
     };
     let tag = format!("{}{}", component.prefix, version);
     let index = seams.store.resolve(&version_name(&component.name, &tag))?;
+    if let Asked::Gate { to: reported, .. } = &m.asked {
+        if reported.index != index {
+            return Err(Not::unreadable(
+                &Source::new(Seam::Store, BOUND),
+                format!("{tag} as the index the reports named"),
+                Some(format!(
+                    "{tag} resolves to {index}, and the reports named {}",
+                    reported.index
+                )),
+            ));
+        }
+    }
     let revision = history
-        .tags(&at_head, &component.prefix)?
+        .tags(m.at_head, &component.prefix)?
         .into_iter()
         .find(|t| t.name == tag)
         .map(|t| t.revision)
@@ -241,12 +339,15 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
                 format!("tag {tag} reached from {head}"),
             )
         })?;
-    Landed::check(seams.landing.as_ref(), &ask.branch, &revision)?;
+    Landed::check(seams.landing.as_ref(), m.branch, &revision)?;
     let to = Moved { version, index };
 
     // 5: the version the asker expects the channel at (35, S7).
-    if let Some(from) = &ask.from {
-        if at.as_ref().map(|m| &m.version) != Some(from) {
+    if let Asked::By {
+        from: Some(from), ..
+    } = &m.asked
+    {
+        if at.as_ref().map(|a| &a.version) != Some(*from) {
             return Err(Not::refused(
                 &keeper(),
                 Why::ChannelAt {
@@ -260,9 +361,9 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
 
     // 6: the channel there already: nothing appended, the store brought
     // to the ledger (106).
-    if at.as_ref().is_some_and(|m| m.index == to.index) {
+    if at.as_ref().is_some_and(|a| a.index == to.index) {
         return Ok(Promoted::There {
-            channel: ask.channel.clone(),
+            channel: channel.name.clone(),
             component: component.name.clone(),
             at: to,
             store: mirror(seams.store.as_ref(), seams.keeper.as_ref(), channel),
@@ -271,7 +372,7 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
 
     // 7: a bound channel takes only what its bound channel, of its own
     // component, held (37, 83, 125).
-    if let Some(bound_to) = listed.bound_to() {
+    if let Some(bound_to) = m.listed.bound_to() {
         if !held_by(seams.keeper.as_ref(), &bound_to, &to.index)? {
             return Err(Not::refused(
                 &keeper(),
@@ -284,12 +385,18 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
         }
     }
 
-    // 8: the asker one the channel's policy lets ask, judged, and the
-    // host's signer one the channel's policy names among its promoters
-    // (9, 31, 32, C.10).
-    may_ask(&required, channel, &ask.signer)?;
-    let claims = judge(seams, &required, &to.index)?;
-    may_promote(&required, &ask.signer)?;
+    // 8: the asker one the channel's policy lets ask, where an asker
+    // asks, the version judged, and the host's signer one the channel's
+    // policy names among its promoters (9, 31, 32, 95, C.10).
+    let asked_by = match &m.asked {
+        Asked::By { asker, .. } => {
+            may_ask(m.required, channel, asker)?;
+            *asker
+        }
+        Asked::Gate { gate, .. } => *gate,
+    };
+    let claims = judge(seams, m.required, &to.index)?;
+    may_promote(m.required, asked_by)?;
 
     // 9: the claim, naming the head as its predecessor (33, 39, 105),
     // signed as publish signs.
@@ -299,18 +406,18 @@ pub fn promote(seams: &Seams, history: &History, ask: &PromoteAsk) -> Answer<Pro
         to: to.clone(),
         from: at.clone(),
         predecessor: last.map(|(digest, _)| digest),
-        asked_by: ask.signer.clone(),
+        asked_by: asked_by.clone(),
         policy: Satisfied {
             revision: head.clone(),
             claims,
         },
-        at: ask.at,
+        at: m.at,
     };
     let signer = seams
         .signers
         .first()
         .ok_or_else(|| Not::absent(&Source::new(Seam::Signer, BOUND), "signer bound"))?;
-    let envelope = signer.sign(&promotion.claim(revision), &ask.signer)?;
+    let envelope = signer.sign(&promotion.claim(revision), asked_by)?;
 
     // 10: held by the ledger before the store is written, never retried
     // (33, 120, rules core.6, core.34).
@@ -355,6 +462,7 @@ fn wanting(wanted: &RequiredClaim) -> Not {
         Why::Wanting {
             kind: wanted.kind,
             check: wanted.check.clone(),
+            environment: wanted.environment.clone(),
             signers: wanted.signers.iter().map(|s| s.id.clone()).collect(),
         },
         None,
@@ -366,6 +474,7 @@ fn of_kind(signers: &[NamedSigner], kind: ClaimKind) -> RequiredClaim {
     RequiredClaim {
         kind,
         check: None,
+        environment: None,
         signers: signers
             .iter()
             .filter(|s| s.kinds.contains(&kind))
@@ -378,12 +487,15 @@ fn of_kind(signers: &[NamedSigner], kind: ClaimKind) -> RequiredClaim {
 /// 9, 31, 58: the digests of the envelopes on `index` that satisfy, in
 /// order, an acceptance that counts under the channel's policy, whether
 /// or not the policy lists one, then each claim the policy requires, its
-/// check where it is a verdict; refused [`Why::Wanting`] naming the first
-/// found wanting and the signers that may make it. Each attestation is
-/// told as verify tells it, under the signers the policy names merged as
-/// verify merges them (rule core.7), and counts for a claim required only
-/// when made by a signer that claim names. Only the index's claims are
-/// judged: a claim about a version is a claim about its index (7).
+/// check where it is a verdict and its environment where it is a report
+/// (C.12); refused [`Why::Wanting`] naming the first found wanting and
+/// the signers that may make it, so a report the policy lets nobody make
+/// is refused naming its environment. Each attestation is told as verify
+/// tells it, under the signers the policy names merged as verify merges
+/// them (rule core.7), and counts for a claim required only when made by
+/// a signer that claim names. Only the index's claims are judged: a claim
+/// about a version is a claim about its index (7), and a report on it
+/// counts only where it reports that index of the environment required.
 pub fn judge(seams: &Seams, required: &Required, index: &Digest) -> Answer<Vec<Digest>> {
     let signers = merged(required);
     let mut told = Vec::new();
@@ -423,6 +535,8 @@ pub fn judge(seams: &Seams, required: &Required, index: &Digest) -> Answer<Vec<D
             t.counts
                 && t.kind == Some(wanted.kind)
                 && (wanted.kind != ClaimKind::Verdict || t.check == wanted.check)
+                && (wanted.kind != ClaimKind::Report
+                    || (wanted.environment.is_some() && t.environment == wanted.environment))
                 && t.made_by
                     .as_ref()
                     .is_some_and(|maker| wanted.signers.iter().any(|s| s.id == *maker))
@@ -467,6 +581,7 @@ pub(crate) fn may_promote(required: &Required, signer: &SignerId) -> Answer<()> 
         Err(wanting(&RequiredClaim {
             kind: ClaimKind::Promotion,
             check: None,
+            environment: None,
             signers: required.promoted_by().to_vec(),
             asked_of: AskedOf::Every,
         }))

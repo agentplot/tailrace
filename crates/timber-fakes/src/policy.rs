@@ -1,7 +1,7 @@
 //! The fake policy (B.5): what each audience requires, for every revision
-//! or for one, which channels move on each publish, the givens it holds
-//! off, and the environments each revision declares, as a test scripts
-//! it. A channel carries its component (125), and the fake gives and
+//! or for one, which channels move on each publish, which come after
+//! environments, the givens it holds off, and the environments each
+//! revision declares, as a test scripts it. A channel carries its component (125), and the fake gives and
 //! holds off no channel a test did not script: the channels a profile
 //! gives with nothing declared are that profile's (C.10).
 
@@ -9,8 +9,9 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 use timber_seams::{
-    Answer, Audience, ChannelId, ComponentName, DeclaredChannel, DeclaredEnvironment,
-    EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, Revision, Seam,
+    Answer, AskedOf, Audience, ChannelId, ClaimKind, ComponentName, DeclaredChannel,
+    DeclaredEnvironment, EnvironmentName, HeldChannel, Moves, NamedSigner, Not, Policy,
+    PolicyChannels, Required, RequiredClaim, Revision, Seam,
 };
 
 use crate::Fake;
@@ -25,14 +26,16 @@ pub enum PolicyOp {
 
 /// What each audience requires, at every revision and at one, the
 /// channels that move on each publish, at every revision and at one, the
-/// givens held off, each with how it would move and its line, and the
-/// environments each revision declares, by component and then name.
+/// environments each bound channel comes after, the givens held off, each
+/// with how it would move and its line, and the environments each
+/// revision declares, by component and then name.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PolicyState {
     every: BTreeMap<Audience, Required>,
     at: BTreeMap<(Revision, Audience), Required>,
     follows: BTreeMap<ChannelId, bool>,
     follows_at: BTreeMap<(Revision, ChannelId), bool>,
+    after: BTreeMap<ChannelId, Vec<EnvironmentName>>,
     holds: BTreeMap<ChannelId, (Moves, String)>,
     environments: BTreeMap<Revision, Declared>,
 }
@@ -90,6 +93,37 @@ impl FakePolicy {
             .insert((revision.clone(), channel.clone()), prereleases);
     }
 
+    /// 41, C.10: `channel` comes after `environments` at every revision,
+    /// in the order named, as an environment's `after` makes it: listed
+    /// bound to the channel `required` binds it to and coming after them,
+    /// and its policy `required` with, after its own claims, a report of
+    /// each environment by `reporters`, in the order named (83). A
+    /// binding is answered as scripted, never checked, and a channel
+    /// `required` binds to none is listed as its policy says, coming
+    /// after none.
+    pub fn after(
+        &self,
+        channel: &ChannelId,
+        environments: &[EnvironmentName],
+        reporters: &[NamedSigner],
+        mut required: Required,
+    ) {
+        if let Required::Channel { claims, .. } = &mut required {
+            claims.extend(environments.iter().map(|environment| RequiredClaim {
+                kind: ClaimKind::Report,
+                check: None,
+                environment: Some(environment.clone()),
+                signers: reporters.to_vec(),
+                asked_of: AskedOf::Every,
+            }));
+        }
+        let mut state = self.state();
+        state.after.insert(channel.clone(), environments.to_vec());
+        state
+            .every
+            .insert(Audience::Channel(channel.clone()), required);
+    }
+
     /// C.10: `channel` held off at every revision, moving as `moves` once
     /// `switch`, the line that switches it on, is written; carried in the
     /// channels answer apart from the channels in force.
@@ -129,10 +163,11 @@ impl Policy for FakePolicy {
     /// 131: a channel for each channel audience held at `revision` or at
     /// every revision, the revision's policy over every revision's, by
     /// name and then component, each in the component its identity
-    /// carries (125): bound where its policy names a binding, moving on
-    /// each publish where the test scripted it so, and by a promotion
-    /// alone otherwise, taking prereleases as scripted. A binding is
-    /// answered as scripted, never checked. Apart from them, each given
+    /// carries (125): bound where its policy names a binding, coming after
+    /// the environments the test scripted it after, moving on each publish
+    /// where the test scripted it so, and by a promotion alone otherwise,
+    /// taking prereleases as scripted. A binding is answered as scripted,
+    /// never checked. Apart from them, each given
     /// scripted held off, by name and then component, with how it would
     /// move and its line; an empty list where none is (C.10).
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
@@ -157,7 +192,10 @@ impl Policy for FakePolicy {
                         .get(&(revision.clone(), channel.clone()))
                         .or_else(|| s.follows.get(channel));
                     let moves = match (required.bound_to(), follows) {
-                        (Some(to), _) => Moves::Bound { to: to.clone() },
+                        (Some(to), _) => Moves::Bound {
+                            to: to.clone(),
+                            after: s.after.get(channel).cloned().unwrap_or_default(),
+                        },
                         (None, Some(prereleases)) => Moves::EachPublish {
                             prereleases: *prereleases,
                         },
@@ -200,10 +238,7 @@ impl Policy for FakePolicy {
 
 #[cfg(test)]
 mod tests {
-    use timber_seams::{
-        AskedOf, ChannelName, Check, ClaimKind, RequiredClaim, SignerId, Source, TargetProfile,
-        TargetTable,
-    };
+    use timber_seams::{ChannelName, Check, SignerId, Source, TargetProfile, TargetTable};
 
     use super::*;
     use crate::{Fault, Times};
@@ -212,6 +247,7 @@ mod tests {
         RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new(check)),
+            environment: None,
             signers: vec![],
             asked_of: AskedOf::Every,
         }
@@ -331,6 +367,7 @@ mod tests {
     fn bound(to: &str) -> Moves {
         Moves::Bound {
             to: ChannelName::new(to),
+            after: vec![],
         }
     }
 
@@ -396,6 +433,90 @@ mod tests {
                 declared(edge, Moves::Promotion),
             ])
         );
+    }
+
+    #[test]
+    fn a_channel_scripted_after_an_environment_requires_a_report_of_it() {
+        let policy = FakePolicy::new();
+        let (first, second) = (id(Some("web"), "first"), id(Some("web"), "second"));
+        let deployer = NamedSigner {
+            id: SignerId::new("deployer"),
+            verified_by: "a public key".into(),
+            kinds: vec![ClaimKind::Provenance, ClaimKind::Report],
+            checks: vec![],
+        };
+        let at = Revision::new("4f2a9c1");
+        policy.require(Audience::Channel(first.clone()), channel(Some("stable")));
+        policy.after(
+            &second,
+            &[EnvironmentName::new("first")],
+            std::slice::from_ref(&deployer),
+            Required::Channel {
+                claims: vec![claim("test")],
+                bound_to: Some(ChannelName::new("first")),
+                promoted_by: vec![deployer.clone()],
+                approvers: vec![],
+            },
+        );
+
+        assert_eq!(
+            listed(&policy, &at),
+            Ok(vec![
+                declared(first, bound("stable")),
+                declared(
+                    second.clone(),
+                    Moves::Bound {
+                        to: ChannelName::new("first"),
+                        after: vec![EnvironmentName::new("first")],
+                    }
+                ),
+            ])
+        );
+        let report = RequiredClaim {
+            kind: ClaimKind::Report,
+            check: None,
+            environment: Some(EnvironmentName::new("first")),
+            signers: vec![deployer.clone()],
+            asked_of: AskedOf::Every,
+        };
+        assert_eq!(
+            policy.policy_for(&at, &Audience::Channel(second.clone())),
+            Ok(Required::Channel {
+                claims: vec![claim("test"), report],
+                bound_to: Some(ChannelName::new("first")),
+                promoted_by: vec![deployer],
+                approvers: vec![],
+            })
+        );
+        let calls = policy.calls();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].op, PolicyOp::Channels);
+        assert_eq!(
+            calls[0].answer.as_ref().unwrap()["in_force"][1]["moves"]["after"],
+            json!(["first"])
+        );
+        assert_eq!(calls[1].op, PolicyOp::PolicyFor);
+        assert_eq!(
+            calls[1].answer.as_ref().unwrap()["channel"]["claims"][1]["environment"],
+            "first"
+        );
+
+        for op in [PolicyOp::Channels, PolicyOp::PolicyFor] {
+            policy.fault(
+                op,
+                Fault::Unreadable("no such revision".into()),
+                Times::Once,
+            );
+        }
+        assert!(matches!(
+            listed(&policy, &at),
+            Err(Not::Unreadable(u)) if u.said.as_deref() == Some("no such revision")
+        ));
+        assert!(matches!(
+            policy.policy_for(&at, &Audience::Channel(second)),
+            Err(Not::Unreadable(u)) if u.said.as_deref() == Some("no such revision")
+        ));
+        assert_eq!(policy.calls().len(), 4);
     }
 
     #[test]

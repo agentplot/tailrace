@@ -1774,6 +1774,7 @@ fn required(kind: ClaimKind, signer: &str) -> RequiredClaim {
     RequiredClaim {
         kind,
         check: None,
+        environment: None,
         signers: vec![NamedSigner {
             id: SignerId::new(signer),
             verified_by: format!("{signer}'s key"),

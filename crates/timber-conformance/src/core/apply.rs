@@ -18,7 +18,7 @@ use timber_seams::{
 };
 
 use crate::core::publish::{one, passing};
-use crate::world::{FakeWorld, GATE, REBUILDER, STABLE, TARGET};
+use crate::world::{FakeWorld, Write, GATE, HOST, REBUILDER, STABLE, TARGET, WHEN};
 use crate::{ok, Scenario};
 
 pub const GROUP: &str = "apply";
@@ -153,6 +153,8 @@ fn ask(world: &FakeWorld) -> ApplyAsk {
         branch: world.main.clone(),
         component: None,
         environment: cache(),
+        signer: SignerId::new(HOST),
+        at: WHEN,
     }
 }
 
@@ -214,6 +216,11 @@ fn the_head_applied_after_its_claims_are_judged(world: &FakeWorld) {
     );
     let (before, writes) = (world.fakes.store.calls().len(), world.writes().len());
     let answer = apply(&seams, &world.history(), &ask(world));
+    let written = world.writes()[writes..].to_vec();
+    let report = match written.as_slice() {
+        [Write::Attach { subject, envelope }] if *subject == second => envelope.digest(),
+        other => panic!("the apply wrote other than one claim beside the index: {other:?}"),
+    };
     assert_eq!(
         answer,
         Ok(Applied {
@@ -224,10 +231,11 @@ fn the_head_applied_after_its_claims_are_judged(world: &FakeWorld) {
             index: second.clone(),
             applied: true,
             current: Ok(first),
-            report: Ok(Running {
+            running: Ok(Running {
                 digest: second.clone(),
                 converged_at: CONVERGED.into(),
             }),
+            report: Ok(report),
         }),
         "the apply named another environment, channel, version or report"
     );
@@ -271,7 +279,6 @@ fn the_head_applied_after_its_claims_are_judged(world: &FakeWorld) {
         "the target was handed the version before its claims were read"
     );
     assert!(!read(&store[at..]), "the claims were read after the apply");
-    assert_eq!(world.writes().len(), writes, "the apply wrote to the store");
 }
 
 fn a_wanting_claim_stops_the_apply(world: &FakeWorld) {
@@ -286,6 +293,7 @@ fn a_wanting_claim_stops_the_apply(world: &FakeWorld) {
     let wanted = |kind: ClaimKind, signer: NamedSigner| RequiredClaim {
         kind,
         check: None,
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Every,
     };
@@ -308,6 +316,7 @@ fn a_wanting_claim_stops_the_apply(world: &FakeWorld) {
             Why::Wanting {
                 kind: ClaimKind::Rebuild,
                 check: None,
+                environment: None,
                 signers: vec![SignerId::new("box")],
             },
             "the apply was refused for another claim than the rebuild by box"

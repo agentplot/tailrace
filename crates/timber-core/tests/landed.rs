@@ -16,6 +16,7 @@ fn acceptance() -> Required {
         claims: vec![RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("test")),
+            environment: None,
             signers: vec![],
             asked_of: AskedOf::Every,
         }],

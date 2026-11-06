@@ -574,14 +574,80 @@ fn an_apply_binds_every_target_built_through_a_store_it_never_makes() {
     let before = files(&layout);
     let binding = bound(&host, &layout, true, For::Apply).unwrap();
     let profiles: Vec<&str> = binding.seams.targets.keys().map(|p| p.as_str()).collect();
-    assert_eq!(profiles, ["nix_cache"]);
+    assert_eq!(profiles, ["clan", "nix_cache"]);
     assert!(binding
         .seams
         .target(&timber_seams::TargetProfile::new("nix_cache"))
         .is_some());
     assert!(binding.seams.projections.is_empty());
-    assert_eq!(binding.signer, None, "apply signs nothing");
     assert_eq!(files(&layout), before, "binding an apply wrote the layout");
+}
+
+// Requirement: Apply binds the host's signer to sign its report
+
+#[test]
+fn an_apply_signs_as_the_signer_signing_names_and_binds_every_other_verify_only() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound(&host, &layout, true, For::Apply).unwrap();
+    assert_eq!(binding.signer, Some(SignerId::new("laptop")));
+    let promote = bound(&host, &layout, true, For::Promote).unwrap();
+    assert_eq!(
+        binding.seams.signers.len(),
+        promote.seams.signers.len(),
+        "an apply binds other signers than a promote"
+    );
+    for signer in &binding.seams.signers[1..] {
+        match signer.sign(&claim(), &SignerId::new("laptop")) {
+            Err(Not::Absent(a)) => {
+                assert_eq!(a.source.seam, Seam::Signer);
+                assert!(a.what.contains("no identity is at hand"), "{a:?}");
+            }
+            other => panic!("a signer after the host's answered {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn an_apply_with_no_file_signs_as_the_given_host_key_made_at_its_first_sign() {
+    let host = Host::new();
+    let (repo, head) = committed(&host, None);
+    let apply = host.bind(&repo, For::Apply);
+    // The given layout is opened and never made: a host that never
+    // published has none to apply from.
+    assert!(
+        matches!(&apply, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store),
+        "{:?}",
+        apply.err()
+    );
+    profiles::store::layout::Layout::create(host.given_layout()).unwrap();
+    let apply = host.bind(&repo, For::Apply).unwrap();
+    assert_given(&host, &apply, &repo, &head);
+    assert_eq!(apply.signer, Some(given_signer(&host)));
+    let key = host.data().join(profiles::signer::HOST_KEY);
+    assert!(!key.exists(), "binding an apply made {}", key.display());
+    let signer = apply.signer.clone().unwrap();
+    apply.seams.signers[0].sign(&claim(), &signer).unwrap();
+    assert!(
+        key.is_file(),
+        "the first sign made no key at {}",
+        key.display()
+    );
+}
+
+#[test]
+fn status_and_policy_bind_no_signer_whatever_the_file_names() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    for command in [For::Status, For::Policy] {
+        assert_eq!(
+            bound(&host, &layout, true, command).unwrap().signer,
+            None,
+            "{command:?}"
+        );
+    }
 }
 
 /// A repository in the host's directory, made with git, and its path.

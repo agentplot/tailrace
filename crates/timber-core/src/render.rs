@@ -333,6 +333,7 @@ fn given(own: Option<&Own>, trusted: &[NamedSigner]) -> (PolicyOf, Vec<RequiredC
             vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: Vec::new(),
                 asked_of: AskedOf::Every,
             }],

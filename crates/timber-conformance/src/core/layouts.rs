@@ -166,6 +166,7 @@ fn acceptance() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![named(GATE, &[ClaimKind::Acceptance])],
         asked_of: AskedOf::Every,
     }
@@ -176,6 +177,7 @@ fn provenance() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![named(HOST, &[ClaimKind::Provenance])],
         asked_of: AskedOf::Every,
     }
@@ -452,6 +454,7 @@ fn the_publishers_policy_through_the_hosts_trust(world: &FakeWorld) {
     let gate_or_box = RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![
             named(GATE, &[ClaimKind::Acceptance]),
             named("box", &[ClaimKind::Acceptance]),
@@ -743,6 +746,7 @@ fn a_consumers_file_reads_under_its_own_signers_alone(world: &FakeWorld) {
     let host_or_box = RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![
             named(HOST, &[ClaimKind::Provenance]),
             named("box", &[ClaimKind::Provenance]),
@@ -808,6 +812,7 @@ fn a_claim_the_file_names_no_signer_for_read_through_the_hosts_trust(world: &Fak
         vec![RequiredClaim {
             kind: ClaimKind::Acceptance,
             check: None,
+            environment: None,
             signers: vec![],
             asked_of: AskedOf::Every,
         }],

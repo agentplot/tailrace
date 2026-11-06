@@ -56,10 +56,13 @@ pub enum ClaimKind {
     /// claims a layout must require, as the publishing repository
     /// declared them at the revision the claim names (113).
     LayoutPolicy,
+    /// An environment runs a version's index, as the host that ran the
+    /// apply observed it after the target converged (43, 91, C.12).
+    Report,
 }
 
 impl ClaimKind {
-    const ALL: [ClaimKind; 9] = [
+    const ALL: [ClaimKind; 10] = [
         ClaimKind::Provenance,
         ClaimKind::Verdict,
         ClaimKind::Test,
@@ -69,6 +72,7 @@ impl ClaimKind {
         ClaimKind::Promotion,
         ClaimKind::Carried,
         ClaimKind::LayoutPolicy,
+        ClaimKind::Report,
     ];
 
     pub fn name(self) -> &'static str {
@@ -82,6 +86,7 @@ impl ClaimKind {
             ClaimKind::Promotion => "promotion",
             ClaimKind::Carried => "carried",
             ClaimKind::LayoutPolicy => "layout_policy",
+            ClaimKind::Report => "report",
         }
     }
 
@@ -368,6 +373,29 @@ mod tests {
             serde_json::to_value(ClaimKind::LayoutPolicy).unwrap(),
             "layout_policy"
         );
+    }
+
+    #[test]
+    fn a_report_about_an_index_is_written_under_timbers_own_report_type() {
+        let c = Claim {
+            subject: Digest::of(b"index"),
+            kind: ClaimKind::Report,
+            revision: Revision::new("4f2a9c1"),
+            build: None,
+            body: json!({"environment": "first", "component": "web"}),
+        };
+        let statement: Value = serde_json::from_slice(&c.payload()).unwrap();
+        assert_eq!(
+            statement["predicateType"],
+            "https://agentplot.github.io/timber/claim/report/v1"
+        );
+        assert_eq!(Claim::from_envelope(&sealed(&c, "deployer")), Some(c));
+        assert_eq!(serde_json::to_value(ClaimKind::Report).unwrap(), "report");
+        assert_eq!(
+            serde_json::from_value::<ClaimKind>(json!("report")).unwrap(),
+            ClaimKind::Report
+        );
+        round_trip(ClaimKind::Report);
     }
 
     #[test]

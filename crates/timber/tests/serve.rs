@@ -885,6 +885,7 @@ fn accepted_by_the_gate() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![NamedSigner {
             id: SignerId::new("gate"),
             verified_by: "gate's key".into(),

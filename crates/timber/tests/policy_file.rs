@@ -162,7 +162,7 @@ fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) ->
                     text.push_str("prereleases = true\n");
                 }
             }
-            Moves::Bound { to } => {
+            Moves::Bound { to, .. } => {
                 text.push_str(&format!("bound_to = {}\n", quoted(to.as_str())));
             }
             Moves::Promotion => {}
@@ -253,6 +253,7 @@ fn fragment(components: &[ComponentName]) -> Vec<(DeclaredChannel, bool, String)
         ) {
             (_, Some(to)) => Moves::Bound {
                 to: ChannelName::new(to),
+                after: vec![],
             },
             (Some(true), None) => Moves::EachPublish {
                 prereleases: key("prereleases").and_then(toml::Value::as_bool) == Some(true),

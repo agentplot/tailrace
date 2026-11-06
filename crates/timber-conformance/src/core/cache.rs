@@ -294,6 +294,7 @@ fn acceptance() -> Required {
         claims: vec![RequiredClaim {
             kind: ClaimKind::Provenance,
             check: None,
+            environment: None,
             signers: vec![NamedSigner {
                 id: SignerId::new(HOST),
                 verified_by: format!("{HOST}'s key"),

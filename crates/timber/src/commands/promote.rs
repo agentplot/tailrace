@@ -107,7 +107,9 @@ fn store(out: &mut dyn Write, store: &Answer<Mirrored>) -> io::Result<()> {
     writeln!(out)
 }
 
-fn text(out: &mut dyn Write, answer: &Answer<Promoted>) -> io::Result<()> {
+/// A promotion's answer as a person reads it, the gate's move on reports
+/// among them (design D9).
+pub(crate) fn text(out: &mut dyn Write, answer: &Answer<Promoted>) -> io::Result<()> {
     match answer {
         Err(not) => render::not(out, "", not),
         Ok(Promoted::Moved {

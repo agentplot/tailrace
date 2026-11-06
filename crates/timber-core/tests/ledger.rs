@@ -9,15 +9,16 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use serde_json::json;
+use timber_core::ledger::judge;
 use timber_core::{
     answer_json, channel, mirror, promote, Channel, Followed, Mirrored, PromoteAsk, Promoted,
-    Published, To,
+    Published, Reported, To,
 };
 use timber_fakes::{FakeKeeper, FakeSigner, FakeStore, Fault, KeeperOp, SignerOp, StoreOp, Times};
 use timber_seams::{
     channel_name, Answer, AskedOf, Audience, Branch, Chain, ChannelId, ChannelName, Claim,
-    ClaimKind, ComponentName, Digest, Envelope, Keeper, Moved, NamedSigner, Not, Outcome,
-    OutputName, Promotion, Read, Report, Required, RequiredClaim, Satisfied, Seam, Seams,
+    ClaimKind, ComponentName, Digest, Envelope, EnvironmentName, Keeper, Moved, NamedSigner, Not,
+    Outcome, OutputName, Promotion, Read, Report, Required, RequiredClaim, Satisfied, Seam, Seams,
     Signature, Signer, SignerId, Store, Version, Why,
 };
 use world::{build_of, version_of, World};
@@ -45,6 +46,7 @@ fn wanted(kind: ClaimKind, signers: Vec<NamedSigner>) -> RequiredClaim {
     RequiredClaim {
         kind,
         check: None,
+        environment: None,
         signers,
         asked_of: AskedOf::Every,
     }
@@ -469,6 +471,7 @@ fn a_version_not_accepted_is_refused_naming_acceptance_and_nothing_is_written() 
         Why::Wanting {
             kind: ClaimKind::Acceptance,
             check: None,
+            environment: None,
             signers: vec![SignerId::new(GATE)],
         }
     );
@@ -518,6 +521,7 @@ fn a_claim_the_channel_requires_wanting_is_refused_naming_it_and_its_signers() {
         Why::Wanting {
             kind: ClaimKind::Rebuild,
             check: None,
+            environment: None,
             signers: vec![SignerId::new(REBUILD)],
         }
     );
@@ -562,6 +566,7 @@ fn a_host_the_policy_does_not_let_promote_is_refused_before_anything_is_signed()
         Why::Wanting {
             kind: ClaimKind::Promotion,
             check: None,
+            environment: None,
             signers: vec![SignerId::new("approver")],
         }
     );
@@ -625,6 +630,7 @@ fn a_lines_promotion_signer_is_refused_and_nothing_is_appended() {
         Why::Wanting {
             kind: ClaimKind::Promotion,
             check: None,
+            environment: None,
             signers: vec![SignerId::new(GATE)],
         }
     );
@@ -1284,4 +1290,162 @@ fn the_answers_render_in_the_one_form() {
         json["value"]["store"]["value"]["name"]["followed"], "moved",
         "{json}"
     );
+}
+
+// Requirement: A report counts only through a signer the policy lets
+// claim one (environment-reports; design D9)
+
+/// The deployer, which the policy lets claim a report.
+const DEPLOYER: &str = "deployer";
+
+/// A report of `environment` on `index`, as the host that applied it
+/// observed it, signed by `signer` and attached to the index; its
+/// envelope's digest.
+fn report_on(world: &World, index: &Digest, signer: &str, environment: &str) -> Digest {
+    let theirs = FakeSigner::new();
+    let id = SignerId::new(signer);
+    theirs.hold(&id);
+    let claim = Reported {
+        environment: EnvironmentName::new(environment),
+        component: ComponentName::new("lib"),
+        channel: ChannelName::new("stable"),
+        version: Version::new("0.2.0"),
+        index: index.clone(),
+        runs: index.clone(),
+        converged_at: "2026-11-05T09:00:00Z".into(),
+        at: AT,
+    }
+    .claim(world.head.clone());
+    let envelope = theirs.sign(&claim, &id).unwrap();
+    world.fakes.store.attach(index, &envelope).unwrap();
+    envelope.digest()
+}
+
+/// A policy requiring the gate's acceptance, a review by `desk`, which
+/// may claim reviews alone, and a report of `first` by `reporters`.
+fn after_first(reporters: Vec<NamedSigner>) -> Required {
+    Required::Channel {
+        claims: vec![
+            wanted(ClaimKind::Acceptance, vec![gate()]),
+            wanted(ClaimKind::Review, vec![named("desk", &[ClaimKind::Review])]),
+            RequiredClaim {
+                kind: ClaimKind::Report,
+                check: None,
+                environment: Some(EnvironmentName::new("first")),
+                signers: reporters,
+                asked_of: AskedOf::Every,
+            },
+        ],
+        bound_to: Some(ChannelName::new("stable")),
+        promoted_by: vec![gate()],
+        approvers: vec![],
+    }
+}
+
+fn deployer() -> NamedSigner {
+    named(DEPLOYER, &[ClaimKind::Report])
+}
+
+/// The refusal of a report of `first` the policy lets `signers` make.
+fn no_report_of_first(signers: &[&str]) -> Why {
+    Why::Wanting {
+        kind: ClaimKind::Report,
+        check: None,
+        environment: Some(EnvironmentName::new("first")),
+        signers: signers.iter().map(|s| SignerId::new(*s)).collect(),
+    }
+}
+
+/// `second`'s index under review by `desk`, as the policy requires.
+fn reviewed() -> Two {
+    let two = two();
+    attach(
+        &two.world,
+        &two.second,
+        "desk",
+        ClaimKind::Review,
+        json!({}),
+    );
+    two
+}
+
+#[test]
+fn a_report_of_the_environment_required_by_a_signer_that_may_report_counts() {
+    let Two { world, second, .. } = reviewed();
+    let report = report_on(&world, &second, DEPLOYER, "first");
+    let satisfied = judge(
+        &world.fakes.seams(),
+        &after_first(vec![deployer()]),
+        &second,
+    )
+    .unwrap();
+    assert_eq!(satisfied.len(), 3, "{satisfied:?}");
+    assert_eq!(satisfied.last(), Some(&report));
+    assert_eq!(claims_of(&world, &second, ClaimKind::Report), [report]);
+}
+
+#[test]
+fn a_report_of_another_environment_is_refused_naming_the_environment_required() {
+    let Two { world, second, .. } = reviewed();
+    report_on(&world, &second, DEPLOYER, "second");
+    assert_eq!(
+        refused(judge(
+            &world.fakes.seams(),
+            &after_first(vec![deployer()]),
+            &second
+        )),
+        no_report_of_first(&[DEPLOYER])
+    );
+}
+
+#[test]
+fn a_report_on_another_index_than_the_one_judged_does_not_count() {
+    let Two {
+        world,
+        first,
+        second,
+    } = reviewed();
+    report_on(&world, &first, DEPLOYER, "first");
+    assert_eq!(
+        refused(judge(
+            &world.fakes.seams(),
+            &after_first(vec![deployer()]),
+            &second
+        )),
+        no_report_of_first(&[DEPLOYER])
+    );
+}
+
+#[test]
+fn a_report_by_a_signer_that_may_not_report_stays_attached_and_counts_for_nothing() {
+    let Two { world, second, .. } = reviewed();
+    let theirs = report_on(&world, &second, "desk", "first");
+    assert_eq!(
+        refused(judge(
+            &world.fakes.seams(),
+            &after_first(vec![deployer()]),
+            &second
+        )),
+        no_report_of_first(&[DEPLOYER])
+    );
+    let listed = named("desk", &[ClaimKind::Review]);
+    assert_eq!(
+        refused(judge(
+            &world.fakes.seams(),
+            &after_first(vec![listed]),
+            &second
+        )),
+        no_report_of_first(&["desk"]),
+        "a signer listed for a report whose kinds lack it counted"
+    );
+    assert_eq!(claims_of(&world, &second, ClaimKind::Report), [theirs]);
+}
+
+#[test]
+fn a_report_requirement_naming_no_signer_is_refused_naming_it_whatever_is_attached() {
+    let Two { world, second, .. } = reviewed();
+    report_on(&world, &second, DEPLOYER, "first");
+    let why = refused(judge(&world.fakes.seams(), &after_first(vec![]), &second));
+    assert_eq!(why, no_report_of_first(&[]));
+    assert!(why.to_string().contains("no report of first"), "{why}");
 }

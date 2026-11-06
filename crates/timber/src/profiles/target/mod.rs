@@ -8,22 +8,36 @@
 
 pub mod nix_cache;
 pub mod nix_closure;
+pub mod nix_fleet;
 
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use timber_seams::{Store, Target, TargetProfile};
+use timber_seams::{Answer, RepositoryName, Store, Target, TargetProfile};
 
 use nix_cache::NixCache;
+use nix_fleet::push::{self, ClanPush};
 
 /// Every target profile built, by its profile name (92, C.10, C.12;
-/// design D3): the Nix cache, reading a version's index and its closures
-/// through `store`, a store of its own, since a store is not shared. A
-/// profile that runs the repository's own tools is handed `checkout`, the
-/// checkout's path, as a projection is; no profile built yet runs one.
-pub fn bound(store: Box<dyn Store>, _checkout: &Path) -> BTreeMap<TargetProfile, Box<dyn Target>> {
-    BTreeMap::from([(
-        TargetProfile::new(nix_cache::PROFILE),
-        Box::new(NixCache::new(store)) as Box<dyn Target>,
-    )])
+/// design D3), each reading a version's index and its closures through a
+/// store of its own, which `store` binds, since a store is not shared:
+/// the Nix cache, and the clan push profile, which runs the fleet's own
+/// tools against `checkout`, the checkout's path, and keeps its markers
+/// under `repository`, the checkout's repository, or answers why it has
+/// none at every operation that needs it (119).
+pub fn bound(
+    store: &dyn Fn() -> Answer<Box<dyn Store>>,
+    checkout: &Path,
+    repository: Answer<RepositoryName>,
+) -> Answer<BTreeMap<TargetProfile, Box<dyn Target>>> {
+    Ok(BTreeMap::from([
+        (
+            TargetProfile::new(nix_cache::PROFILE),
+            Box::new(NixCache::new(store()?)) as Box<dyn Target>,
+        ),
+        (
+            TargetProfile::new(push::PROFILE),
+            Box::new(ClanPush::new(store()?, checkout, repository)) as Box<dyn Target>,
+        ),
+    ]))
 }

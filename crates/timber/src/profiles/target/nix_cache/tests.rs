@@ -8,7 +8,7 @@ use tempfile::TempDir;
 use timber_fakes::FakeStore;
 use timber_seams::{
     Artifact, ArtifactMeta, ChannelId, ChannelName, ComponentName, Ecosystem, EcosystemName,
-    EnvironmentName, Version,
+    EnvironmentName, IndexMeta, Manifest, Version,
 };
 
 use super::*;

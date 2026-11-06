@@ -1,19 +1,38 @@
 //! `timber apply <environment>`: one environment converged on its
 //! channel's head, the claims the channel's policy requires of the head's
-//! index judged before its target is handed the version (40, 42, 88 to
-//! 91, 136; design D5). It is bound as status is, signing nothing, with
-//! the store opened and never made and every target profile built beside
-//! it, the repository's environments picking among them (92); timber
-//! keeps no credential that reaches a target (45, rule core.21).
+//! index judged before its target is handed the version, and the report
+//! of what the host observed it run after signed as the host and
+//! attached beside the index (11, 40, 42, 43, 88 to 91, 136; design D5,
+//! D6). It is bound as status is, with the host's signer to sign that
+//! report, the store opened and never made and every target profile built
+//! beside it, the repository's environments picking among them (92);
+//! timber keeps no credential that reaches a target (45, rule core.21).
+//!
+//! After the core's apply has answered a report claim, the command tells
+//! the host's gate of it as the publish command tells it of a version:
+//! where the bindings file names this host's own steps as what tells it,
+//! or names no `[gate]` (118), it asks the core to move each channel that
+//! comes after the environment, in the same run, and prints each
+//! channel's answer beside the apply's; where the file names a job, it
+//! says so and asks the gate nothing (95, 130; design D9). The core's
+//! apply reaches nothing of the gate: this step, the host's binding of
+//! what tells it, calls one and then the other (rule core.52). Its exit
+//! is the worst of the apply's, the report's and each channel's, a
+//! channel held counting as refused (58).
 
 use std::io::{self, Write};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
-use timber_core::{apply, Applied, ApplyAsk, History};
+use serde_json::{json, Value};
+use timber_core::after::{follow, After, FollowAsk, Follows};
+use timber_core::{answer_json, apply, Applied, ApplyAsk, History};
 use timber_seams::{Answer, Branch, ComponentName, EnvironmentName, Not};
 
-use crate::{render, Binding};
+use crate::bindings::Teller;
+use crate::commands::promote;
+use crate::{render, unsigned, Binding};
 
 #[derive(Debug, Args)]
 pub struct ApplyArgs {
@@ -32,25 +51,124 @@ pub struct ApplyArgs {
     pub json: bool,
 }
 
+/// The core's apply answer and, where it answered a report claim, what
+/// tells the gate of it; none where the report is not one, so no gate is
+/// asked (design D9).
+struct Converged {
+    applied: Applied,
+    after: Option<Gate>,
+}
+
+/// What became of telling the gate of an environment's report.
+#[derive(Clone, Debug, PartialEq)]
+enum Gate {
+    /// This host's apply told its own gate, and this is its answer for
+    /// each channel that comes after the environment.
+    Told(Answer<Follows>),
+    /// A job outside timber tells the gate, in the file's words; the
+    /// gate was not asked, and no channel moved.
+    Job(String),
+}
+
+impl Gate {
+    /// 57: the apply's `after` member, in the core's one form.
+    fn json(&self) -> Value {
+        match self {
+            Gate::Told(answer) => {
+                let mut value = answer_json(answer);
+                value["told_by"] = json!("apply");
+                value
+            }
+            Gate::Job(words) => json!({ "told_by": "job", "job": words }),
+        }
+    }
+
+    /// The exit code the gate's part adds: each channel's by its kind, a
+    /// channel held counting as refused; a job adds none, the apply
+    /// having done what it was asked.
+    fn code(&self) -> i32 {
+        match self {
+            Gate::Told(Err(not)) => render::code(not),
+            Gate::Told(Ok(follows)) => {
+                render::worst(follows.channels.iter().map(|(_, after)| match after {
+                    Ok(After::Held { .. }) => render::REFUSED,
+                    other => render::exit(other),
+                }))
+            }
+            Gate::Job(_) => render::OK,
+        }
+    }
+}
+
 pub fn run(args: &ApplyArgs, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write) -> i32 {
     let answer = ask(args, binding, at);
     let _ = if args.json {
-        render::json(out, &answer)
+        json(out, &answer)
     } else {
         text(out, &answer)
     };
-    render::exit(&answer)
+    match &answer {
+        Ok(converged) => render::worst(
+            [render::exit(&converged.applied.report)]
+                .into_iter()
+                .chain(converged.after.iter().map(Gate::code)),
+        ),
+        Err(not) => render::code(not),
+    }
 }
 
-fn ask(args: &ApplyArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Applied> {
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+fn ask(args: &ApplyArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Converged> {
     let binding = binding.as_ref().map_err(Not::clone)?;
+    let signer = binding.signer.clone().ok_or_else(unsigned)?;
     let history = History::open(at)?;
     let ask = ApplyAsk {
         branch: Branch::new(&args.branch),
         component: args.component.as_ref().map(ComponentName::new),
         environment: EnvironmentName::new(&args.environment),
+        signer,
+        at: now(),
     };
-    apply(&binding.seams, &history, &ask)
+    let applied = apply(&binding.seams, &history, &ask)?;
+    // Only once the apply has answered a report claim: the gate, told of
+    // it, where this host's own steps are what tell it (130).
+    let after = applied.report.is_ok().then(|| match &binding.gate {
+        Teller::Publish => Gate::Told(follow(
+            &binding.seams,
+            &history,
+            &FollowAsk {
+                branch: ask.branch.clone(),
+                component: Some(applied.component.clone()),
+                environment: applied.environment.clone(),
+                signer: ask.signer.clone(),
+                at: now(),
+            },
+        )),
+        Teller::Job(words) => Gate::Job(words.clone()),
+    });
+    Ok(Converged { applied, after })
+}
+
+/// The answer as one JSON document: the apply's, in the core's one form,
+/// with its `after` member where the gate was told (57).
+fn json(out: &mut dyn Write, answer: &Answer<Converged>) -> io::Result<()> {
+    let value = match answer {
+        Ok(converged) => {
+            let mut value = answer_json::<&Applied>(&Ok(&converged.applied));
+            if let Some(gate) = &converged.after {
+                value["value"]["after"] = gate.json();
+            }
+            value
+        }
+        Err(not) => answer_json::<()>(&Err(not.clone())),
+    };
+    serde_json::to_writer_pretty(&mut *out, &value)?;
+    writeln!(out)
 }
 
 /// One part of the answer under its label: its value, or its own answer
@@ -72,11 +190,14 @@ fn part<T>(
 
 /// The environment, its component and channel, the version and index
 /// its chain's head names and whether it was applied; then what the
-/// environment ran before and the target's report after, each its digest
-/// or its unread answer (43, 91, 119).
-fn text(out: &mut dyn Write, answer: &Answer<Applied>) -> io::Result<()> {
-    let applied = match answer {
-        Ok(applied) => applied,
+/// environment ran before and what the target's report says it runs
+/// after, each its digest or its unread answer (43, 91, 119); and the
+/// report claim's digest, or the answer given in its place (design D6);
+/// and where the gate was told, what it answered for each channel that
+/// comes after the environment, or the job that tells it (design D9).
+fn text(out: &mut dyn Write, answer: &Answer<Converged>) -> io::Result<()> {
+    let (applied, after) = match answer {
+        Ok(converged) => (&converged.applied, &converged.after),
         Err(not) => return render::not(out, "", not),
     };
     let done = if applied.applied {
@@ -90,9 +211,72 @@ fn text(out: &mut dyn Write, answer: &Answer<Applied>) -> io::Result<()> {
         applied.environment, applied.component, applied.channel, applied.version, applied.index
     )?;
     part(out, "before", &applied.current, ToString::to_string)?;
-    part(out, "report", &applied.report, |running| {
+    part(out, "runs", &applied.running, |running| {
         format!("{}, converged {}", running.digest, running.converged_at)
-    })
+    })?;
+    part(out, "report", &applied.report, ToString::to_string)?;
+    match after {
+        Some(gate) => self::gate(out, &applied.environment, gate),
+        None => Ok(()),
+    }
+}
+
+/// The gate's part, below the report: each channel that comes after the
+/// environment with its answer, a move as the promote command prints it,
+/// or the job that tells the gate.
+fn gate(out: &mut dyn Write, environment: &EnvironmentName, gate: &Gate) -> io::Result<()> {
+    let follows = match gate {
+        Gate::Job(words) => {
+            return writeln!(
+                out,
+                "  after: the gate is told by \"{words}\", and no channel moved"
+            )
+        }
+        Gate::Told(Err(not)) => {
+            writeln!(out, "  after:")?;
+            return render::not(out, "    ", not);
+        }
+        Gate::Told(Ok(follows)) => follows,
+    };
+    if follows.channels.is_empty() {
+        return writeln!(out, "  after: no channel comes after {environment}");
+    }
+    writeln!(out, "  after:")?;
+    for (channel, after) in &follows.channels {
+        match after {
+            Ok(After::Promoted(promoted)) => {
+                let mut moved = Vec::new();
+                promote::text(&mut moved, &Ok(promoted.clone()))?;
+                for line in String::from_utf8_lossy(&moved).lines() {
+                    writeln!(out, "    {line}")?;
+                }
+            }
+            Ok(After::Held { reports }) => {
+                writeln!(
+                    out,
+                    "    {channel} held, its environments not at one index:"
+                )?;
+                for (environment, newest) in reports {
+                    match newest {
+                        Ok(n) => writeln!(
+                            out,
+                            "      {environment} last reported {} ({})",
+                            n.report.version, n.report.index
+                        )?,
+                        Err(not) => {
+                            writeln!(out, "      {environment}:")?;
+                            render::not(out, "        ", not)?;
+                        }
+                    }
+                }
+            }
+            Err(not) => {
+                writeln!(out, "    {channel}:")?;
+                render::not(out, "      ", not)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -183,6 +367,7 @@ mod tests {
                 .map(|(kind, signer)| RequiredClaim {
                     kind: *kind,
                     check: None,
+                    environment: None,
                     signers: vec![named(signer, &[*kind])],
                     asked_of: AskedOf::Every,
                 })
@@ -290,7 +475,8 @@ mod tests {
                 version,
                 vec![Artifact { digest, meta }],
             )
-            .unwrap();
+            .unwrap()
+            .published_from(self.head.clone(), None);
             let index = store.put_artifact(&Manifest::Index(index)).unwrap().digest;
             let gate = SignerId::new(GATE);
             let signer = FakeSigner::new();
@@ -364,7 +550,7 @@ mod tests {
             Binding {
                 seams: self.fakes.seams(),
                 store: Source::new(Seam::Store, "layout /srv/timber/layout"),
-                signer: None,
+                signer: Some(SignerId::new(HOST)),
                 gate: Teller::Job("the gate's job".into()),
                 trust: vec![],
             }
@@ -387,6 +573,19 @@ mod tests {
 
         fn ops(&self) -> Vec<TargetOp> {
             self.target.calls().into_iter().map(|c| c.op).collect()
+        }
+
+        /// The digests of the report claims attached to `index`, in the
+        /// order attached.
+        fn reports_on(&self, index: &Digest) -> Vec<Digest> {
+            self.fakes
+                .store
+                .claims_of(index)
+                .unwrap()
+                .iter()
+                .filter(|e| Claim::from_envelope(e).is_some_and(|c| c.kind == ClaimKind::Report))
+                .map(|e| e.digest())
+                .collect()
         }
     }
 
@@ -414,7 +613,9 @@ mod tests {
                     s.second
                 ),
                 format!("  before: {}", s.first),
-                format!("  report: {}, converged {CONVERGED}", s.second),
+                format!("  runs: {}, converged {CONVERGED}", s.second),
+                format!("  report: {}", s.reports_on(&s.second)[0]),
+                "  after: the gate is told by \"the gate's job\", and no channel moved".into(),
             ],
             "{printed}"
         );
@@ -435,7 +636,15 @@ mod tests {
         s.declares("cache", "beta", "fake", json!({}));
         let (code, printed) = s.run(&["apply", "cache", "--component", COMPONENT, "--json"]);
         assert_eq!(code, render::OK, "{printed}");
-        let printed: Value = serde_json::from_str(&printed).unwrap();
+        let mut printed: Value = serde_json::from_str(&printed).unwrap();
+        // The one thing beside the core's answer: the job that tells the
+        // gate of the report.
+        let after = printed["value"]
+            .as_object_mut()
+            .unwrap()
+            .remove("after")
+            .expect("the apply names what tells the gate");
+        assert_eq!(after, json!({ "told_by": "job", "job": "the gate's job" }));
         let core: Answer<Applied> = Ok(Applied {
             environment: EnvironmentName::new("cache"),
             component: ComponentName::new(COMPONENT),
@@ -444,21 +653,22 @@ mod tests {
             index: s.second.clone(),
             applied: true,
             current: Ok(s.first.clone()),
-            report: Ok(Running {
+            running: Ok(Running {
                 digest: s.second.clone(),
                 converged_at: CONVERGED.into(),
             }),
+            report: Ok(s.reports_on(&s.second)[0].clone()),
         });
         assert_eq!(printed, answer_json(&core));
     }
 
     #[test]
-    fn a_target_that_keeps_no_marker_prints_its_unread_reason_and_exits_0() {
+    fn a_target_that_keeps_no_marker_prints_its_unread_reason_asks_no_gate_and_exits_unreadable() {
         let s = Scratch::new();
         s.declares("cache", "beta", "fake", json!({}));
         s.target.holds_no_marker();
         let (code, printed) = s.run(&["apply", "cache"]);
-        assert_eq!(code, render::OK, "{printed}");
+        assert_eq!(code, render::UNREADABLE, "{printed}");
         let lines: Vec<&str> = printed.lines().collect();
         assert_eq!(
             lines,
@@ -468,6 +678,9 @@ mod tests {
                     s.second
                 ),
                 "  before:".to_string(),
+                "    the target (fake) could not read what cache runs".to_string(),
+                NO_MARKER.to_string(),
+                "  runs:".to_string(),
                 "    the target (fake) could not read what cache runs".to_string(),
                 NO_MARKER.to_string(),
                 "  report:".to_string(),
@@ -575,7 +788,12 @@ mod tests {
             json!({ "attic": "fleet:swancloud", "closures": [COMPONENT] }),
         );
         let mut binding = s.binding();
-        binding.seams.targets = profiles::target::bound(Box::new(s.fakes.store.clone()), &s.repo);
+        let store = || Ok(Box::new(s.fakes.store.clone()) as Box<dyn timber_seams::Store>);
+        let repository = timber_seams::RepositoryName {
+            owner: "afterthought".into(),
+            name: "swancloud".into(),
+        };
+        binding.seams.targets = profiles::target::bound(&store, &s.repo, Ok(repository)).unwrap();
         let before = files(s.dir.path());
         let (_, printed) = s.run_over(&Ok(binding), &["apply", "cache", "--json"]);
         let printed: Value = serde_json::from_str(&printed).unwrap();
