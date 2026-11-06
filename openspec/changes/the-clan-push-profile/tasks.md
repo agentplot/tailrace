@@ -2,7 +2,7 @@
 
 ## 1. The Nix cache target's machinery
 
-- [ ] 1.1 Bring `change/the-nix-cache-target`'s built work into this branch before any code that reads `Policy::environments`, `Head`, `core::apply`, `timber apply`, the target family's `bound` or `nix_closure`. Take it from the bolt it landed on, or from its branch where it has not landed (design D1). Verify that `moon run ':#check-fast'` passes on the merged tree with nothing of this change written.
+- [x] 1.1 Bring `change/the-nix-cache-target`'s built work into this branch before any code that reads `Policy::environments`, `Head`, `core::apply`, `timber apply`, the target family's `bound` or `nix_closure`. Take it from the bolt it landed on, or from its branch where it has not landed (design D1). Verify that `moon run ':#check-fast'` passes on the merged tree with nothing of this change written.
 
 ## 2. Reports and after channels in the seams and the policy file
 
