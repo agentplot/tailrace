@@ -148,14 +148,13 @@
       }
     },
     "environments": {
-      "answer": "unreadable",
-      "unreadable": {
-        "source": {
-          "seam": "target",
-          "profile": "unread"
-        },
-        "what": "the environments: what each environment should run and runs is read from a target, and no target is read",
-        "said": null
+      "answer": "ok",
+      "value": {
+        "converged": 0,
+        "behind": 0,
+        "waiting": 0,
+        "unreadable": 0,
+        "environments": []
       }
     },
     "published": {

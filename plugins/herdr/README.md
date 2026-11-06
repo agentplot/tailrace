@@ -22,8 +22,8 @@ where it stays while your agents run.
   process gives them, from `/status.json`: every channel's component, name
   and the version it is at or that it is empty, and how many of the
   repository's environments run what they should, are behind, wait on a
-  person or cannot be read. Until a target is read, the environments say
-  so in timber's words, never as zeros. A repository appears once a
+  person or cannot be read. Where the environments cannot be read, they
+  say so in timber's words, never as zeros. A repository appears once a
   timber command run in a checkout of it names it, as
   `timber status --page` does.
 - **One repository whole**, on opening its row, from
@@ -31,8 +31,11 @@ where it stays while your agents run.
   prints in its checkout: the branch and the landed revision its policy
   was read at, each channel with its version or that it is empty and the
   chain of promotions that put it there, newest first, with the version
-  each moved from, who asked, when, and the claim; then the environments
-  and what this host published.
+  each moved from, who asked, when, and the claim; then the environments'
+  counts and every environment with its state, what it runs and since
+  when or why that cannot be read, what it should run, what it waits on,
+  and beside one that is behind the notes of every version between; then
+  what this host published.
 
 An answer that is not a value leads with its own word wherever it stands,
 `absent`, `refused` or `unreadable`, and the source's own words follow it
