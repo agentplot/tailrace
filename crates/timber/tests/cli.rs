@@ -18,13 +18,13 @@ use timber_core::{
     write, AcceptAsk, Ask, CheckoutAsk, Entry, History, InForceAsk, Judged, Kept, Layouts, LeftAsk,
     Moved, PromoteAsk, PushAsk, Reported, RepositoryName, To, ToldBy,
 };
-use timber_fakes::{Fakes, Fault, StoreOp, Times};
+use timber_fakes::{FakeTarget, Fakes, Fault, PolicyOp, StoreOp, Times};
 use timber_seams::{
     Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
-    Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, EnvironmentName,
-    Held, IndexMeta, Left, Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion,
-    Report, Required, RequiredClaim, Revision, Seam, Signer, SignerId, Source, Store, Verdict,
-    Version,
+    Check, Claim, ClaimKind, ComponentName, DeclaredEnvironment, Digest, Ecosystem, EcosystemName,
+    EnvironmentName, Held, IndexMeta, Keeper, Left, Manifest, NamedSigner, Outcome, Output,
+    OutputName, Pinned, Promotion, Report, Required, RequiredClaim, Revision, Seam, Signer,
+    SignerId, Source, Store, TargetProfile, TargetTable, Verdict, Version,
 };
 
 /// The store as the host's bindings name it, which the record keeps.
@@ -1074,6 +1074,256 @@ fn verify_lists_a_report_with_its_signer_and_the_environment_it_reports() {
             .filter(|c| c["kind"] != "report")
             .all(|c| c.get("environment").is_none()),
         "a claim other than the report names an environment: {json}"
+    );
+}
+
+// Requirement: The apply's host tells its own gate of a report
+
+/// When the fake target's apply converges.
+const CONVERGED: &str = "2026-11-06T09:00:00Z";
+
+/// The host as the policy names it: it may accept, promote and report.
+fn host_signer() -> NamedSigner {
+    NamedSigner {
+        id: SignerId::new("host"),
+        verified_by: "the host's key".into(),
+        kinds: vec![
+            ClaimKind::Acceptance,
+            ClaimKind::Promotion,
+            ClaimKind::Report,
+        ],
+        checks: vec![],
+    }
+}
+
+/// A channel's policy requiring the host's acceptance and promoted by
+/// the host, bound to `bound_to` where given.
+fn by_the_host(bound_to: Option<&str>) -> Required {
+    Required::Channel {
+        claims: vec![RequiredClaim {
+            kind: ClaimKind::Acceptance,
+            check: None,
+            environment: None,
+            signers: vec![host_signer()],
+            asked_of: AskedOf::Every,
+        }],
+        bound_to: bound_to.map(ChannelName::new),
+        promoted_by: vec![host_signer()],
+        approvers: vec![],
+    }
+}
+
+fn second() -> ChannelId {
+    ChannelId::new(None, ChannelName::new("second"))
+}
+
+/// The host's head published as 0.1.0, its index carrying the host's
+/// acceptance; `stable` promoted to it by the host; each of `declared`
+/// declared on `stable`, `srv` with the fake target, converging at
+/// [`CONVERGED`]; and `second`, which comes after `after`, bound to
+/// `stable`. The index and the fake target.
+fn applicable(host: &mut Host, declared: &[&str], after: &[&str]) -> (Digest, FakeTarget) {
+    let (code, published) = host.run(&["publish", "HEAD", "--json"]);
+    assert_eq!(code, 0, "{published}");
+    let published: Value = serde_json::from_str(&published).unwrap();
+    let index = Digest::parse(
+        published["value"]["components"][0]["value"]["index"]
+            .as_str()
+            .expect("the index"),
+    )
+    .unwrap();
+    let acceptance = Claim {
+        subject: index.clone(),
+        kind: ClaimKind::Acceptance,
+        revision: host.head.clone(),
+        build: None,
+        body: serde_json::json!({}),
+    };
+    let envelope = host
+        .fakes
+        .signer
+        .sign(&acceptance, &SignerId::new("host"))
+        .unwrap();
+    host.fakes.store.attach(&index, &envelope).unwrap();
+    host.fakes
+        .policy
+        .require(Audience::Channel(stable()), by_the_host(None));
+    let promoted = promote(
+        &host.fakes.seams(),
+        &History::open(&host.repo).unwrap(),
+        &PromoteAsk {
+            branch: Branch::new("main"),
+            component: None,
+            channel: ChannelName::new("stable"),
+            to: To::Version(Version::new("0.1.0")),
+            from: None,
+            signer: SignerId::new("host"),
+            at: 1_793_000_000,
+        },
+    );
+    assert!(promoted.is_ok(), "{promoted:?}");
+    for name in declared {
+        host.fakes.policy.declares_at(
+            &host.head,
+            DeclaredEnvironment {
+                name: EnvironmentName::new(*name),
+                channel: stable(),
+                waits: false,
+                approvers: vec![],
+                target: Some(TargetTable {
+                    profile: TargetProfile::new("fake"),
+                    settings: serde_json::json!({}),
+                }),
+            },
+        );
+    }
+    let after: Vec<EnvironmentName> = after.iter().map(|e| EnvironmentName::new(*e)).collect();
+    host.fakes.policy.after(
+        &second(),
+        &after,
+        &[host_signer()],
+        by_the_host(Some("stable")),
+    );
+    let target = host.fakes.target(&TargetProfile::new("fake"));
+    target.at(CONVERGED);
+    (index, target)
+}
+
+/// The host's binding with its own steps telling its gate (118).
+fn own_gate(host: &Host) -> Binding {
+    Binding {
+        gate: Teller::Publish,
+        ..host.binding()
+    }
+}
+
+/// The promotions `channel`'s chain holds, none where it holds none.
+fn promotions(fakes: &Fakes, channel: &ChannelId) -> Vec<Promotion> {
+    match fakes.keeper.chain(channel) {
+        Ok(chain) => chain
+            .claims
+            .iter()
+            .map(|e| Promotion::of(&Claim::from_envelope(e).unwrap()).unwrap())
+            .collect(),
+        Err(_) => vec![],
+    }
+}
+
+#[test]
+fn srv_applied_on_a_host_that_is_its_gate_moves_the_channel_after_it_and_exits_0() {
+    let mut host = Host::new();
+    let (index, _target) = applicable(&mut host, &["srv"], &["srv"]);
+    let (code, printed) = run_over(&host, own_gate(&host), &["apply", "srv", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    let value = &printed["value"];
+    assert_eq!(value["report"]["answer"], "ok", "{printed}");
+    let after = &value["after"];
+    assert_eq!(after["told_by"], "apply", "{printed}");
+    assert_eq!(after["answer"], "ok", "{printed}");
+    let channels = after["value"]["channels"].as_array().expect("the channels");
+    assert_eq!(channels.len(), 1, "{printed}");
+    assert_eq!(channels[0]["channel"], serde_json::json!(second()));
+    assert_eq!(channels[0]["answer"], "ok", "{printed}");
+    assert_eq!(channels[0]["value"]["after"], "promoted", "{printed}");
+    assert_eq!(channels[0]["value"]["promoted"], "moved", "{printed}");
+    assert_eq!(channels[0]["value"]["to"]["index"], index.as_str());
+
+    let chain = promotions(&host.fakes, &second());
+    assert_eq!(chain.len(), 1);
+    assert_eq!(chain[0].to.index, index);
+    assert_eq!(chain[0].asked_by, SignerId::new("host"));
+    let report = Digest::parse(value["report"]["value"].as_str().unwrap()).unwrap();
+    assert!(chain[0].policy.claims.contains(&report), "{chain:?}");
+}
+
+#[test]
+fn srv_applied_where_a_job_tells_the_gate_carries_the_jobs_words_and_moves_nothing() {
+    let mut host = Host::new();
+    applicable(&mut host, &["srv"], &["srv"]);
+    let before = host.fakes.policy.calls().len();
+    let (code, printed) = host.run(&["apply", "srv", "--json"]);
+    assert_eq!(code, 0, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    assert_eq!(printed["value"]["report"]["answer"], "ok", "{printed}");
+    assert_eq!(
+        printed["value"]["after"],
+        serde_json::json!({ "told_by": "job", "job": JOB })
+    );
+    assert!(
+        promotions(&host.fakes, &second()).is_empty(),
+        "second moved"
+    );
+    assert!(
+        host.fakes.policy.calls()[before..]
+            .iter()
+            .all(|c| c.op != PolicyOp::Channels),
+        "the channels were asked for a move"
+    );
+
+    let (code, printed) = host.run(&["apply", "srv"]);
+    assert_eq!(code, 0, "{printed}");
+    assert_eq!(
+        printed.lines().last(),
+        Some(format!("  after: the gate is told by \"{JOB}\", and no channel moved").as_str()),
+        "{printed}"
+    );
+}
+
+#[test]
+fn a_report_the_target_answers_unread_asks_no_gate_and_exits_as_unreadable() {
+    let mut host = Host::new();
+    let (_, target) = applicable(&mut host, &["srv"], &["srv"]);
+    target.holds_no_marker();
+    let before = host.fakes.policy.calls().len();
+    let (code, printed) = run_over(&host, own_gate(&host), &["apply", "srv", "--json"]);
+    assert_eq!(code, 3, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    assert_eq!(printed["answer"], "ok", "{printed}");
+    assert_eq!(
+        printed["value"]["report"]["answer"], "unreadable",
+        "{printed}"
+    );
+    assert!(printed["value"].get("after").is_none(), "{printed}");
+    assert!(
+        promotions(&host.fakes, &second()).is_empty(),
+        "second moved"
+    );
+    assert!(
+        host.fakes.policy.calls()[before..]
+            .iter()
+            .all(|c| c.op != PolicyOp::Channels),
+        "the channels were asked for a move"
+    );
+}
+
+#[test]
+fn a_channel_held_for_an_environment_that_has_not_reported_prints_each_and_exits_as_refused() {
+    let mut host = Host::new();
+    let (index, _target) = applicable(&mut host, &["srv", "eu"], &["srv", "eu"]);
+    let (code, printed) = run_over(&host, own_gate(&host), &["apply", "srv"]);
+    assert_eq!(code, 1, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| *l == "  after:")
+        .unwrap_or_else(|| panic!("no after part: {printed}"));
+    assert_eq!(
+        lines[at + 1],
+        "    second held, its environments not at one index:"
+    );
+    assert_eq!(
+        lines[at + 2],
+        format!("      srv last reported 0.1.0 ({index})")
+    );
+    assert_eq!(lines[at + 3], "      eu:");
+    assert!(
+        lines[at + 4].contains("a counted report of environment eu"),
+        "{printed}"
+    );
+    assert!(
+        promotions(&host.fakes, &second()).is_empty(),
+        "second moved"
     );
 }
 

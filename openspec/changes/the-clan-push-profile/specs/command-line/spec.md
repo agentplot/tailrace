@@ -24,3 +24,29 @@ as refused (58).
 
 - **WHEN** the update converges but the target's report is unread
 - **THEN** the answer carries the unread report in place of the claim, no channel is asked to move, and the exit is the unreadable exit
+
+## MODIFIED Requirements
+
+### Requirement: Apply converges one environment
+
+`timber apply <environment>` SHALL ask the core's apply for that
+environment at the governed branch's landed head, taking `--branch` as
+promote does and `--component <name>` where the repository declares
+components, and SHALL render the core's answer and nothing of its own,
+with `--json` printing it in its machine-readable form (56, 57, rule
+core.31). Absent, refused and unreadable SHALL be three exits (58).
+
+#### Scenario: An environment applied
+
+- **WHEN** `timber apply cache --component swancloud-srv` runs, and the cache environment's channel has its head at `0.4.0` with every claim its policy requires
+- **THEN** it prints `cache` of `swancloud-srv`, its channel, `0.4.0` and its index, the target's report and the report claim's digest, and exits 0
+
+#### Scenario: A claim found wanting
+
+- **WHEN** `timber apply prod` runs and the head of the channel `prod` follows lacks a claim its policy requires
+- **THEN** it prints the refusal naming that claim, exits as a refusal, and no target was asked to apply
+
+#### Scenario: Apply makes no store
+
+- **WHEN** `timber apply` runs on a host with no bindings file and no given layout
+- **THEN** the given layout is not made
