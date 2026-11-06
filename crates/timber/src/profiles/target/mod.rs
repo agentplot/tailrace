@@ -3,8 +3,11 @@
 //! built. The repository's environments pick among them (92, C.10,
 //! C.12): a profile bound once serves every environment that names it,
 //! each handed its own settings as the policy answers them (design D3).
+//! The Nix profiles read a closure's artifact through [`nix_closure`],
+//! which they share, so none calls another (rule core.2; design D6).
 
 pub mod nix_cache;
+pub mod nix_closure;
 
 use std::collections::BTreeMap;
 use std::path::Path;

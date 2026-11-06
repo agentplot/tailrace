@@ -29,7 +29,7 @@
 
 ## 7. The closure's form
 
-- [ ] 7.1 Add `crates/timber/src/profiles/target/nix_closure.rs`: read an artifact's bytes into its roots, one absolute store path per line, `<store dir>/<32 characters of Nix's base32>-<name>`, the store directory `/nix/store` unless `NIX_STORE_DIR` names another, refusing a file with no line, an empty or repeated line, or a line that is no store path, naming the artifact and the line; and find, in an index's metadata, the file projection's artifact of an output, refused naming the output and the version where there is none. Its own code, no new crate (design D6). Verify: unit tests for one root, two, an empty file, an empty line, a repeated line, `result`, a path outside the store directory, a hash of 31 characters and one with a character outside Nix's base32, and an output the index lacks
+- [x] 7.1 Add `crates/timber/src/profiles/target/nix_closure.rs`: read an artifact's bytes into its roots, one absolute store path per line, `<store dir>/<32 characters of Nix's base32>-<name>`, the store directory `/nix/store` unless `NIX_STORE_DIR` names another, refusing a file with no line, an empty or repeated line, or a line that is no store path, naming the artifact and the line; and find, in an index's metadata, the file projection's artifact of an output, refused naming the output and the version where there is none. Its own code, no new crate (design D6). Verify: unit tests for one root, two, an empty file, an empty line, a repeated line, `result`, a path outside the store directory, a hash of 31 characters and one with a character outside Nix's base32, and an output the index lacks
 
 ## 8. The Nix cache target
 
