@@ -8,13 +8,14 @@
 use serde::{Serialize, Serializer};
 use timber_seams::{
     version_name, Answer, Artifact, Audience, Branch, Check, Claim, ClaimKind, Component,
-    ComponentName, Digest, Envelope, Held, Manifest, NamedSigner, Not, Required, Revision, Seam,
-    Seams, SignerId, Source, Version, Why,
+    ComponentName, Digest, Envelope, EnvironmentName, Held, Manifest, NamedSigner, Not, Required,
+    Revision, Seam, Seams, SignerId, Source, Version, Why,
 };
 
 use crate::ledger::listed;
 use crate::{
-    answer_json, policy_at, Declared, History, Landed, Provenance, BOUND, LOCAL, NOTES, POLICY_FILE,
+    answer_json, policy_at, Declared, History, Landed, Provenance, Reported, BOUND, LOCAL, NOTES,
+    POLICY_FILE,
 };
 
 /// What verify is asked: the version, of the one component named or the
@@ -64,16 +65,19 @@ fn notes_json<S: Serializer>(
 }
 
 /// One attestation told: the digest it is attached to, its envelope's
-/// digest, its kind and check where timber reads them, which named
-/// signer made it and whether that identity has expired (81), whether it
-/// counts (9, 116), the signers it was checked against, and the
-/// provenance it was carried in, for a verdict carried (12).
+/// digest, its kind and check where timber reads them, and for a report
+/// the environment it reports (C.12), which named signer made it and
+/// whether that identity has expired (81), whether it counts (9, 116),
+/// the signers it was checked against, and the provenance it was carried
+/// in, for a verdict carried (12).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Told {
     pub on: Digest,
     pub envelope: Digest,
     pub kind: Option<ClaimKind>,
     pub check: Option<Check>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<EnvironmentName>,
     pub made_by: Option<SignerId>,
     pub expired: bool,
     pub counts: bool,
@@ -276,7 +280,8 @@ pub(crate) fn chosen<'d>(
 
 /// 80: which of `signers` made `envelope`, asked of each bound signer in
 /// turn until one says; none saying is no named signer, and one that
-/// cannot be read ends the verify unreadable (58). It counts only when
+/// cannot be read ends the verify unreadable (58); for a report, the
+/// environment it reports of `on`. It counts only when
 /// its maker may claim its kind, and for a verdict its check (9, 116,
 /// rule core.7); an expired maker is reported beside and still counts
 /// (81, 117). The gate tells by it too, and adds the joins acceptance
@@ -309,11 +314,22 @@ pub(crate) fn tell(
                     || check.as_ref().is_some_and(|c| s.checks.contains(c)))
         })
     });
+    // A report names the environment it reports, as a verdict its check
+    // (C.12); one whose body is no report's of `on` names none.
+    let environment = match kind {
+        Some(ClaimKind::Report) => Claim::from_envelope(envelope)
+            .as_ref()
+            .and_then(Reported::of)
+            .filter(|r| r.index == *on)
+            .map(|r| r.environment),
+        _ => None,
+    };
     Ok(Told {
         on: on.clone(),
         envelope: envelope.digest(),
         kind,
         check,
+        environment,
         expired: made.as_ref().is_some_and(|m| m.expired),
         made_by: made.map(|m| m.signer),
         counts,

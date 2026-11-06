@@ -90,35 +90,7 @@ fn text(out: &mut dyn Write, answer: &Answer<Verified>) -> io::Result<()> {
         }
     )?;
     for told in &verified.claims {
-        let kind = told
-            .kind
-            .map_or_else(|| "a claim in another form".to_string(), |k| k.to_string());
-        let check = told
-            .check
-            .as_ref()
-            .map_or_else(String::new, |c| format!(" of {c}"));
-        let carried = told
-            .carried_in
-            .as_ref()
-            .map_or_else(String::new, |c| format!(", carried in {c}"));
-        let made = match &told.made_by {
-            Some(signer) if told.expired => format!("made by {signer}, expired"),
-            Some(signer) => format!("made by {signer}"),
-            None => {
-                let checked: Vec<&str> = told.checked.iter().map(|s| s.as_str()).collect();
-                format!("made by no named signer (checked {})", checked.join(", "))
-            }
-        };
-        let counts = if told.counts {
-            "counts"
-        } else {
-            "kept, does not count"
-        };
-        writeln!(
-            out,
-            "  {kind}{check} on {}{carried}: {made}; {counts}",
-            told.on
-        )?;
+        writeln!(out, "  {}", render::told(told))?;
     }
     match &verified.notes {
         Some(Ok(notes)) => {

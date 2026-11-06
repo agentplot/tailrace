@@ -16,14 +16,15 @@ use timber::{run, Binding, Cli};
 use timber_core::{
     accept, answer_json, artifact_name, in_force, promote, publish, push, push_left, sync_checkout,
     write, AcceptAsk, Ask, CheckoutAsk, Entry, History, InForceAsk, Judged, Kept, Layouts, LeftAsk,
-    Moved, PromoteAsk, PushAsk, RepositoryName, To, ToldBy,
+    Moved, PromoteAsk, PushAsk, Reported, RepositoryName, To, ToldBy,
 };
 use timber_fakes::{Fakes, Fault, StoreOp, Times};
 use timber_seams::{
     Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
-    Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, Held, IndexMeta,
-    Left, Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion, Report, Required,
-    RequiredClaim, Revision, Seam, Signer, SignerId, Source, Store, Verdict, Version,
+    Check, Claim, ClaimKind, ComponentName, Digest, Ecosystem, EcosystemName, EnvironmentName,
+    Held, IndexMeta, Left, Manifest, NamedSigner, Outcome, Output, OutputName, Pinned, Promotion,
+    Report, Required, RequiredClaim, Revision, Seam, Signer, SignerId, Source, Store, Verdict,
+    Version,
 };
 
 /// The store as the host's bindings name it, which the record keeps.
@@ -999,6 +1000,81 @@ fn verify_prints_the_notes_after_the_claims() {
     assert_eq!(code, 0, "{json}");
     let json: Value = serde_json::from_str(&json).unwrap();
     assert_eq!(json["value"]["notes"]["value"]["text"], text);
+}
+
+// Requirement: Verify lists reports as it lists every claim
+
+#[test]
+fn verify_lists_a_report_with_its_signer_and_the_environment_it_reports() {
+    let host = Host::new();
+    let (code, published) = host.run(&["publish", "HEAD", "--json"]);
+    assert_eq!(code, 0, "{published}");
+    let published: Value = serde_json::from_str(&published).unwrap();
+    let index = Digest::parse(
+        published["value"]["components"][0]["value"]["index"]
+            .as_str()
+            .expect("the index"),
+    )
+    .unwrap();
+    let srv = EnvironmentName::new("srv");
+    let report = Reported {
+        environment: srv.clone(),
+        component: ComponentName::new("repository"),
+        channel: ChannelName::new("stable"),
+        version: Version::new("0.1.0"),
+        index: index.clone(),
+        runs: index.clone(),
+        converged_at: "2026-11-05T09:00:00Z".into(),
+        at: 1_793_000_000,
+    };
+    let envelope = host
+        .fakes
+        .signer
+        .sign(&report.claim(host.head.clone()), &SignerId::new("host"))
+        .unwrap();
+    host.fakes.store.attach(&index, &envelope).unwrap();
+    host.fakes.policy.require(
+        Audience::Acceptance,
+        Required::Acceptance {
+            claims: vec![RequiredClaim {
+                kind: ClaimKind::Report,
+                check: None,
+                environment: Some(srv),
+                signers: vec![NamedSigner {
+                    id: SignerId::new("host"),
+                    verified_by: "the host's key".into(),
+                    kinds: vec![ClaimKind::Report],
+                    checks: vec![],
+                }],
+                asked_of: AskedOf::Every,
+            }],
+        },
+    );
+
+    let (code, printed) = host.run(&["verify", "0.1.0"]);
+    assert_eq!(code, 0, "{printed}");
+    let line = format!("  report of srv on {index}: made by host; counts");
+    assert!(printed.lines().any(|l| l == line), "{printed}");
+
+    let (code, json) = host.run(&["verify", "0.1.0", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let claims = json["value"]["claims"].as_array().expect("the claims");
+    let told = claims
+        .iter()
+        .find(|c| c["kind"] == "report")
+        .expect("no report listed");
+    assert_eq!(told["environment"], "srv", "{told}");
+    assert_eq!(told["made_by"], "host", "{told}");
+    assert_eq!(told["counts"], true, "{told}");
+    assert_eq!(told["envelope"], envelope.digest().as_str(), "{told}");
+    assert!(
+        claims
+            .iter()
+            .filter(|c| c["kind"] != "report")
+            .all(|c| c.get("environment").is_none()),
+        "a claim other than the report names an environment: {json}"
+    );
 }
 
 // Requirement: Status shows each version's notes from git

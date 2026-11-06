@@ -26,7 +26,7 @@ pub use timber_seams::Promotion;
 
 use crate::{
     answer_json, channels_at, chosen, follow, merged, policy_at, tell, Declared, Followed, History,
-    Landed, Provenance, Reported, BOUND, LOCAL,
+    Landed, Provenance, BOUND, LOCAL,
 };
 
 /// Where a promotion moves its channel: to a version of its component,
@@ -404,43 +404,36 @@ pub fn judge(seams: &Seams, required: &Required, index: &Digest) -> Answer<Vec<D
             None,
         )?;
         let carried_in = one.envelope.clone();
-        let reports = claim.as_ref().and_then(Reported::of).map(|r| r.environment);
-        told.push((one, reports));
+        told.push(one);
         let Some(provenance) = claim.as_ref().and_then(Provenance::of) else {
             continue;
         };
         for carried in &provenance.carried {
-            told.push((
-                tell(
-                    seams,
-                    &signers,
-                    index,
-                    &carried.envelope,
-                    Some(ClaimKind::Verdict),
-                    Some(carried.check.clone()),
-                    Some(carried_in.clone()),
-                )?,
-                None,
-            ));
+            told.push(tell(
+                seams,
+                &signers,
+                index,
+                &carried.envelope,
+                Some(ClaimKind::Verdict),
+                Some(carried.check.clone()),
+                Some(carried_in.clone()),
+            )?);
         }
     }
 
     let acceptance = of_kind(&signers, ClaimKind::Acceptance);
     let mut satisfied: Vec<Digest> = Vec::new();
     for wanted in std::iter::once(&acceptance).chain(required.claims()) {
-        let found = told
-            .iter()
-            .find(|(t, reports)| {
-                t.counts
-                    && t.kind == Some(wanted.kind)
-                    && (wanted.kind != ClaimKind::Verdict || t.check == wanted.check)
-                    && (wanted.kind != ClaimKind::Report
-                        || (wanted.environment.is_some() && *reports == wanted.environment))
-                    && t.made_by
-                        .as_ref()
-                        .is_some_and(|maker| wanted.signers.iter().any(|s| s.id == *maker))
-            })
-            .map(|(t, _)| t);
+        let found = told.iter().find(|t| {
+            t.counts
+                && t.kind == Some(wanted.kind)
+                && (wanted.kind != ClaimKind::Verdict || t.check == wanted.check)
+                && (wanted.kind != ClaimKind::Report
+                    || (wanted.environment.is_some() && t.environment == wanted.environment))
+                && t.made_by
+                    .as_ref()
+                    .is_some_and(|maker| wanted.signers.iter().any(|s| s.id == *maker))
+        });
         match found {
             Some(t) if satisfied.contains(&t.envelope) => {}
             Some(t) => satisfied.push(t.envelope.clone()),
