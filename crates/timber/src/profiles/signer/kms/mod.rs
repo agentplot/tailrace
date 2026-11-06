@@ -4,7 +4,10 @@
 //! signer's name. A claim is signed by KMS over the digest of the
 //! envelope's DSSE pre-authentication encoding, and told apart by the
 //! key's public half, read from KMS at each verify; a disabled key's
-//! signatures are told as expired (79 to 81).
+//! signatures are told as expired (79 to 81). Bound for status, it
+//! reaches no service, and a claim only the key's public half could tell
+//! is unreadable naming the key until the policy carries that half (60,
+//! C.7).
 //!
 //! The profile is the key's ARN and how it reaches KMS, and nothing
 //! else: the host's credentials are found as the AWS tools find them at
@@ -97,6 +100,10 @@ impl Failure {
             Failure::NoCredentials(words)
             | Failure::Kms { words, .. }
             | Failure::Unreached(words) => words,
+            Failure::NoService => "status reaches no key service, and a key-service signer's \
+                                   public half is read from the service until the policy \
+                                   carries it"
+                .into(),
         }
     }
 }
@@ -141,7 +148,9 @@ impl Signer for Kms {
     /// encoding (design D2, D3); absent for any other identity, and for
     /// every identity where no key is bound, with nothing reached (11,
     /// rule core.8). A key the host may not sign with now is no identity
-    /// at hand, and a key of the wrong kind is refused (design D4).
+    /// at hand, and a key of the wrong kind is refused (design D4). Bound
+    /// to reach no service, as status binds it, every identity is absent
+    /// (60).
     fn sign(&self, claim: &Claim, identity: &SignerId) -> Answer<Envelope> {
         let source = Kms::source();
         let Some(key) = &self.signing else {
@@ -160,6 +169,11 @@ impl Signer for Kms {
         let unreadable =
             |words: String| Not::unreadable(&source, format!("the key {key}"), Some(words));
         let failed = |failure: Failure| match failure {
+            Failure::NoService => absent(
+                "no identity is at hand, since status reaches no key \
+                                          service"
+                    .into(),
+            ),
             Failure::NoCredentials(words) => absent(words),
             Failure::Kms { code, words } if STANDING.contains(&code.as_str()) => absent(words),
             other => unreadable(other.words()),
@@ -217,7 +231,9 @@ impl Signer for Kms {
     /// signers none of whom is listed by a KMS key, is refused reaching
     /// nothing, so the core asks the next signer bound; a key whose public
     /// half or state cannot be read is unreadable, never refused (design
-    /// D7).
+    /// D7). Bound to reach no service, as status binds it, the first key
+    /// listed is unreadable where its public half would be read, saying
+    /// status reaches no key service (60, C.7, rule core.42).
     fn verify(&self, attestation: &Envelope, signers: &[NamedSigner]) -> Answer<Made> {
         let source = Kms::source();
         let mut keys = Vec::new();
