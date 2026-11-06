@@ -193,7 +193,7 @@ fn name_problem(name: &str) -> Option<String> {
 }
 
 /// A closure file's artifact, as a refusal names it.
-struct ClosureFile<'a>(&'a Artifact);
+pub struct ClosureFile<'a>(pub &'a Artifact);
 
 impl fmt::Display for ClosureFile<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
