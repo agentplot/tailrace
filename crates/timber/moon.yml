@@ -15,11 +15,12 @@ tasks:
   # scratch repositories, the registry store's against a zot and a
   # reference distribution each started for the test, the Cargo
   # projection's and its served registry's proof with the shell's cargo,
-  # and the npm projection's pack and npm installing from a served layout
-  # with the npm devenv.lock pins, behind the `tools` feature: the tools
-  # layer.
+  # the npm projection's pack and npm installing from a served layout
+  # with the npm devenv.lock pins, and the Nix cache target's proof against
+  # an atticd started for the test with the host's Nix, behind the `tools`
+  # feature: the tools layer.
   tools:
-    command: 'cargo test -p timber --features tools --test build_moon --test landing_sluice --test landings_end_to_end --test laptop --test moon_cache --test registry_store --test push_after_landing --test one_host --test pool_run_publish --test cargo_projection --test cargo_served --test npm_projection --test npm_served'
+    command: 'cargo test -p timber --features tools --test build_moon --test landing_sluice --test landings_end_to_end --test laptop --test moon_cache --test registry_store --test push_after_landing --test one_host --test pool_run_publish --test cargo_projection --test cargo_served --test npm_projection --test npm_served --test nix_cache'
     inputs: ['/crates/timber/**/*', '/crates/timber-seams/**/*', '/crates/timber-core/**/*', '/crates/timber-fakes/**/*', '/crates/timber-conformance/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools']
     tags: [check-tools]
     options: {runFromWorkspaceRoot: true}
