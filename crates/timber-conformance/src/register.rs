@@ -25,7 +25,6 @@ pub struct Pending {
 }
 
 const DRIVER: &str = "bolt 5 · the driver and the pool run publish";
-const ENVIRONMENTS: &str = "phase 2 · environments in status";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
 const PHASE_2: &str = "phase 2";
 
@@ -35,7 +34,6 @@ const PHASE_2: &str = "phase 2";
 pub const PENDING: &[Pending] = &[
     Pending { clause: 135, unit: DRIVER, why: "A check job pushes what its run left before the landing and a publish takes its outputs from the store, and no publish reads the store for them yet." },
     Pending { clause: 139, unit: DRIVER, why: "The build answers what a checkout's run left, and the build seam has no such operation yet." },
-    Pending { clause: 98, unit: ENVIRONMENTS, why: "What each environment should run and runs is reported to an asker by status, and environments in status, which no unit of bolt 6 carves, come in phase 2." },
     Pending { clause: 55, unit: REBUILD, why: "A verifier's rebuild reads no cache entry it did not write, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 112, unit: REBUILD, why: "A verifier compares the digests of outputs, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 133, unit: REBUILD, why: "A verifier's rebuild reads no compilation's cache another party wrote, and phase 1 leaves the rebuild to phase 2." },
@@ -58,10 +56,7 @@ pub struct Part {
 
 // One part per line, as the entries are.
 #[rustfmt::skip]
-pub const PARTS: &[Part] = &[
-    Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: ENVIRONMENTS, why: "The pages show environments once status reads them of their targets, which no unit of bolt 6 carves." },
-    Part { clause: 134, part: "the notes of every version between what an environment runs and what it should", unit: ENVIRONMENTS, why: "The surfaces show environments once status reads them of their targets, which no unit of bolt 6 carves." },
-];
+pub const PARTS: &[Part] = &[];
 
 #[cfg(test)]
 mod tests {
@@ -118,15 +113,9 @@ mod tests {
                 .unwrap_or_else(|| panic!("{clause} is not in the register"))
                 .unit
         };
-        for (clause, waits_on) in [(44, PHASE_2), (126, PHASE_2), (98, ENVIRONMENTS)] {
-            assert_eq!(unit(clause), waits_on, "{clause} waits on another unit");
+        for clause in [44, 126] {
+            assert_eq!(unit(clause), PHASE_2, "{clause} waits on another unit");
         }
-        let parts: Vec<(u16, &str)> = PARTS
-            .iter()
-            .filter(|p| [132, 134].contains(&p.clause))
-            .map(|p| (p.clause, p.unit))
-            .collect();
-        assert_eq!(parts, [(132, ENVIRONMENTS), (134, ENVIRONMENTS)]);
         for why in PENDING
             .iter()
             .map(|p| p.why)
@@ -135,6 +124,35 @@ mod tests {
             assert!(
                 !why.contains("leaves every target"),
                 "an entry still leaves every target to phase 2: {why}"
+            );
+        }
+    }
+
+    #[test]
+    fn environments_in_status_leave_the_register_with_98_cited_and_no_part_of_132_or_134_waiting() {
+        assert!(
+            citations()
+                .iter()
+                .any(|c| c.group == "status" && c.cites.contains(&98)),
+            "no scenario of the status group cites 98"
+        );
+        assert!(
+            !PENDING.iter().any(|p| p.clause == 98),
+            "98 is cited, and still in the register"
+        );
+        let parts: Vec<&Part> = PARTS
+            .iter()
+            .filter(|p| [132, 134].contains(&p.clause))
+            .collect();
+        assert_eq!(parts, Vec::<&Part>::new(), "a part of 132 or 134 waits");
+        for unit in PENDING
+            .iter()
+            .map(|p| p.unit)
+            .chain(PARTS.iter().map(|p| p.unit))
+        {
+            assert!(
+                !unit.contains("environments in status"),
+                "an entry still waits on environments in status: {unit}"
             );
         }
     }

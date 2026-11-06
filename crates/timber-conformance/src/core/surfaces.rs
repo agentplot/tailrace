@@ -227,7 +227,7 @@ const GROWN: &str = "0.3.0";
 
 /// The text of the notes the index at `index` names, as the fake store
 /// holds their bytes.
-fn notes_held(world: &FakeWorld, index: &Digest) -> String {
+pub(crate) fn notes_held(world: &FakeWorld, index: &Digest) -> String {
     let store = &world.fakes.store;
     let Ok(Held::Manifest(Manifest::Index(meta))) = store.read(index) else {
         panic!("{index} holds no index")
