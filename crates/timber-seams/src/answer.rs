@@ -307,6 +307,14 @@ pub enum Why {
         asker: SignerId,
         approvers: Vec<SignerId>,
     },
+    /// 32, 108: `signer`, the host's, would move `channel` as the gate's
+    /// own act, and the channel's policy names only `promoters` as the
+    /// signers whose promotion of it counts.
+    NotPromoter {
+        channel: ChannelId,
+        signer: SignerId,
+        promoters: Vec<SignerId>,
+    },
     /// 47, 99: `version`, whose index is `index`, lacks `wanting`, the
     /// first claim in the policy's order that no claim attached to the
     /// index or the artifact satisfies; `checked` the signers it was
@@ -512,6 +520,15 @@ impl fmt::Display for Why {
                 f,
                 "{asker} may not ask for {channel}; ask one of {}",
                 list(approvers)
+            ),
+            Why::NotPromoter {
+                channel,
+                signer,
+                promoters,
+            } => write!(
+                f,
+                "{signer} may not promote {channel}; its promoters are {}",
+                list(promoters)
             ),
             Why::VersionWanting {
                 version,
@@ -1127,6 +1144,14 @@ mod tests {
                     approvers: vec![SignerId::new("release"), SignerId::new("gate")],
                 },
                 "laptop may not ask for lib/stable; ask one of release, gate".into(),
+            ),
+            (
+                Why::NotPromoter {
+                    channel: lib("second"),
+                    signer: SignerId::new("laptop"),
+                    promoters: vec![SignerId::new("deployer")],
+                },
+                "laptop may not promote lib/second; its promoters are deployer".into(),
             ),
         ];
         for (why, names) in cases {

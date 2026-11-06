@@ -235,6 +235,11 @@ pub(crate) enum Asked<'a> {
         from: Option<&'a Version>,
         asker: &'a SignerId,
     },
+    /// 43, 95, 129, C.10: the gate's own act, `to` the version and index
+    /// the reports of the environments the channel comes after name, the
+    /// version's name resolving to that index; `gate`, the host's signer,
+    /// recorded as who asked, whatever approvers the channel names.
+    Gate { to: &'a Moved, gate: &'a SignerId },
 }
 
 /// A move of a channel once the channel and its policy are read at the
@@ -289,9 +294,22 @@ pub(crate) fn moved(seams: &Seams, history: &History, m: &Move<'_>) -> Answer<Pr
             .and_then(|(_, p)| p.from.as_ref())
             .map(|from| from.version.clone())
             .ok_or_else(|| Not::absent(&keeper(), format!("a version {channel} moved from")))?,
+        Asked::Gate { to, .. } => to.version.clone(),
     };
     let tag = format!("{}{}", component.prefix, version);
     let index = seams.store.resolve(&version_name(&component.name, &tag))?;
+    if let Asked::Gate { to: reported, .. } = &m.asked {
+        if reported.index != index {
+            return Err(Not::unreadable(
+                &Source::new(Seam::Store, BOUND),
+                format!("{tag} as the index the reports named"),
+                Some(format!(
+                    "{tag} resolves to {index}, and the reports named {}",
+                    reported.index
+                )),
+            ));
+        }
+    }
     let revision = history
         .tags(m.at_head, &component.prefix)?
         .into_iter()
@@ -357,6 +375,7 @@ pub(crate) fn moved(seams: &Seams, history: &History, m: &Move<'_>) -> Answer<Pr
             may_ask(m.required, channel, asker)?;
             *asker
         }
+        Asked::Gate { gate, .. } => *gate,
     };
     let claims = judge(seams, m.required, &to.index)?;
     may_promote(m.required, asked_by)?;
