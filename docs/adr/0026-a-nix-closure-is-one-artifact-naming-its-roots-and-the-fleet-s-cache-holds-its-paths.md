@@ -1,17 +1,17 @@
 ---
 number: 26
 title: A Nix closure is one artifact naming its roots and the fleet's cache holds its paths
-status: proposed
+status: accepted
 date: 2026-11-05
 decision-makers:
-- Chuck Swanberg
+- madswan-design
 ---
 
 # A Nix closure is one artifact naming its roots and the fleet's cache holds its paths
 
-Status: proposed. The record is accepted when the user says yes to it as a record, with the change.
+Status: accepted on 2026-11-06 by madswan-design, the design agent: it answers the statement's question of how a closure enters the store by clauses already written (C.12, I3), and what is left are choices cheap to change, which are design's.
 
-Deciders: proposed by the the-nix-cache-target unit of phase 1's bolt 6, the Nix fleet pushed (`agentplot/blueprints:design/timber/models/phase-1-bolts.md`, Bolt 6), for the user to accept with the change. Its number is 0026 by agreement with the clan push profile's change, bolt 6's second unit, which takes 0027.
+Deciders: madswan-design, taking the choices of the the-nix-cache-target unit of phase 1's bolt 6, the Nix fleet pushed (`agentplot/blueprints:design/timber/models/phase-1-bolts.md`, Bolt 6). Its number is 0026 by agreement with the clan push profile's change, bolt 6's second unit, which takes 0027.
 Sources: statement clauses 15, 42, 45, 52, 54, 88 to 91, 92, 119, 136, C.10, C.12 and section 10, as the statement has them at blueprints 2287669 (`design/timber/requirements.md`); the snix and casita note (`design/timber/models/snix-and-casita.md`, points 2, 4 and 5); ADRs 0002, 0009 and 0019; rules core.2, core.4, core.16, core.21, core.29, core.43 and core.50; the change's design, D2 to D9.
 
 ## Context and problem statement
