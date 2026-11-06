@@ -366,6 +366,7 @@ fn of_kind(signers: &[NamedSigner], kind: ClaimKind) -> RequiredClaim {
     RequiredClaim {
         kind,
         check: None,
+        environment: None,
         signers: signers
             .iter()
             .filter(|s| s.kinds.contains(&kind))
@@ -467,6 +468,7 @@ pub(crate) fn may_promote(required: &Required, signer: &SignerId) -> Answer<()> 
         Err(wanting(&RequiredClaim {
             kind: ClaimKind::Promotion,
             check: None,
+            environment: None,
             signers: required.promoted_by().to_vec(),
             asked_of: AskedOf::Every,
         }))

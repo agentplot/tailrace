@@ -151,6 +151,7 @@ fn a_host_key_listed_is_a_signer_with_its_verifier_and_reach() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop_the_given_gate()],
                 asked_of: AskedOf::Every,
             }],
@@ -370,6 +371,7 @@ fn a_layout_line_written_is_answered_with_nothing_of_the_given_beneath_it() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop()],
                 asked_of: AskedOf::Every,
             }],
@@ -489,6 +491,7 @@ fn declared(channel: ChannelId, moves: Moves) -> DeclaredChannel {
 fn bound(to: &str) -> Moves {
     Moves::Bound {
         to: ChannelName::new(to),
+        after: vec![],
     }
 }
 
@@ -530,6 +533,7 @@ fn by_the_gate(signers: Vec<NamedSigner>) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers,
         asked_of: AskedOf::Every,
     }
@@ -696,6 +700,7 @@ fn a_bound_channel_names_the_channel_it_is_bound_to() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop_the_given_gate()],
                 asked_of: AskedOf::Every,
             }],
@@ -881,6 +886,7 @@ fn a_rebuild() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Rebuild,
         check: None,
+        environment: None,
         signers: vec![NamedSigner {
             id: SignerId::new("verifier"),
             verified_by: "ssh-ed25519 VVVV".into(),
@@ -1119,6 +1125,7 @@ fn a_givens_line_naming_another_promoter_never_widens_who_signs() {
             vec![RequiredClaim {
                 kind: ClaimKind::Promotion,
                 check: None,
+                environment: None,
                 signers: vec![release],
                 asked_of: AskedOf::Every,
             }],
@@ -1714,6 +1721,7 @@ fn a_line_that_restates_prods_binding_adds_its_claims() {
             RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop()],
                 asked_of: AskedOf::Every,
             },
@@ -1844,6 +1852,7 @@ fn a_fragment_of_other_names_is_read_with_a_line_under_one() {
             RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop()],
                 asked_of: AskedOf::Every,
             },
@@ -1939,6 +1948,7 @@ fn a_laptops_policy_names_it_the_gate_for_acceptance_and_the_given_channels() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop_the_given_gate()],
                 asked_of: AskedOf::Every,
             }],
@@ -1974,6 +1984,7 @@ fn a_file_naming_a_gate_answers_its_provenance_signer_as_written() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop()],
                 asked_of: AskedOf::Every,
             }],
@@ -2080,6 +2091,7 @@ fn with_two_publishers_and_no_gate_the_layout_and_a_hand_declared_channel_answer
     let provenance_by = |signer: NamedSigner| RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Every,
     };
@@ -2241,12 +2253,14 @@ fn acceptance_asks_its_provenance_of_every_artifact_and_its_verdict_of_built_one
                 RequiredClaim {
                     kind: ClaimKind::Provenance,
                     check: None,
+                    environment: None,
                     signers: vec![laptop_the_given_gate()],
                     asked_of: AskedOf::Every,
                 },
                 RequiredClaim {
                     kind: ClaimKind::Verdict,
                     check: Some(Check::new("cli:test")),
+                    environment: None,
                     signers: vec![the_box()],
                     asked_of: AskedOf::Built,
                 },
@@ -2287,6 +2301,7 @@ fn the_one_hosts_own_given_acceptance_is_asked_of_every_artifact() {
         Ok(vec![RequiredClaim {
             kind: ClaimKind::Acceptance,
             check: None,
+            environment: None,
             signers: vec![laptop_the_given_gate()],
             asked_of: AskedOf::Every,
         }])
@@ -2306,6 +2321,7 @@ fn a_layouts_verdict_is_asked_of_every_artifact() {
         [RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("cli:test")),
+            environment: None,
             signers: vec![the_box()],
             asked_of: AskedOf::Every,
         }]

@@ -20,13 +20,16 @@ pub enum Audience {
 }
 
 /// 82: one claim a policy requires: its kind, the check it is for where
-/// it is a verdict, the signers that may make it, each with what it may
+/// it is a verdict, the environment it is a report of where it is a
+/// report (C.12), the signers that may make it, each with what it may
 /// claim, and the artifacts it is asked of (134), every artifact where it
 /// names none.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequiredClaim {
     pub kind: ClaimKind,
     pub check: Option<Check>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub environment: Option<EnvironmentName>,
     pub signers: Vec<NamedSigner>,
     #[serde(default, skip_serializing_if = "AskedOf::is_every")]
     pub asked_of: AskedOf,
@@ -139,14 +142,22 @@ impl Required {
 /// act (95), taking the releases the version rule makes and prereleases
 /// too only where `prereleases` says so (C.10); by a promotion alone; or
 /// bound to a channel of its own component, taking only what that
-/// channel held (37, 83). One of the three, so no channel both follows
-/// each publish and is bound.
+/// channel held (37, 83), and where an environment's `after` makes it,
+/// coming after the environments `after` names, each by its name within
+/// the channel's component, in `after`'s order (41, C.10). One of the
+/// three, so no channel both follows each publish and is bound.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "by", rename_all = "snake_case")]
 pub enum Moves {
-    EachPublish { prereleases: bool },
+    EachPublish {
+        prereleases: bool,
+    },
     Promotion,
-    Bound { to: ChannelName },
+    Bound {
+        to: ChannelName,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        after: Vec<EnvironmentName>,
+    },
 }
 
 /// 125, 131: a channel the policy lists, with its component, and how it
@@ -162,7 +173,9 @@ impl DeclaredChannel {
     /// none where it moves on each publish or by a promotion alone.
     pub fn bound_to(&self) -> Option<ChannelId> {
         match &self.moves {
-            Moves::Bound { to } => Some(ChannelId::new(self.channel.component.clone(), to.clone())),
+            Moves::Bound { to, .. } => {
+                Some(ChannelId::new(self.channel.component.clone(), to.clone()))
+            }
             Moves::EachPublish { .. } | Moves::Promotion => None,
         }
     }
@@ -274,6 +287,7 @@ mod tests {
         vec![RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("test")),
+            environment: None,
             signers: vec![NamedSigner {
                 id: SignerId::new("landing"),
                 verified_by: "a public key".into(),
@@ -394,6 +408,7 @@ mod tests {
         let every = RequiredClaim {
             kind: ClaimKind::Provenance,
             check: None,
+            environment: None,
             signers: vec![],
             asked_of: AskedOf::Every,
         };
@@ -438,8 +453,16 @@ mod tests {
             (
                 Moves::Bound {
                     to: ChannelName::new("beta"),
+                    after: vec![],
                 },
                 serde_json::json!({ "by": "bound", "to": "beta" }),
+            ),
+            (
+                Moves::Bound {
+                    to: ChannelName::new("first"),
+                    after: vec![EnvironmentName::new("first")],
+                },
+                serde_json::json!({ "by": "bound", "to": "first", "after": ["first"] }),
             ),
         ];
         for (moves, json) in cases {
@@ -453,11 +476,84 @@ mod tests {
     }
 
     #[test]
+    fn a_channel_after_environments_names_them_in_the_order_written() {
+        let eu = DeclaredChannel {
+            channel: lib("eu"),
+            moves: Moves::Bound {
+                to: ChannelName::new("stable"),
+                after: vec![EnvironmentName::new("us"), EnvironmentName::new("ap")],
+            },
+        };
+        let json = serde_json::to_value(&eu).unwrap();
+        assert_eq!(
+            json,
+            json!({
+                "channel": { "component": "lib", "name": "eu" },
+                "moves": { "by": "bound", "to": "stable", "after": ["us", "ap"] },
+            })
+        );
+        assert_eq!(eu.bound_to(), Some(lib("stable")));
+        round_trip(eu);
+    }
+
+    #[test]
+    fn a_bound_channel_written_with_no_after_reads_back_the_same() {
+        let written = json!({
+            "channel": { "component": "lib", "name": "stable" },
+            "moves": { "by": "bound", "to": "beta" },
+        });
+        let read: DeclaredChannel = serde_json::from_value(written.clone()).unwrap();
+        assert_eq!(
+            read.moves,
+            Moves::Bound {
+                to: ChannelName::new("beta"),
+                after: vec![],
+            }
+        );
+        assert_eq!(serde_json::to_value(&read).unwrap(), written);
+    }
+
+    #[test]
+    fn a_report_requirement_names_its_environment_and_reads_back_the_same() {
+        let deployer = NamedSigner {
+            id: SignerId::new("deployer"),
+            verified_by: "a public key".into(),
+            kinds: vec![ClaimKind::Provenance, ClaimKind::Report],
+            checks: vec![],
+        };
+        let report = RequiredClaim {
+            kind: ClaimKind::Report,
+            check: None,
+            environment: Some(EnvironmentName::new("first")),
+            signers: vec![deployer],
+            asked_of: AskedOf::Every,
+        };
+        let json = serde_json::to_value(&report).unwrap();
+        assert_eq!(json["kind"], "report", "{json}");
+        assert_eq!(json["environment"], "first", "{json}");
+        assert!(json.get("asked_of").is_none(), "{json}");
+        round_trip(report.clone());
+        let read: RequiredClaim = serde_json::from_value(json).unwrap();
+        assert_eq!(read, report);
+        assert_eq!(read.asked_of, AskedOf::Every);
+
+        let verdict = claims().remove(0);
+        let json = serde_json::to_value(&verdict).unwrap();
+        assert!(json.get("environment").is_none(), "{json}");
+        let read: RequiredClaim = serde_json::from_value(json!({
+            "kind": "verdict", "check": "test", "signers": [],
+        }))
+        .unwrap();
+        assert_eq!(read.environment, None);
+    }
+
+    #[test]
     fn a_declared_channel_names_its_component_or_none_and_how_it_moves() {
         let stable = DeclaredChannel {
             channel: lib("stable"),
             moves: Moves::Bound {
                 to: ChannelName::new("beta"),
+                after: vec![],
             },
         };
         assert_eq!(
@@ -503,6 +599,7 @@ mod tests {
                         channel: lib("lts"),
                         moves: Moves::Bound {
                             to: ChannelName::new("stable"),
+                            after: vec![],
                         },
                     },
                     switch: "[channels.lib.lts]".into(),

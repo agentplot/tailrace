@@ -157,7 +157,10 @@ impl Policy for FakePolicy {
                         .get(&(revision.clone(), channel.clone()))
                         .or_else(|| s.follows.get(channel));
                     let moves = match (required.bound_to(), follows) {
-                        (Some(to), _) => Moves::Bound { to: to.clone() },
+                        (Some(to), _) => Moves::Bound {
+                            to: to.clone(),
+                            after: vec![],
+                        },
                         (None, Some(prereleases)) => Moves::EachPublish {
                             prereleases: *prereleases,
                         },
@@ -212,6 +215,7 @@ mod tests {
         RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new(check)),
+            environment: None,
             signers: vec![],
             asked_of: AskedOf::Every,
         }
@@ -331,6 +335,7 @@ mod tests {
     fn bound(to: &str) -> Moves {
         Moves::Bound {
             to: ChannelName::new(to),
+            after: vec![],
         }
     }
 

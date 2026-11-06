@@ -183,6 +183,7 @@ mod tests {
                 .map(|(kind, signer)| RequiredClaim {
                     kind: *kind,
                     check: None,
+                    environment: None,
                     signers: vec![named(signer, &[*kind])],
                     asked_of: AskedOf::Every,
                 })

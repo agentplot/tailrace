@@ -92,7 +92,7 @@ fn moves(moves: &Moves) -> String {
         Moves::EachPublish { prereleases: false } => "each publish".to_string(),
         Moves::EachPublish { prereleases: true } => "each publish, prereleases too".to_string(),
         Moves::Promotion => "promotion".to_string(),
-        Moves::Bound { to } => format!("bound to {to}"),
+        Moves::Bound { to, .. } => format!("bound to {to}"),
     }
 }
 

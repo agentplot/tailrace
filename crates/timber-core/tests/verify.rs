@@ -36,12 +36,14 @@ fn acceptance() -> Required {
             RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
                 asked_of: AskedOf::Every,
             },
             RequiredClaim {
                 kind: ClaimKind::Verdict,
                 check: Some(Check::new("test")),
+                environment: None,
                 signers: vec![named(LANDING, &[ClaimKind::Verdict], &["test"])],
                 asked_of: AskedOf::Every,
             },

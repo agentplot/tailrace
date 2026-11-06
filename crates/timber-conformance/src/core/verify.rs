@@ -81,6 +81,7 @@ fn provenance_from(signer: NamedSigner) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Every,
     }
@@ -90,6 +91,7 @@ fn verdict_from(signer: NamedSigner, check: &str) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new(check)),
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Every,
     }

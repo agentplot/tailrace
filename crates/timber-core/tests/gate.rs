@@ -46,6 +46,7 @@ fn provenance_from(signer: NamedSigner) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Every,
     }
@@ -57,6 +58,7 @@ fn verdict_from(signer: NamedSigner, check: &str) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new(check)),
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Built,
     }
@@ -67,6 +69,7 @@ fn a_review() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Review,
         check: None,
+        environment: None,
         signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
         asked_of: AskedOf::Built,
     }
@@ -111,6 +114,7 @@ fn from_gate() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
         asked_of: AskedOf::Every,
     }
@@ -242,6 +246,7 @@ fn each_answer_renders_in_the_one_form_naming_the_index_and_both_revisions() {
     let wanting = RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new("test")),
+        environment: None,
         signers: vec![],
         asked_of: AskedOf::Every,
     };
@@ -765,6 +770,7 @@ fn rebuilt() -> (RequiredClaim, Required) {
     let rebuild = RequiredClaim {
         kind: ClaimKind::Rebuild,
         check: None,
+        environment: None,
         signers: vec![
             named(HOST, &[ClaimKind::Provenance, ClaimKind::Rebuild], &[]),
             named("verifier", &[ClaimKind::Rebuild], &[]),
@@ -2145,6 +2151,7 @@ fn a_verifiers_rebuild() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Rebuild,
         check: None,
+        environment: None,
         signers: vec![named("verifier", &[ClaimKind::Rebuild], &[])],
         asked_of: AskedOf::Built,
     }

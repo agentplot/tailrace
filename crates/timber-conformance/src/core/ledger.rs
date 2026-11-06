@@ -492,6 +492,7 @@ fn a_promotion_found_wanting(world: &FakeWorld) {
     let required = |kind, signers| timber_seams::RequiredClaim {
         kind,
         check: None,
+        environment: None,
         signers,
         asked_of: timber_seams::AskedOf::Every,
     };
@@ -741,6 +742,7 @@ fn given_stable(world: &FakeWorld) {
             claims: vec![timber_seams::RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![gate.clone()],
                 asked_of: timber_seams::AskedOf::Every,
             }],
@@ -808,6 +810,7 @@ fn stable_asked_by(world: &FakeWorld, approvers: &[&str]) {
             claims: vec![timber_seams::RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![gate.clone()],
                 asked_of: timber_seams::AskedOf::Every,
             }],

@@ -286,6 +286,7 @@ fn a_wanting_claim_stops_the_apply(world: &FakeWorld) {
     let wanted = |kind: ClaimKind, signer: NamedSigner| RequiredClaim {
         kind,
         check: None,
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Every,
     };

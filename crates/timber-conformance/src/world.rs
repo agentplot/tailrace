@@ -823,6 +823,7 @@ impl FakeWorld {
         let mut claims = vec![timber_seams::RequiredClaim {
             kind: ClaimKind::Acceptance,
             check: None,
+            environment: None,
             signers: vec![gate.clone()],
             asked_of: timber_seams::AskedOf::Every,
         }];
@@ -830,6 +831,7 @@ impl FakeWorld {
             claims.push(timber_seams::RequiredClaim {
                 kind: ClaimKind::Rebuild,
                 check: None,
+                environment: None,
                 signers: vec![named(REBUILDER, &[ClaimKind::Rebuild])],
                 asked_of: timber_seams::AskedOf::Every,
             });

@@ -6,7 +6,7 @@
 
 ## 2. Reports and after channels in the seams and the policy file
 
-- [ ] 2.1 Make three changes to the seams (seam-contracts spec, design D9), and verify with `moon run seams:test`:
+- [x] 2.1 Make three changes to the seams (seam-contracts spec, design D9), and verify with `moon run seams:test`:
   - Add `ClaimKind::Report` to `crates/timber-seams/src/claim.rs`, under `https://agentplot.github.io/timber/claim/report/v1`.
   - Add `environment: Option<EnvironmentName>` to `RequiredClaim`, written only where it is set.
   - Add `after: Vec<EnvironmentName>` to `Moves::Bound` in `policy.rs`, skipped in JSON where it is empty.

@@ -804,7 +804,7 @@ fn moves_of(full: &str, keys: &ChannelTable) -> Result<Moves, String> {
         (Some(true), None) => Moves::EachPublish {
             prereleases: keys.prereleases == Some(true),
         },
-        (_, Some(bound)) => Moves::Bound { to: bound.clone() },
+        (_, Some(bound)) => Moves::Bound { to: bound.clone(), after: vec![] },
         (_, None) => Moves::Promotion,
     };
     if keys.prereleases.is_some() && !matches!(moves, Moves::EachPublish { .. }) {
@@ -1020,7 +1020,7 @@ fn resolve(table: &InForce) -> Result<Resolution, String> {
         resolved.insert(
             id,
             Resolved {
-                moves: Moves::Bound { to },
+                moves: Moves::Bound { to, after: vec![] },
                 origin: Origin::Made,
                 table,
                 require,
@@ -1045,7 +1045,7 @@ fn resolve(table: &InForce) -> Result<Resolution, String> {
         }
     }
     for (id, entry) in &resolved {
-        let Moves::Bound { to } = &entry.moves else {
+        let Moves::Bound { to, .. } = &entry.moves else {
             continue;
         };
         let target = ChannelId::new(id.component.clone(), to.clone());
@@ -1063,7 +1063,7 @@ fn resolve(table: &InForce) -> Result<Resolution, String> {
         let mut path = vec![id.name.to_string()];
         let mut at = id.clone();
         while let Some(Resolved {
-            moves: Moves::Bound { to },
+            moves: Moves::Bound { to, .. },
             ..
         }) = resolved.get(&at)
         {
@@ -1246,6 +1246,7 @@ fn claims_of(
         claims.push(RequiredClaim {
             kind: entry.kind,
             check: entry.check.clone(),
+            environment: None,
             signers: named,
             asked_of: asked(entry.kind),
         });
@@ -1264,7 +1265,8 @@ fn asked_of(kind: ClaimKind) -> AskedOf {
         ClaimKind::Provenance
         | ClaimKind::Acceptance
         | ClaimKind::Promotion
-        | ClaimKind::LayoutPolicy => AskedOf::Every,
+        | ClaimKind::LayoutPolicy
+        | ClaimKind::Report => AskedOf::Every,
         ClaimKind::Verdict
         | ClaimKind::Test
         | ClaimKind::Review
@@ -1351,6 +1353,7 @@ fn channel_policy(
             let mut all = vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: gate.clone(),
                 asked_of: AskedOf::Every,
             }];
@@ -1375,7 +1378,7 @@ fn channel_policy(
     Ok(Required::Channel {
         claims,
         bound_to: match &resolved.moves {
-            Moves::Bound { to } => Some(to.clone()),
+            Moves::Bound { to, .. } => Some(to.clone()),
             Moves::EachPublish { .. } | Moves::Promotion => None,
         },
         promoted_by,
@@ -1442,6 +1445,7 @@ fn given_layout(signers: &[NamedSigner]) -> Vec<RequiredClaim> {
     vec![RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: signers
             .iter()
             .filter(|s| s.kinds.contains(&ClaimKind::Acceptance))

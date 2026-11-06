@@ -26,6 +26,7 @@ fn acceptance() -> Required {
         claims: vec![RequiredClaim {
             kind: ClaimKind::Provenance,
             check: None,
+            environment: None,
             signers: vec![],
             asked_of: AskedOf::Every,
         }],
@@ -125,7 +126,8 @@ fn an_absent_layout_is_shown_beside_the_channels() {
             listed(
                 of("lib", "stable"),
                 Moves::Bound {
-                    to: ChannelName::new("beta")
+                    to: ChannelName::new("beta"),
+                    after: vec![],
                 },
                 Ok(channel_policy(Some("beta")))
             ),

@@ -541,6 +541,7 @@ fn pinning_one_of_each_served(host: &Host) {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![NamedSigner {
                     id: SignerId::new("gate"),
                     verified_by: "the gate's key".into(),
@@ -1836,6 +1837,7 @@ fn promotable(host: &Host, fakes: &Fakes, second: &Revision) {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![host_signer.clone()],
                 asked_of: AskedOf::Every,
             }],

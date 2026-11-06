@@ -45,6 +45,7 @@ fn wanted(kind: ClaimKind, signers: Vec<NamedSigner>) -> RequiredClaim {
     RequiredClaim {
         kind,
         check: None,
+        environment: None,
         signers,
         asked_of: AskedOf::Every,
     }

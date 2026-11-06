@@ -900,6 +900,7 @@ mod tests {
         let wanting = RequiredClaim {
             kind: crate::ClaimKind::Verdict,
             check: Some(crate::Check::new("test")),
+            environment: None,
             signers: vec![named("landing"), named("gate")],
             asked_of: crate::AskedOf::Every,
         };
@@ -934,6 +935,7 @@ mod tests {
             wanting: RequiredClaim {
                 kind: crate::ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![],
                 asked_of: crate::AskedOf::Every,
             },

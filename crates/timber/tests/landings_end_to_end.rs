@@ -308,6 +308,7 @@ fn s13_over_a_plain_branch_and_moon() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Verdict,
                 check: Some(Check::new("web:build")),
+                environment: None,
                 signers: vec![named(SIGNER, &[ClaimKind::Verdict], &["web:build"])],
                 asked_of: AskedOf::Every,
             }],
@@ -329,6 +330,7 @@ fn s13_over_a_plain_branch_and_moon() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
                 asked_of: AskedOf::Every,
             }],

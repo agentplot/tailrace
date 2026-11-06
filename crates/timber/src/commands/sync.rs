@@ -445,6 +445,7 @@ mod tests {
         RequiredClaim {
             kind: ClaimKind::Acceptance,
             check: None,
+            environment: None,
             signers: vec![NamedSigner {
                 id: SignerId::new(GATE),
                 verified_by: format!("{GATE}'s key"),

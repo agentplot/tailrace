@@ -345,7 +345,8 @@ fn every_channel_at_its_version_or_empty(world: &FakeWorld) {
     assert_eq!(
         channels[1].declared.moves,
         Moves::Bound {
-            to: ChannelName::new(BETA)
+            to: ChannelName::new(BETA),
+            after: vec![],
         }
     );
     let Ok(Channel::At { head, chain, read }) = &channels[1].at else {
