@@ -1,11 +1,19 @@
 $schema: 'https://moonrepo.dev/schemas/project.json'
 
 # The site, published to https://agentplot.github.io/timber by
-# .github/workflows/pages.yml. bun comes from the devenv shell.
+# .github/workflows/pages.yml. bun comes from the devenv shell, bun's own
+# release build (devenv.nix).
 language: 'typescript'
 layer: 'application'
 
 tasks:
+  # bun is the version the Pages workflow pins, on whichever host runs the
+  # gate (core.26). It reads the tool it checks from outside the tree, so
+  # it never replays.
+  toolchain:
+    command: 'sh check-toolchain.sh'
+    tags: [check-fast]
+    options: {cache: false}
   # The pinned dependencies, from bun.lock. It reaches the registry, so it
   # is never replayed.
   install:

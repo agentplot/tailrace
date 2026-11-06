@@ -10,10 +10,12 @@
 
 #![allow(dead_code)]
 
+#[path = "../ports/mod.rs"]
+mod ports;
+
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::error::Error;
-use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -439,9 +441,7 @@ pub fn listed(id: &str, verified_by: &str) -> NamedSigner {
 /// its chain of errors, read by a client of the SDK's own.
 pub fn dead(arn: &str) -> (Kms, String) {
     let key = KeyArn::parse(arn).unwrap();
-    let (port, held) = free_port();
-    drop(held);
-    let endpoint = format!("http://127.0.0.1:{port}");
+    let endpoint = format!("http://127.0.0.1:{}", ports::unanswered());
     let switch = Switch::new();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -472,11 +472,4 @@ pub fn dead(arn: &str) -> (Kms, String) {
         endpoint: Some(endpoint),
     });
     (kms, words.join(": "))
-}
-
-/// A port on the loopback interface nothing listens on once the listener
-/// answered beside it is dropped.
-pub fn free_port() -> (u16, TcpListener) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a free loopback port");
-    (listener.local_addr().unwrap().port(), listener)
 }
