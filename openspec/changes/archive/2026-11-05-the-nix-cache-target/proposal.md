@@ -88,7 +88,7 @@ it once, and the clan push profile builds on it (design D1).
   leaf with it, from that cache alone.
 - The site's targets page says the Nix binary cache is built, how an
   environment names it and its closures, and how `timber apply` runs;
-  record 0026 proposes the decisions of design D2 to D9, and rule
+  record 0027 proposes the decisions of design D2 to D9, and rule
   core.70 holds the closure's form (design D6).
 
 ## Capabilities
@@ -174,7 +174,7 @@ it once, and the clan push profile builds on it (design D1).
   profile's own code, linking no copyleft crate (the snix note, point 4).
 - The register: 42, 45, 119 and 136 leave; 41 and 97 name the clan push
   profile; 44, 98, 126 and the parts of 132 and 134 name phase 2.
-- The site's targets page and integrations index; record 0026 in
+- The site's targets page and integrations index; record 0027 in
   `docs/adr/` and rule core.70 in `docs/architecture/core.md`.
 - Rules kept: core.1 (attic, Nix and store paths named only under
   `profiles/target/`), core.2 (the closure's form shared through the
@@ -223,6 +223,6 @@ crates/timber-conformance/src/**
 crates/timber-conformance/tests/**
 site/src/content/docs/guides/integrations/targets.mdx
 site/src/content/docs/guides/integrations/index.mdx
-docs/adr/0026-*.md
+docs/adr/0027-*.md
 docs/architecture/core.md
 ```

@@ -33,7 +33,7 @@ code stage takes that branch's work first. That change gives:
 - `timber apply <environment> [--component] [--branch] [--json]`, bound
   as status is, with the target family beside it.
 - The register: 41 and 97 named `bolt 6 · the clan push profile`.
-- Record 0026 and rule core.70: a Nix closure enters the store as one
+- Record 0027 and rule core.70: a Nix closure enters the store as one
   artifact naming its roots.
 
 The two planners settled the split on 2026-11-05, and their messages
@@ -450,7 +450,7 @@ steps:
 
 ### D12. The records
 
-- Record `docs/adr/0027-a-pushed-machine-s-report-is-a-claim-beside-its-version-and-an-after-channel-follows-the-newest-reports.md`,
+- Record `docs/adr/0028-a-pushed-machine-s-report-is-a-claim-beside-its-version-and-an-after-channel-follows-the-newest-reports.md`,
   MADR, proposed, covers D3, D4, D6, D7, D8 and D9, citing the
   blueprints amendment `c118a95`.
 - `docs/architecture/core.md` gains three rules:

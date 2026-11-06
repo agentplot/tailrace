@@ -35,7 +35,7 @@ programs (8.1 to 8.4); the suite's scenarios, each clause leaving the
 register in the commit that first cites it, 136 in `bdff606`, 45 and 119
 in `ed71dcb`, 42 in `0e0c803` (9.1 to 9.4, rule core.33); attic pinned in
 `devenv.nix` and the proof in the `tools` task (10.1 to 10.3); the site's
-targets page and index, record 0026, proposed, and rule core.70 (11.1 to
+targets page and index, record 0027, proposed, and rule core.70 (11.1 to
 11.3).
 
 ## The specs
@@ -112,4 +112,4 @@ targets page and index, record 0026, proposed, and rule core.70 (11.1 to
   and "converged and reported" is not applicable where no marker is
   held. The conformance-suite delta modifies both, so the change is the
   spec's.
-- Record 0026 is proposed, for the user to accept with the change.
+- Record 0027 is proposed, for the user to accept with the change.
