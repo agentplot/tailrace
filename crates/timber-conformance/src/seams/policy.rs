@@ -1,9 +1,11 @@
-//! The policy's group: 82, 83 and 131, and 116 and 125 as a policy keeps
-//! them (B.5).
+//! The policy's group: 82, 83, 131 and 136, and 116 and 125 as a policy
+//! keeps them (B.5).
 
+use serde_json::json;
 use timber_seams::{
     AskedOf, Audience, ChannelId, ChannelName, Check, ClaimKind, ComponentName, DeclaredChannel,
-    HeldChannel, Moves, NamedSigner, Policy, Required, RequiredClaim, Revision, Seam, SignerId,
+    DeclaredEnvironment, EnvironmentName, HeldChannel, Moves, NamedSigner, Policy, Required,
+    RequiredClaim, Revision, Seam, SignerId, TargetProfile, TargetTable,
 };
 
 use crate::seams::{absent, unreadable};
@@ -37,9 +39,45 @@ pub trait PolicyRig: Rig {
     /// carries them; none where it holds none.
     fn held(&self, components: &[ComponentName]) -> Vec<HeldChannel>;
 
+    /// 136: a landed revision at which the repository, declaring no
+    /// component, declares each of `environments` as written, and each
+    /// channel one of them names that its profile does not give, moving by
+    /// a promotion alone and requiring no claim.
+    fn environments(&self, environments: &[Declares]) -> Revision;
+
     /// The policy made unreachable, every operation answering unreadable,
     /// and the words it answers with.
     fn unreachable(&self) -> String;
+}
+
+/// 136, C.10: an environment as a repository declares it: its name, the
+/// channel it names, the signers it waits on where it waits, none where it
+/// moves on its own, and its target.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Declares {
+    pub name: EnvironmentName,
+    pub channel: ChannelName,
+    pub waits_on: Option<Vec<SignerId>>,
+    pub target: Option<TargetTable>,
+}
+
+impl Declares {
+    /// 41, 136, C.10: the environment as the policy answers it: following
+    /// the channel it names where it moves on its own, and where it waits
+    /// the channel made for it, named for it, waiting on its signers.
+    pub fn answered(&self) -> DeclaredEnvironment {
+        let channel = match self.waits_on {
+            Some(_) => ChannelName::new(self.name.as_str()),
+            None => self.channel.clone(),
+        };
+        DeclaredEnvironment {
+            name: self.name.clone(),
+            channel: ChannelId::new(None, channel),
+            waits: self.waits_on.is_some(),
+            approvers: self.waits_on.clone().unwrap_or_default(),
+            target: self.target.clone(),
+        }
+    }
 }
 
 pub fn scenarios() -> Vec<Scenario<dyn PolicyRig>> {
@@ -104,6 +142,18 @@ pub fn scenarios() -> Vec<Scenario<dyn PolicyRig>> {
             plays: None,
             cites: &[131],
             run: the_givens_held_off,
+        },
+        Scenario {
+            name: "environments declared",
+            plays: None,
+            cites: &[136],
+            run: environments_declared,
+        },
+        Scenario {
+            name: "none declared",
+            plays: None,
+            cites: &[136],
+            run: none_declared,
         },
     ]
 }
@@ -420,4 +470,55 @@ fn the_givens_held_off(rig: &dyn PolicyRig) {
             held.channel.channel
         );
     }
+}
+
+/// The target `profile` with `settings`.
+fn target(profile: &str, settings: serde_json::Value) -> Option<TargetTable> {
+    Some(TargetTable {
+        profile: TargetProfile::new(profile),
+        settings,
+    })
+}
+
+/// 136: a policy answers each environment it declares, by name, with the
+/// channel it follows, the one made for it where it waits, whom it waits
+/// on, and its target's profile and settings as written.
+fn environments_declared(rig: &dyn PolicyRig) {
+    let cache = Declares {
+        name: EnvironmentName::new("cache"),
+        channel: ChannelName::new("beta"),
+        waits_on: None,
+        target: target(
+            "pushed",
+            json!({ "at": "a place of its own", "outputs": ["site", "docs"], "tries": 3 }),
+        ),
+    };
+    let prod = Declares {
+        name: EnvironmentName::new("prod"),
+        channel: ChannelName::new("stable"),
+        waits_on: Some(vec![SignerId::new("box")]),
+        target: target("pulled", json!({ "at": { "place": "another" } })),
+    };
+    // Declared in another order than the answer's, which is by name.
+    let at = rig.environments(&[prod.clone(), cache.clone()]);
+    let answer = ok(rig.policy().environments(&at), "environments");
+    assert_eq!(
+        answer,
+        [cache.answered(), prod.answered()],
+        "the policy answered other environments, channels, waits, approvers or targets than it declares, or not by name"
+    );
+}
+
+/// 136: a policy that declares no environment answers an empty list, not
+/// absent.
+fn none_declared(rig: &dyn PolicyRig) {
+    let at = rig.at(&[(
+        Audience::Acceptance,
+        Required::Acceptance { claims: claims() },
+    )]);
+    assert_eq!(
+        ok(rig.policy().environments(&at), "environments"),
+        [],
+        "a policy declaring no environment answered environments"
+    );
 }

@@ -24,7 +24,7 @@ use crate::seams::binding::BindingRig;
 use crate::seams::build::{BuildRig, Made};
 use crate::seams::keeper::KeeperRig;
 use crate::seams::landing::{LandingRig, Recorded};
-use crate::seams::policy::PolicyRig;
+use crate::seams::policy::{Declares, PolicyRig};
 use crate::seams::projection::ProjectionRig;
 use crate::seams::signer::SignerRig;
 use crate::seams::store::{StoreRig, BYTES};
@@ -454,11 +454,25 @@ impl PolicyRig for FakePolicyRig {
         Vec::new()
     }
 
+    /// Each of `environments` scripted as a policy declaring it answers
+    /// it; the fake keeps no channel an environment names.
+    fn environments(&self, environments: &[Declares]) -> Revision {
+        let at = revision(&self.revisions);
+        for environment in environments {
+            self.policy.declares_at(&at, environment.answered());
+        }
+        at
+    }
+
     fn unreachable(&self) -> String {
         let policy = &self.policy;
         unreachable(
             |op, f, t| policy.fault(op, f, t),
-            &[PolicyOp::PolicyFor, PolicyOp::Channels],
+            &[
+                PolicyOp::PolicyFor,
+                PolicyOp::Channels,
+                PolicyOp::Environments,
+            ],
         )
     }
 }
