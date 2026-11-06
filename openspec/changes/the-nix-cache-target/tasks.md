@@ -16,7 +16,7 @@
 
 ## 4. The target family and its binding
 
-- [ ] 4.1 Add `crates/timber/src/profiles/target/mod.rs`, the target profiles' family, with `bound(store, checkout) -> BTreeMap<TargetProfile, Box<dyn Target>>` binding every target profile built, each handed a store binding of its own and the checkout's path, so the clan push profile appends itself there, and declare it in `profiles/mod.rs`; bind it in `bindings/mod.rs` for `apply`, the store opened and never made, as Cargo's projection's is; add `"targets"` and `"environments"` to the tables the bindings file refuses as the repository's to bind; update the module documentation, which says no target is bound yet (design D3). Verify: `bindings/tests.rs` asserts `nix_cache` is among the bound targets for apply, that binding it makes no layout, and that a `[targets]` table is unreadable naming it as the repository's, in `check-fast`
+- [x] 4.1 Add `crates/timber/src/profiles/target/mod.rs`, the target profiles' family, with `bound(store, checkout) -> BTreeMap<TargetProfile, Box<dyn Target>>` binding every target profile built, each handed a store binding of its own and the checkout's path, so the clan push profile appends itself there, and declare it in `profiles/mod.rs`; bind it in `bindings/mod.rs` for `apply`, the store opened and never made, as Cargo's projection's is; add `"targets"` and `"environments"` to the tables the bindings file refuses as the repository's to bind; update the module documentation, which says no target is bound yet (design D3). Verify: `bindings/tests.rs` asserts `nix_cache` is among the bound targets for apply, that binding it makes no layout, and that a `[targets]` table is unreadable naming it as the repository's, in `check-fast`
 
 ## 5. The core's apply
 
