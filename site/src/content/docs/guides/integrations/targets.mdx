@@ -1,6 +1,6 @@
 ---
 title: Targets
-description: The target seam, the Nix binary cache built to fill it, and the registries, sites, stacks, functions, clusters and fleets designed to be converged.
+description: The target seam, the Nix binary cache and a clan fleet's push built to fill it, and the registries, sites, stacks, functions, clusters and pulling fleets designed to be converged.
 sidebar:
   order: 7
 ---
@@ -51,7 +51,8 @@ credential has nowhere in the repository's file to sit (45).
 | a CloudFormation stack or StackSet | push: one stack operation on the version's template with the environment's parameters, which a StackSet carries to every stack instance it holds, a list kept outside timber; current is the stack's or the StackSet's recorded version | designed |
 | a function | push: point the function at the version's image by digest | designed |
 | Kubernetes, via Flux or Argo | pull: the channel's tag, verified by Flux or Argo against the gate's signature; current reported by a watcher | designed |
-| a Nix fleet, via Clan | pull: each machine verifies and applies the release assigned to it, realising store paths from the cache | designed |
+| a Nix fleet, via Clan, pushed | push: one machine switched with `clan machines update` to the one root its version's closure names, checked against the revision's flake and realised from substituters alone, from the host that holds the machine's key; a marker on the machine, and a report claim beside the version; see below | built, `clan` |
+| a Nix fleet, via Clan, pulled | pull: each machine verifies and applies the release assigned to it, realising store paths from the cache | designed |
 | a Nix binary cache, through Attic | push: the version's closures pushed to the cache with `attic push`, from the host that built them, with attic's own credential; current and report unread, since a cache keeps no marker; see below | built, `nix_cache` |
 
 A target's credential is the environment's, reached at the moment of
@@ -136,6 +137,9 @@ cache of swancloud-srv follows beta: 0.4.0 (sha256:…) applied
   before:
     the target (nix_cache) could not read what environment cache of swancloud-srv runs
 the Nix binary cache fleet:swancloud holds store paths by their hash and keeps no marker of what was pushed to it
+  runs:
+    the target (nix_cache) could not read what environment cache of swancloud-srv runs
+the Nix binary cache fleet:swancloud holds store paths by their hash and keeps no marker of what was pushed to it
   report:
     the target (nix_cache) could not read what environment cache of swancloud-srv runs
 the Nix binary cache fleet:swancloud holds store paths by their hash and keeps no marker of what was pushed to it
@@ -145,8 +149,214 @@ A Nix binary cache holds store paths by their hash and keeps no name a
 marker could be held under, so current and report are always unread,
 saying so, never the digest last pushed and never converged (119, 89).
 Apply therefore runs whenever it is asked, and an apply of a version
-already pushed uploads nothing. Nothing in timber runs it when the
-channel moves: the host names what does (C.16).
+already pushed uploads nothing. With no report, no report claim is
+signed and no gate is told, and the apply exits as unreadable, 3, after
+every push it makes: apply's exit is the worst of its parts, and the
+report is one. Nothing in timber runs it when the channel moves: the
+host names what does (C.16).
+
+## The clan push profile
+
+The clan push profile, `clan`, converges one machine of a
+[clan](https://clan.lol) fleet on the closure its version names, from
+the host that holds the machine's key, with clan's own deploy (C.12).
+It builds nothing: what runs is the one root the version's closure file
+names, which the landing's checks and the version's claims named (42).
+
+Each machine's build task leaves a closure file naming its toplevel,
+one store path, as for the Nix binary cache, and the component declares
+it as an output packed by the file projection. The environment's
+`clan` table names two keys and no others:
+
+| key | what |
+|---|---|
+| `machine` | the machine as the fleet's inventory names it: letters, digits, `-` and `_`, beginning with a letter or a digit |
+| `closure` | the component's output whose artifact names the machine's closure, of exactly one root |
+
+```toml
+[environments.swancloud-srv.srv]
+channel = "stable"
+target.clan = { machine = "swancloud-srv", closure = "swancloud-srv" }
+```
+
+Any other key is unreadable naming it and the two the table reads, and
+a `machine` of any other form is unreadable naming `machine`; nothing
+runs. There is no key for a host, a user or a key: clan holds the
+machine's address in the fleet's own inventory, and the host's ssh
+holds the key to it (45).
+
+### What apply runs and checks
+
+Run `timber apply` on the host that holds the machine's key, in the
+fleet's shell, so the `clan`, `nix` and `nix-store` on its path are the
+ones the fleet pins. The machine's host key must already be in that
+host's known hosts: clan runs with `--host-key-check strict`, which asks
+no one and refuses a machine it does not know, in ssh's words. timber
+reads, writes and passes no key, and keeps nothing of the session (45,
+64).
+
+Apply judges the channel's head as for any target, then runs these
+steps, and nothing runs on the machine until every check before it
+holds:
+
+1. It reads the version's index by digest, the revision and the
+   publishing repository the index names, and the closure file of the
+   table's output, which must name exactly one root. An index with no
+   artifact of that output is absent, naming the output and the index;
+   one naming no revision, or another publishing repository than the
+   checkout's, is refused.
+2. It makes a detached worktree of the checkout at that revision, under
+   the repository's common git directory, `<common>/timber/fleet/<revision>`,
+   once, and reuses it after.
+3. It evaluates the machine's toplevel from that worktree's flake with
+   `nix eval --raw`, under `nixosConfigurations.<machine>`, or
+   `darwinConfigurations.<machine>` where the flake holds no NixOS
+   machine of that name. A path other than the root is refused, naming
+   both.
+4. It realises the root in this host's Nix store from its substituters
+   alone, `nix-store --realise <root> --option max-jobs 0`. A path no
+   substituter holds is refused in Nix's words, naming the path, and
+   nothing is built in its place (I3).
+5. It runs one `clan machines update <machine> --flake <worktree>
+   --build-host localhost --host-key-check strict`, which finds the
+   root in this host's store, copies it to the machine, uploads the
+   machine's vars and switches it. clan's words on a failure are the
+   answer, as clan wrote them.
+6. It leaves the marker on the machine, then reads the machine back: it
+   must run the root, and its marker name the index.
+
+### The marker
+
+After the switch, apply writes one JSON object on the machine, in the
+state directory of the user the fleet deploys as, so neither a Mac's
+user nor a NixOS machine's root needs any privilege beyond the deploy's:
+
+```text
+${XDG_STATE_HOME:-$HOME/.local/state}/timber/markers/<owner>/<name>/<component>/<environment>.json
+```
+
+```json
+{"index":"sha256:…","version":"0.4.0","closure":"/nix/store/…-nixos-system-swancloud-srv-…","at":"2026-11-06T18:04:11Z"}
+```
+
+`<owner>/<name>` is the repository the checkout is of, as its landing's
+remote names it, so a machine that is an environment of two
+repositories keeps a marker for each. It is written through `clan ssh`
+to a temporary file renamed into place, so a reader never reads part of
+one, and `at` is the machine's own clock at the write. A marker that
+cannot be written makes the apply unreadable, naming the marker and the
+machine's words, and saying the switch was made.
+
+current and report read `readlink /run/current-system` and the marker
+in one `clan ssh`. They answer the marker's index where the machine runs
+the closure the marker names; where it holds no marker, runs another
+closure, or cannot be reached, they answer unread, naming what it runs
+and what the marker says, or ssh's words, and never guess (89, 91, 119).
+A machine switched by hand after timber reads unread until its next
+apply.
+
+### The report
+
+Once the machine's report names the index applied, `timber apply` signs
+a report claim as the host's `[signing]` signer, the given host key
+where the host binds none, and attaches it beside the version's index,
+where every reader of the store reads it (43, 91). It says what the
+host observed the machine answer: the environment, its component and
+channel, the version and index, the digest the machine reports it
+runs, when the machine converged, and the moment of the apply. A report is a claim of timber's
+own kind, `report`, since the public catalogue of claim kinds carries
+none that says an environment runs a digest (141), and `timber verify`
+lists it with its signer and its environment. An apply that finds the
+machine already running the head signs one only where the
+environment's newest report names another index or none, so a report
+the store refused to hold is made by the next apply and never twice.
+
+A report counts only where its signer may claim one: `report` among the
+`kinds` of its `[signers.<name>]` table (116):
+
+```toml
+[signers.deployer]
+ssh = "ssh-ed25519 DDDD… deployer@box"
+kinds = ["provenance", "acceptance", "promotion", "report"]
+```
+
+A report by a signer whose kinds lack `report` stays attached and is
+never counted, and the one host a file with no acceptance signer makes
+its gate gains no report by being the gate.
+
+### An environment after another
+
+An environment's `after` names the environments it must never be ahead
+of, and gives it a channel of its own, bound to theirs, that moves to
+the version every environment it names last reported it runs (37, 43,
+91, C.10). One environment that waits on a yes, and a second after it,
+both machines of one fleet whose version names both closures:
+
+```toml
+[[component]]
+name = "boxes"
+outputs = ["box-1", "box-2"]
+paths = ["machines/**", "flake.nix", "flake.lock"]
+prefix = "boxes-v"
+projections = { box-1 = "file", box-2 = "file" }
+
+# first waits on a yes: its own channel, first, bound to stable.
+[environments.boxes.first]
+channel = "stable"
+policy = "manual"
+approvers = ["deployer"]
+target.clan = { machine = "box-1", closure = "box-1" }
+
+# second comes after first: its own channel, second, bound to first,
+# moving only to what first last reported it runs.
+[environments.boxes.second]
+channel = "stable"
+after = ["first"]
+target.clan = { machine = "box-2", closure = "box-2" }
+```
+
+The policy for `second` requires, after the gate's acceptance and any
+claim its line adds, a report of `first` by every signer that may claim
+one, and by no signer where none may, so `second` never moves on a
+report nobody may make. A `require` entry of kind `report` is unreadable
+naming its table, since an entry has no key to name the environment a
+report is of.
+
+A yes moves `first`'s channel, and `second`'s stays where it is. Then
+`timber apply first --component boxes` switches `box-1`, signs its
+report, and tells the gate as a publish does, under the host's `[gate]`
+binding: with no `[gate]`, or `[gate] publish = {}`, this host's gate
+moves every channel that comes after `first`, as its own act, to the
+version `first` last reported, and the apply's answer carries each one:
+
+```text
+first of boxes follows first: 0.2.0 (sha256:…) applied
+  before: sha256:…
+  runs: sha256:…, converged 2026-11-06T18:04:11Z
+  report: sha256:…
+  after:
+    second moved from 0.1.0 (sha256:…) to 0.2.0 (sha256:…): claim sha256:… after sha256:…; the store followed
+```
+
+`timber apply second --component boxes` then converges `box-2`. Moved
+back and applied, `first` reports the older version and `second`
+follows it back, one more promotion each (34). The gate reads each
+named environment's newest report across its channel's chain, the one
+whose apply came last, so `second` is never moved to a version `first`
+did not last report it runs, nor to one `first`'s channel never held.
+Where the environments a channel comes after last reported different
+versions, or one has no report that counts, the channel is held, and
+the answer names each environment and what it last reported. The
+host's signer must be among the channel's promoters, or the channel is
+refused naming it and them, with no report read. The promotion names
+the host's signer as who asked and the reports among its counted
+claims.
+
+Where `[gate] job = "<words>"` names a job that tells the gate, the
+answer carries the words, timber runs nothing for it, and no channel
+moves. An unread report signs nothing and tells no gate. The exit is
+the worst of the apply's answer, the report's and each channel's, a
+held channel counting as refused.
 
 ## Adding one
 
