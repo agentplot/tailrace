@@ -452,9 +452,11 @@ fn no_target() -> Not {
 
 /// 58, 60, 98: the environments' part of status, unreadable naming the
 /// environments, since what each should run and runs is read from a
-/// target and no target is read. It asks no target of `seams`, however
-/// many are bound, and the policy lists no environment, so nothing is
-/// counted: a count of none would read as none behind.
+/// target and status reads none. Targets are bound, for apply, and still
+/// status asks no target of `seams`, however many are bound, and no
+/// environment of the policy, until phase 2 builds environments in
+/// status (98); so nothing is counted: a count of none would read as
+/// none behind.
 pub fn environments(_seams: &Seams, _ask: &OverviewAsk) -> Answer<EnvironmentCounts> {
     Err(no_target())
 }

@@ -1,6 +1,6 @@
 ---
 title: Targets
-description: The target seam, and the registries, sites, stacks, functions, clusters, fleets and caches designed to be converged.
+description: The target seam, the Nix binary cache built to fill it, and the registries, sites, stacks, functions, clusters and fleets designed to be converged.
 sidebar:
   order: 7
 ---
@@ -10,6 +10,19 @@ channel it subscribes to, a policy, `auto` or `manual`, and a reconciler,
 push or pull; the target answers what the environment wants, what it
 runs, and converges the two. Any number of targets are bound at once, by
 the repository's authors (92).
+
+An environment names its target by its profile: its `target` table
+holds exactly one key, the profile's name, and that key's table is the
+target's own settings, which the target reads and timber's core never
+does (C.10, 136). Every target profile built is bound, and each
+environment picks one by that key; an environment naming a profile no
+binding holds is answered absent, naming the profile.
+
+```toml
+[environments.swancloud-srv.cache]
+channel = "beta"
+target.nix_cache = { attic = "fleet:swancloud", closures = ["swancloud-srv"] }
+```
 
 ## The contract
 
@@ -23,6 +36,12 @@ when it last converged, where every asker reads it. A reconciler verifies
 the claims it is told to require before any apply, and an environment is
 never handed a version except through its channel.
 
+A target that can keep a marker of the digest it applied reports what
+runs from it; one that can keep none answers current and report unread,
+with the reason, never a guess (119). A target reads no setting but its
+own: a key of its table it does not read is unreadable naming it, so a
+credential has nowhere in the repository's file to sit (45).
+
 ## Members
 
 | target | reconciler | status |
@@ -33,10 +52,101 @@ never handed a version except through its channel.
 | a function | push: point the function at the version's image by digest | designed |
 | Kubernetes, via Flux or Argo | pull: the channel's tag, verified by Flux or Argo against the gate's signature; current reported by a watcher | designed |
 | a Nix fleet, via Clan | pull: each machine verifies and applies the release assigned to it, realising store paths from the cache | designed |
-| a Nix binary cache, such as Attic | push: the version's store paths pushed to the cache | designed |
+| a Nix binary cache, through Attic | push: the version's closures pushed to the cache with `attic push`, from the host that built them, with attic's own credential; current and report unread, since a cache keeps no marker; see below | built, `nix_cache` |
 
 A target's credential is the environment's, reached at the moment of
 use; timber keeps none.
+
+## The Nix binary cache
+
+The Nix cache target, `nix_cache`, pushes a version's closures to the
+fleet's Nix binary cache with [attic](https://github.com/zhaofengli/attic),
+so a closure built on one host is realised on another from the cache
+alone (C.12).
+
+A closure is one artifact naming its roots. A machine's build task
+leaves one file naming its closure's root store paths, one absolute
+store path per line, as `nix build --print-out-paths` prints them, and
+declares that file as the task's output. The component declares it as an
+output packed by the file projection, as any file is, so its digest, its
+provenance and the landing's verdicts name it as they name any output:
+
+```toml
+[[component]]
+name = "swancloud-srv"
+outputs = ["swancloud-srv"]
+paths = ["machines/srv/**"]
+prefix = "swancloud-srv-v"
+projections = { swancloud-srv = "file" }
+```
+
+The store holds that file and no store path of the closure. The paths,
+and the references among them, are the cache's, kept and collected by
+the cache; a machine that misses a path the cache has collected builds
+it again (54).
+
+The environment's `nix_cache` table names two keys and no others:
+
+| key | what |
+|---|---|
+| `attic` | the cache as attic's own command names it, `<server>:<cache>` |
+| `closures` | one or more of the component's outputs whose artifacts name closures |
+
+Any other key, an empty `closures`, or an `attic` that is not
+`<server>:<cache>` is unreadable naming the environment and the key, and
+nothing is pushed. There is no key for a token. attic's own
+configuration holds it, on the host that pushes,
+`$XDG_CONFIG_HOME/attic/config.toml`, with the server's address and a
+token that may push and pull on the cache:
+
+```toml
+[servers.fleet]
+endpoint = "https://cache.example.org/"
+token = "…"
+```
+
+timber passes attic no token, sets none of its variables and reads
+nothing of its configuration: attic reads it at the push (45).
+
+`timber apply <environment>` converges the environment on its channel's
+head, with `--component <name>` where the repository declares
+components, `--branch` for a governed branch other than `main`, and
+`--json` for the answer as one document. It reads the policy at the
+branch's landed head, the channel's head from its chain, and judges the
+claims the channel's policy requires of the head's index before the
+target is handed the version; a claim found wanting refuses the apply,
+naming it, and the target is asked nothing (42). It moves no name.
+
+Run it from the host that built the closure. The target reads the
+version's index and each closure's file through the store by digest,
+checks every root valid in this host's Nix store with `nix-store
+--check-validity`, and only then runs `attic push <server>:<cache>
+<roots…>`, which pushes each root with its closure and skips what the
+cache holds already. A root this host's store does not hold refuses the
+apply, naming the root and the host, and nothing is pushed: the target
+builds nothing, substitutes nothing and fetches nothing (15). attic's
+words on a failure are the answer, unread, as attic wrote them.
+
+```sh
+timber apply cache --component swancloud-srv
+```
+
+```text
+cache of swancloud-srv follows beta: 0.4.0 (sha256:…) applied
+  before:
+    the target (nix_cache) could not read what environment cache of swancloud-srv runs
+the Nix binary cache fleet:swancloud holds store paths by their hash and keeps no marker of what was pushed to it
+  report:
+    the target (nix_cache) could not read what environment cache of swancloud-srv runs
+the Nix binary cache fleet:swancloud holds store paths by their hash and keeps no marker of what was pushed to it
+```
+
+A Nix binary cache holds store paths by their hash and keeps no name a
+marker could be held under, so current and report are always unread,
+saying so, never the digest last pushed and never converged (119, 89).
+Apply therefore runs whenever it is asked, and an apply of a version
+already pushed uploads nothing. Nothing in timber runs it when the
+channel moves: the host names what does (C.16).
 
 ## Adding one
 

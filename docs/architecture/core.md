@@ -46,6 +46,7 @@ part exists.
 - **[core.60]** A publish names each artifact `artifact/<ecosystem>/<name>@<version>` at the digest of its version's index, beside the component's tag and moved only with the digest it is expected at; no component's tag enters `artifact/`, `cache/` or `channel/`, and the index names the publishing repository by its remote's owner and name and the revision.
 - **[core.61]** A version's notes are rendered by the version rule's own tool under the repository's own template from the history that derives the version, are an artifact its index names, and are written by nothing after the offer; a surface derives them from the landed history and asks no store for them.
 - **[core.62]** A host pushes the cache entries of the tasks it ran, which the build seam's `left` names, as cache entries and nothing more; a pool job's push holds a credential that writes cache entries and nothing else in the store.
+- **[core.70]** A Nix closure enters the store as one artifact naming its roots, and no store path of it is an artifact or a cache entry; its paths are the Nix binary cache's.
 
 ### Acceptance and channels
 
@@ -175,3 +176,4 @@ part exists.
 - **core.67** Rules out: a consumer that reaches the publishing repository to read its policy (49, 60); a publisher's layout policy read from anywhere but the claim its version's index carries; a consumer's own layout policy read from its checkout (core.22); a file with no layout line read as writing one. Source: clauses 49, 60, 65, 113, C.10.
 - **core.68** Rules out: a pane that reads a store, a ledger or the host's file of repositories itself (core.31); a pane that shows a repository otherwise than the page answers it. Source: clause 132; section 9 as amended at `agentplot/blueprints` 9057c8f; ADR 0018.
 - **core.69** Rules out: timber pushing, pulling or naming a toolchain's compilation cache between hosts; a cache entry holding one; a verifier's rebuild that reads a compilation cache another party wrote, the party on one host being the host. Not ruled out: the host's own compilation cache read inside a task it runs. Source: clauses 30, 55, 133; ADR 0025.
+- **core.70** Rules out: a NAR, a narinfo or a store path's bytes put in the store; a closure split across artifacts or cache entries. Not ruled out: the file naming a closure's roots, packed by the file projection as an output's one file, with the claims attached to it as to any artifact. Source: clauses 52, 54, C.12, section 10; ADR 0026.

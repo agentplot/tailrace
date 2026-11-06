@@ -10,15 +10,24 @@ text! {
     EnvironmentName
 }
 
-/// One target, the channel it follows with its component (125), and
+/// One target, the channel it follows with its component (125),
 /// whether it waits for an approver rather than moving on its own (40,
-/// 41).
+/// 41), and the target's own settings as the policy answered them, its
+/// `target` table's one key's table as written (45, C.10).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Environment {
     pub name: EnvironmentName,
     pub channel: ChannelId,
     pub waits: bool,
+    pub settings: serde_json::Value,
 }
+
+/// 88, rule core.50: the head of an environment's channel as the core
+/// read it from the chain: the digest of the index its head promotion
+/// moved to, or absent naming the channel where the chain holds none
+/// (31). A target that is pushed to answers it; one that pulls answers
+/// what its own reading of the channel gives (44).
+pub type Head<'a> = &'a dyn Fn() -> Answer<Digest>;
 
 /// 42: an index and its version, which the core made once it verified
 /// the claims it was told to require (rule core.29); a profile is handed
@@ -52,13 +61,21 @@ pub struct Running {
     pub converged_at: String,
 }
 
+/// B.7: a target reads no setting but its own: a key of the
+/// environment's settings it does not read answers unreadable naming it,
+/// so no credential sits where the policy is written (45, C.10). A
+/// target that can hold no marker of the digest it applied answers
+/// current and report unreadable with the reason, never a digest and
+/// never converged (119).
 pub trait Target {
-    /// 88: the digest `environment`'s channel names; absent when the
-    /// channel is empty (31).
-    fn desired(&self, environment: &Environment) -> Answer<Digest>;
+    /// 88: the digest `environment`'s channel names, given `head`, the
+    /// head the core read from its chain; absent when the channel is
+    /// empty (31).
+    fn desired(&self, environment: &Environment, head: Head<'_>) -> Answer<Digest>;
 
     /// 89: the digest `environment` runs; unreadable with the reason
-    /// when its state cannot be read, never a guess (119).
+    /// when its state cannot be read, or where the target holds no marker
+    /// of what it applied, never a guess (119).
     fn current(&self, environment: &Environment) -> Answer<Digest>;
 
     /// 90: `environment` converged on `version`, which the reconciler
@@ -66,7 +83,8 @@ pub trait Target {
     fn apply(&self, environment: &Environment, version: &Verified) -> Answer<()>;
 
     /// 91: what `environment` runs and when it last converged, recorded
-    /// where every asker reads it (43).
+    /// where every asker reads it (43); unreadable with the reason where
+    /// the target holds no marker of what it applied (119).
     fn report(&self, environment: &Environment) -> Answer<Running>;
 }
 
@@ -74,6 +92,7 @@ pub trait Target {
 mod tests {
     use super::*;
     use crate::{round_trip, ChannelName, ComponentName};
+    use serde_json::json;
 
     #[test]
     fn every_type_round_trips_through_json() {
@@ -82,6 +101,7 @@ mod tests {
             name: EnvironmentName::new("production"),
             channel: ChannelId::new(Some(ComponentName::new("web")), ChannelName::new("stable")),
             waits: true,
+            settings: json!({ "at": "a place of its own", "outputs": ["site"] }),
         });
         let verified = Verified::new(Digest::of(b"index"), Version::new("1.0.0"));
         assert_eq!(verified.index(), &Digest::of(b"index"));

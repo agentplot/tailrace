@@ -15,9 +15,9 @@ use timber_core::{
 };
 use timber_fakes::{FakeSigner, Fault, KeeperOp, LandingOp, StoreOp, Times};
 use timber_seams::{
-    Audience, Branch, ChannelId, ChannelName, ComponentName, Digest, Envelope, EnvironmentName,
-    Held, Keeper, Manifest, Moved, Moves, Not, Outcome, Promotion, Read, Required, Revision,
-    Satisfied, Seam, Signer, SignerId, Source, Version, Why,
+    Audience, Branch, ChannelId, ChannelName, ComponentName, Digest, Envelope, Held, Keeper,
+    Manifest, Moved, Moves, Not, Outcome, Promotion, Read, Required, Revision, Satisfied, Seam,
+    Signer, SignerId, Source, TargetProfile, Version, Why,
 };
 use world::{World, HOST};
 
@@ -928,7 +928,7 @@ fn a_head_not_landed_as_last_fetched_refuses_the_channels_and_the_record_still_a
 #[test]
 fn status_asks_no_store_signer_target_or_projection_and_writes_nothing() {
     let mut world = World::new();
-    let production = world.fakes.target(&EnvironmentName::new("production"));
+    let production = world.fakes.target(&TargetProfile::new("fake"));
     declare(&world, &beta(), None);
     declare(&world, &stable(), None);
     published(&world);
@@ -1265,7 +1265,7 @@ fn unread(answer: &timber_seams::Answer<timber_core::EnvironmentCounts>) {
 #[test]
 fn a_target_bound_and_never_asked_leaves_the_environments_unreadable() {
     let mut world = World::new();
-    let production = world.fakes.target(&EnvironmentName::new("production"));
+    let production = world.fakes.target(&TargetProfile::new("fake"));
     declare(&world, &stable(), None);
     promoted(&world, &stable(), &["0.1.0"]);
     let answer = asked(&world, &ask(&world));

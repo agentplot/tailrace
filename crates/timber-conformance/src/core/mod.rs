@@ -2,6 +2,7 @@
 //! plan has build it, over the one [`FakeWorld`](crate::world::FakeWorld)
 //! (design D2, D4); the surfaces' group over a surface (design D6).
 
+pub mod apply;
 pub mod cache;
 pub mod copy;
 pub mod gate;

@@ -18,11 +18,11 @@ use timber_core::{
 use timber_fakes::{Fault, KeeperOp, StoreOp, Times};
 use timber_seams::{
     channel_name, Branch, ChannelId, ChannelName, ComponentName, Held, IndexMeta, Manifest, Moves,
-    Name, Not, Read, Seam, Signer, SignerId, Source, Store, Version, Why,
+    Name, Not, Read, Seam, Signer, SignerId, Source, Store, TargetProfile, Version, Why,
 };
 
 use crate::core::publish::{one, passing, TAG, VERSION};
-use crate::world::{FakeWorld, GATE, PROMOTED, STABLE};
+use crate::world::{FakeWorld, GATE, PROMOTED, STABLE, TARGET};
 use crate::{ok, Scenario};
 
 pub const GROUP: &str = "status";
@@ -564,7 +564,10 @@ fn s12_everything_kept_deleted_the_channels_the_same(world: &FakeWorld) {
 
 fn the_environments_not_yet_read_a_fake_target_bound(world: &FakeWorld) {
     assert!(
-        world.fakes.targets.contains_key(&world.environment.name),
+        world
+            .fakes
+            .targets
+            .contains_key(&TargetProfile::new(TARGET)),
         "the world binds no target"
     );
     published(world);

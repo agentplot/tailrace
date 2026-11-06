@@ -9,9 +9,9 @@ use serde_json::json;
 use timber_core::{verify, Published, Told, Verified, POLICY_FILE};
 use timber_fakes::{FakeLanding, FakePolicy, Fault, LandingOp, PolicyOp, StoreOp, Times};
 use timber_seams::{
-    Answer, AskedOf, Audience, Check, Claim, ClaimKind, Envelope, Held, Manifest, NamedSigner, Not,
-    Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store,
-    Verdict,
+    Answer, AskedOf, Audience, Check, Claim, ClaimKind, DeclaredEnvironment, Envelope, Held,
+    Manifest, NamedSigner, Not, Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision,
+    Seam, SignerId, Store, Verdict,
 };
 
 use crate::core::publish::{one, passing, version_of, TAG, VERSION};
@@ -322,6 +322,10 @@ impl Policy for Watched {
 
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         self.inner.channels(revision)
+    }
+
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        self.inner.environments(revision)
     }
 }
 

@@ -81,7 +81,11 @@
 //! through a second binding of the store, and Cargo's projection crates
 //! and npm's tarballs through a third and a fourth, each opened and
 //! never made (design D6). What tells the gate is bound for every
-//! command; no target is bound yet. Only a publish and the two pushes
+//! command. Every target profile built is bound for an apply, each
+//! reading through a store binding of its own, opened and never made,
+//! the repository's environments picking among them (92, C.10; the Nix
+//! cache unit's design D3); no other command binds a target. Only a
+//! publish and the two pushes
 //! make the layout, the given one with its parents, at the first
 //! operation asked of the store and never in binding it, so a publish
 //! refused before it asks the store anything leaves nothing behind; a
@@ -98,7 +102,10 @@
 //! otherwise; so status on a host with nothing written reads the given
 //! landing and the given ledger and makes nothing. The policy command is
 //! bound as status is, with no store whether or not the file names one
-//! (the channels unit's design D11).
+//! (the channels unit's design D11). Apply is bound as status is, signing
+//! nothing, with the store opened and never made, since it judges the
+//! claims attached to the head's index, and the targets beside (42; the
+//! Nix cache unit's design D5).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -368,7 +375,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
                     bindings.trust.push(trusted(file, id, value)?);
                 }
             }
-            "build" | "projections" => {
+            "build" | "projections" | "targets" | "environments" => {
                 return Err(unreadable(
                     file,
                     Some(&at),
@@ -473,7 +480,8 @@ fn trusted(file: &Path, id: &str, value: &toml::Value) -> Answer<NamedSigner> {
 /// landing, which make the layout the first time; verify, sync or
 /// rebuild, which never make or write one; promote, which signs and never
 /// makes the layout; status, which asks the landing, the policy and the
-/// ledger alone; or policy, bound as status is with no store.
+/// ledger alone; policy, bound as status is with no store; or apply,
+/// bound as status is with the store opened and the targets beside.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
@@ -487,6 +495,7 @@ pub enum For {
     Promote,
     Status,
     Policy,
+    Apply,
 }
 
 /// The store status binds where no ledger is held in it, and the policy
@@ -577,7 +586,9 @@ impl Landing for NoLanding {
 /// operation of it absent, since it asks the landing nothing (139); every
 /// other command binds both signers verify-only. A sync trusts the host's
 /// own signer, the one `[signing]` names, before the signers `[trust]`
-/// names, what verifies it read before the store is bound.
+/// names, what verifies it read before the store is bound. An apply binds
+/// every target profile built beside the store, each through a store
+/// binding of its own (92; the Nix cache unit's design D3).
 /// Every table is read, `[gate]` among them, and nothing is made: a
 /// publish or a push makes the layout at its store's first operation, so
 /// path with `~/` expanded, so the record names a directory a reader
@@ -596,7 +607,7 @@ pub fn bind(
     let gate = Teller::of(bindings.gate.as_ref())?;
     let given_signing;
     let signing = match (&bindings.signing, command) {
-        (_, For::Status | For::Policy) => None,
+        (_, For::Status | For::Policy | For::Apply) => None,
         (Some(signing), _) => Some(signing),
         (None, For::Publish | For::Promote) => {
             let data = data(xdg_data_home, home).ok_or_else(|| {
@@ -648,7 +659,7 @@ pub fn bind(
         Some(ledger) => profiles::ledger::bind(ledger, repository, store, make),
         None => Ok(profiles::ledger::given(repository, remote.clone())),
     };
-    let (bound, keeper, projections) = if matches!(command, For::Status | For::Policy) {
+    let (bound, keeper, projections, targets) = if matches!(command, For::Status | For::Policy) {
         let keeper = ledger(store)?;
         // No part of status reads the store but a ledger held in it, so a
         // store that is not there leaves every other ledger's chains read.
@@ -665,7 +676,14 @@ pub fn bind(
                 file.display()
             )),
         };
-        (bound, keeper, BTreeMap::new())
+        (bound, keeper, BTreeMap::new(), BTreeMap::new())
+    } else if command == For::Apply {
+        // Apply judges the claims attached to the head's index, and each
+        // target reads through a store of its own; neither is made (42).
+        let bound = profiles::store::bind(store, false)?;
+        let targets = profiles::target::bound(profiles::store::bind(store, false)?, repository);
+        let keeper = ledger(store)?;
+        (bound, keeper, BTreeMap::new(), targets)
     } else {
         // A push's store, after a landing or of what a checkout left,
         // writes cache entries alone, into the bound build profile's cache
@@ -681,6 +699,7 @@ pub fn bind(
             bound,
             keeper,
             profiles::projection::bound(cache, crates, packages, repository),
+            BTreeMap::new(),
         )
     };
     Ok(Binding {
@@ -692,7 +711,7 @@ pub fn bind(
             keeper,
             signers: profiles::signer::bind(signing),
             projections,
-            targets: BTreeMap::new(),
+            targets,
         },
         store: named,
         signer: signing.map(Signing::signer),

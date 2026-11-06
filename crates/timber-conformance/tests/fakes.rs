@@ -2,7 +2,7 @@
 //! with the runner and reported as any profile is (93; design D9).
 
 use timber_conformance::core::{
-    cache, copy, gate, layouts, ledger, naming, publish, record, status, verify, version,
+    apply, cache, copy, gate, layouts, ledger, naming, publish, record, status, verify, version,
 };
 use timber_conformance::fakes::{
     FakeBindingRig, FakeBuildRig, FakeKeeperRig, FakeLandingRig, FakePolicyRig, FakeProjectionRig,
@@ -149,10 +149,71 @@ fn a_fake_projection_packing_no_cache_entries_keeps_a_projections_contract() {
 
 #[test]
 fn the_fake_target_keeps_a_targets_contract() {
-    run(target::GROUP, &target::scenarios(), &|| {
+    let report = run(target::GROUP, &target::scenarios(), &|| {
         Box::new(FakeTargetRig::new())
-    })
-    .assert();
+    });
+    report.assert();
+    assert_eq!(
+        inapplicable(&report),
+        [(
+            "applied where no marker is held",
+            "the target holds a marker of what it applied, so the group runs \"converged and \
+             reported\" in its stead (119)"
+        )],
+        "{report}"
+    );
+    assert!(
+        report
+            .to_string()
+            .starts_with("the target group over the profile `fake`: 4 passed, 1 not applicable"),
+        "{report}"
+    );
+}
+
+#[test]
+fn a_fake_target_holding_no_marker_keeps_a_targets_contract() {
+    let report = run(target::GROUP, &target::scenarios(), &|| {
+        Box::new(FakeTargetRig::holding_no_marker())
+    });
+    report.assert();
+    assert_eq!(
+        inapplicable(&report),
+        [(
+            "converged and reported",
+            "the target holds no marker of what it applied, so what an environment runs is \
+             unread, and the group runs \"applied where no marker is held\" in its stead (119)"
+        )],
+        "{report}"
+    );
+    assert!(
+        report
+            .to_string()
+            .starts_with("the target group over the profile `fake`: 4 passed, 1 not applicable"),
+        "{report}"
+    );
+}
+
+/// A fake target told to read the foreign key as well breaks the group's
+/// "a table with a key the target does not read" (45, 93).
+#[test]
+fn a_target_that_reads_a_key_not_its_own_fails_the_target_group() {
+    let report = run(target::GROUP, &target::scenarios(), &|| {
+        let rig = FakeTargetRig::new();
+        rig.target
+            .reads([FakeTargetRig::READS, FakeTargetRig::FOREIGN]);
+        Box::new(rig)
+    });
+    let failed: Vec<&str> = report.failures.iter().map(|f| f.scenario).collect();
+    assert_eq!(
+        failed,
+        ["a table with a key the target does not read"],
+        "{report}"
+    );
+    assert!(
+        report.failures[0].why.contains("token"),
+        "{}",
+        report.failures[0].why
+    );
 }
 
 /// The fake keeper, made unreachable as a ledger whose source is gone
@@ -318,4 +379,12 @@ fn one_scenarios_store_is_not_the_nexts() {
         },
     ];
     run(store::GROUP, &scenarios, &|| Box::new(FakeStoreRig::new())).assert();
+}
+
+#[test]
+fn the_core_applies_over_the_fakes() {
+    run(apply::GROUP, &apply::scenarios(), &|| {
+        Box::new(FakeWorld::new())
+    })
+    .assert();
 }
