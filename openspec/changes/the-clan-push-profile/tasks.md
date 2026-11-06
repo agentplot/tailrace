@@ -22,7 +22,7 @@
   - Once the target's report names the index applied, sign a report claim as the bound signer and attach it beside the index. Its body is environment, component, channel, version, index, runs, converged at and the ask's `at`.
   - Where current already runs the head, ask the target's report, and sign only where the newest report names another index or none.
   - Add `report: Answer<Digest>` to `Applied`.
-- [ ] 3.4 Bind the host's signer to sign for `For::Apply` in `crates/timber/src/bindings/mod.rs`, as publish and promote bind it, with the given host key made on first use where `[signing]` is absent, and every other signer profile verify-only (host-bindings spec). Verify with `bindings/tests.rs` cases under `moon run cli:test`.
+- [x] 3.4 Bind the host's signer to sign for `For::Apply` in `crates/timber/src/bindings/mod.rs`, as publish and promote bind it, with the given host key made on first use where `[signing]` is absent, and every other signer profile verify-only (host-bindings spec). Verify with `bindings/tests.rs` cases under `moon run cli:test`.
 - [ ] 3.5 Make `timber verify` list a report claim with its signer and its environment, and add its line to `crates/timber/src/render.rs` (environment-reports spec). Verify with a `crates/timber/tests/cli.rs` case over the fakes under `moon run cli:test`.
 
 ## 4. A channel an after makes follows the reports

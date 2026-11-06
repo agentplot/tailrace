@@ -63,8 +63,8 @@
 //! the repository's `HEAD` commit is set up for (C.5, C.6), over the
 //! checkout's `origin` or its one remote; the ledger the git ref on the
 //! landing's remote, written or given, or in the repository's own refs
-//! where the landing has none (C.13); for a publish or a promote, the
-//! host key at `timber/host/signing.key` under the same data
+//! where the landing has none (C.13); for a publish, a promote or an
+//! apply, the host key at `timber/host/signing.key` under the same data
 //! directory, made on its first sign and signing as the host's name
 //! (C.8); and the host's own publish as what tells its gate (130). A
 //! file that is there is
@@ -84,7 +84,9 @@
 //! command. Every target profile built is bound for an apply, each
 //! reading through a store binding of its own, opened and never made,
 //! the repository's environments picking among them (92, C.10; the Nix
-//! cache unit's design D3); no other command binds a target. Only a
+//! cache unit's design D3); no other command binds a target. An apply
+//! binds the host's signer to sign its report, as a promote binds it, and
+//! every other signer profile verify-only (11, 43). Only a
 //! publish and the two pushes
 //! make the layout, the given one with its parents, at the first
 //! operation asked of the store and never in binding it, so a publish
@@ -481,7 +483,8 @@ fn trusted(file: &Path, id: &str, value: &toml::Value) -> Answer<NamedSigner> {
 /// rebuild, which never make or write one; promote, which signs and never
 /// makes the layout; status, which asks the landing, the policy and the
 /// ledger alone; policy, bound as status is with no store; or apply,
-/// bound as status is with the store opened and the targets beside.
+/// bound as status is with the store opened and the targets beside, and
+/// signing its report as promote signs (11, 43).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
@@ -579,9 +582,10 @@ impl Landing for NoLanding {
 /// each it leaves out, or every table where there is no file, binds what
 /// its seam's profile family gives: the layout under the data directory,
 /// the landing the repository is set up for over the checkout's remote,
-/// the git ref on the landing's remote, and for a publish or a promote
-/// the given host key under the same data directory, signing as the name
-/// its public half gives (C.2, C.5, C.6, C.8, C.13); a push before a
+/// the git ref on the landing's remote, and for a publish, a promote or
+/// an apply the given host key under the same data directory, signing as
+/// the name its public half gives, made at its first sign (C.2, C.5, C.6,
+/// C.8, C.13); a push before a
 /// landing binds none where the file names no `[landing]`, every
 /// operation of it absent, since it asks the landing nothing (139); every
 /// other command binds both signers verify-only. A sync trusts the host's
@@ -607,9 +611,9 @@ pub fn bind(
     let gate = Teller::of(bindings.gate.as_ref())?;
     let given_signing;
     let signing = match (&bindings.signing, command) {
-        (_, For::Status | For::Policy | For::Apply) => None,
+        (_, For::Status | For::Policy) => None,
         (Some(signing), _) => Some(signing),
-        (None, For::Publish | For::Promote) => {
+        (None, For::Publish | For::Promote | For::Apply) => {
             let data = data(xdg_data_home, home).ok_or_else(|| {
                 Not::absent(
                     &source(file),
