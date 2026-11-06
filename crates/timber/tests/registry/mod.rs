@@ -10,7 +10,10 @@
 
 #![allow(dead_code)]
 
-use std::cell::{Cell, RefCell};
+#[path = "../ports/mod.rs"]
+mod ports;
+
+use std::cell::Cell;
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -70,12 +73,7 @@ impl Kind {
     }
 }
 
-/// A port on the loopback interface nothing listens on now, held by the
-/// listener answered until it is dropped.
-pub fn free_port() -> (u16, TcpListener) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("a free loopback port");
-    (listener.local_addr().unwrap().port(), listener)
-}
+pub use ports::unanswered;
 
 /// A port for a registry: below the ephemeral ranges every host hands a
 /// listener on port 0 from (32768 on Linux, 49152 on macOS), so no
@@ -243,17 +241,14 @@ pub struct RegistryRig {
     _server: Rc<Server>,
     live: Registry,
     dead: Registry,
-    held: RefCell<Option<TcpListener>>,
     down: Cell<bool>,
 }
 
 impl RegistryRig {
     pub fn new(server: &Rc<Server>) -> RegistryRig {
-        let (port, held) = free_port();
         RegistryRig {
             live: server.store(),
-            dead: Registry::new(&format!("127.0.0.1:{port}/store")).unwrap(),
-            held: RefCell::new(Some(held)),
+            dead: Registry::new(&format!("127.0.0.1:{}/store", unanswered())).unwrap(),
             _server: server.clone(),
             down: Cell::new(false),
         }
@@ -278,7 +273,6 @@ impl StoreRig for RegistryRig {
     /// The rig's store pointed at a port nothing listens on: every
     /// operation answers with what a client asking that port is told.
     fn unreachable(&self) -> String {
-        self.held.borrow_mut().take();
         self.down.set(true);
         ureq::get(&format!("{}tags/list", self.dead.base()))
             .call()

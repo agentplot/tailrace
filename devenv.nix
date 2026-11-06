@@ -118,6 +118,59 @@ let
       '';
     };
 
+  # bun's own release build, for the site (site/moon.yml): nixpkgs holds
+  # 1.4.2 at devenv.lock's pin. Where `bun run` finds no node on PATH it
+  # stands one of its own in, a link to itself in a directory under
+  # /private/tmp (/tmp on Linux); from 1.4.4 that directory is the running
+  # user's own (bun-node-<uid>-<sha>), where 1.4.2's was one for every user
+  # of the host and refused to the users who did not make it, as to a gate
+  # that runs as a user of its own (ADR 0026). The checksums are the
+  # release's SHASUMS256.txt, signed by bun's release key
+  # (F3DCC08A8572C0749B3E18888EAB4D40A7B22B59); x64 takes the baseline
+  # build, which asks for no AVX2. Linux takes the build's dynamic loader
+  # from nixpkgs. Bump the version here and in .github/workflows/pages.yml
+  # together: site:toolchain fails while they differ.
+  bun =
+    let
+      version = "1.4.4";
+      target =
+        {
+          aarch64-darwin = "darwin-aarch64";
+          x86_64-darwin = "darwin-x64-baseline";
+          aarch64-linux = "linux-aarch64";
+          x86_64-linux = "linux-x64-baseline";
+        }
+        .${pkgs.stdenv.hostPlatform.system}
+          or (throw "bun ${version}: no release build for ${pkgs.stdenv.hostPlatform.system}");
+      hashes = {
+        darwin-aarch64 = "c240d7f0ccb90c263a849fcdb09b7ee62630d921348ed6aafda86b9d577bc510";
+        darwin-x64-baseline = "d4a155adfbfd09155eb3ba05c9e3a544f39297d7a68616d3c7759f67ab5c47dc";
+        linux-aarch64 = "baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e";
+        linux-x64-baseline = "e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76";
+      };
+    in
+    pkgs.stdenv.mkDerivation {
+      pname = "bun";
+      inherit version;
+      src = pkgs.fetchurl {
+        url = "https://github.com/oven-sh/bun/releases/download/bun-v${version}/bun-${target}.zip";
+        sha256 = hashes.${target};
+      };
+      sourceRoot = "bun-${target}";
+      nativeBuildInputs = [
+        pkgs.unzip
+      ]
+      ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.autoPatchelfHook ];
+      # macOS runs the build as signed; a strip would void its signature.
+      dontStrip = true;
+      installPhase = ''
+        runHook preInstall
+        install -Dm755 -t $out/bin bun
+        ln -s bun $out/bin/bunx
+        runHook postInstall
+      '';
+    };
+
   # Claude Code, run by the plugin's project (plugin-claude-code:validate) and
   # by root:marketplace, both through plugins/claude.sh: the release sluice's
   # plugins are checked with, so every host checks the plugin against one
@@ -279,7 +332,7 @@ in
     proto
     # The site (site/): bun builds it, and Playwright drives the headless
     # Chromium its screenshots are taken in (site/scripts/shots.mjs).
-    pkgs.bun
+    bun
     pkgs.playwright-test
     # check-compile-server.sh reads the host's sluice settings, TOML.
     pkgs.taplo
@@ -356,14 +409,18 @@ in
   '';
 
   # The tool versions .prototools lists, installed before enterShell
-  # activates them. A task, not part of enterShell, so a script that only
-  # sources the shell's environment never installs.
+  # activates them and before treefmt formats with their rustfmt. A task,
+  # not part of enterShell, so a script that only sources the shell's
+  # environment never installs.
   tasks."timber:proto:install" = {
     exec = ''
       ${protoHome}
       ${proto}/bin/proto install --config-mode upwards
     '';
-    before = [ "devenv:enterShell" ];
+    before = [
+      "devenv:enterShell"
+      "devenv:treefmt:run"
+    ];
   };
 
   treefmt.enable = true;
