@@ -25,7 +25,8 @@ pub struct Pending {
 }
 
 const DRIVER: &str = "bolt 5 · the driver and the pool run publish";
-const TARGET: &str = "phase 2 · the first target";
+const CLAN_PUSH: &str = "bolt 6 · the clan push profile";
+const ENVIRONMENTS: &str = "phase 2 · environments in status";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
 const PHASE_2: &str = "phase 2";
 
@@ -35,14 +36,14 @@ const PHASE_2: &str = "phase 2";
 pub const PENDING: &[Pending] = &[
     Pending { clause: 135, unit: DRIVER, why: "A check job pushes what its run left before the landing and a publish takes its outputs from the store, and no publish reads the store for them yet." },
     Pending { clause: 139, unit: DRIVER, why: "The build answers what a checkout's run left, and the build seam has no such operation yet." },
-    Pending { clause: 41, unit: TARGET, why: "An environment that waits converges on an approver's promotion, S6's environment half, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 97, unit: TARGET, why: "An approval is a promotion of the environment's own channel, S6's environment half, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 44, unit: TARGET, why: "Pushed to or pulling is the environment's own, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 126, unit: TARGET, why: "The roster is a target's, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 98, unit: TARGET, why: "What each environment should run and runs is reported by a target, and phase 1 leaves every target to phase 2." },
+    Pending { clause: 41, unit: CLAN_PUSH, why: "An environment that waits converges when an approver promotes its own channel, S6's environment half, which the clan push profile's machines play with the bolt's S16." },
+    Pending { clause: 97, unit: CLAN_PUSH, why: "An approval is a promotion of the environment's own channel, and no environment converges on a yes the ledger does not hold, which the clan push profile's machines play with the bolt's S16." },
+    Pending { clause: 98, unit: ENVIRONMENTS, why: "What each environment should run and runs is reported to an asker by status, and environments in status, which no unit of bolt 6 carves, come in phase 2." },
     Pending { clause: 55, unit: REBUILD, why: "A verifier's rebuild reads no cache entry it did not write, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 112, unit: REBUILD, why: "A verifier compares the digests of outputs, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 133, unit: REBUILD, why: "A verifier's rebuild reads no compilation's cache another party wrote, and phase 1 leaves the rebuild to phase 2." },
+    Pending { clause: 44, unit: PHASE_2, why: "Pushed to or pulling is the environment's own, and every target of bolt 6 is pushed to; the Nix fleet's pull profile, the first that pulls, comes in phase 2." },
+    Pending { clause: 126, unit: PHASE_2, why: "The roster is a target's, and no target of bolt 6 holds one; the pull profile's roster comes in phase 2." },
     Pending { clause: 127, unit: PHASE_2, why: "A channel declared by a pattern over branch names, which no unit of phase 1 carves." },
     Pending { clause: 128, unit: PHASE_2, why: "Several promotions in one act, which no unit of phase 1 carves." },
     Pending { clause: 129, unit: PHASE_2, why: "The asker named by an identity the owner's identity provider issued, and phase 1 binds none." },
@@ -61,8 +62,8 @@ pub struct Part {
 // One part per line, as the entries are.
 #[rustfmt::skip]
 pub const PARTS: &[Part] = &[
-    Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: TARGET, why: "The pages show environments once a target reports them, and phase 1 leaves every target to phase 2." },
-    Part { clause: 134, part: "the notes of every version between what an environment runs and what it should", unit: TARGET, why: "The surfaces show environments once a target reports them, and phase 1 leaves every target to phase 2." },
+    Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: ENVIRONMENTS, why: "The pages show environments once status reads them of their targets, which no unit of bolt 6 carves." },
+    Part { clause: 134, part: "the notes of every version between what an environment runs and what it should", unit: ENVIRONMENTS, why: "The surfaces show environments once status reads them of their targets, which no unit of bolt 6 carves." },
 ];
 
 #[cfg(test)]
@@ -97,6 +98,53 @@ mod tests {
             "a pinned version's dependencies, two levels down",
         ] {
             assert!(layouts.contains(&scenario), "{scenario} cites no 137");
+        }
+    }
+
+    #[test]
+    fn the_nix_cache_target_leaves_the_register_naming_who_cites_the_rest() {
+        let cited: Vec<u16> = citations()
+            .iter()
+            .flat_map(|c| c.cites.iter().copied())
+            .collect();
+        for clause in [42, 45, 119, 136] {
+            assert!(cited.contains(&clause), "{clause} is cited by no scenario");
+            assert!(
+                !PENDING.iter().any(|p| p.clause == clause),
+                "{clause} is cited, and still in the register"
+            );
+        }
+        let unit = |clause: u16| {
+            PENDING
+                .iter()
+                .find(|p| p.clause == clause)
+                .unwrap_or_else(|| panic!("{clause} is not in the register"))
+                .unit
+        };
+        for (clause, waits_on) in [
+            (41, CLAN_PUSH),
+            (97, CLAN_PUSH),
+            (44, PHASE_2),
+            (126, PHASE_2),
+            (98, ENVIRONMENTS),
+        ] {
+            assert_eq!(unit(clause), waits_on, "{clause} waits on another unit");
+        }
+        let parts: Vec<(u16, &str)> = PARTS
+            .iter()
+            .filter(|p| [132, 134].contains(&p.clause))
+            .map(|p| (p.clause, p.unit))
+            .collect();
+        assert_eq!(parts, [(132, ENVIRONMENTS), (134, ENVIRONMENTS)]);
+        for why in PENDING
+            .iter()
+            .map(|p| p.why)
+            .chain(PARTS.iter().map(|p| p.why))
+        {
+            assert!(
+                !why.contains("leaves every target"),
+                "an entry still leaves every target to phase 2: {why}"
+            );
         }
     }
 }
