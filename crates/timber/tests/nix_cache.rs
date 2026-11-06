@@ -12,12 +12,15 @@
 //! and applied through the Nix cache target with `Verified` as the core
 //! makes it (42, 90, C.12). Another host's part: a fresh Nix store in the
 //! test's directory realises the root from the cache's address alone,
-//! trusting only the cache's key, and holds the leaf after. Needs attic,
-//! atticd and atticadm, which the devenv shell pins, and the host's Nix,
-//! so it is in the tools layer.
+//! trusting only the cache's key, and holds the leaf after. Then the
+//! target group runs over a rig of the profile against the same server,
+//! holding no marker, its foreign settings a `token` key (45, 58, 88, 89,
+//! 119; design D9, D10). Needs attic, atticd and atticadm, which the
+//! devenv shell pins, and the host's Nix, so it is in the tools layer.
 
 #![cfg(feature = "tools")]
 
+use std::cell::Cell;
 use std::fs;
 use std::net::TcpListener;
 use std::os::unix::fs::PermissionsExt;
@@ -32,10 +35,12 @@ use ssh_key::rand_core::{OsRng, RngCore};
 use tempfile::TempDir;
 use timber::profiles::projection::file::FileProjection;
 use timber::profiles::store::layout::Layout;
-use timber::profiles::target::nix_cache::NixCache;
+use timber::profiles::target::nix_cache::{self, NixCache};
+use timber_conformance::seams::target::{self, TargetRig};
+use timber_conformance::Rig;
 use timber_core::paths_hold;
 use timber_seams::{
-    Artifact, BuildId, ChannelId, ChannelName, Component, ComponentName, Environment,
+    Artifact, BuildId, ChannelId, ChannelName, Component, ComponentName, Digest, Environment,
     EnvironmentName, IndexMeta, Manifest, Output, OutputName, PackAt, Projection, Store, Target,
     Verified, Version,
 };
@@ -584,8 +589,96 @@ fn realised_from_the_cache_alone(fleet: &Fleet) {
     }
 }
 
+/// The target group's rig over the Nix cache target and the test's
+/// server: the target holds no marker, every environment names the
+/// closure the version published, and its foreign settings add a `token`
+/// (119, 45; design D9, D10).
+struct CacheRig {
+    target: NixCache,
+    verified: Verified,
+    settings: serde_json::Value,
+    environments: Cell<u32>,
+}
+
+impl CacheRig {
+    fn new(fleet: &Fleet) -> CacheRig {
+        CacheRig {
+            target: fleet.target(),
+            verified: fleet.verified.clone(),
+            settings: fleet.environment("cache").settings,
+            environments: Cell::new(0),
+        }
+    }
+
+    fn next(&self) -> Environment {
+        self.environments.set(self.environments.get() + 1);
+        Environment {
+            name: EnvironmentName::new(format!("cache-{}", self.environments.get())),
+            channel: ChannelId::new(
+                Some(ComponentName::new(COMPONENT)),
+                ChannelName::new("beta"),
+            ),
+            waits: false,
+            settings: self.settings.clone(),
+        }
+    }
+}
+
+impl Rig for CacheRig {
+    fn profile(&self) -> String {
+        nix_cache::PROFILE.into()
+    }
+}
+
+impl TargetRig for CacheRig {
+    fn target(&self) -> &dyn Target {
+        &self.target
+    }
+
+    /// The version the test published, whatever `digest` the suite
+    /// names: a store holds an index only at its own digest.
+    fn verified(&self, _digest: &Digest) -> Verified {
+        self.verified.clone()
+    }
+
+    /// The cache is pushed to, handed the head at desired, so `head` is
+    /// left unread.
+    fn environment(&self, _head: Option<&Digest>) -> Environment {
+        self.next()
+    }
+
+    /// No environment of a cache can be read, for the cache keeps no
+    /// marker of what was pushed to it.
+    fn unreadable_environment(&self) -> (Environment, String) {
+        (
+            self.next(),
+            format!(
+                "the Nix binary cache {SERVER}:{CACHE} holds store paths by their hash and keeps \
+                 no marker of what was pushed to it"
+            ),
+        )
+    }
+
+    fn holds_marker(&self) -> bool {
+        false
+    }
+
+    fn foreign_settings(&self) -> (Environment, String) {
+        let mut environment = self.next();
+        environment.settings["token"] = json!("a credential");
+        (environment, "token".into())
+    }
+}
+
 #[test]
-fn a_closure_built_here_is_realised_from_the_cache_alone() {
+fn a_closure_built_here_is_realised_from_the_cache_alone_and_the_target_group_passes() {
     let fleet = Fleet::new();
     realised_from_the_cache_alone(&fleet);
+
+    let report = timber_conformance::run(target::GROUP, &target::scenarios(), &|| {
+        Box::new(CacheRig::new(&fleet)) as Box<dyn TargetRig>
+    });
+    report.assert();
+    let inapplicable: Vec<&str> = report.not_applicable.iter().map(|n| n.scenario).collect();
+    assert_eq!(inapplicable, ["converged and reported"], "{report}");
 }
