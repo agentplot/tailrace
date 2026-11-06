@@ -28,7 +28,7 @@
 //! | [`gate`](mod@gate) | an offered version judged under the policy for acceptance at the governed branch's landed head: accepted whole with one claim of the gate's own on its index, no byte changed, or refused whole naming the artifact and the claim found wanting; the gate never accepting what it offered but on the one host; and each channel of the component that the policy's channels answer says follows each publish promoted by the gate, where the channel's policy names it a promoter, the ledger appended before the name moves | 7, 9, 13, 25 to 30, 32, 33, 35, 39, 94 to 96, 105, 107, 108, 125, 131; core.4, core.6, core.7, core.14, core.15, core.34 |
 //! | [`ledger`] | a channel the policy lists for its component moved by a promotion the host's signer makes, where the channel's policy names it a promoter, judged under the channel's policy and its binding, held by the ledger before the store is written and undone by a promotion back; the store rewritten from the ledger; and a channel read from the ledger alone | 9, 31 to 39, 58, 101, 105, 106, 109, 125, 131; core.4, core.6, core.7, core.15, core.16, core.34 |
 //! | [`after`](mod@after) | an environment's newest report: the reports of it attached to each index its channel's chain moved to, counted through the signers the requirement names, the one whose apply came last; absent where none counts, and unreadable naming the chain or the index that could not be read | 40, 43, 58, 91, C.12; core.7, core.50 |
-//! | [`apply`](mod@apply) | one environment the policy declares at the branch's landed head converged on its channel's head, read from the ledger's chain: the target bound for its profile handed that head as desired, nothing applied where it runs it already, and the claims the channel's policy requires judged of the head's index before the target is handed the version, verified; its report after, and what it ran before, each its own answer; no name moved and nothing written | 31, 40, 42, 43, 88 to 92, 119, 136; core.4, core.16, core.19, core.29, core.50 |
+//! | [`apply`](mod@apply) | one environment the policy declares at the branch's landed head converged on its channel's head, read from the ledger's chain: the target bound for its profile handed that head as desired, nothing applied where it runs it already, and the claims the channel's policy requires judged of the head's index before the target is handed the version, verified; its report after, and what it ran before, each its own answer; once the report names the index applied, a report claim the host signs attached beside it, made again where the environment's newest report names another index or none and never twice; no name moved and nothing else written | 11, 31, 40, 42, 43, 88 to 92, 119, 136; core.4, core.8, core.9, core.16, core.19, core.27, core.29, core.50 |
 //!
 //! Every read and the claim take a [`Landed`], which only the landing
 //! seam's yes makes, and answer an `Answer`: absent, refused and
@@ -39,9 +39,10 @@
 //! landing, the policy, the ledger and the history alone, the policy in
 //! force the landing and the policy alone, and status, the policy in
 //! force and verify write nothing (60, rule core.32); apply hands a
-//! target a version only once its claims are judged, and moves no name
-//! (42, rules core.16, core.29). Every surface renders an answer through
-//! [`answer_json`]'s one form (57, rule core.31).
+//! target a version only once its claims are judged, moves no name, and
+//! writes only the report claim it signs beside the index applied (42,
+//! 43, rules core.16, core.27, core.29). Every surface renders an
+//! answer through [`answer_json`]'s one form (57, rule core.31).
 
 pub mod after;
 pub mod apply;

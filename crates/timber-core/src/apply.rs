@@ -12,39 +12,55 @@
 //! environment with its own settings as the policy answered them, and
 //! reads them itself (45, rule core.43).
 //!
-//! Apply moves no name, appends nothing and signs nothing: it reads the
-//! store for the head's claims and writes nothing there (rules core.6,
-//! core.16). A chain the ledger answers as last read is not applied
+//! Apply moves no name and appends nothing (rules core.6, core.16). It
+//! signs one claim, the report of what the host observed the target
+//! answer once it converged, as the party running it, and writes nothing
+//! to the store but that report beside the index it is about (11, 43,
+//! 91, rules core.8, core.27; design D6): only once the target's report
+//! names the index applied, and, where the environment ran the head
+//! already, only where its newest report names another index or none, so
+//! a report the store failed to hold is made again and one held is never
+//! made twice. A chain the ledger answers as last read is not applied
 //! from, since its head may be behind the one held and an apply from it
 //! could take the environment back (60). What stops the target is the
 //! answer, in its own words (59, rule core.19).
 
 use serde::{Deserialize, Serialize, Serializer};
 use timber_seams::{
-    Answer, Audience, Branch, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest,
-    Environment, EnvironmentName, Not, Read, Revision, Running, Seam, Seams, Source, Verified,
-    Version, Why,
+    Answer, AskedOf, Audience, Branch, ChannelId, ChannelName, Claim, ClaimKind, Component,
+    ComponentName, Digest, Environment, EnvironmentName, Held, Manifest, NamedSigner, Not, Read,
+    Required, RequiredClaim, Revision, Running, Seam, Seams, SignerId, Source, Verified, Version,
+    Why,
 };
 
 use crate::ledger::judge;
-use crate::{answer_json, channel, chosen, policy_at, Channel, Declared, History, Landed, BOUND};
+use crate::{
+    answer_json, channel, chosen, newest, policy_at, Channel, Declared, History, Landed, BOUND,
+    LOCAL,
+};
 
 /// What an apply is asked: the environment of that name in the one
 /// component named, or the only one declared (123, 125), at the landed
-/// head of the branch whose policy declares it (65, 136).
+/// head of the branch whose policy declares it (65, 136); the identity of
+/// the party running it, which signs the report (11, 79); and the moment
+/// of the act, in seconds since the Unix epoch, so the core reads no
+/// clock.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ApplyAsk {
     pub branch: Branch,
     pub component: Option<ComponentName>,
     pub environment: EnvironmentName,
+    pub signer: SignerId,
+    pub at: u64,
 }
 
 /// 43, 57, 91: what an apply answers: the environment, its component,
 /// the channel it follows, and the version and index its chain's head
 /// names; whether the target was asked to apply it, which it is not where
 /// the environment ran it already (89, 90); what `current` answered
-/// before, and the target's `report` after, each its digest or its own
-/// answer, an unread one with its reason (119).
+/// before, and what the target's report says it `running` after, each its
+/// digest or its own answer, an unread one with its reason (119); and the
+/// `report` claim's digest, or the answer given in its place (design D6).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct Applied {
     pub environment: EnvironmentName,
@@ -56,7 +72,9 @@ pub struct Applied {
     #[serde(serialize_with = "one_answer")]
     pub current: Answer<Digest>,
     #[serde(serialize_with = "one_answer")]
-    pub report: Answer<Running>,
+    pub running: Answer<Running>,
+    #[serde(serialize_with = "one_answer")]
+    pub report: Answer<Digest>,
 }
 
 /// 43, 91, C.12: the body of a report claim, what the host that ran an
@@ -149,10 +167,12 @@ fn head_of(seams: &Seams, channel_id: &ChannelId) -> Answer<(Version, Digest)> {
 /// that head (40, rule core.16), and its current, where nothing is
 /// applied if it answers the head already; the claims the channel's
 /// policy requires judged of the head's index (42, rule core.29); and
-/// only then the verified version handed to the target, and its report
-/// read after. A refusal at any step is the answer, nothing after it is
-/// asked, and the target is asked nothing before the chain's head is
-/// read.
+/// only then the verified version handed to the target, its report read
+/// after, and the report claim made of it (design D6). A refusal at any
+/// step before the report is the answer, nothing after it is asked, and
+/// the target is asked nothing before the chain's head is read; what
+/// stops the report claim is its part of the answer, the convergence
+/// answered as made (59).
 pub fn apply(seams: &Seams, history: &History, ask: &ApplyAsk) -> Answer<Applied> {
     // 1: the branch's head, landed (65, 77), and the component it
     // declares (123).
@@ -237,7 +257,24 @@ pub fn apply(seams: &Seams, history: &History, ask: &ApplyAsk) -> Answer<Applied
         target.apply(&environment, &Verified::new(index.clone(), version.clone()))?;
     }
 
-    // 6: what the target reports the environment runs after (91).
+    // 6: what the target reports the environment runs after (91), and
+    // the report claim the host makes of it (11, 43; design D6).
+    let running = target.report(&environment);
+    let report = reported(
+        seams,
+        &Converged {
+            history,
+            at_head: &at_head,
+            component,
+            environment: &environment,
+            profile: table.profile.as_str(),
+            version: &version,
+            index: &index,
+            already,
+        },
+        &running,
+        ask,
+    );
     Ok(Applied {
         environment: environment.name.clone(),
         component: component.name.clone(),
@@ -246,6 +283,136 @@ pub fn apply(seams: &Seams, history: &History, ask: &ApplyAsk) -> Answer<Applied
         index,
         applied: !already,
         current,
-        report: target.report(&environment),
+        running,
+        report,
     })
+}
+
+/// What an apply knew once the target converged, which its report
+/// claim is made of.
+struct Converged<'a> {
+    history: &'a History,
+    at_head: &'a Landed,
+    component: &'a Component,
+    environment: &'a Environment,
+    profile: &'a str,
+    version: &'a Version,
+    index: &'a Digest,
+    already: bool,
+}
+
+/// 11, 43, 91, rules core.8, core.9, core.27: the report claim of an
+/// apply, signed as `ask`'s identity by the host's signer and attached to
+/// the index applied, and its envelope's digest (design D6). The target's
+/// own answer in its place where its report is not one, and unreadable
+/// naming both digests where it names another than the index applied,
+/// nothing signed for either. Where the environment ran the head already,
+/// the digest of its newest report where that names the head, nothing
+/// signed (design D8), and its answer where it cannot be read. What
+/// stops the signer or the store is the answer, in its own words (59).
+fn reported(
+    seams: &Seams,
+    c: &Converged<'_>,
+    running: &Answer<Running>,
+    ask: &ApplyAsk,
+) -> Answer<Digest> {
+    let environment = &c.environment.name;
+    let running = running.as_ref().map_err(Not::clone)?;
+    if running.digest != *c.index {
+        return Err(Not::unreadable(
+            &Source::new(Seam::Target, c.profile),
+            format!(
+                "the report of {environment}, which names {} where {} was applied",
+                running.digest, c.index
+            ),
+            None,
+        ));
+    }
+
+    // Where nothing was applied: the newest report, among those that
+    // count through the signers the policy lets report, answered where it
+    // names the head already (design D8).
+    if c.already {
+        let required = RequiredClaim {
+            kind: ClaimKind::Report,
+            check: None,
+            environment: Some(environment.clone()),
+            signers: reporters(seams, c.at_head)?,
+            asked_of: AskedOf::Every,
+        };
+        let channel = &c.environment.channel;
+        match newest(seams, environment, &c.component.name, channel, &required) {
+            Ok(held) if held.report.index == *c.index => return Ok(held.claim),
+            Ok(_) | Err(Not::Absent(_)) => {}
+            Err(not) => return Err(not),
+        }
+    }
+
+    // The revision the index names, which the claim names (13, rules
+    // core.9, core.60); for an index published before indexes named one,
+    // the revision its version's tag names, as a promotion finds it.
+    let revision = match seams.store.read(c.index)? {
+        Held::Manifest(Manifest::Index(meta)) => match meta.revision() {
+            Some(revision) => revision.clone(),
+            None => tagged(c)?,
+        },
+        _ => {
+            return Err(Not::unreadable(
+                &Source::new(Seam::Store, BOUND),
+                format!("{} as an index", c.index),
+                Some(format!("{} holds no index", c.index)),
+            ))
+        }
+    };
+    let claim = Reported {
+        environment: environment.clone(),
+        component: c.component.name.clone(),
+        channel: c.environment.channel.name.clone(),
+        version: c.version.clone(),
+        index: c.index.clone(),
+        runs: running.digest.clone(),
+        converged_at: running.converged_at.clone(),
+        at: ask.at,
+    }
+    .claim(revision);
+    let signer = seams
+        .signers
+        .first()
+        .ok_or_else(|| Not::absent(&Source::new(Seam::Signer, BOUND), "signer bound"))?;
+    let envelope = signer.sign(&claim, &ask.signer)?;
+    seams.store.attach(c.index, &envelope)?;
+    Ok(envelope.digest())
+}
+
+/// 13: the revision the tag of `c`'s version names, reached from the
+/// branch's landed head; absent naming the tag where none is.
+fn tagged(c: &Converged<'_>) -> Answer<Revision> {
+    let tag = format!("{}{}", c.component.prefix, c.version);
+    c.history
+        .tags(c.at_head, &c.component.prefix)?
+        .into_iter()
+        .find(|t| t.name == tag)
+        .map(|t| t.revision)
+        .ok_or_else(|| {
+            Not::absent(
+                &Source::history(LOCAL),
+                format!("tag {tag} reached from {}", c.at_head.revision()),
+            )
+        })
+}
+
+/// 116, C.10: the signers the policy at `landed` lets claim a report,
+/// read from the signers its answer for a layout carries, each with what
+/// it may claim, the one answer that lists every signer the policy names;
+/// none where it declares no policy for a layout.
+fn reporters(seams: &Seams, landed: &Landed) -> Answer<Vec<NamedSigner>> {
+    let signers = match policy_at(seams.policy.as_ref(), landed, &Audience::Layout) {
+        Ok(Required::Layout { signers, .. }) => signers,
+        Ok(_) | Err(Not::Absent(_)) => Vec::new(),
+        Err(not) => return Err(not),
+    };
+    Ok(signers
+        .into_iter()
+        .filter(|s| s.kinds.contains(&ClaimKind::Report))
+        .collect())
 }

@@ -1,19 +1,22 @@
 //! `timber apply <environment>`: one environment converged on its
 //! channel's head, the claims the channel's policy requires of the head's
-//! index judged before its target is handed the version (40, 42, 88 to
-//! 91, 136; design D5). It is bound as status is, signing nothing, with
-//! the store opened and never made and every target profile built beside
-//! it, the repository's environments picking among them (92); timber
-//! keeps no credential that reaches a target (45, rule core.21).
+//! index judged before its target is handed the version, and the report
+//! of what the host observed it run after signed as the host and
+//! attached beside the index (11, 40, 42, 43, 88 to 91, 136; design D5,
+//! D6). It is bound as status is, with the host's signer to sign that
+//! report, the store opened and never made and every target profile built
+//! beside it, the repository's environments picking among them (92);
+//! timber keeps no credential that reaches a target (45, rule core.21).
 
 use std::io::{self, Write};
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use timber_core::{apply, Applied, ApplyAsk, History};
 use timber_seams::{Answer, Branch, ComponentName, EnvironmentName, Not};
 
-use crate::{render, Binding};
+use crate::{render, unsigned, Binding};
 
 #[derive(Debug, Args)]
 pub struct ApplyArgs {
@@ -44,11 +47,16 @@ pub fn run(args: &ApplyArgs, binding: &Answer<Binding>, at: &Path, out: &mut dyn
 
 fn ask(args: &ApplyArgs, binding: &Answer<Binding>, at: &Path) -> Answer<Applied> {
     let binding = binding.as_ref().map_err(Not::clone)?;
+    let signer = binding.signer.clone().ok_or_else(unsigned)?;
     let history = History::open(at)?;
     let ask = ApplyAsk {
         branch: Branch::new(&args.branch),
         component: args.component.as_ref().map(ComponentName::new),
         environment: EnvironmentName::new(&args.environment),
+        signer,
+        at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs()),
     };
     apply(&binding.seams, &history, &ask)
 }
@@ -72,8 +80,9 @@ fn part<T>(
 
 /// The environment, its component and channel, the version and index
 /// its chain's head names and whether it was applied; then what the
-/// environment ran before and the target's report after, each its digest
-/// or its unread answer (43, 91, 119).
+/// environment ran before and what the target's report says it runs
+/// after, each its digest or its unread answer (43, 91, 119); and the
+/// report claim's digest, or the answer given in its place (design D6).
 fn text(out: &mut dyn Write, answer: &Answer<Applied>) -> io::Result<()> {
     let applied = match answer {
         Ok(applied) => applied,
@@ -90,9 +99,10 @@ fn text(out: &mut dyn Write, answer: &Answer<Applied>) -> io::Result<()> {
         applied.environment, applied.component, applied.channel, applied.version, applied.index
     )?;
     part(out, "before", &applied.current, ToString::to_string)?;
-    part(out, "report", &applied.report, |running| {
+    part(out, "runs", &applied.running, |running| {
         format!("{}, converged {}", running.digest, running.converged_at)
-    })
+    })?;
+    part(out, "report", &applied.report, ToString::to_string)
 }
 
 #[cfg(test)]
@@ -291,7 +301,8 @@ mod tests {
                 version,
                 vec![Artifact { digest, meta }],
             )
-            .unwrap();
+            .unwrap()
+            .published_from(self.head.clone(), None);
             let index = store.put_artifact(&Manifest::Index(index)).unwrap().digest;
             let gate = SignerId::new(GATE);
             let signer = FakeSigner::new();
@@ -365,7 +376,7 @@ mod tests {
             Binding {
                 seams: self.fakes.seams(),
                 store: Source::new(Seam::Store, "layout /srv/timber/layout"),
-                signer: None,
+                signer: Some(SignerId::new(HOST)),
                 gate: Teller::Job("the gate's job".into()),
                 trust: vec![],
             }
@@ -388,6 +399,19 @@ mod tests {
 
         fn ops(&self) -> Vec<TargetOp> {
             self.target.calls().into_iter().map(|c| c.op).collect()
+        }
+
+        /// The digests of the report claims attached to `index`, in the
+        /// order attached.
+        fn reports_on(&self, index: &Digest) -> Vec<Digest> {
+            self.fakes
+                .store
+                .claims_of(index)
+                .unwrap()
+                .iter()
+                .filter(|e| Claim::from_envelope(e).is_some_and(|c| c.kind == ClaimKind::Report))
+                .map(|e| e.digest())
+                .collect()
         }
     }
 
@@ -415,7 +439,8 @@ mod tests {
                     s.second
                 ),
                 format!("  before: {}", s.first),
-                format!("  report: {}, converged {CONVERGED}", s.second),
+                format!("  runs: {}, converged {CONVERGED}", s.second),
+                format!("  report: {}", s.reports_on(&s.second)[0]),
             ],
             "{printed}"
         );
@@ -445,10 +470,11 @@ mod tests {
             index: s.second.clone(),
             applied: true,
             current: Ok(s.first.clone()),
-            report: Ok(Running {
+            running: Ok(Running {
                 digest: s.second.clone(),
                 converged_at: CONVERGED.into(),
             }),
+            report: Ok(s.reports_on(&s.second)[0].clone()),
         });
         assert_eq!(printed, answer_json(&core));
     }
@@ -469,6 +495,9 @@ mod tests {
                     s.second
                 ),
                 "  before:".to_string(),
+                "    the target (fake) could not read what cache runs".to_string(),
+                NO_MARKER.to_string(),
+                "  runs:".to_string(),
                 "    the target (fake) could not read what cache runs".to_string(),
                 NO_MARKER.to_string(),
                 "  report:".to_string(),
