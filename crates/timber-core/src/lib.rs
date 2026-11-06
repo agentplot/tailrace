@@ -17,6 +17,7 @@
 //! | [`published`] | the host's record of the versions it published, a file per version a reader opens, naming the commits each version's notes were rendered from and never their text | 61, 62, 64, 134; core.20, core.21 |
 //! | [`served`] | the one address the host's serving process answers at, the core's and moved by no setting, a repository's owner and name in its path from its landing's remote, and a served layout's address under them | 49, 114; core.18, core.36 |
 //! | [`status`](mod@status) | every channel the policy declares at the branch's landed head, at its version or empty with the chain that put it there, read from the ledger alone, and the notes of every version the chain moved it to, rendered again from the repository's own history as a rebuild recovers them; beside which versions this host published, answered from the record alone, each with its notes rendered again from the repository's own history, and the environments, unreadable while no target is read; each part, each channel and each version's notes its own answer; and a repository's row of every channel's head and its environments' counts | 23, 31, 33, 36, 56 to 61, 63, 98, 101, 125, 131, 132, 134; core.19, core.31, core.32 |
+//! | [`reports`](mod@reports) | the host's copy of each environment's reports as status last fetched them: the claims of each index its channel's chain moved to asked of the store once per status, the environment's report claims kept with their indexes and uncounted once every index is read, written beside and renamed, and answered from the copy saying when where the store does not answer; unreadable naming the reports where there is no copy, the index the store holds none of, and the file that cannot be read or written | 58 to 61, 63, 98, S10, S12; core.20, core.27, core.32 |
 //! | [`in_force`](mod@in_force) | the policy in force at the branch's landed head: what acceptance and a layout require, and every channel the policy's channels answer lists with how it moves and its policy, each part and each channel its own answer | 58, 60, 82, 131, C.10; core.31, core.32 |
 //! | [`record`] | the host's record rebuilt from the store and git: an entry per tag the branch landed whose name the store resolves to its component's index at that version, its notes' commits derived again at the tag's revision, every read before any write, nothing rewritten or deleted | 22, 58 to 63, 134; core.4, core.19, core.20 |
 //! | [`copy`](mod@copy) | a version copied from one store to another through the store seam, every attestation going with its digest, the index last and the name made from nothing, and no channel | 1 to 3, 6, 8, 103; core.4, core.6, core.12, core.27 |
@@ -62,6 +63,7 @@ pub mod push;
 pub mod record;
 pub mod render;
 pub mod repair;
+pub mod reports;
 pub mod served;
 pub mod status;
 pub mod verify;
@@ -84,6 +86,7 @@ pub use push::*;
 pub use record::*;
 pub use render::*;
 pub use repair::*;
+pub use reports::*;
 pub use served::*;
 pub use status::*;
 pub use verify::*;

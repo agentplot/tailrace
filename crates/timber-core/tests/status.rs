@@ -17,7 +17,7 @@ use timber_fakes::{FakeSigner, Fault, KeeperOp, LandingOp, StoreOp, Times};
 use timber_seams::{
     Audience, Branch, ChannelId, ChannelName, ComponentName, Digest, Envelope, Held, Keeper,
     Manifest, Moved, Moves, Not, Outcome, Promotion, Read, Required, Revision, Satisfied, Seam,
-    Signer, SignerId, Source, TargetProfile, Version, Why,
+    Signer, SignerId, Source, Store, TargetProfile, Version, Why,
 };
 use world::{World, HOST};
 
@@ -1390,4 +1390,330 @@ fn a_remotes_address_is_read_as_written_with_no_rewrite_applied() {
         timber_core::RepositoryName::from_remote(url).map(|r| r.to_string()),
         Some("agentplot/timber".to_string())
     );
+}
+
+// Requirement (environment-status): The reports are fetched into the
+// host's copy
+
+/// A store's own words, carried verbatim (59).
+const WORDS: &str = "referrers of the index: 503 Service Unavailable\n\t\u{fc} ";
+
+/// The signer whose reports the policy lets count.
+const DEPLOYER: &str = "deployer";
+
+fn env(name: &str) -> timber_seams::EnvironmentName {
+    timber_seams::EnvironmentName::new(name)
+}
+
+/// A digest the fake store holds, which a chain may have moved to.
+fn held_index(world: &World, name: &str) -> Digest {
+    world.fakes.store.put_bytes(name.as_bytes()).unwrap().digest
+}
+
+/// A claim of `kind` with `body` about `index`, signed by `signer` as
+/// the fake signer signs and attached to the index: its envelope.
+fn attach_claim(
+    world: &World,
+    index: &Digest,
+    signer: &str,
+    kind: timber_seams::ClaimKind,
+    body: serde_json::Value,
+) -> Envelope {
+    let theirs = FakeSigner::new();
+    theirs.hold(&SignerId::new(signer));
+    let claim = timber_seams::Claim {
+        subject: index.clone(),
+        kind,
+        revision: world.head.clone(),
+        build: None,
+        body,
+    };
+    let envelope = theirs.sign(&claim, &SignerId::new(signer)).unwrap();
+    world.fakes.store.attach(index, &envelope).unwrap();
+    envelope
+}
+
+/// A report of `environment` of `lib`, which follows `channel`, running
+/// `version` at `index`, from an apply at `at`, by `signer`, attached to
+/// the index: its envelope.
+fn reported_by(
+    world: &World,
+    signer: &str,
+    (environment, channel): (&str, &ChannelId),
+    (version, index): (&str, &Digest),
+    at: u64,
+) -> Envelope {
+    let report = timber_core::Reported {
+        environment: env(environment),
+        component: channel.component_name(),
+        channel: channel.name.clone(),
+        version: Version::new(version),
+        index: index.clone(),
+        runs: index.clone(),
+        converged_at: "2026-10-31T09:00:00Z".into(),
+        at,
+    };
+    attach_claim(
+        world,
+        index,
+        signer,
+        timber_seams::ClaimKind::Report,
+        serde_json::to_value(&report).unwrap(),
+    )
+}
+
+fn copy_of(world: &World) -> timber_core::ReportsCopy {
+    timber_core::ReportsCopy::at(&world.history())
+}
+
+/// The reports of `environment`, which follows `channel`, fetched over
+/// `indexes` at `at` in a fetch of its own.
+fn fetched(
+    world: &World,
+    environment: &str,
+    channel: &ChannelId,
+    indexes: &[Digest],
+    at: u64,
+) -> timber_seams::Answer<timber_core::Fetched> {
+    let copy = copy_of(world);
+    timber_core::Fetch::new(&world.fakes.store, &copy, at).reports(
+        &env(environment),
+        channel,
+        indexes,
+    )
+}
+
+/// The envelopes of `fetched`'s reports, in the order answered.
+fn envelopes(fetched: &timber_core::Fetched) -> Vec<Envelope> {
+    fetched
+        .reports
+        .attached
+        .iter()
+        .map(|r| r.envelope.clone())
+        .collect()
+}
+
+#[test]
+fn the_reports_are_kept_with_their_indexes_and_the_moment_and_nothing_else() {
+    let world = World::new();
+    let (first, second) = (held_index(&world, "0.1.0"), held_index(&world, "0.2.0"));
+    let older = reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.1.0", &first), AT);
+    attach_claim(
+        &world,
+        &first,
+        "gate",
+        timber_seams::ClaimKind::Acceptance,
+        serde_json::json!({}),
+    );
+    reported_by(&world, DEPLOYER, ("desk", &stable()), ("0.1.0", &first), AT);
+    let newer = reported_by(
+        &world,
+        "desk",
+        ("srv", &stable()),
+        ("0.2.0", &second),
+        AT + 60,
+    );
+
+    let answer = fetched(
+        &world,
+        "srv",
+        &stable(),
+        &[first.clone(), second.clone()],
+        AT + 100,
+    )
+    .expect("the reports fetched");
+    assert_eq!(answer.read, Read::Source);
+    assert_eq!(envelopes(&answer), [older.clone(), newer.clone()]);
+    assert_eq!(answer.reports.environment, env("srv"));
+
+    let path = copy_of(&world).dir().join("lib").join("srv.json");
+    assert_eq!(copy_of(&world).path(&env("srv"), &stable()), path);
+    let text = fs::read_to_string(&path).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "at": AT + 100,
+            "reports": [
+                { "index": first, "envelope": older },
+                { "index": second, "envelope": newer },
+            ],
+        })
+    );
+    let beside: Vec<_> = files(copy_of(&world).dir())
+        .into_iter()
+        .map(|(p, _, _)| p)
+        .collect();
+    assert_eq!(beside, [path], "the copy left a file beside");
+}
+
+#[test]
+fn a_repository_declaring_no_component_keeps_its_reports_by_environment_alone() {
+    let world = World::with_policy(world::UNDECLARED);
+    let undeclared = ChannelId::new(None, ChannelName::new("stable"));
+    let index = held_index(&world, "0.1.0");
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &undeclared),
+        ("0.1.0", &index),
+        AT,
+    );
+    let answer = fetched(&world, "srv", &undeclared, &[index], AT).unwrap();
+    assert_eq!(answer.reports.attached.len(), 1);
+    assert!(copy_of(&world).dir().join("srv.json").is_file());
+}
+
+#[test]
+fn with_the_store_unreadable_the_reports_are_answered_from_the_copy_saying_when() {
+    let world = World::new();
+    let (first, second) = (held_index(&world, "0.1.0"), held_index(&world, "0.2.0"));
+    reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.1.0", &first), AT);
+    let indexes = [first.clone(), second.clone()];
+    let before = fetched(&world, "srv", &stable(), &indexes, AT + 100).unwrap();
+    let path = copy_of(&world).path(&env("srv"), &stable());
+    let kept = fs::read(&path).unwrap();
+
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &stable()),
+        ("0.2.0", &second),
+        AT + 200,
+    );
+    world.fakes.store.fault(
+        StoreOp::ClaimsOf,
+        Fault::Unreadable(WORDS.into()),
+        Times::Once,
+    );
+    let after = fetched(&world, "srv", &stable(), &indexes, AT + 300).unwrap();
+    assert_eq!(
+        after.read,
+        Read::Kept {
+            at: AT + 100,
+            said: WORDS.into()
+        }
+    );
+    assert_eq!(after.reports, before.reports);
+    assert_eq!(fs::read(&path).unwrap(), kept, "the copy was written");
+}
+
+#[test]
+fn with_no_copy_and_the_store_unreadable_the_reports_are_unreadable_naming_them() {
+    let world = World::new();
+    let index = held_index(&world, "0.1.0");
+    reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.1.0", &index), AT);
+    world.fakes.store.fault(
+        StoreOp::ClaimsOf,
+        Fault::Unreadable(WORDS.into()),
+        Times::Once,
+    );
+    match fetched(&world, "srv", &stable(), &[index], AT) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Store);
+            assert!(
+                u.what.contains("the reports of environment srv of lib"),
+                "{}",
+                u.what
+            );
+            assert_eq!(u.said.as_deref(), Some(WORDS));
+        }
+        other => panic!("answered {other:?}, not unreadable"),
+    }
+    assert!(
+        files(copy_of(&world).dir()).is_empty(),
+        "a copy was written"
+    );
+}
+
+#[test]
+fn an_index_the_store_holds_none_of_is_unreadable_naming_it_and_the_copy_is_left() {
+    let world = World::new();
+    let index = held_index(&world, "0.1.0");
+    reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.1.0", &index), AT);
+    fetched(&world, "srv", &stable(), std::slice::from_ref(&index), AT).unwrap();
+    let kept = files(copy_of(&world).dir());
+
+    let gone = Digest::of(b"an index the store never held");
+    match fetched(&world, "srv", &stable(), &[index, gone.clone()], AT + 100) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Store);
+            assert!(u.what.contains(gone.as_str()), "{}", u.what);
+            assert!(u.what.contains("lib/stable"), "{}", u.what);
+        }
+        other => panic!("answered {other:?}, not unreadable"),
+    }
+    assert_eq!(files(copy_of(&world).dir()), kept, "the copy was written");
+}
+
+#[test]
+fn a_copy_that_cannot_be_read_is_unreadable_naming_its_file() {
+    let world = World::new();
+    let index = held_index(&world, "0.1.0");
+    let path = copy_of(&world).path(&env("srv"), &stable());
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "{ \"at\": ").unwrap();
+    world.fakes.store.fault(
+        StoreOp::ClaimsOf,
+        Fault::Unreadable(WORDS.into()),
+        Times::Once,
+    );
+    match fetched(&world, "srv", &stable(), &[index], AT) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::host(&path));
+            assert_eq!(u.what, path.display().to_string());
+            assert!(u.said.is_some(), "{u:?}");
+        }
+        other => panic!("answered {other:?}, not unreadable"),
+    }
+}
+
+#[test]
+fn a_copy_that_cannot_be_written_is_unreadable_naming_its_file() {
+    let world = World::new();
+    let index = held_index(&world, "0.1.0");
+    reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.1.0", &index), AT);
+    let path = copy_of(&world).path(&env("srv"), &stable());
+    fs::create_dir_all(path.join("in the way")).unwrap();
+    match fetched(&world, "srv", &stable(), &[index], AT) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::host(&path));
+            assert_eq!(u.what, path.display().to_string());
+            assert!(u.said.is_some(), "{u:?}");
+        }
+        other => panic!("answered {other:?}, not unreadable"),
+    }
+    let left: Vec<_> = files(path.parent().unwrap())
+        .into_iter()
+        .filter(|(p, _, _)| !p.starts_with(&path))
+        .collect();
+    assert!(left.is_empty(), "a file was left beside: {left:?}");
+}
+
+#[test]
+fn one_index_is_asked_its_claims_once_for_two_environments() {
+    let world = World::new();
+    let desk = of("lib", "desk");
+    let (first, second) = (held_index(&world, "0.1.0"), held_index(&world, "0.2.0"));
+    reported_by(&world, DEPLOYER, ("srv", &stable()), ("0.1.0", &first), AT);
+    reported_by(&world, DEPLOYER, ("desk", &desk), ("0.1.0", &first), AT);
+    let copy = copy_of(&world);
+    let before = world.fakes.store.calls().len();
+    let mut fetch = timber_core::Fetch::new(&world.fakes.store, &copy, AT);
+    let srv = fetch
+        .reports(&env("srv"), &stable(), &[first.clone(), second.clone()])
+        .unwrap();
+    let desk = fetch
+        .reports(&env("desk"), &desk, std::slice::from_ref(&first))
+        .unwrap();
+    assert_eq!(srv.reports.attached.len(), 1);
+    assert_eq!(desk.reports.attached.len(), 1);
+    let asked: Vec<serde_json::Value> = world.fakes.store.calls()[before..]
+        .iter()
+        .map(|c| {
+            assert_eq!(c.op, StoreOp::ClaimsOf, "status asked the store {:?}", c.op);
+            c.given["digest"].clone()
+        })
+        .collect();
+    assert_eq!(asked, [serde_json::json!(first), serde_json::json!(second)]);
 }
