@@ -34,6 +34,10 @@ pub mod commands;
 pub mod profiles;
 pub mod render;
 
+#[cfg(test)]
+#[path = "../tests/ports/mod.rs"]
+mod ports;
+
 /// The revision this binary was built from. A binary carries the revision
 /// and the build that made it, never a version (24, C.11): the release's
 /// version is its tag's, and `timber status` says which version a
