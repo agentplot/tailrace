@@ -356,14 +356,18 @@ in
   '';
 
   # The tool versions .prototools lists, installed before enterShell
-  # activates them. A task, not part of enterShell, so a script that only
-  # sources the shell's environment never installs.
+  # activates them and before treefmt formats with their rustfmt. A task,
+  # not part of enterShell, so a script that only sources the shell's
+  # environment never installs.
   tasks."timber:proto:install" = {
     exec = ''
       ${protoHome}
       ${proto}/bin/proto install --config-mode upwards
     '';
-    before = [ "devenv:enterShell" ];
+    before = [
+      "devenv:enterShell"
+      "devenv:treefmt:run"
+    ];
   };
 
   treefmt.enable = true;
