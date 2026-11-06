@@ -335,6 +335,15 @@ component, environment, signer, at })`, works in four steps:
    acceptance's on-publish move records it (95, 129). `may_ask` is not
    applied.
 
+Before it reads a channel's reports, `follow` checks that the host's
+signer is one of the channel's promoters (32, 108). Where it is not, the
+channel is refused with `Why::NotPromoter { channel, signer, promoters }`,
+naming both, and none of its reports is read, so a host that could
+never move the channel is refused rather than held. Not taken:
+`may_promote`'s refusal, `Wanting` a promotion, which names the
+promoters and not the host's signer; and checking after the reports,
+which reads the store for a move the host cannot make.
+
 `ledger::promote` is refactored so its post-asking half is one function
 the two callers share, with no second copy of the move.
 
