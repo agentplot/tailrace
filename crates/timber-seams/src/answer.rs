@@ -318,6 +318,14 @@ pub enum Why {
     /// store does not hold, so a publish of a landing with verdicts has
     /// no bytes the landing's checks built to offer for it.
     NotInStore { output: OutputName, build: BuildId },
+    /// 40, 88: a target answered `desired` as what `channel` names, with
+    /// its component (125), and the channel's chain has its head at
+    /// `head`, so the environment is handed nothing (rule core.16).
+    Desired {
+        channel: ChannelId,
+        head: Digest,
+        desired: Digest,
+    },
     /// A refusal that names nothing beyond the source's own words.
     Said,
 }
@@ -524,6 +532,14 @@ impl fmt::Display for Why {
             Why::NotInStore { output, build } => {
                 write!(f, "{output} from {build}: no cache entry in the store")
             }
+            Why::Desired {
+                channel,
+                head,
+                desired,
+            } => write!(
+                f,
+                "the target answers {desired} for {channel}, whose chain's head is at {head}"
+            ),
             Why::Said => write!(f, "it refused"),
         }
     }
@@ -1104,5 +1120,21 @@ mod tests {
             };
             assert_eq!(r.said.unwrap().as_bytes(), WORDS.as_bytes());
         }
+    }
+
+    #[test]
+    fn the_refusal_of_an_apply_names_the_targets_digest_and_the_heads_through_json() {
+        let (head, desired) = (Digest::of(b"i2"), Digest::of(b"i1"));
+        let why = Why::Desired {
+            channel: lib("beta"),
+            head: head.clone(),
+            desired: desired.clone(),
+        };
+        let text = why.to_string();
+        let names =
+            format!("the target answers {desired} for lib/beta, whose chain's head is at {head}");
+        assert_eq!(text, names);
+        let not = Not::refused(&Source::new(Seam::Target, "fake"), why, None);
+        assert_eq!(round_trip(&not), not);
     }
 }

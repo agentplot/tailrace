@@ -40,6 +40,7 @@
 //! renders an answer through [`answer_json`]'s one form (57, rule
 //! core.31).
 
+pub mod apply;
 pub mod cache;
 pub mod copy;
 pub mod declared;
