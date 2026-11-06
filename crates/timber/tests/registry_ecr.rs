@@ -11,11 +11,10 @@
 
 mod registry;
 
-use std::cell::{Cell, RefCell};
-use std::net::TcpListener;
+use std::cell::Cell;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use registry::{cache_entries, free_port};
+use registry::{cache_entries, unanswered};
 use timber::profiles::store::registry::Registry;
 use timber_conformance::seams::store::{self, StoreRig};
 use timber_conformance::{run, Rig};
@@ -100,20 +99,17 @@ impl Store for Prefixed {
 struct EcrRig {
     live: Prefixed,
     dead: Registry,
-    held: RefCell<Option<TcpListener>>,
     down: Cell<bool>,
 }
 
 impl EcrRig {
     fn new(repository: &str, run: &str, scenario: usize) -> EcrRig {
-        let (port, held) = free_port();
         EcrRig {
             live: Prefixed {
                 registry: Registry::new(repository).expect("the repository the host names"),
                 prefix: format!("{run}-{scenario}-"),
             },
-            dead: Registry::new(&format!("127.0.0.1:{port}/store")).unwrap(),
-            held: RefCell::new(Some(held)),
+            dead: Registry::new(&format!("127.0.0.1:{}/store", unanswered())).unwrap(),
             down: Cell::new(false),
         }
     }
@@ -135,7 +131,6 @@ impl StoreRig for EcrRig {
     }
 
     fn unreachable(&self) -> String {
-        self.held.borrow_mut().take();
         self.down.set(true);
         ureq::get(&format!("{}tags/list", self.dead.base()))
             .call()

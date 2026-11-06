@@ -761,11 +761,7 @@ mod tests {
 
     #[test]
     fn a_connection_refused_is_unreadable_in_the_clients_words() {
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
+        let port = crate::ports::unanswered();
         let source = Source::new(timber_seams::Seam::Store, "OCI registry test");
         let client = Client::new(&format!("127.0.0.1:{port}"), &source);
         let url = format!("http://127.0.0.1:{port}/v2/");

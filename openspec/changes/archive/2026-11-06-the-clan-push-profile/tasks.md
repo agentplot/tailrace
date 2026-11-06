@@ -55,7 +55,7 @@
 
 ## 6. Records and the site
 
-- [x] 6.1 Add to `docs/adr/` and `adrs.toml` record 0027, `a-pushed-machine-s-report-is-a-claim-beside-its-version-and-an-after-channel-follows-the-newest-reports`, in MADR form and proposed. It records design D3, D4, D6, D7, D8 and D9 with the paths not taken, and cites agentplot/blueprints `c118a95` and swancloud record 0043's words. Add rules core.71, core.72 and core.73 with their details to `docs/architecture/core.md`, as design D12 words them. Verify with `moon run root:adrs` and `moon run root:format`.
+- [x] 6.1 Add to `docs/adr/` and `adrs.toml` record 0028, `a-pushed-machine-s-report-is-a-claim-beside-its-version-and-an-after-channel-follows-the-newest-reports`, in MADR form and proposed. It records design D3, D4, D6, D7, D8 and D9 with the paths not taken, and cites agentplot/blueprints `c118a95` and swancloud record 0043's words. Add rules core.71, core.72 and core.73 with their details to `docs/architecture/core.md`, as design D12 words them. Verify with `moon run root:adrs` and `moon run root:format`.
 - [x] 6.2 Add the clan push profile to `site/src/content/docs/guides/integrations/targets.mdx`: its `target.clan` table, what apply runs and checks, the marker, the report and the `report` kind its signer needs, `after` with an example of an environment that waits and one after it, and that `timber apply` runs on the host that holds the machine's key. Mark the Nix fleet row built in the integrations index (design D12). Verify with `moon run site:build`.
 
 ## 7. Integration

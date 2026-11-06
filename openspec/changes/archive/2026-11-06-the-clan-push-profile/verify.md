@@ -59,7 +59,7 @@ holds:
 - 5.1 to 5.4: the profile's unit tests over `Scripted`, and the target
   group over it.
 - 5.5: the `fleet` task, tagged `check-fleet` alone.
-- 6.1 and 6.2: record 0027, proposed; rules core.71 to core.73; the
+- 6.1 and 6.2: record 0028, proposed; rules core.71 to core.73; the
   site's targets page and the integrations index.
 - 7.1: the integration checks, run again above at `b0c9777`.
 
@@ -214,7 +214,7 @@ holds:
   never by being an approver (rule core.44). Nothing in the core reads
   `DeclaredEnvironment.waits` yet: apply carries it to the target, and
   the move reads the channel's policy.
-- **Records.** Record 0027 is proposed, for the user to accept with
+- **Records.** Record 0028 is proposed, for the user to accept with
   the change. The statement's amendment at blueprints `c118a95` is not
   yet landed. The coverage check reads the statement at `7f60e57`, and
   adopting the newer statement is the follow-up's own chore.
