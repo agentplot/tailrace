@@ -5,7 +5,7 @@
 
 ## 2. The fakes
 
-- [ ] 2.1 Make the fake policy answer `environments` at a revision as a test sets them, ordered by component and then name, an empty list at a revision given none, recorded and faultable as `channels` is (design D2). Verify: unit tests in `crates/timber-fakes/src/policy.rs` for the seam-fakes delta's two environments scenarios
+- [x] 2.1 Make the fake policy answer `environments` at a revision as a test sets them, ordered by component and then name, an empty list at a revision given none, recorded and faultable as `channels` is (design D2). Verify: unit tests in `crates/timber-fakes/src/policy.rs` for the seam-fakes delta's two environments scenarios
 - [ ] 2.2 Make the fake target answer `desired` from the head it is handed; keep what each environment runs and its unreadable reason as a test sets them; add `holds_no_marker()`, after which current and report answer unreadable naming why whatever was applied; add `reads(keys)`, after which desired, current and apply answer unreadable naming the first settings key not among them, applying nothing; key `Fakes.targets` by `TargetProfile` (design D4, D9, D10). Verify: unit tests in `crates/timber-fakes/src/target.rs` for the seam-fakes delta's three target scenarios, and `moon run fakes:test`
 
 ## 3. The policy file answers its environments
