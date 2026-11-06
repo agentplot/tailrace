@@ -431,6 +431,71 @@ fn an_older_report_of_a_newer_version_never_carries_the_channel_ahead() {
     );
 }
 
+/// `channel` asked to move `to` by `asker`, the host signing as it.
+fn asked(world: &World, channel: &str, to: To, asker: &str) -> Answer<Promoted> {
+    promote(
+        &world.fakes.seams(),
+        &world.history(),
+        &PromoteAsk {
+            branch: Branch::new("main"),
+            component: Some(lib()),
+            channel: ChannelName::new(channel),
+            to,
+            from: None,
+            signer: SignerId::new(asker),
+            at: AT + 5 * HOUR,
+        },
+    )
+}
+
+#[test]
+fn an_asked_move_of_second_ahead_of_srvs_newest_report_is_refused_and_nothing_is_read_or_written() {
+    let Two {
+        world,
+        first,
+        second,
+    } = two();
+    after(&world, "second", &["srv"], bound(vec![], &[gate()], &[]));
+    move_to(&world, to("0.1.0"), AT);
+    move_to(&world, to("0.2.0"), AT + HOUR);
+    report(&world, DEPLOYER, "srv", ("0.2.0", &second), AT + 2 * HOUR);
+    move_to(&world, To::Back, AT + 3 * HOUR);
+    report(&world, DEPLOYER, "srv", ("0.1.0", &first), AT + 4 * HOUR);
+    moved_to(&only(followed(&world, "srv", AT + 4 * HOUR), "second"));
+
+    // 0.2.0's index carries srv's older report, the gate's acceptance and
+    // the gate as second's promoter, so only the asking refuses it.
+    for ask in [to("0.2.0"), to("0.1.0"), To::Back] {
+        let before = counts(&world);
+        let answer = asked(&world, "second", ask.clone(), GATE);
+        let Err(Not::Refused(refusal)) = answer else {
+            panic!("asking second {ask:?} answered {answer:?}, not refused")
+        };
+        assert_eq!(
+            refusal.why,
+            Why::MovesOnReports {
+                channel: of("second"),
+                after: vec![env("srv")],
+            }
+        );
+        assert_eq!(
+            refusal.why.to_string(),
+            "lib/second comes after srv, and the gate moves it on their reports; \
+             no asker may move it"
+        );
+        assert_eq!(written_since(&world, before), (0, 0));
+        assert!(
+            world.fakes.keeper.calls()[before.0..]
+                .iter()
+                .all(|c| c.op != KeeperOp::Chain),
+            "a chain was read for an asking refused"
+        );
+    }
+    let chain = chain_of(&world, &of("second"));
+    let indexes: Vec<&Digest> = chain.iter().map(|p| &p.to.index).collect();
+    assert_eq!(indexes, [&first], "second's chain moved at an asking");
+}
+
 // Requirement: A channel whose environments disagree is held
 
 #[test]

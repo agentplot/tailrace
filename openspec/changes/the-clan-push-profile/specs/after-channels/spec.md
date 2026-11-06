@@ -61,6 +61,19 @@ the version only from among those its bound channel has held (37, 83).
 - **WHEN** `first` reported `0.4.0`, then was moved back and reported `0.3.0`
 - **THEN** `second`'s channel is moved to `0.3.0`, never to `0.4.0`
 
+### Requirement: An asked promotion of a channel an after makes is refused
+
+A promotion asked of a channel an `after` makes SHALL be refused,
+naming the channel and the environments it comes after, since the gate
+alone moves it, on their reports (37, 43, C.10, rule core.72). It SHALL
+be refused before the channel's chain is read, with nothing signed or
+appended, whoever asks, among them the channel's own promoters.
+
+#### Scenario: Asked ahead of what first last reported
+
+- **WHEN** `first` reported `0.4.0`, then was moved back and reported `0.3.0`, the gate moved `second` to `0.3.0`, and `second`'s own promoter asks `timber promote 0.4.0 --to second`
+- **THEN** the promotion is refused naming `second` and `first`, nothing is appended, and `second` stays at `0.3.0`
+
 ### Requirement: The channel follows its environments back
 
 Where every environment a channel comes after last reported a version

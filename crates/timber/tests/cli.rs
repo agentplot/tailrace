@@ -1298,6 +1298,33 @@ fn a_report_the_target_answers_unread_asks_no_gate_and_exits_as_unreadable() {
 }
 
 #[test]
+fn promote_of_a_channel_an_after_makes_exits_1_naming_it_and_its_environments() {
+    let mut host = Host::new();
+    applicable(&mut host, &["srv"], &["srv"]);
+    let (code, printed) = host.run(&["promote", "0.1.0", "--to", "second"]);
+    assert_eq!(code, 1, "{printed}");
+    assert!(
+        printed.contains(
+            "second comes after srv, and the gate moves it on their reports; no asker may move it"
+        ),
+        "{printed}"
+    );
+    let (code, printed) = host.run(&["promote", "0.1.0", "--to", "second", "--json"]);
+    assert_eq!(code, 1, "{printed}");
+    let printed: Value = serde_json::from_str(&printed).unwrap();
+    assert_eq!(printed["answer"], "refused", "{printed}");
+    assert_eq!(
+        printed["refused"]["why"]["moves_on_reports"]["after"],
+        serde_json::json!(["srv"]),
+        "{printed}"
+    );
+    assert!(
+        promotions(&host.fakes, &second()).is_empty(),
+        "second moved"
+    );
+}
+
+#[test]
 fn a_channel_held_for_an_environment_that_has_not_reported_prints_each_and_exits_as_refused() {
     let mut host = Host::new();
     let (index, _target) = applicable(&mut host, &["srv", "eu"], &["srv", "eu"]);

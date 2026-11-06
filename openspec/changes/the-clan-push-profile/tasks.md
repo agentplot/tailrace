@@ -36,6 +36,7 @@
   - "the newest report across a rollback", citing 43 and 91;
   - "S16", playing `S16` and citing 37, 41, 43, 83, 91 and 97, over `first` manual on `stable` and `second` after `first`, with the never-ahead check after each step.
   Take 41 and 97 and the `bolt 6 · the clan push profile` constant out of `register.rs` in the same commit. Verify with `moon run conformance:test` and `moon run conformance:coverage`: 41 and 97 cited and registered nowhere, and no clause newly uncited.
+- [x] 4.5 Refuse an asked move of a channel an `after` makes in `ledger::moved` (after-channels spec, design D9 and D12, rule core.72): where `Asked::By` meets a `Moves::Bound` whose `after` is not empty, answer refused `Why::MovesOnReports { channel, after }`, naming the channel and the environments whose reports the gate moves it on, before the chain is read and with nothing signed or appended. Verify with a `crates/timber-core/tests/follow.rs` case where `srv` reported 0.2.0 and then went back and reported 0.1.0, and an asked promotion of `second` to 0.2.0 by its own promoter is refused, under `moon run core:test`; with a fourth step in S16, the host asking `second` to 0.2.0 after `first` went back, refused and `never_ahead` after it, under `moon run conformance:test`; and with a `cli.rs` case where `timber promote 0.1.0 --to second` exits 1 naming `second` and `srv`, under `moon run cli:test`.
 
 ## 5. The clan push profile
 

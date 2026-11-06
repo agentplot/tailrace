@@ -18,8 +18,8 @@ use serde::{Serialize, Serializer};
 use timber_seams::{
     channel_name, version_name, Answer, AskedOf, Audience, Branch, Chain, ChannelId, ChannelName,
     Claim, ClaimKind, Component, ComponentName, DeclaredChannel, Digest, Envelope, Keeper, Moved,
-    NamedSigner, Not, Read, Required, RequiredClaim, Satisfied, Seam, Seams, SignerId, Source,
-    Store, Version, Why,
+    Moves, NamedSigner, Not, Read, Required, RequiredClaim, Satisfied, Seam, Seams, SignerId,
+    Source, Store, Version, Why,
 };
 
 pub use timber_seams::Promotion;
@@ -257,7 +257,9 @@ pub(crate) struct Move<'a> {
 }
 
 /// 31 to 39, 105: the one move of a channel a promotion and the gate's
-/// move on reports share (design D9): the chain's head read from the
+/// move on reports share (design D9): an asked move of a channel an
+/// `after` makes refused, since the gate alone moves it (rule core.72),
+/// the chain's head read from the
 /// ledger itself, the version's name resolved in the store before
 /// anything of it is read (rule core.4), the channel moved only from
 /// where it is (35) and, where bound, only to a version its bound
@@ -272,6 +274,22 @@ pub(crate) fn moved(seams: &Seams, history: &History, m: &Move<'_>) -> Answer<Pr
     let channel = &m.listed.channel;
     let component = m.component;
     let head = m.at_head.revision();
+
+    // 2: a channel an `after` makes moved by no asking but the gate's
+    // own, on the reports of the environments it comes after, refused
+    // before anything of it is read (37, 43, C.10, rule core.72).
+    if let (Asked::By { .. }, Moves::Bound { after, .. }) = (&m.asked, &m.listed.moves) {
+        if !after.is_empty() {
+            return Err(Not::refused(
+                &Source::new(Seam::Policy, BOUND),
+                Why::MovesOnReports {
+                    channel: channel.clone(),
+                    after: after.clone(),
+                },
+                None,
+            ));
+        }
+    }
 
     // 3: the chain, read from the ledger itself, and its head (105, 121).
     let chain = held(seams.keeper.as_ref(), channel)?;

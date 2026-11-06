@@ -350,7 +350,9 @@ the answer names each environment and what it last reported. The
 host's signer must be among the channel's promoters, or the channel is
 refused naming it and them, with no report read. The promotion names
 the host's signer as who asked and the reports among its counted
-claims.
+claims. No one asks for such a channel to move: `timber promote 0.2.0
+--to second` is refused naming `second` and `first`, whoever asks,
+with nothing signed or appended.
 
 Where `[gate] job = "<words>"` names a job that tells the gate, the
 answer carries the words, timber runs nothing for it, and no channel

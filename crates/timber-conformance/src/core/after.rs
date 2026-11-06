@@ -14,7 +14,7 @@ use timber_fakes::{FakeSigner, FakeTarget, SignerOp};
 use timber_seams::{
     Answer, AskedOf, Audience, ChannelId, ChannelName, Claim, ClaimKind, ComponentName,
     DeclaredEnvironment, Digest, EnvironmentName, NamedSigner, Not, Required, RequiredClaim, Seams,
-    SignerId, TargetProfile, TargetTable, Version,
+    SignerId, TargetProfile, TargetTable, Version, Why,
 };
 
 use crate::core::publish::{one, passing};
@@ -499,6 +499,39 @@ fn s16(world: &FakeWorld) {
         moves, 2,
         "step 3: second's chain holds other than its two moves"
     );
+
+    // 4: the host, second's own promoter, asks for second to move to
+    // 0.2.0, whose index carries first's older report, and is refused:
+    // the gate alone moves second, on first's reports (rule core.72).
+    let writes = world.writes().len();
+    let signs = sign_calls(world);
+    let ask = timber_core::PromoteAsk {
+        signer: SignerId::new(HOST),
+        ..world.promote_ask(SECOND, To::Version(Version::new("0.2.0")))
+    };
+    let answer = timber_core::promote(&world.seams(), &world.history(), &ask);
+    let Err(Not::Refused(refusal)) = &answer else {
+        panic!("step 4: asking second to 0.2.0 answered {answer:?}, not refused")
+    };
+    assert_eq!(
+        refusal.why,
+        Why::MovesOnReports {
+            channel: channel(SECOND),
+            after: vec![environment(FIRST)],
+        },
+        "step 4: the refusal names other than second and first"
+    );
+    assert_eq!(
+        (world.writes().len(), sign_calls(world)),
+        (writes, signs),
+        "step 4: an asking refused signed or wrote"
+    );
+    assert_eq!(
+        head_of(world, SECOND),
+        Some(first.clone()),
+        "step 4: second moved at an asking"
+    );
+    never_ahead(world, "step 4");
 }
 
 #[cfg(test)]

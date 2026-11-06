@@ -315,6 +315,13 @@ pub enum Why {
         signer: SignerId,
         promoters: Vec<SignerId>,
     },
+    /// 37, 43, C.10: `channel` comes after `after`, so the gate alone
+    /// moves it, on those environments' newest reports, and no asker may
+    /// ask it to move (rule core.72).
+    MovesOnReports {
+        channel: ChannelId,
+        after: Vec<EnvironmentName>,
+    },
     /// 47, 99: `version`, whose index is `index`, lacks `wanting`, the
     /// first claim in the policy's order that no claim attached to the
     /// index or the artifact satisfies; `checked` the signers it was
@@ -529,6 +536,11 @@ impl fmt::Display for Why {
                 f,
                 "{signer} may not promote {channel}; its promoters are {}",
                 list(promoters)
+            ),
+            Why::MovesOnReports { channel, after } => write!(
+                f,
+                "{channel} comes after {}, and the gate moves it on their reports; no asker may move it",
+                list(after)
             ),
             Why::VersionWanting {
                 version,
@@ -1152,6 +1164,13 @@ mod tests {
                     promoters: vec![SignerId::new("deployer")],
                 },
                 "laptop may not promote lib/second; its promoters are deployer".into(),
+            ),
+            (
+                Why::MovesOnReports {
+                    channel: lib("second"),
+                    after: vec![EnvironmentName::new("us"), EnvironmentName::new("asia")],
+                },
+                "lib/second comes after us, asia, and the gate moves it on their reports; no asker may move it".into(),
             ),
         ];
         for (why, names) in cases {
