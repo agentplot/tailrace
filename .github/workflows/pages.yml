@@ -28,10 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # The bun of the devenv shell, which wrote bun.lock.
+      # The bun of the devenv shell, which wrote bun.lock: site:toolchain
+      # fails while the two differ.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.2
+          bun-version: 1.4.4
       - run: bun install --frozen-lockfile
         working-directory: site
       - run: bun run build

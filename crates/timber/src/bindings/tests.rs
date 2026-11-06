@@ -352,11 +352,7 @@ fn a_registry_binds_a_store_named_by_its_repository() {
         Source::new(Seam::Store, "registry localhost:5000/timber")
     );
 
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let port = crate::ports::unanswered();
     host.write(&format!(
         "[store]\nregistry = \"127.0.0.1:{port}/timber\"\n\n[landing]\nbranch = {{}}\n\n\
          [signing]\nsigner = \"laptop\"\nkey = \"~/.config/timber/signing\"\n"
