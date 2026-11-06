@@ -1,6 +1,49 @@
 //! The Nix cache target (C.12's Nix binary cache row), bound as
-//! `nix_cache`: a version's closures pushed to a Nix binary cache with
-//! attic, from the host that holds them.
+//! `nix_cache`: a version's closures pushed to the fleet's Nix binary
+//! cache with attic, from the host that holds them, so a closure built on
+//! one host is realised on another from the cache alone.
+//!
+//! An environment names it in its `target` table, which names the cache
+//! as attic's own command names it, `<server>:<cache>`, and the outputs
+//! whose artifacts name closures, and nothing else (C.10; design D7):
+//!
+//! ```toml
+//! [environments.swancloud-srv.cache]
+//! channel = "beta"
+//! target.nix_cache = { attic = "fleet:swancloud", closures = ["swancloud-srv"] }
+//! ```
+//!
+//! Any other key, an empty `closures`, or an `attic` that is not
+//! `<server>:<cache>` is unreadable naming the environment and the key,
+//! at every operation, so no token is written where timber reads (45,
+//! rule core.21).
+//!
+//! A closure is one artifact naming its roots: a machine's build task
+//! leaves a file of its closure's root store paths, one per line, which
+//! its component declares as an output and the file projection packs.
+//! Its form is read by [`nix_closure`], which the Nix
+//! profiles share (design D6). The store holds that file and no store
+//! path of the closure; the paths are the cache's (section 10).
+//!
+//! Apply reads the verified version's index and each closure's file
+//! through the store by digest (42, rule core.4), then checks every root
+//! valid in this host's Nix store with `nix-store --check-validity`,
+//! refusing the first it does not hold, naming it and the host: the host
+//! that applies is the host that built, and nothing is built, substituted
+//! or fetched (15, I3; design D8). Then `attic push <server>:<cache>
+//! <roots…>` pushes each root with its closure, skipping what the cache
+//! holds already. attic reads its servers and the environment's token
+//! from its own configuration on that host,
+//! `$XDG_CONFIG_HOME/attic/config.toml`, at the push: timber passes it no
+//! token, sets none of its variables and reads nothing of its
+//! configuration (45), and attic's words on a failure are the answer,
+//! unreadable, verbatim (59).
+//!
+//! A Nix binary cache holds store paths by their hash and keeps no name a
+//! marker could be held under, so current and report are unread, saying
+//! so and naming the cache, never the digest last pushed and never
+//! converged (119, 89, 98; design D9). desired answers the head the core
+//! hands it (88), and apply runs whenever it is asked.
 
 mod table;
 #[cfg(test)]
