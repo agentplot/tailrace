@@ -6,8 +6,9 @@
 //! version's notes rendered from the repository's own history, on any
 //! machine, one that never published included (31, 33, 36, 56 to 61, 98,
 //! 134). It is bound to
-//! the landing, the policy and the ledger alone, asks no store, signer or
-//! target, and writes nothing (60, rule core.32). It reads the asker's
+//! the landing, the policy, the ledger and the store, opened and never
+//! made, reaches no signer or target, and writes nothing but the host's
+//! copy of a chain or of the reports (60, rule core.32). It reads the asker's
 //! time from the clock and hands it to the core, which reads none.
 //!
 //! `--page` asks another question: where the repository's own page is.

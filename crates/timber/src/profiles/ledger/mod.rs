@@ -7,7 +7,7 @@ pub mod store;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use timber_seams::{Answer, Keeper, Seam, Source};
+use timber_seams::{Answer, Keeper, Seam, Source, Store};
 
 use crate::bindings::Table;
 use crate::profiles::run::{Tool, GIT_REPOSITORY_ENV};
@@ -30,17 +30,15 @@ struct StoreOptions {}
 /// The ledger `[ledger]` names (92, C.13, C.14) for the repository at
 /// `repository`: `git_ref`, with its optional remote, the repository
 /// holding the refs where it names none; or `store`, the chain held in
-/// the store `store` binds, written or given, through a binding of its
-/// own that never makes it, and kept under the repository's common git
-/// directory (61, 62); where `make`, a publish's or a push's, the layout
-/// that binding opens is the one the command makes at its first
-/// operation. Unreadable naming any other key, or an option its profile
-/// does not read.
+/// the store `[store]` names, written or given, through the binding of
+/// its own `open` makes, which never makes it but where a publish or a
+/// push makes the layout at its first operation, and kept under the
+/// repository's common git directory (61, 62). Unreadable naming any
+/// other key, or an option its profile does not read.
 pub fn bind(
     table: &Table,
     repository: &Path,
-    store: &Table,
-    make: bool,
+    open: &dyn Fn() -> Answer<Box<dyn Store>>,
 ) -> Answer<Box<dyn Keeper>> {
     match table.key() {
         "git_ref" => {
@@ -50,18 +48,10 @@ pub fn bind(
         "store" => {
             let StoreOptions {} = table.options()?;
             let kept = common_dir(repository)?.join("timber").join("ledger");
-            let store = crate::profiles::store::bind(store, make)?;
-            Ok(Box::new(InStore::new(store, kept)))
+            Ok(Box::new(InStore::new(open()?, kept)))
         }
         _ => Err(table.unknown(&["git_ref", "store"])),
     }
-}
-
-/// Whether the ledger `[ledger]` names holds its chains in `[store]`
-/// (C.14), so a binding that reads no store but the ledger's opens it
-/// for this ledger alone (60).
-pub fn in_store(table: &Table) -> bool {
-    table.key() == "store"
 }
 
 /// The ledger a host binds where its file names no `[ledger]` (118,

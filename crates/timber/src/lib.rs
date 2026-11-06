@@ -13,14 +13,18 @@
 //! by the host's bindings file (118) and the repository's policy file
 //! ([`bindings`]): on a host with no bindings file they answer absent
 //! naming it, and a broken one unreadable, each in its own form and with
-//! its own exit. `status` is bound to the landing, the policy and the
-//! ledger alone, and on a host with no bindings file as 118 binds such a
-//! host; a binding it cannot make is its channels' answer, and the
-//! host's record answers beside it (60). `policy` is bound as status is,
-//! with no store and no signer, and a binding it cannot make is its
-//! answer. `apply` is bound as status is, signing nothing, with the store
-//! opened and never made and every target profile built beside it (92),
-//! and a binding it cannot make is its answer. `timber serve` is the host's one serving process, timber's
+//! its own exit. `status` is bound to the landing, the policy, the ledger
+//! and the store, opened and never made, a store that cannot be opened
+//! answering every operation with the opening's words, and every signer
+//! verify-only, reaching no service; on a host with no bindings file as
+//! 118 binds such a host; a binding it cannot make is its channels'
+//! answer, and the host's record answers beside it (60, 61). `policy` is
+//! bound to the landing, the policy and the ledger, with no store and no
+//! signer, and a binding it cannot make is its answer. `apply` is bound
+//! to the landing, the policy and the ledger, signing its report as the
+//! host's signer, with the store opened and never made and every target
+//! profile built beside it (43, 92), and a binding it cannot make is its
+//! answer. `timber serve` is the host's one serving process, timber's
 //! second surface: it binds nothing itself, and answers each request from
 //! the one core over the binding of the checkout that named the
 //! repository (57, 114, 132).
