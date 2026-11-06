@@ -104,10 +104,12 @@
 //! otherwise; so status on a host with nothing written reads the given
 //! landing and the given ledger and makes nothing. The policy command is
 //! bound as status is, with no store whether or not the file names one
-//! (the channels unit's design D11). Apply is bound as status is, signing
-//! nothing, with the store opened and never made, since it judges the
-//! claims attached to the head's index, and the targets beside (42; the
-//! Nix cache unit's design D5).
+//! (the channels unit's design D11). Apply binds the host's signer to sign
+//! its report and the gate's moves on it, every other profile
+//! verify-only, with the store opened and never made, since it judges the
+//! claims attached to the head's index, and the targets beside (11, 42,
+//! 43, 91; the Nix cache unit's design D5; the clan push profile's design
+//! D6 and D9).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;

@@ -133,15 +133,22 @@ fn target(world: &FakeWorld) -> FakeTarget {
     world.fakes.targets[&TargetProfile::new(TARGET)].clone()
 }
 
-/// `name` declared at the head, following `channel` on the fake target.
+/// `name` declared at the head, following `channel` on the fake target,
+/// moving on its own.
 fn declares(world: &FakeWorld, name: &str, channel: ChannelId) {
+    declared(world, name, channel, false, &[]);
+}
+
+/// `name` declared at the head, following `channel` on the fake target,
+/// waiting where `waits` on the promotion `approvers` ask for (41, 97).
+fn declared(world: &FakeWorld, name: &str, channel: ChannelId, waits: bool, approvers: &[&str]) {
     world.fakes.policy.declares_at(
         &world.head,
         DeclaredEnvironment {
             name: environment(name),
             channel,
-            waits: false,
-            approvers: vec![],
+            waits,
+            approvers: approvers.iter().map(|a| SignerId::new(*a)).collect(),
             target: Some(TargetTable {
                 profile: TargetProfile::new(TARGET),
                 settings: json!({}),
@@ -417,7 +424,7 @@ fn s16_world(world: &FakeWorld) -> (Digest, Digest) {
         &[reporter()],
         bound(FIRST, &[HOST], &[]),
     );
-    declares(world, FIRST, channel(FIRST));
+    declared(world, FIRST, channel(FIRST), true, &[DESK]);
     declares(world, SECOND, channel(SECOND));
     indexes
 }
