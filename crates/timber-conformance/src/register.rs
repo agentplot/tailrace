@@ -25,7 +25,6 @@ pub struct Pending {
 }
 
 const DRIVER: &str = "bolt 5 · the driver and the pool run publish";
-const CLAN_PUSH: &str = "bolt 6 · the clan push profile";
 const ENVIRONMENTS: &str = "phase 2 · environments in status";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
 const PHASE_2: &str = "phase 2";
@@ -36,8 +35,6 @@ const PHASE_2: &str = "phase 2";
 pub const PENDING: &[Pending] = &[
     Pending { clause: 135, unit: DRIVER, why: "A check job pushes what its run left before the landing and a publish takes its outputs from the store, and no publish reads the store for them yet." },
     Pending { clause: 139, unit: DRIVER, why: "The build answers what a checkout's run left, and the build seam has no such operation yet." },
-    Pending { clause: 41, unit: CLAN_PUSH, why: "An environment that waits converges when an approver promotes its own channel, S6's environment half, which the clan push profile's machines play with the bolt's S16." },
-    Pending { clause: 97, unit: CLAN_PUSH, why: "An approval is a promotion of the environment's own channel, and no environment converges on a yes the ledger does not hold, which the clan push profile's machines play with the bolt's S16." },
     Pending { clause: 98, unit: ENVIRONMENTS, why: "What each environment should run and runs is reported to an asker by status, and environments in status, which no unit of bolt 6 carves, come in phase 2." },
     Pending { clause: 55, unit: REBUILD, why: "A verifier's rebuild reads no cache entry it did not write, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 112, unit: REBUILD, why: "A verifier compares the digests of outputs, and phase 1 leaves the rebuild to phase 2." },
@@ -121,13 +118,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{clause} is not in the register"))
                 .unit
         };
-        for (clause, waits_on) in [
-            (41, CLAN_PUSH),
-            (97, CLAN_PUSH),
-            (44, PHASE_2),
-            (126, PHASE_2),
-            (98, ENVIRONMENTS),
-        ] {
+        for (clause, waits_on) in [(44, PHASE_2), (126, PHASE_2), (98, ENVIRONMENTS)] {
             assert_eq!(unit(clause), waits_on, "{clause} waits on another unit");
         }
         let parts: Vec<(u16, &str)> = PARTS
@@ -144,6 +135,33 @@ mod tests {
             assert!(
                 !why.contains("leaves every target"),
                 "an entry still leaves every target to phase 2: {why}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_clan_push_profile_leaves_the_register_with_s16_citing_41_and_97() {
+        let s16: Vec<&[u16]> = citations()
+            .iter()
+            .filter(|c| c.group == "after" && c.plays == Some("S16"))
+            .map(|c| c.cites)
+            .collect();
+        assert_eq!(s16.len(), 1, "the after group plays S16 other than once");
+        for clause in [41, 97] {
+            assert!(s16[0].contains(&clause), "S16 cites no {clause}");
+            assert!(
+                !PENDING.iter().any(|p| p.clause == clause),
+                "{clause} is cited, and still in the register"
+            );
+        }
+        for unit in PENDING
+            .iter()
+            .map(|p| p.unit)
+            .chain(PARTS.iter().map(|p| p.unit))
+        {
+            assert!(
+                !unit.contains("clan push profile"),
+                "an entry still waits on the clan push profile: {unit}"
             );
         }
     }

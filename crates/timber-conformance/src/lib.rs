@@ -34,6 +34,7 @@
 //! | copy | [`core::copy`] | the `FakeWorld` and a second fake store |
 //! | store naming | [`core::naming`] | the `FakeWorld` |
 //! | apply | [`core::apply`] | the `FakeWorld` |
+//! | after | [`core::after`] | the `FakeWorld` |
 //!
 //! A seam's group runs over a rig: the seam's profile, what a scenario
 //! sets up through it, and how it makes the source unreachable. The
@@ -130,8 +131,8 @@ fn group<R: ?Sized>(name: &'static str, scenarios: Vec<Scenario<R>>) -> Group {
 /// Every group of the suite, in order (design D2).
 pub fn groups() -> Vec<Group> {
     use crate::core::{
-        apply, cache, copy, gate, layouts, ledger, naming, publish, record, status, surfaces,
-        verify, version,
+        after, apply, cache, copy, gate, layouts, ledger, naming, publish, record, status,
+        surfaces, verify, version,
     };
     use crate::seams::{
         binding, build, host, keeper, landing, policy, projection, signer, store, target,
@@ -160,6 +161,7 @@ pub fn groups() -> Vec<Group> {
         group(copy::GROUP, copy::scenarios()),
         group(naming::GROUP, naming::scenarios()),
         group(apply::GROUP, apply::scenarios()),
+        group(after::GROUP, after::scenarios()),
     ]
 }
 
@@ -174,7 +176,7 @@ mod tests {
 
     /// The groups of design D2: one per seam, the binding, the host's
     /// bindings file, and one per part of the core.
-    const DESIGNED: [&str; 23] = [
+    const DESIGNED: [&str; 24] = [
         "store",
         "build",
         "landing",
@@ -198,6 +200,7 @@ mod tests {
         "copy",
         "naming",
         "apply",
+        "after",
     ];
 
     #[test]
