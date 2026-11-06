@@ -97,17 +97,6 @@ fn reporter() -> NamedSigner {
     named(HOST, &[ClaimKind::Report])
 }
 
-/// A report of `name` by the host, as a channel's policy requires one.
-fn report_of(name: &str) -> RequiredClaim {
-    RequiredClaim {
-        kind: ClaimKind::Report,
-        check: None,
-        environment: Some(environment(name)),
-        signers: vec![reporter()],
-        asked_of: AskedOf::Every,
-    }
-}
-
 /// A channel's policy: the gate's acceptance, bound to `bound_to`,
 /// promoted by `promoters` and asked by `approvers`.
 fn bound(bound_to: &str, promoters: &[&str], approvers: &[&str]) -> Required {
@@ -211,14 +200,14 @@ fn applied(world: &FakeWorld, name: &str, at: u64) -> Answer<Applied> {
 }
 
 /// `name`'s newest report, read across the chain of `channel`, counted
-/// through the host's signer.
+/// through the host's signer, which the policy lets claim a report.
 fn newest_of(world: &FakeWorld, name: &str, channel: &ChannelId) -> Answer<Newest> {
     newest(
         &world.seams(),
         &environment(name),
         &component(),
         channel,
-        &report_of(name),
+        &[reporter()],
     )
 }
 

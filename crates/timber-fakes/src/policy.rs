@@ -26,9 +26,10 @@ pub enum PolicyOp {
 
 /// What each audience requires, at every revision and at one, the
 /// channels that move on each publish, at every revision and at one, the
-/// environments each bound channel comes after, the givens held off, each
-/// with how it would move and its line, and the environments each
-/// revision declares, by component and then name.
+/// environments each bound channel comes after and the signers that may
+/// report them, the givens held off, each with how it would move and its
+/// line, and the environments each revision declares, by component and
+/// then name.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PolicyState {
     every: BTreeMap<Audience, Required>,
@@ -36,6 +37,7 @@ pub struct PolicyState {
     follows: BTreeMap<ChannelId, bool>,
     follows_at: BTreeMap<(Revision, ChannelId), bool>,
     after: BTreeMap<ChannelId, Vec<EnvironmentName>>,
+    reporters: Vec<NamedSigner>,
     holds: BTreeMap<ChannelId, (Moves, String)>,
     environments: BTreeMap<Revision, Declared>,
 }
@@ -100,7 +102,11 @@ impl FakePolicy {
     /// each environment by `reporters`, in the order named (83). A
     /// binding is answered as scripted, never checked, and a channel
     /// `required` binds to none is listed as its policy says, coming
-    /// after none.
+    /// after none. As the policy file's profile lets claim a report the
+    /// signers it lists with `report` among their kinds, and names them
+    /// in each report an `after` requires (116), the policy for a layout
+    /// lists `reporters` with what each may claim, beside the signers a
+    /// test scripted it.
     pub fn after(
         &self,
         channel: &ChannelId,
@@ -119,6 +125,11 @@ impl FakePolicy {
         }
         let mut state = self.state();
         state.after.insert(channel.clone(), environments.to_vec());
+        for reporter in reporters {
+            if !state.reporters.iter().any(|r| r.id == reporter.id) {
+                state.reporters.push(reporter.clone());
+            }
+        }
         state
             .every
             .insert(Audience::Channel(channel.clone()), required);
@@ -149,14 +160,38 @@ impl FakePolicy {
     }
 }
 
+/// The policy for a layout `scripted`, or one requiring nothing where
+/// none is, listing each of `reporters` it does not list already.
+fn with_reporters(scripted: Option<Required>, reporters: &[NamedSigner]) -> Required {
+    let mut required = scripted.unwrap_or(Required::Layout {
+        claims: vec![],
+        given: false,
+        signers: vec![],
+    });
+    if let Required::Layout { signers, .. } = &mut required {
+        for reporter in reporters {
+            if !signers.iter().any(|s| s.id == reporter.id) {
+                signers.push(reporter.clone());
+            }
+        }
+    }
+    required
+}
+
 impl Policy for FakePolicy {
     fn policy_for(&self, revision: &Revision, audience: &Audience) -> Answer<Required> {
         let given = json!({ "revision": revision, "audience": audience });
         self.ask(PolicyOp::PolicyFor, given, of(audience), |s, source| {
-            s.at.get(&(revision.clone(), audience.clone()))
-                .or_else(|| s.every.get(audience))
-                .cloned()
-                .ok_or_else(|| Not::absent(source, of(audience)))
+            let scripted =
+                s.at.get(&(revision.clone(), audience.clone()))
+                    .or_else(|| s.every.get(audience))
+                    .cloned();
+            match (audience, scripted) {
+                (Audience::Layout, scripted) if !s.reporters.is_empty() => {
+                    Ok(with_reporters(scripted, &s.reporters))
+                }
+                (_, scripted) => scripted.ok_or_else(|| Not::absent(source, of(audience))),
+            }
         })
     }
 
@@ -484,7 +519,7 @@ mod tests {
             Ok(Required::Channel {
                 claims: vec![claim("test"), report],
                 bound_to: Some(ChannelName::new("first")),
-                promoted_by: vec![deployer],
+                promoted_by: vec![deployer.clone()],
                 approvers: vec![],
             })
         );
@@ -517,6 +552,38 @@ mod tests {
             Err(Not::Unreadable(u)) if u.said.as_deref() == Some("no such revision")
         ));
         assert_eq!(policy.calls().len(), 4);
+
+        // The policy for a layout lists the deployer, as the file's does
+        // every signer that may report, and keeps a scripted signer.
+        assert_eq!(
+            policy.policy_for(&at, &Audience::Layout),
+            Ok(Required::Layout {
+                claims: vec![],
+                given: false,
+                signers: vec![deployer.clone()],
+            })
+        );
+        let rebuild = NamedSigner {
+            id: SignerId::new("rebuild"),
+            kinds: vec![ClaimKind::Rebuild],
+            ..deployer.clone()
+        };
+        policy.require(
+            Audience::Layout,
+            Required::Layout {
+                claims: vec![claim("test")],
+                given: false,
+                signers: vec![rebuild.clone()],
+            },
+        );
+        assert_eq!(
+            policy.policy_for(&at, &Audience::Layout),
+            Ok(Required::Layout {
+                claims: vec![claim("test")],
+                given: false,
+                signers: vec![rebuild, deployer],
+            })
+        );
     }
 
     #[test]
