@@ -16,10 +16,10 @@ use timber_fakes::{
 };
 use timber_seams::{
     Answer, Artifact, AskedOf, Audience, Branch, BuildId, Claim, ClaimKind, ComponentName,
-    Contents, Digest, EcosystemName, Envelope, EnvironmentName, Held, IndexMeta, Landing, Layout,
-    Manifest, Miss, Name, NamedSigner, Not, Outcome, Output, PackAt, Packed, Pin, Pinned,
-    Projection, Put, Range, Rendered, Request, Required, RequiredClaim, Requirement, Response,
-    Seam, SignerId, Source, Store, Version, Why,
+    Contents, Digest, EcosystemName, Envelope, Held, IndexMeta, Landing, Layout, Manifest, Miss,
+    Name, NamedSigner, Not, Outcome, Output, PackAt, Packed, Pin, Pinned, Projection, Put, Range,
+    Rendered, Request, Required, RequiredClaim, Requirement, Response, Seam, SignerId, Source,
+    Store, TargetProfile, Version, Why,
 };
 use world::{
     build_of, build_ops, by_host, eco, output, published_before_notes, version_of, Watched, World,
@@ -1752,7 +1752,7 @@ fn the_entry_and_the_answer_name_the_store_as_the_ask_names_it() {
 #[test]
 fn a_publish_moves_no_channel_and_reaches_no_target() {
     let mut world = World::new();
-    let target = world.fakes.target(&EnvironmentName::new("production"));
+    let target = world.fakes.target(&TargetProfile::new("fake"));
     world.publish_one(&world.ask_for("lib")).unwrap();
     assert_eq!(world.fakes.keeper.calls(), []);
     assert_eq!(target.calls(), []);

@@ -16,7 +16,8 @@ use timber_seams::{
     ClaimKind, ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope,
     Environment, EnvironmentName, HeldChannel, Keeper, Landing, Left, Moves, NamedSigner, Outcome,
     Output, OutputName, Pinned, Policy, Projection, Range, Report, Required, Requirement, Revision,
-    Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
+    Seams, Signature, Signer, SignerId, Store, Target, TargetProfile, Verdict, Verified, Version,
+    IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
@@ -643,6 +644,7 @@ impl FakeTargetRig {
             name: EnvironmentName::new(format!("environment-{n}")),
             channel: ChannelId::new(None, ChannelName::new(format!("channel-{n}"))),
             waits: false,
+            settings: json!({}),
         }
     }
 }
@@ -822,15 +824,15 @@ impl BindingRig for FakeBindingRig {
     fn bind(
         &self,
         ecosystems: &[Ecosystem],
-        environments: &[EnvironmentName],
+        targets: &[TargetProfile],
         signers: &[SignerId],
     ) -> Seams {
         let mut fakes = Fakes::new();
         for ecosystem in ecosystems {
             fakes.projection(ecosystem);
         }
-        for environment in environments {
-            fakes.target(environment);
+        for profile in targets {
+            fakes.target(profile);
         }
         let mut seams = fakes.seams();
         seams.signers = signers

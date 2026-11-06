@@ -1,7 +1,7 @@
 //! A target's group: 88 to 91, and 31, 40 and 43 as far as a target keeps
 //! them (B.7).
 
-use timber_seams::{Digest, Environment, Not, Seam, Target, Verified};
+use timber_seams::{Digest, Environment, Not, Seam, Source, Target, Verified};
 
 use crate::{ok, Rig, Scenario};
 
@@ -58,13 +58,19 @@ fn what_an_environment_should_run(rig: &dyn TargetRig) {
     let empty = rig.environment(None);
     assert_eq!(
         ok(
-            target.desired(&following),
+            target.desired(&following, &|| Ok(head.clone())),
             "desired of a channel with a head"
         ),
         head,
         "the environment should run another digest than its channel's head"
     );
-    match target.desired(&empty) {
+    let none = || {
+        Err(Not::absent(
+            &Source::new(Seam::Keeper, "the suite"),
+            format!("the head of channel {}", empty.channel),
+        ))
+    };
+    match target.desired(&empty, &none) {
         Err(Not::Absent(a)) => assert_eq!(a.source.seam, Seam::Target, "{a:?}"),
         other => panic!("desired of an empty channel answered {other:?}, not empty"),
     }

@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 use timber_seams::{
-    Answer, Digest, Environment, EnvironmentName, Not, Running, Seam, Target, Verified,
+    Answer, Digest, Environment, EnvironmentName, Head, Not, Running, Seam, Target, Verified,
 };
 
 use crate::Fake;
@@ -102,7 +102,7 @@ impl TargetState {
 }
 
 impl Target for FakeTarget {
-    fn desired(&self, environment: &Environment) -> Answer<Digest> {
+    fn desired(&self, environment: &Environment, _: Head<'_>) -> Answer<Digest> {
         let given = json!({ "environment": environment });
         let what = format!("the head of channel {}", environment.channel);
         self.ask(TargetOp::Desired, given, what.clone(), |s, source| {
@@ -152,7 +152,17 @@ mod tests {
             name: EnvironmentName::new("production"),
             channel: ChannelId::new(Some(ComponentName::new("web")), ChannelName::new("stable")),
             waits: false,
+            settings: json!({}),
         }
+    }
+
+    /// The head of a channel the chain holds none of, as the core hands
+    /// it.
+    fn empty() -> Answer<Digest> {
+        Err(Not::absent(
+            &Source::new(Seam::Keeper, "fake"),
+            "the head of channel web/stable",
+        ))
     }
 
     fn source() -> Source {
@@ -163,11 +173,14 @@ mod tests {
     fn an_empty_channel_is_absent_and_a_head_is_desired() {
         let target = FakeTarget::new();
         assert_eq!(
-            target.desired(&production()),
+            target.desired(&production(), &empty),
             Err(Not::absent(&source(), "the head of channel web/stable"))
         );
         target.head(&production().name, &Digest::of(b"index"));
-        assert_eq!(target.desired(&production()), Ok(Digest::of(b"index")));
+        assert_eq!(
+            target.desired(&production(), &empty),
+            Ok(Digest::of(b"index"))
+        );
     }
 
     #[test]
@@ -227,7 +240,7 @@ mod tests {
             );
         }
         let verified = Verified::new(Digest::of(b"index"), Version::new("1.0.0"));
-        assert!(target.desired(&production()).is_err());
+        assert!(target.desired(&production(), &empty).is_err());
         assert!(target.current(&production()).is_err());
         assert!(target.apply(&production(), &verified).is_err());
         assert!(target.report(&production()).is_err());

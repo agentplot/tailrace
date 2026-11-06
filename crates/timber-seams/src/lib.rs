@@ -197,7 +197,7 @@ mod tests {
     }
 
     impl Target for Nowhere {
-        fn desired(&self, _: &Environment) -> Answer<Digest> {
+        fn desired(&self, _: &Environment, _: Head<'_>) -> Answer<Digest> {
             nothing(Seam::Target, "desired")
         }
         fn current(&self, _: &Environment) -> Answer<Digest> {
@@ -251,6 +251,7 @@ mod tests {
             name: EnvironmentName::new("production"),
             channel: stable.clone(),
             waits: false,
+            settings: Value::Null,
         };
         let claim = Claim {
             subject: d.clone(),
@@ -333,7 +334,7 @@ mod tests {
                 meta,
             })),
             asked(projection.satisfying(&Range::new("^1"), &[Version::new("1.0.0")])),
-            asked(target.desired(&environment)),
+            asked(target.desired(&environment, &|| Ok(d.clone()))),
             asked(target.current(&environment)),
             asked(target.apply(
                 &environment,
@@ -386,5 +387,75 @@ mod tests {
             ["desired", "current", "apply", "report"]
         );
         assert_eq!(named(Seam::Keeper), ["append", "chain"]);
+    }
+
+    /// A target answering every operation absent in its profile's name,
+    /// so a binding is seen to hand back the one asked for.
+    struct Profiled(&'static str);
+
+    impl Profiled {
+        fn nothing<T>(&self, what: &str) -> Answer<T> {
+            Err(Not::absent(&Source::new(Seam::Target, self.0), what))
+        }
+    }
+
+    impl Target for Profiled {
+        fn desired(&self, _: &Environment, _: Head<'_>) -> Answer<Digest> {
+            self.nothing("desired")
+        }
+        fn current(&self, _: &Environment) -> Answer<Digest> {
+            self.nothing("current")
+        }
+        fn apply(&self, _: &Environment, _: &Verified) -> Answer<()> {
+            self.nothing("apply")
+        }
+        fn report(&self, _: &Environment) -> Answer<Running> {
+            self.nothing("report")
+        }
+    }
+
+    #[test]
+    fn a_binding_with_two_targets_finds_each_by_its_profile() {
+        let profiles = [TargetProfile::new("pushed"), TargetProfile::new("pulled")];
+        let seams = Seams {
+            store: Box::new(Nowhere),
+            build: Box::new(Nowhere),
+            landing: Box::new(Nowhere),
+            policy: Box::new(Nowhere),
+            keeper: Box::new(Nowhere),
+            signers: vec![],
+            projections: std::collections::BTreeMap::new(),
+            targets: [
+                (
+                    profiles[0].clone(),
+                    Box::new(Profiled("pushed")) as Box<dyn Target>,
+                ),
+                (profiles[1].clone(), Box::new(Profiled("pulled")) as _),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let environment = |component: &str| Environment {
+            name: EnvironmentName::new("cache"),
+            channel: ChannelId::new(
+                Some(ComponentName::new(component)),
+                ChannelName::new("beta"),
+            ),
+            waits: false,
+            settings: serde_json::json!({ "of": component }),
+        };
+        for profile in &profiles {
+            let target = seams
+                .target(profile)
+                .unwrap_or_else(|| panic!("no target is bound for {profile}"));
+            for component in ["web", "api"] {
+                match target.current(&environment(component)) {
+                    Err(Not::Absent(a)) => assert_eq!(a.source.profile, profile.as_str()),
+                    other => panic!("the target bound for {profile} answered {other:?}"),
+                }
+            }
+        }
+        assert!(seams.target(&TargetProfile::new("unbound")).is_none());
+        assert_eq!(seams.targets.len(), 2);
     }
 }

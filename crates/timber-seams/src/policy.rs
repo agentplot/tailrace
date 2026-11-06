@@ -545,8 +545,8 @@ mod tests {
             waits: true,
             approvers: vec![SignerId::new("box")],
             target: Some(TargetTable {
-                profile: TargetProfile::new("nix_cache"),
-                settings: json!({ "attic": "fleet:web", "closures": ["web-srv"] }),
+                profile: TargetProfile::new("pushed"),
+                settings: json!({ "at": "a place of its own", "outputs": ["site"] }),
             }),
         };
         assert_eq!(
@@ -557,8 +557,8 @@ mod tests {
                 "waits": true,
                 "approvers": ["box"],
                 "target": {
-                    "profile": "nix_cache",
-                    "settings": { "attic": "fleet:web", "closures": ["web-srv"] },
+                    "profile": "pushed",
+                    "settings": { "at": "a place of its own", "outputs": ["site"] },
                 },
             })
         );

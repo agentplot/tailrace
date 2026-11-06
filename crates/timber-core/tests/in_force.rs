@@ -10,8 +10,8 @@ use timber_core::{answer_json, in_force, ChannelInForce, ChannelsInForce, InForc
 use timber_fakes::{FakePolicy, LandingOp, PolicyOp, PROFILE};
 use timber_seams::{
     Answer, AskedOf, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
-    DeclaredEnvironment, EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels,
-    Required, RequiredClaim, Revision, Seam, Seams, Source, Why,
+    DeclaredEnvironment, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim,
+    Revision, Seam, Seams, Source, TargetProfile, Why,
 };
 use world::World;
 
@@ -207,7 +207,7 @@ fn one_channels_policy_unreadable_leaves_the_rest_standing() {
 #[test]
 fn the_policy_in_force_asks_the_landing_and_the_policy_alone_and_writes_nothing() {
     let mut world = World::new();
-    let production = world.fakes.target(&EnvironmentName::new("production"));
+    let production = world.fakes.target(&TargetProfile::new("fake"));
     declare(&world.fakes.policy);
     let others = || {
         (
