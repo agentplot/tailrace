@@ -11,7 +11,6 @@ Deleted when empty.
 - **C.13, "no device that asks for a promotion commits anything".** Holds because the asking host is the gate (108); an asker that is not the gate is not built.
 - **141 and section 9, the catalogued kinds.** Built: every kind of claim takes a predicate type of timber's own under `https://agentplot.github.io/timber/claim/` (`crates/timber-seams/src/claim.rs`); a provenance is to take SLSA's Provenance, an acceptance and a rebuild SLSA's Verification Summary Attestation, and a test in-toto's Test Result (ADR 0022, core.57). Unit `every-claim-takes-the-catalogued-kind-that-carries-it`.
 - **135, a publish never builds to offer where the landing has verdicts.** Built: publish asks the build seam to ensure every output whatever the landing carries (`crates/timber-core/src/publish.rs`), so where the landing has verdicts an output whose cache entry is gone is built before the publish refuses it naming the output, where 135 builds nothing (core.10, core.30). Unit `a-publish-with-verdicts-builds-nothing`.
-- **Section 12 and core.33, the suite's clauses.** Built: the suite's list of clauses reads the statement at `agentplot/blueprints` 7f60e57 and holds 1 to 140 (`crates/timber-conformance/src/statement.rs`); 141 to 143 are in neither the list nor the register, so no run reports them waiting. Chore `the-suite-reads-the-statement-through-143`.
 
 ## Decisions waiting
 

@@ -25,6 +25,8 @@ pub struct Pending {
 }
 
 const DRIVER: &str = "bolt 5 · the driver and the pool run publish";
+const CATALOGUED: &str = "every-claim-takes-the-catalogued-kind-that-carries-it";
+const KEYLESS: &str = "phase 2 · keyless signing";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
 const PHASE_2: &str = "phase 2";
 
@@ -34,6 +36,9 @@ const PHASE_2: &str = "phase 2";
 pub const PENDING: &[Pending] = &[
     Pending { clause: 135, unit: DRIVER, why: "A check job pushes what its run left before the landing and a publish takes its outputs from the store, and no publish reads the store for them yet." },
     Pending { clause: 139, unit: DRIVER, why: "The build answers what a checkout's run left, and the build seam has no such operation yet." },
+    Pending { clause: 141, unit: CATALOGUED, why: "Every claim still takes a predicate type of timber's own, and a provenance, an acceptance, a rebuild and a test take the kinds SLSA and in-toto catalogue only once the signer seam's form changes (ADR 0022, rule core.57)." },
+    Pending { clause: 142, unit: KEYLESS, why: "A bundle of claims verified under a trusted root timber is given comes with keyless signing (C.9) and the open verifier, which phase 1 builds none of (ADR 0022, rule core.58)." },
+    Pending { clause: 143, unit: KEYLESS, why: "Another system's trusted root named as a signer comes with keyless signing (C.9), and phase 1 verifies under no root (ADR 0022, rule core.59)." },
     Pending { clause: 55, unit: REBUILD, why: "A verifier's rebuild reads no cache entry it did not write, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 112, unit: REBUILD, why: "A verifier compares the digests of outputs, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 133, unit: REBUILD, why: "A verifier's rebuild reads no compilation's cache another party wrote, and phase 1 leaves the rebuild to phase 2." },
@@ -154,6 +159,23 @@ mod tests {
                 !unit.contains("environments in status"),
                 "an entry still waits on environments in status: {unit}"
             );
+        }
+    }
+
+    #[test]
+    fn the_clauses_the_statement_added_through_143_wait_named() {
+        let cited: Vec<u16> = citations()
+            .iter()
+            .flat_map(|c| c.cites.iter().copied())
+            .collect();
+        for (clause, waits_on) in [(141, CATALOGUED), (142, KEYLESS), (143, KEYLESS)] {
+            assert!(!cited.contains(&clause), "{clause} is cited");
+            let entry = PENDING
+                .iter()
+                .find(|p| p.clause == clause)
+                .unwrap_or_else(|| panic!("{clause} is not in the register"));
+            assert_eq!(entry.unit, waits_on, "{clause} waits on another unit");
+            assert!(!entry.why.trim().is_empty(), "{clause} waits for no reason");
         }
     }
 
