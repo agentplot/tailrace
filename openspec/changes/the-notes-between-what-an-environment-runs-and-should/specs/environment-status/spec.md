@@ -242,10 +242,15 @@ semantic version, SHALL make the versions between unreadable naming it,
 never empty. The environment's state, what it should run and what it
 runs SHALL be shown as they are.
 
+#### Scenario: One version's notes cannot be rendered
+
+- **WHEN** one version between is tagged at a revision whose notes' template the version rule's tool cannot read
+- **THEN** that version's notes are unreadable naming the template with the tool's words, the other versions' notes are shown, and status exits 0
+
 #### Scenario: A commit the history no longer holds
 
-- **WHEN** one version between would be rendered from a commit the local history does not hold
-- **THEN** that version's notes are unreadable naming the commit, the other versions' notes are shown, and status exits 0
+- **WHEN** a commit between what `srv` runs and what it should is no longer in the local history
+- **THEN** the versions between are unreadable naming the tags the head reaches, with git's words naming the commit, and `srv`'s state, what it should run and what it runs are shown as they are
 
 ### Requirement: The four counts are of the environments shown
 

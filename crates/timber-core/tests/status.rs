@@ -1280,11 +1280,11 @@ fn lets_report(world: &World) {
     );
 }
 
-/// `name` declared at the head, following `channel`, waiting on
+/// `name` declared at `main`'s head, following `channel`, waiting on
 /// `approvers` where `waits`, with no target.
 fn declares(world: &World, name: &str, channel: &ChannelId, waits: bool, approvers: &[&str]) {
     world.fakes.policy.declares_at(
-        &world.head,
+        &world.history().head(&world.main).unwrap(),
         timber_seams::DeclaredEnvironment {
             name: env(name),
             channel: channel.clone(),
@@ -1445,6 +1445,7 @@ fn an_environment_running_its_channels_head_is_converged_and_no_target_is_asked(
         })
     );
     assert_eq!(srv.state, Ok(timber_core::State::Converged));
+    assert_eq!(srv.between, None);
     assert_eq!(environments_of(&answer).counts, counts(1, 0, 0, 0));
     assert!(production.calls().is_empty(), "status asked the target");
     assert_eq!(signs(), signed, "status signed");
@@ -1455,6 +1456,7 @@ fn an_environment_running_its_channels_head_is_converged_and_no_target_is_asked(
         serde_json::json!({ "answer": "ok", "value": "converged" })
     );
     assert_eq!(srv["runs"]["value"]["read"], "source", "{json}");
+    assert!(srv.get("between").is_none(), "{json}");
     assert_eq!(json["environments"]["value"]["converged"], 1, "{json}");
 }
 
@@ -1818,6 +1820,281 @@ fn four_environments_one_of_each_are_counted_one_one_one_and_one() {
     ] {
         assert_eq!(value[key], n, "{json}");
     }
+}
+
+// Requirement (environment-status): The versions between what an
+// environment runs and what it should
+
+/// `lib` tagged each of `versions` in turn, the first at the head and
+/// each after at a commit one feature on, landed on `main`: each one's
+/// revision.
+fn released(world: &World, versions: &[&str]) -> Vec<Revision> {
+    versions
+        .iter()
+        .enumerate()
+        .map(|(i, version)| {
+            let revision = match i {
+                0 => world.head.clone(),
+                _ => world.next(&format!("feat: lib grows to {version}")),
+            };
+            world.repo.tag(&format!("lib-v{version}"), &revision);
+            revision
+        })
+        .collect()
+}
+
+/// `srv` declared at `main`'s head, following `stable`, which is
+/// promoted to `chain` in turn, and reporting it runs `runs`, by the
+/// deployer the policy lets report: status's answer.
+fn behind(world: &World, chain: &[&str], runs: &str) -> Overview {
+    lets_report(world);
+    declare(world, &stable(), None);
+    declares(world, "srv", &stable(), false, &[]);
+    held_chain(world, &stable(), chain);
+    let index = held_index(world, &format!("{runs}'s index"));
+    reported_by(world, DEPLOYER, ("srv", &stable()), (runs, &index), AT);
+    asked(world, &ask(world))
+}
+
+/// `srv`'s versions between, answered.
+fn between_of(overview: &Overview) -> &timber_core::Between {
+    let srv = one(overview, "srv");
+    assert_eq!(srv.state, Ok(timber_core::State::Behind));
+    match &srv.between {
+        Some(Ok(between)) => between,
+        other => panic!("srv's between answered {other:?}"),
+    }
+}
+
+/// The versions and revisions `between` names, in its order.
+fn named(between: &timber_core::Between) -> Vec<(Version, Revision)> {
+    between
+        .versions
+        .iter()
+        .map(|v| (v.version.clone(), v.revision.clone()))
+        .collect()
+}
+
+#[test]
+fn two_versions_ahead_are_named_with_their_tags_revisions_and_notes_as_the_changelogs() {
+    let world = World::new();
+    let revisions = released(&world, &["0.2.0", "0.3.0", "0.4.0"]);
+    let stores = world.fakes.store.calls().len();
+    let answer = behind(&world, &["0.2.0", "0.3.0", "0.4.0"], "0.2.0");
+    let between = between_of(&answer);
+    assert_eq!(between.direction, timber_core::Direction::Ahead);
+    assert_eq!(
+        named(between),
+        [
+            (Version::new("0.3.0"), revisions[1].clone()),
+            (Version::new("0.4.0"), revisions[2].clone()),
+        ]
+    );
+    let changelog = &channels_of(&answer)[0].notes;
+    for version in &between.versions {
+        let logged = changelog
+            .iter()
+            .find(|l| l.version == version.version)
+            .expect("the changelog holds the version");
+        let notes = version.notes.as_ref().expect("the notes rendered");
+        assert_eq!(
+            Ok(notes.as_bytes()),
+            logged.notes.as_ref().map(|n| n.as_bytes())
+        );
+        assert!(notes.contains(version.version.as_str()), "{notes}");
+    }
+    assert!(
+        world.fakes.store.calls()[stores..].iter().all(|c| matches!(
+            c.op,
+            StoreOp::ClaimsOf | StoreOp::PutBytes | StoreOp::Attach
+        )),
+        "status asked the store for the notes"
+    );
+    let json = serde_json::to_value(&answer).unwrap();
+    let srv = &json["environments"]["value"]["environments"][0];
+    assert_eq!(srv["between"]["answer"], "ok", "{json}");
+    assert_eq!(srv["between"]["value"]["direction"], "ahead", "{json}");
+    assert_eq!(
+        srv["between"]["value"]["versions"][1]["version"], "0.4.0",
+        "{json}"
+    );
+    assert_eq!(
+        srv["between"]["value"]["versions"][1]["notes"]["answer"], "ok",
+        "{json}"
+    );
+}
+
+#[test]
+fn a_channel_moved_back_names_the_versions_whose_changes_the_environment_leaves() {
+    let world = World::new();
+    released(&world, &["0.2.0", "0.3.0", "0.4.0"]);
+    let answer = behind(&world, &["0.2.0", "0.3.0", "0.4.0", "0.2.0"], "0.4.0");
+    let between = between_of(&answer);
+    assert_eq!(between.direction, timber_core::Direction::Back);
+    let versions: Vec<Version> = named(between).into_iter().map(|(v, _)| v).collect();
+    assert_eq!(versions, [Version::new("0.3.0"), Version::new("0.4.0")]);
+}
+
+#[test]
+fn a_version_the_channel_skipped_is_between_with_its_notes() {
+    let world = World::new();
+    released(&world, &["0.2.0", "0.3.0", "0.4.0"]);
+    let answer = behind(&world, &["0.2.0", "0.4.0"], "0.2.0");
+    let between = between_of(&answer);
+    let versions: Vec<Version> = named(between).into_iter().map(|(v, _)| v).collect();
+    assert_eq!(versions, [Version::new("0.3.0"), Version::new("0.4.0")]);
+    let skipped = between.versions[0].notes.as_ref().expect("0.3.0's notes");
+    assert!(skipped.contains("lib grows to 0.3.0"), "{skipped}");
+    assert!(
+        channels_of(&answer)[0]
+            .notes
+            .iter()
+            .all(|l| l.version != Version::new("0.3.0")),
+        "the changelog holds 0.3.0, which the channel skipped"
+    );
+}
+
+#[test]
+fn a_prerelease_between_is_left_out_and_a_prerelease_at_the_higher_end_is_named() {
+    let world = World::new();
+    released(&world, &["0.2.0", "0.3.0", "0.4.0-rc.1", "0.4.0"]);
+    let answer = behind(&world, &["0.3.0", "0.4.0"], "0.3.0");
+    let versions: Vec<Version> = named(between_of(&answer))
+        .into_iter()
+        .map(|(v, _)| v)
+        .collect();
+    assert_eq!(versions, [Version::new("0.4.0")]);
+
+    let world = World::new();
+    released(&world, &["0.2.0", "0.3.0", "0.4.0-rc.1", "0.4.0"]);
+    let answer = behind(&world, &["0.3.0", "0.4.0-rc.1"], "0.3.0");
+    let versions: Vec<Version> = named(between_of(&answer))
+        .into_iter()
+        .map(|(v, _)| v)
+        .collect();
+    assert_eq!(versions, [Version::new("0.4.0-rc.1")]);
+}
+
+/// One version between whose notes cannot be rendered: 0.3.0 tagged at a
+/// revision whose template the rule's tool cannot read.
+#[test]
+fn a_version_whose_notes_cannot_be_rendered_is_its_own_answer_and_the_rest_shown() {
+    let world = World::new();
+    world.repo.tag("lib-v0.2.0", &world.head);
+    let three = world.repo.commit(
+        "feat: lib grows to 0.3.0",
+        &[
+            ("crates/lib/touched", "0.3.0"),
+            ("cliff.toml", "[changelog\nbody = "),
+        ],
+    );
+    world.fakes.landing.land(&world.main, &three);
+    world.repo.tag("lib-v0.3.0", &three);
+    let four = world.repo.commit(
+        "feat: lib grows to 0.4.0",
+        &[
+            ("crates/lib/touched", "0.4.0"),
+            ("cliff.toml", common::CLIFF_TOML),
+        ],
+    );
+    world.fakes.landing.land(&world.main, &four);
+    world.repo.tag("lib-v0.4.0", &four);
+    let answer = behind(&world, &["0.2.0", "0.4.0"], "0.2.0");
+    let between = between_of(&answer);
+    assert_eq!(
+        named(between),
+        [
+            (Version::new("0.3.0"), three.clone()),
+            (Version::new("0.4.0"), four.clone()),
+        ]
+    );
+    let Err(Not::Unreadable(u)) = &between.versions[0].notes else {
+        panic!("0.3.0's notes answered {:?}", between.versions[0].notes)
+    };
+    assert!(u.what.contains("cliff.toml"), "{u:?}");
+    assert!(u.said.is_some(), "{u:?}");
+    let shown = between.versions[1].notes.as_ref().expect("0.4.0's notes");
+    assert!(shown.contains("lib grows to 0.4.0"), "{shown}");
+    let srv = one(&answer, "srv");
+    assert!(srv.should.is_ok() && srv.runs.is_ok(), "{srv:?}");
+}
+
+/// A commit the history lacks, between the two ends: the tags the head
+/// reaches cannot be read past it, so the versions between are unreadable
+/// naming them with git's words, never empty, and the rest is shown.
+#[test]
+fn a_commit_the_history_lacks_makes_the_versions_between_unreadable_naming_it() {
+    let world = World::new();
+    world.repo.tag("lib-v0.2.0", &world.head);
+    let mend = world.repo.touch("fix: lib mends", &["crates/lib"]);
+    let three = world.next("feat: lib grows to 0.3.0");
+    world.repo.tag("lib-v0.3.0", &three);
+    let four = world.next("feat: lib grows to 0.4.0");
+    world.repo.tag("lib-v0.4.0", &four);
+    let hex = mend.as_str();
+    fs::remove_file(
+        world
+            .repo
+            .path
+            .join(".git/objects")
+            .join(&hex[..2])
+            .join(&hex[2..]),
+    )
+    .unwrap();
+    let answer = behind(&world, &["0.2.0", "0.4.0"], "0.2.0");
+    let srv = one(&answer, "srv");
+    let Some(Err(Not::Unreadable(u))) = &srv.between else {
+        panic!("srv's between answered {:?}", srv.between)
+    };
+    assert_eq!(u.source, Source::history(LOCAL));
+    assert!(u.what.contains("lib-v"), "{u:?}");
+    assert!(u.said.as_deref().unwrap_or_default().contains(hex), "{u:?}");
+    assert_eq!(srv.state, Ok(timber_core::State::Behind));
+    assert!(srv.should.is_ok() && srv.runs.is_ok(), "{srv:?}");
+}
+
+#[test]
+fn a_version_that_is_no_semantic_version_makes_the_versions_between_unreadable_naming_it() {
+    let world = World::new();
+    released(&world, &["0.2.0"]);
+    let answer = behind(&world, &["0.2.0", "latest"], "0.2.0");
+    let srv = one(&answer, "srv");
+    assert_eq!(srv.state, Ok(timber_core::State::Behind));
+    let Some(Err(Not::Unreadable(u))) = &srv.between else {
+        panic!("srv's between answered {:?}", srv.between)
+    };
+    assert!(u.what.contains("between 0.2.0 and latest"), "{u:?}");
+    assert!(
+        u.said
+            .as_deref()
+            .unwrap_or_default()
+            .contains("latest is no semantic version"),
+        "{u:?}"
+    );
+}
+
+#[test]
+fn an_environment_behind_on_its_version_at_another_index_names_no_version_between() {
+    let world = World::new();
+    released(&world, &["0.2.0"]);
+    lets_report(&world);
+    declare(&world, &stable(), None);
+    declares(&world, "srv", &stable(), false, &[]);
+    let first = Moved {
+        version: Version::new("0.2.0"),
+        index: held_index(&world, "0.2.0 packed first"),
+    };
+    held_index(&world, "0.2.0's index");
+    promoted_to(&world, &stable(), &[first.clone(), moved("0.2.0")]);
+    reported_by(
+        &world,
+        DEPLOYER,
+        ("srv", &stable()),
+        ("0.2.0", &first.index),
+        AT,
+    );
+    let answer = asked(&world, &ask(&world));
+    assert_eq!(between_of(&answer).versions, []);
 }
 
 // Requirement (channel-status): Asking reaches no signer or target and

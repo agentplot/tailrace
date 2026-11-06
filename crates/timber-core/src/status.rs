@@ -28,14 +28,17 @@
 //! their own: every environment the policy declares at the landed head,
 //! with what it should run, its channel's head as the channels part reads
 //! it, what it runs, its newest counted report, its state and what its
-//! channel moves on, and four counts beside them (98, 132, 136; design
-//! D2, D6, D7, D9). The landed head, the policy and each chain are read
+//! channel moves on, beside one that is behind the notes of every version
+//! between what it runs and what it should, rendered once per ask with
+//! the channels' changelogs, and four counts beside them (98, 132, 134,
+//! 136; design D2, D6 to D9). The landed head, the policy and each chain are read
 //! once, and both parts are made from them, so they never disagree on a
 //! head (rule core.50). One repository's row of every channel's head and
 //! its environments' counts is made from its status answer alone, so the
 //! host's serving process shows every repository it knows together from
 //! the one core (132).
 
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize, Serializer};
@@ -363,36 +366,54 @@ impl<'a> Changelog<'a> {
             return rendered.clone();
         }
         let what = format!("the notes of {component} {version}");
-        let rendered = match &self.components {
-            Err(not) => Err(not.clone()),
-            Ok(components) => match components.iter().find(|c| c.name == *component) {
-                None => Err(Not::unreadable(
-                    &Source::history(LOCAL),
-                    &what,
-                    Some(format!(
-                        "{POLICY_FILE} at {} declares no component {component}",
-                        self.head.revision()
-                    )),
-                )),
-                Some(declared) => {
-                    let tags = self
-                        .tags
-                        .entry(component.clone())
-                        .or_insert_with(|| self.history.tags(self.head, &declared.prefix));
-                    tagged(
-                        self.landing,
-                        self.history,
-                        self.head,
-                        tags,
-                        declared,
-                        version,
-                    )
-                }
-            },
-        }
-        .map_err(|not| never_absent(&what, not));
+        let rendered = self
+            .declared(component, &what)
+            .and_then(|declared| {
+                let tags = self.tags_of(&declared);
+                tagged(
+                    self.landing,
+                    self.history,
+                    self.head,
+                    &tags,
+                    &declared,
+                    version,
+                )
+            })
+            .map_err(|not| never_absent(&what, not));
         self.rendered.insert(key, rendered.clone());
         rendered
+    }
+
+    /// `component` as the policy file at the landed head declares it;
+    /// unreadable naming `what` where it declares none of that name, and
+    /// the file's own answer where it cannot be read.
+    fn declared(&self, component: &ComponentName, what: &str) -> Answer<Component> {
+        match &self.components {
+            Err(not) => Err(not.clone()),
+            Ok(components) => components
+                .iter()
+                .find(|c| c.name == *component)
+                .cloned()
+                .ok_or_else(|| {
+                    Not::unreadable(
+                        &Source::history(LOCAL),
+                        what,
+                        Some(format!(
+                            "{POLICY_FILE} at {} declares no component {component}",
+                            self.head.revision()
+                        )),
+                    )
+                }),
+        }
+    }
+
+    /// The tags of `component` the landed head reaches, read on the
+    /// first ask and the same answer on every ask after.
+    fn tags_of(&mut self, component: &Component) -> Answer<Vec<Tag>> {
+        self.tags
+            .entry(component.name.clone())
+            .or_insert_with(|| self.history.tags(self.head, &component.prefix))
+            .clone()
     }
 }
 
@@ -469,7 +490,7 @@ pub fn overview(seams: &Seams, history: &History, kept: &Kept, ask: &OverviewAsk
         Ok(heads) => {
             let mut changelog = Changelog::new(seams.landing.as_ref(), history, &heads.landed);
             let channels = channels_part(&heads, &mut changelog);
-            let environments = environments(seams, ask, &heads, &copy);
+            let environments = environments(seams, ask, &heads, &copy, &mut changelog);
             (Ok(channels), environments)
         }
     };
@@ -517,10 +538,11 @@ pub struct Environments {
     pub environments: Vec<EnvironmentStatus>,
 }
 
-/// 41, 97, 98, 132: one environment as status shows it: its name, its
-/// component, the channel it follows, whether it waits and on whom, what
-/// its channel moves on, what it should run, what it runs and its state,
-/// each its own answer (design D9).
+/// 41, 97, 98, 132, 134: one environment as status shows it: its name,
+/// its component, the channel it follows, whether it waits and on whom,
+/// what its channel moves on, what it should run, what it runs, its state
+/// and, where it is behind, the versions between, each its own answer
+/// (design D9).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct EnvironmentStatus {
     pub environment: EnvironmentName,
@@ -536,6 +558,11 @@ pub struct EnvironmentStatus {
     pub runs: Answer<Runs>,
     #[serde(serialize_with = "one_answer")]
     pub state: Answer<State>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        serialize_with = "some_answer"
+    )]
+    pub between: Option<Answer<Between>>,
 }
 
 /// 37, 41, 97, 132: what an environment's channel moves on, where it
@@ -584,6 +611,50 @@ pub enum State {
     Waiting,
 }
 
+/// 23, 134: the versions between what an environment that is behind
+/// runs and what it should, `ahead` where what it should run is higher by
+/// semantic precedence and `back` where it is lower: the component's
+/// releases the landed head reaches above the lower and at or below the
+/// higher, with the higher where it is a prerelease, ascending, each with
+/// its notes (design D8). One behind on the same version at another index
+/// is `ahead` with none.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Between {
+    pub direction: Direction,
+    pub versions: Vec<VersionBetween>,
+}
+
+/// Which way an environment that is behind moves to what it should run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Direction {
+    Ahead,
+    Back,
+}
+
+/// 134: one version between, by its version and its tag's revision,
+/// since status resolves no name in the store (60), with its notes
+/// rendered from the landed history as the channels' changelog renders
+/// them, or why they cannot be (rule core.19).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct VersionBetween {
+    pub version: Version,
+    pub revision: Revision,
+    #[serde(serialize_with = "one_answer")]
+    pub notes: Answer<String>,
+}
+
+/// 57: an answer given only where there is one, in the one form.
+fn some_answer<T: Serialize, S: Serializer>(
+    answer: &Option<Answer<T>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    match answer {
+        Some(answer) => answer_json(answer).serialize(serializer),
+        None => serializer.serialize_none(),
+    }
+}
+
 /// 31: where `channel`'s head puts it.
 fn head_at(channel: &Channel) -> HeadAt {
     match channel {
@@ -611,6 +682,7 @@ fn environments(
     ask: &OverviewAsk,
     heads: &Heads,
     copy: &ReportsCopy,
+    changelog: &mut Changelog<'_>,
 ) -> Answer<Environments> {
     let declared: Vec<DeclaredEnvironment> = seams
         .policy
@@ -630,7 +702,7 @@ fn environments(
     let mut fetch = Fetch::new(seams.store.as_ref(), copy, ask.at);
     let environments: Vec<EnvironmentStatus> = declared
         .iter()
-        .map(|declared| environment(seams, heads, &reporters, &mut fetch, declared))
+        .map(|declared| environment(seams, heads, &reporters, &mut fetch, changelog, declared))
         .collect();
     let mut counts = EnvironmentCounts::default();
     for environment in &environments {
@@ -647,15 +719,18 @@ fn environments(
     })
 }
 
-/// 40, 41, 88, 97, 98: one environment `declared`: what it should run,
-/// its channel's head as `heads` read it (rule core.50); what it runs, its
-/// newest counted report across that chain's indexes, as last read
-/// included; what its channel moves on; and its state from them.
+/// 40, 41, 88, 97, 98, 134: one environment `declared`: what it should
+/// run, its channel's head as `heads` read it (rule core.50); what it
+/// runs, its newest counted report across that chain's indexes, as last
+/// read included; what its channel moves on; its state from them; and,
+/// where it is behind, the versions between with their notes from
+/// `changelog`.
 fn environment(
     seams: &Seams,
     heads: &Heads,
     reporters: &Answer<Vec<NamedSigner>>,
     fetch: &mut Fetch<'_>,
+    changelog: &mut Changelog<'_>,
     declared: &DeclaredEnvironment,
 ) -> EnvironmentStatus {
     let channel = &declared.channel;
@@ -672,6 +747,15 @@ fn environment(
     };
     let moves_on = moves_on(heads, declared, listed.map(|(d, _)| d));
     let state = state(declared, &should, &runs, moves_on.as_ref());
+    let between = match (&state, &should, &runs) {
+        (Ok(State::Behind), Ok(HeadAt::At { version, .. }), Ok(runs)) => Some(between(
+            changelog,
+            &channel.component_name(),
+            version,
+            &runs.version,
+        )),
+        _ => None,
+    };
     EnvironmentStatus {
         environment: declared.name.clone(),
         component: channel.component_name(),
@@ -682,7 +766,74 @@ fn environment(
         should,
         runs,
         state,
+        between,
     }
+}
+
+/// 21, 23, 134: the versions between `runs` and `should` of `component`
+/// (design D8): which way it moves, and the releases of the component the
+/// landed head reaches above the lower of the two and at or below the
+/// higher by semantic precedence, with the higher where it is a
+/// prerelease, ascending, so their notes cover every commit between and
+/// none twice; each with its notes from `changelog`, rendered once per
+/// status and shared with the channels' changelogs, a version's notes
+/// that cannot be rendered its own answer (rule core.19). Unreadable,
+/// never empty, naming what stopped it, where the component's tags
+/// cannot be read or either end is no semantic version (58).
+fn between(
+    changelog: &mut Changelog<'_>,
+    component: &ComponentName,
+    should: &Version,
+    runs: &Version,
+) -> Answer<Between> {
+    let what = format!("the versions of {component} between {runs} and {should}");
+    let parse = |version: &Version| {
+        semver::Version::parse(version.as_str()).map_err(|e| {
+            Not::unreadable(
+                &Source::history(LOCAL),
+                &what,
+                Some(format!("{version} is no semantic version: {e}")),
+            )
+        })
+    };
+    let (higher, lower, direction) = match (parse(should)?, parse(runs)?) {
+        (should, runs) if should.cmp_precedence(&runs) == Ordering::Less => {
+            (runs, should, Direction::Back)
+        }
+        (should, runs) => (should, runs, Direction::Ahead),
+    };
+    let declared = changelog
+        .declared(component, &what)
+        .map_err(|not| never_absent(&what, not))?;
+    let tags = changelog
+        .tags_of(&declared)
+        .map_err(|not| never_absent(&what, not))?;
+    let mut tags: Vec<&Tag> = tags
+        .iter()
+        .filter(|t| {
+            t.version.cmp_precedence(&lower) == Ordering::Greater
+                && t.version.cmp_precedence(&higher) != Ordering::Greater
+                && (t.version.pre.is_empty()
+                    || t.version.cmp_precedence(&higher) == Ordering::Equal)
+        })
+        .collect();
+    tags.sort_by(|a, b| a.version.cmp_precedence(&b.version));
+    tags.dedup_by(|a, b| a.version.cmp_precedence(&b.version) == Ordering::Equal);
+    let versions = tags
+        .into_iter()
+        .map(|tag| {
+            let version = Version::new(&tag.name[declared.prefix.len()..]);
+            VersionBetween {
+                notes: changelog.notes(component, &version),
+                version,
+                revision: tag.revision.clone(),
+            }
+        })
+        .collect();
+    Ok(Between {
+        direction,
+        versions,
+    })
 }
 
 /// 131: a channel an environment follows that the policy does not list,
