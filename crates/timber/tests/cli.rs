@@ -965,7 +965,13 @@ fn the_built_binary_answers_status_from_the_hosts_record() {
         json["value"]["channels"]["answer"].is_string(),
         "no channels' part: {json}"
     );
-    assert_eq!(json["value"]["environments"]["answer"], "unreadable");
+    // The head is not landed: the environments carry the landing's
+    // refusal, as the channels do.
+    assert_eq!(json["value"]["environments"]["answer"], "refused", "{json}");
+    assert_eq!(
+        json["value"]["environments"], json["value"]["channels"],
+        "{json}"
+    );
 }
 
 // Requirement: Verify shows the notes the index names
@@ -1577,13 +1583,295 @@ fn status_as_text_names_each_channel_its_chain_newest_first_and_each_answer_apar
         "{printed}"
     );
     assert_eq!(lines[stable + 5..stable + 7], unread("0.1.0"), "{printed}");
+    // The policy declares no environment: four counts of none.
     let environments = at("environments");
-    assert!(
-        lines[environments + 1].contains("no target is read"),
+    assert_eq!(
+        lines[environments + 1],
+        "  0 running what they should, 0 behind, 0 waiting, 0 unreadable",
         "{printed}"
     );
     let published = at("published from this host");
     assert!(lines[published + 1].contains("holds no"), "{printed}");
+}
+
+// Requirement (environment-status): The environments on the command line
+
+/// The fake store's index of `version`, which the fake chains move to.
+fn index_of(version: &str) -> Digest {
+    Digest::of(format!("{version}'s index").as_bytes())
+}
+
+/// The fakes' report of `srv`, which follows `stable`, running `version`,
+/// converged at `converged_at`, from an apply at `at`, signed by the host
+/// and attached to the version's index.
+fn reported(host: &Host, version: &str, converged_at: &str, at: u64) {
+    let index = index_of(version);
+    let report = Reported {
+        environment: EnvironmentName::new("srv"),
+        component: ComponentName::new("repository"),
+        channel: ChannelName::new("stable"),
+        version: Version::new(version),
+        index: index.clone(),
+        runs: index.clone(),
+        converged_at: converged_at.into(),
+        at,
+    };
+    let envelope = host
+        .fakes
+        .signer
+        .sign(&report.claim(host.head.clone()), &SignerId::new("host"))
+        .unwrap();
+    host.fakes.store.attach(&index, &envelope).unwrap();
+}
+
+/// Over the host's fakes: 0.2.0 tagged at the head, 0.3.0 and 0.4.0 each
+/// at a feature of its own landed on `main` in turn; `stable` promoted
+/// to each in turn, every index held in the store; `srv` declared at the
+/// landed head following `stable`; and the policy letting the host
+/// report, whose one report says `srv` runs 0.2.0. The landed head and
+/// the revisions of 0.3.0 and 0.4.0.
+fn srv_behind(host: &Host) -> (Revision, [Revision; 2]) {
+    git(&host.repo, &["tag", "v0.2.0", host.head.as_str()]);
+    let mut revisions = Vec::new();
+    for version in ["0.3.0", "0.4.0"] {
+        fs::write(
+            host.repo.join("site/index.html"),
+            format!("<p>hello, {version}</p>"),
+        )
+        .unwrap();
+        git(
+            &host.repo,
+            &[
+                "commit",
+                "-q",
+                "-am",
+                &format!("feat: the site at {version}"),
+            ],
+        );
+        let revision = Revision::new(git(&host.repo, &["rev-parse", "HEAD"]));
+        git(
+            &host.repo,
+            &["tag", &format!("v{version}"), revision.as_str()],
+        );
+        host.fakes.landing.land(&Branch::new("main"), &revision);
+        revisions.push(revision);
+    }
+    let landed = revisions[1].clone();
+    declared(&host.fakes, "stable");
+    for version in ["0.2.0", "0.3.0", "0.4.0"] {
+        let held = host
+            .fakes
+            .store
+            .put_bytes(format!("{version}'s index").as_bytes())
+            .unwrap();
+        assert_eq!(held.digest, index_of(version));
+    }
+    chained(host, "stable", &["0.2.0", "0.3.0", "0.4.0"]);
+    host.fakes.policy.declares_at(
+        &landed,
+        DeclaredEnvironment {
+            name: EnvironmentName::new("srv"),
+            channel: stable(),
+            waits: false,
+            approvers: vec![],
+            target: None,
+        },
+    );
+    host.fakes.policy.require(
+        Audience::Layout,
+        Required::Layout {
+            claims: vec![],
+            given: false,
+            signers: vec![NamedSigner {
+                id: SignerId::new("host"),
+                verified_by: "the host's key".into(),
+                kinds: vec![ClaimKind::Report],
+                checks: vec![],
+            }],
+        },
+    );
+    reported(host, "0.2.0", "2026-11-05T09:00:00Z", 1_793_000_100);
+    (landed, [revisions[0].clone(), revisions[1].clone()])
+}
+
+/// `srv`'s line among `lines`: where it is.
+fn srv_line(lines: &[&str], printed: &str) -> usize {
+    lines
+        .iter()
+        .position(|l| l.starts_with("  srv  "))
+        .unwrap_or_else(|| panic!("no line for srv: {printed}"))
+}
+
+#[test]
+fn an_environment_behind_prints_its_line_and_the_notes_between_and_its_json_is_the_cores() {
+    let host = Host::new();
+    let (_, revisions) = srv_behind(&host);
+
+    let (code, json) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let part = &json["value"]["environments"];
+    assert_eq!(part["answer"], "ok", "{json}");
+    for (count, n) in [
+        ("converged", 0),
+        ("behind", 1),
+        ("waiting", 0),
+        ("unreadable", 0),
+    ] {
+        assert_eq!(part["value"][count], n, "{count}: {json}");
+    }
+    let srv = &part["value"]["environments"][0];
+    assert_eq!(srv["environment"], "srv");
+    assert_eq!(srv["state"]["value"], "behind", "{json}");
+    assert_eq!(srv["runs"]["value"]["version"], "0.2.0", "{json}");
+    assert_eq!(srv["should"]["value"]["version"], "0.4.0", "{json}");
+    let between = &srv["between"]["value"];
+    assert_eq!(between["direction"], "ahead", "{json}");
+    let versions = between["versions"]
+        .as_array()
+        .expect("the versions between");
+    assert_eq!(versions.len(), 2, "{json}");
+    let notes: Vec<String> = versions
+        .iter()
+        .zip(["0.3.0", "0.4.0"])
+        .zip(&revisions)
+        .map(|((v, version), revision)| {
+            assert_eq!(v["version"], version, "{json}");
+            assert_eq!(v["revision"], revision.as_str(), "{json}");
+            assert_eq!(v["notes"]["answer"], "ok", "{json}");
+            v["notes"]["value"].as_str().unwrap().to_string()
+        })
+        .collect();
+    assert!(notes[0].contains("- The site at 0.3.0"), "{}", notes[0]);
+    assert!(notes[1].contains("- The site at 0.4.0"), "{}", notes[1]);
+
+    // The JSON's part is the core's, value for value.
+    let history = History::open(&host.repo).unwrap();
+    let core = timber_core::overview(
+        &host.fakes.seams(),
+        &history,
+        &Kept::at(&history),
+        &timber_core::OverviewAsk {
+            branch: Branch::new("main"),
+            component: None,
+            revision: None,
+            at: json["value"]["asked_at"].as_u64().unwrap(),
+        },
+    );
+    assert_eq!(
+        *part,
+        answer_json(&Ok::<_, timber_seams::Not>(core))["value"]["environments"]
+    );
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let environments = lines
+        .iter()
+        .position(|l| *l == "environments")
+        .expect(&printed);
+    assert_eq!(
+        lines[environments + 1],
+        "  0 running what they should, 1 behind, 0 waiting, 0 unreadable",
+        "{printed}"
+    );
+    let srv = srv_line(&lines, &printed);
+    assert_eq!(srv, environments + 2, "{printed}");
+    assert_eq!(
+        lines[srv],
+        format!(
+            "  srv  behind on repository/stable: runs 0.2.0 ({}) since 2026-11-05T09:00:00Z; \
+             should run 0.4.0 ({})",
+            index_of("0.2.0"),
+            index_of("0.4.0")
+        ),
+        "{printed}"
+    );
+    assert_eq!(
+        lines[srv + 1],
+        "       ahead, the versions between:",
+        "{printed}"
+    );
+    let mut beneath = srv + 2;
+    for ((version, revision), text) in ["0.3.0", "0.4.0"].iter().zip(&revisions).zip(&notes) {
+        assert_eq!(
+            lines[beneath],
+            format!("         {version} at {revision}"),
+            "{printed}"
+        );
+        let shown: Vec<String> = text
+            .lines()
+            .map(|l| format!("           {l}").trim_end().to_string())
+            .collect();
+        assert_eq!(
+            lines[beneath + 1..beneath + 1 + shown.len()],
+            shown,
+            "{printed}"
+        );
+        beneath += 1 + shown.len();
+    }
+    assert_eq!(lines[beneath], "", "{printed}");
+}
+
+// Requirement (environment-status): The copy answers where the store does
+// not
+
+#[test]
+fn the_store_unreachable_after_a_fetch_prints_what_each_environment_ran_as_last_fetched() {
+    let host = Host::new();
+    srv_behind(&host);
+    let (code, first) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{first}");
+    let first: Value = serde_json::from_str(&first).unwrap();
+    let fetched = first["value"]["asked_at"].as_u64().unwrap();
+    let srv = &first["value"]["environments"]["value"]["environments"][0];
+    assert_eq!(srv["runs"]["value"]["read"], "source", "{first}");
+
+    const WORDS: &str = "dial tcp 10.0.0.1:443: connect: connection refused";
+    host.fakes.store.fault(
+        StoreOp::ClaimsOf,
+        Fault::Unreadable(WORDS.into()),
+        Times::UntilHealed,
+    );
+    let (code, json) = host.run(&["status", "--json"]);
+    assert_eq!(code, 0, "{json}");
+    let json: Value = serde_json::from_str(&json).unwrap();
+    let again = &json["value"]["environments"]["value"]["environments"][0];
+    assert_eq!(again["state"], srv["state"], "{json}");
+    assert_eq!(again["between"], srv["between"], "{json}");
+    for key in ["version", "index", "converged_at", "at", "claim", "signer"] {
+        assert_eq!(
+            again["runs"]["value"][key], srv["runs"]["value"][key],
+            "{key}"
+        );
+    }
+    assert_eq!(
+        again["runs"]["value"]["read"],
+        serde_json::json!({ "kept": { "at": fetched, "said": WORDS } }),
+        "{json}"
+    );
+
+    let (code, printed) = host.run(&["status"]);
+    assert_eq!(code, 0, "{printed}");
+    let lines: Vec<&str> = printed.lines().collect();
+    let srv = srv_line(&lines, &printed);
+    assert!(
+        lines[srv].starts_with("  srv  behind on repository/stable: runs 0.2.0 ("),
+        "{printed}"
+    );
+    assert!(
+        lines[srv].ends_with(&format!(
+            "; reports as last fetched {}",
+            timber::render::utc(fetched)
+        )),
+        "{printed}"
+    );
+    assert_eq!(lines[srv + 1], WORDS, "{printed}");
+    assert_eq!(
+        lines[srv + 2],
+        "       ahead, the versions between:",
+        "{printed}"
+    );
 }
 
 // Requirement (channel-status): A channel's changelog is its chain read

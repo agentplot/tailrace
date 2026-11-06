@@ -232,7 +232,108 @@
         "converged": 0,
         "behind": 0,
         "waiting": 0,
-        "unreadable": 2
+        "unreadable": 2,
+        "environments": [
+          {
+            "environment": "prod",
+            "component": "app",
+            "channel": "stable",
+            "waits": false,
+            "approvers": [],
+            "should": {
+              "answer": "refused",
+              "refused": {
+                "source": {
+                  "seam": "keeper",
+                  "profile": "git ref, origin"
+                },
+                "why": {
+                  "fork": {
+                    "predecessor": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "claims": [
+                      "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                      "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                    ]
+                  }
+                },
+                "said": "error: two claims name one predecessor\n\tsee the ledger's \u001b[31mlog\u001b[0m\n"
+              }
+            },
+            "runs": {
+              "answer": "refused",
+              "refused": {
+                "source": {
+                  "seam": "keeper",
+                  "profile": "git ref, origin"
+                },
+                "why": {
+                  "fork": {
+                    "predecessor": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "claims": [
+                      "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                      "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                    ]
+                  }
+                },
+                "said": "error: two claims name one predecessor\n\tsee the ledger's \u001b[31mlog\u001b[0m\n"
+              }
+            },
+            "state": {
+              "answer": "refused",
+              "refused": {
+                "source": {
+                  "seam": "keeper",
+                  "profile": "git ref, origin"
+                },
+                "why": {
+                  "fork": {
+                    "predecessor": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "claims": [
+                      "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                      "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                    ]
+                  }
+                },
+                "said": "error: two claims name one predecessor\n\tsee the ledger's \u001b[31mlog\u001b[0m\n"
+              }
+            }
+          },
+          {
+            "environment": "web",
+            "component": "app",
+            "channel": "beta",
+            "waits": false,
+            "approvers": [],
+            "should": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "version": "1.2.0",
+                "index": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+              }
+            },
+            "runs": {
+              "answer": "absent",
+              "absent": {
+                "source": {
+                  "seam": "store",
+                  "profile": "bound"
+                },
+                "what": "a counted report of environment web of app"
+              }
+            },
+            "state": {
+              "answer": "absent",
+              "absent": {
+                "source": {
+                  "seam": "store",
+                  "profile": "bound"
+                },
+                "what": "a counted report of environment web of app"
+              }
+            }
+          }
+        ]
       }
     },
     "published": {

@@ -1,14 +1,16 @@
-//! The serving process's pages (57, 59, 132, 134; design D8): each one HTML
-//! document, its styles inline and no script, rendered from one answer
-//! of the core and nothing else (rule core.31). Every string is escaped,
+//! The serving process's pages (57, 59, 98, 132, 134; design D8): each one
+//! HTML document, its styles inline and no script, rendered from one
+//! answer of the core and nothing else (rule core.31), every environment
+//! with the notes between among it. Every string is escaped,
 //! and every refusal and unreadable answer is shown with the source's
 //! own words in a `<pre>` of their own.
 
 use std::fmt::Write as _;
 
 use timber_core::{
-    Channel, ChannelStatus, Channels, EnvironmentCounts, HeadAt, Logged, Overview, Repositories,
-    RepositoryName, Row, Status,
+    Between, Channel, ChannelStatus, Channels, Direction, EnvironmentCounts, EnvironmentStatus,
+    Environments, HeadAt, Logged, MovesOn, Overview, Repositories, RepositoryName, Row, State,
+    Status,
 };
 use timber_seams::{Answer, ComponentName, Digest, Moves, Not, Promotion, Read};
 
@@ -152,8 +154,9 @@ fn row_html(body: &mut String, row: &Row) {
 /// 132: `repository`'s page, from its status answer: its channels by
 /// component, each with its version or empty or its own answer and its
 /// chain newest first, each promotion with the notes of the version it
-/// moved to, then the environments and what this host published, each
-/// version with its notes beneath it (134).
+/// moved to, then every environment with the notes between beside one
+/// that is behind, and what this host published, each version with its
+/// notes beneath it (98, 134).
 pub fn repository(repository: &RepositoryName, answer: &Answer<Overview>) -> String {
     let mut body = String::from("<p><a href=\"/\">Every repository on this host</a></p>\n");
     let _ = writeln!(body, "<h1>{}</h1>", escape(&repository.to_string()));
@@ -188,11 +191,7 @@ fn overview_html(body: &mut String, overview: &Overview) {
             );
         }
     }
-    let _ = writeln!(
-        body,
-        "<h2>Environments</h2>\n<p>{}</p>",
-        environments(&overview.environments)
-    );
+    environments_html(body, &overview.environments);
     body.push_str("<h2>Published from this host</h2>\n");
     published(body, &overview.published);
 }
@@ -336,6 +335,168 @@ fn notes_html(notes: &Answer<String>) -> String {
         Ok(text) => format!("<pre>{}</pre>", escape(text)),
         Err(not) => self::not(not),
     }
+}
+
+/// 98, 132, 134: the environments' four counts, then a table of every
+/// environment: the channel it follows, its state, what it runs and since
+/// when, what it should run and what its channel moves on, and beside one
+/// that is behind the versions between, each with its notes escaped in
+/// a `<pre>`; or the part's own answer (design D10).
+fn environments_html(body: &mut String, answer: &Answer<Environments>) {
+    body.push_str("<h2>Environments</h2>\n");
+    let part = match answer {
+        Ok(part) => part,
+        Err(not) => {
+            let _ = writeln!(body, "<p>{}</p>", self::not(not));
+            return;
+        }
+    };
+    let _ = writeln!(body, "<p>{}</p>", environments(&Ok(part.counts.clone())));
+    if part.environments.is_empty() {
+        body.push_str("<p>The policy declares no environment.</p>\n");
+        return;
+    }
+    body.push_str(
+        "<table>\n<tr><th>environment</th><th>follows</th><th>state</th><th>runs</th>\
+         <th>should run</th><th>moves on</th></tr>\n",
+    );
+    for environment in &part.environments {
+        environment_html(body, environment);
+    }
+    body.push_str("</table>\n");
+}
+
+/// 41, 43, 97, 98: one environment's row, each answer in its own cell
+/// with its source's words, a reason its state gives that no other cell
+/// shows beside the state; then, where it is behind, the versions
+/// between on a row of their own (58, 59).
+fn environment_html(body: &mut String, environment: &EnvironmentStatus) {
+    let mut shown: Vec<&Not> = Vec::new();
+    let runs = match &environment.runs {
+        Ok(runs) => {
+            let mut cell = format!(
+                "{} <code>{}</code> since {}",
+                escape(runs.version.as_str()),
+                escape(runs.index.as_str()),
+                escape(&runs.converged_at)
+            );
+            if let Read::Kept { at, said } = &runs.read {
+                let _ = write!(
+                    cell,
+                    ", reports as last fetched {}<pre>{}</pre>",
+                    utc(*at),
+                    escape(said)
+                );
+            }
+            cell
+        }
+        Err(not) => {
+            shown.push(not);
+            self::not(not)
+        }
+    };
+    let should = match &environment.should {
+        Ok(at) => head_html(at),
+        Err(not) => {
+            shown.push(not);
+            self::not(not)
+        }
+    };
+    let moves_on = match &environment.moves_on {
+        Some(MovesOn::Asking { bound_to, at }) => {
+            let whom = if environment.approvers.is_empty() {
+                "any asker the gate verifies".to_string()
+            } else {
+                environment
+                    .approvers
+                    .iter()
+                    .map(|a| escape(a.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(" or ")
+            };
+            let at = match at {
+                Ok(at) => head_html(at),
+                Err(not) => {
+                    shown.push(not);
+                    self::not(not)
+                }
+            };
+            format!("waits on {whom} for {} at {at}", escape(bound_to.as_str()))
+        }
+        Some(MovesOn::Reports { after }) => format!(
+            "after {}",
+            after
+                .iter()
+                .map(|a| escape(a.as_str()))
+                .collect::<Vec<_>>()
+                .join(" and ")
+        ),
+        None => String::new(),
+    };
+    let state = match &environment.state {
+        Ok(State::Converged) => "running what it should".to_string(),
+        Ok(State::Behind) => "behind".to_string(),
+        Ok(State::Waiting) => "waiting on a person".to_string(),
+        Err(not) if shown.contains(&not) => "unreadable".to_string(),
+        Err(not) => format!("unreadable: {}", self::not(not)),
+    };
+    let _ = writeln!(
+        body,
+        "<tr><td>{}</td><td>{}/{}</td><td>{state}</td><td>{runs}</td><td>{should}</td>\
+         <td>{moves_on}</td></tr>",
+        escape(environment.environment.as_str()),
+        escape(environment.component.as_str()),
+        escape(environment.channel.as_str())
+    );
+    if let Some(between) = &environment.between {
+        let _ = writeln!(
+            body,
+            "<tr><td></td><td colspan=\"5\">{}</td></tr>",
+            between_html(between)
+        );
+    }
+}
+
+/// Where a channel's head puts an environment: a version and its index,
+/// or empty.
+fn head_html(at: &HeadAt) -> String {
+    match at {
+        HeadAt::At { version, index } => format!(
+            "{} <code>{}</code>",
+            escape(version.as_str()),
+            escape(index.as_str())
+        ),
+        HeadAt::Empty => "nothing, its channel is empty".to_string(),
+    }
+}
+
+/// 23, 134: the versions between, each by its version and its tag's
+/// revision with its notes escaped in a `<pre>` beneath, or why they
+/// cannot be read (58; design D8).
+fn between_html(answer: &Answer<Between>) -> String {
+    let between = match answer {
+        Ok(between) => between,
+        Err(not) => return self::not(not),
+    };
+    let which = match between.direction {
+        Direction::Ahead => "ahead, the versions between",
+        Direction::Back => "back, the versions whose changes it leaves",
+    };
+    if between.versions.is_empty() {
+        return format!("{which}: none");
+    }
+    let mut html = format!("{which}:<ol class=\"chain\">");
+    for version in &between.versions {
+        let _ = write!(
+            html,
+            "<li>{} at <code>{}</code>{}</li>",
+            escape(version.version.as_str()),
+            escape(version.revision.as_str()),
+            notes_html(&version.notes)
+        );
+    }
+    html.push_str("</ol>");
+    html
 }
 
 /// 98: the environments' four counts, or the part's own answer.

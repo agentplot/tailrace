@@ -16,7 +16,7 @@ use timber_seams::{Answer, NamedSigner, Not, Signer, SignerId};
 
 use crate::bindings::{path_of, unreadable};
 use host_key::{public_half, HostKey};
-use kms::{KeyArn, Kms};
+use kms::{KeyArn, Kms, Reach};
 
 /// What the host signs with: the identity `[signing]` names and its key,
 /// or the given host key where the file names no `[signing]`.
@@ -246,6 +246,20 @@ pub fn bind(signing: Option<&Signing>) -> Vec<Box<dyn Signer>> {
             }
         })
         .collect()
+}
+
+/// The signers status binds, whatever `[signing]` names (60; the design
+/// D5 of the change that reads environments in status): both profiles
+/// verify-only, as [`plan`] orders them for a host that signs nothing,
+/// the host key verifying by the key text the policy lists and the key
+/// service profile reaching no service, so a claim only a key service
+/// could tell is unreadable naming the key (C.7). Nothing is read or
+/// reached.
+pub fn unreaching() -> Vec<Box<dyn Signer>> {
+    vec![
+        Box::new(HostKey::verifying()),
+        Box::new(Kms::verifying().reaching(Reach::None)),
+    ]
 }
 
 /// The host's own signer, which the host trusts for reading, so it

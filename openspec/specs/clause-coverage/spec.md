@@ -18,7 +18,7 @@ adopts it.
 #### Scenario: The clauses listed
 
 - **WHEN** the suite's list of clauses is read
-- **THEN** it holds every number from 1 to 132 exactly once, each under its section of Part A or Part B as agentplot/blueprints 157c828 places it, 132 after 60 in A.10, and names that revision as the one it was read at
+- **THEN** it holds every number from 1 to 143 exactly once, each under its section of Part A or Part B as agentplot/blueprints 90cf023 places it, 141, 142 and 143 after 13 in A.2, and names that revision as the one it was read at
 
 ### Requirement: A clause cited by nothing fails the suite
 
@@ -123,3 +123,16 @@ naming a part with no unit or no reason (core.33, section 12).
 
 - **WHEN** the register is read as this unit leaves it
 - **THEN** it names as parts 132's environments, with the four counts of each repository's row, for the first target, and 132's notes, for the notes unit; 36 leaves the clauses that wait, 98 waits on the first target, and 114 still waits on bolt 5's first served projection, whose served layout will cite it
+
+### Requirement: The clauses the statement added through 143 wait named
+
+Each of 141, 142 and 143 that no scenario cites SHALL be named in the
+register in the commit that adopts the statement holding it: 141 with
+the unit `every-claim-takes-the-catalogued-kind-that-carries-it`, and
+142 and 143 with phase 2's keyless signing, each with its reason (rule
+core.33, section 12).
+
+#### Scenario: The register after the statement is adopted
+
+- **WHEN** the coverage check runs after the commit that adopts agentplot/blueprints 90cf023
+- **THEN** 141 is pending with its unit, 142 and 143 are pending with phase 2, each with its reason, and the check passes

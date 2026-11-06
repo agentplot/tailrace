@@ -1,8 +1,9 @@
 //! How the profile reaches KMS (design D5, D6): the host's own AWS
-//! chain, or for a test what it is given. Every call runs on a runtime
-//! made for it, with the credentials resolved once at its start, and
-//! drops the runtime, the client and the credentials before it answers,
-//! so nothing outlives a call (64, rule core.21).
+//! chain, for a test what it is given, or, for status, not at all (60).
+//! Every call runs on a runtime made for it, with the credentials
+//! resolved once at its start, and drops the runtime, the client and the
+//! credentials before it answers, so nothing outlives a call (64, rule
+//! core.21).
 
 use std::error::Error;
 use std::fmt::Debug;
@@ -39,6 +40,12 @@ pub enum Reach {
         http: SharedHttpClient,
         endpoint: Option<String>,
     },
+    /// No service at all, as status binds the profile, which reaches no
+    /// signer (60; the design D5 of the change that reads environments
+    /// in status): every call that would ask KMS answers that status
+    /// reaches none, with no AWS file read and no credential or client
+    /// made.
+    None,
 }
 
 /// The HTTPS client the profile reaches KMS through: rustls on ring, the
@@ -58,6 +65,8 @@ pub(super) enum Failure {
     Kms { code: String, words: String },
     /// KMS could not be reached, or its answer read, in the SDK's words.
     Unreached(String),
+    /// The profile is bound to reach no service, as status binds it (60).
+    NoService,
 }
 
 impl Failure {
@@ -91,7 +100,8 @@ pub(super) struct Session {
 impl Reach {
     /// A session for one call, in `region` for the host's chain: a
     /// current-thread runtime made now and the credentials resolved
-    /// once, `Failure::NoCredentials` where none are found.
+    /// once, `Failure::NoCredentials` where none are found;
+    /// `Failure::NoService`, making nothing, where it reaches none.
     pub(super) fn open(&self, region: &str) -> Result<Session, Failure> {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -135,6 +145,7 @@ impl Reach {
                     None => config,
                 }
             }
+            Reach::None => return Err(Failure::NoService),
         };
         Ok(Session { runtime, config })
     }

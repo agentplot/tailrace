@@ -1,13 +1,16 @@
 //! `timber status`: where each channel the policy declares is and the
 //! chain of promotions that put it there, read from the ledger, each
-//! promotion with the notes of the version it moved to, the
-//! environments, unreadable while no target is read, and the versions
-//! this host published, from its own record, each with its notes; every
-//! version's notes rendered from the repository's own history, on any
-//! machine, one that never published included (31, 33, 36, 56 to 61, 98,
-//! 134). It is bound to
-//! the landing, the policy and the ledger alone, asks no store, signer or
-//! target, and writes nothing (60, rule core.32). It reads the asker's
+//! promotion with the notes of the version it moved to; every
+//! environment the policy declares with its state, what it runs, read
+//! from its reports in the store, what it should run, what it waits on
+//! and, beside one that is behind, the notes of every version between;
+//! and the versions this host published, from its own record, each with
+//! its notes; every version's notes rendered from the repository's own
+//! history, on any machine, one that never published included (31, 33,
+//! 36, 56 to 61, 98, 132, 134; design D10). It is bound to
+//! the landing, the policy, the ledger and the store, opened and never
+//! made, reaches no signer or target, and writes nothing but the host's
+//! copy of a chain or of the reports (60, rule core.32). It reads the asker's
 //! time from the clock and hands it to the core, which reads none.
 //!
 //! `--page` asks another question: where the repository's own page is.
@@ -24,11 +27,12 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 use timber_core::{
-    overview, overview_unbound, Channel, ChannelStatus, Channels, EnvironmentCounts, History, Kept,
-    Logged, Overview, OverviewAsk, Status,
+    overview, overview_unbound, Between, Channel, ChannelStatus, Channels, Direction,
+    EnvironmentCounts, EnvironmentStatus, Environments, HeadAt, History, Kept, Logged, MovesOn,
+    Overview, OverviewAsk, State, Status,
 };
 use timber_seams::{
-    Answer, Branch, ComponentName, Digest, Moves, Not, Promotion, Read, Seam, Source,
+    Answer, Branch, ChannelName, ComponentName, Digest, Moves, Not, Promotion, Read, Seam, Source,
 };
 
 use crate::commands::serve::{self, host, host::Host};
@@ -360,17 +364,177 @@ fn words(out: &mut dyn Write, said: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// 98: how many environments run what they should, are behind, wait or
-/// cannot be read, or the part's own answer.
-fn environments(out: &mut dyn Write, answer: &Answer<EnvironmentCounts>) -> io::Result<()> {
-    match answer {
-        Ok(counts) => writeln!(
-            out,
-            "  {} running what they should, {} behind, {} waiting, {} unreadable",
-            counts.converged, counts.behind, counts.waiting, counts.unreadable
-        ),
-        Err(not) => render::not(out, "  ", not),
+/// 98, 132: how many environments run what they should, are behind,
+/// wait or cannot be read, then each environment on a line of its own,
+/// or the part's own answer (design D10).
+fn environments(out: &mut dyn Write, answer: &Answer<Environments>) -> io::Result<()> {
+    let part = match answer {
+        Ok(part) => part,
+        Err(not) => return render::not(out, "  ", not),
+    };
+    counts(out, &part.counts)?;
+    let width = part
+        .environments
+        .iter()
+        .map(|e| e.environment.as_str().len())
+        .max()
+        .unwrap_or(0);
+    for environment in &part.environments {
+        self::environment(out, environment, width)?;
     }
+    Ok(())
+}
+
+/// The four counts on one line.
+fn counts(out: &mut dyn Write, counts: &EnvironmentCounts) -> io::Result<()> {
+    writeln!(
+        out,
+        "  {} running what they should, {} behind, {} waiting, {} unreadable",
+        counts.converged, counts.behind, counts.waiting, counts.unreadable
+    )
+}
+
+/// 41, 43, 97, 98, 134: one environment's line: its state and the channel
+/// it follows, what it runs with when it converged, what it should run,
+/// what its channel moves on, and where its reports were read from the
+/// host's copy, when they were fetched; then, beneath, the store's words,
+/// each answer given in place of one of those with its source's words,
+/// once where several are one answer, and the notes of every version
+/// between (58, 59, 60; design D10).
+fn environment(
+    out: &mut dyn Write,
+    environment: &EnvironmentStatus,
+    width: usize,
+) -> io::Result<()> {
+    let state = match &environment.state {
+        Ok(State::Converged) => "running what it should",
+        Ok(State::Behind) => "behind",
+        Ok(State::Waiting) => "waiting",
+        Err(_) => "unreadable",
+    };
+    let mut parts = Vec::new();
+    let mut reasons: Vec<&Not> = Vec::new();
+    match &environment.runs {
+        Ok(runs) => parts.push(format!(
+            "runs {} ({}) since {}",
+            runs.version, runs.index, runs.converged_at
+        )),
+        Err(not) => reasons.push(not),
+    }
+    match &environment.should {
+        Ok(at) => parts.push(format!("should run {}", head(at, &environment.channel))),
+        Err(not) => reasons.push(not),
+    }
+    match &environment.moves_on {
+        Some(MovesOn::Asking { bound_to, at }) => {
+            let approvers: Vec<&str> = environment.approvers.iter().map(|a| a.as_str()).collect();
+            let whom = if approvers.is_empty() {
+                "any asker the gate verifies".to_string()
+            } else {
+                approvers.join(" or ")
+            };
+            match at {
+                Ok(at) => parts.push(format!(
+                    "waits on {whom} for {bound_to} at {}",
+                    head(at, bound_to)
+                )),
+                Err(not) => {
+                    parts.push(format!("waits on {whom} for {bound_to}"));
+                    reasons.push(not);
+                }
+            }
+        }
+        Some(MovesOn::Reports { after }) => {
+            let after: Vec<&str> = after.iter().map(|a| a.as_str()).collect();
+            parts.push(format!("after {}", after.join(" and ")));
+        }
+        None => {}
+    }
+    let kept = match &environment.runs {
+        Ok(runs) => match &runs.read {
+            Read::Kept { at, said } => {
+                parts.push(format!("reports as last fetched {}", render::utc(*at)));
+                Some(said)
+            }
+            Read::Source => None,
+        },
+        Err(_) => None,
+    };
+    if let Err(not) = &environment.state {
+        reasons.push(not);
+    }
+    // One reason said once: a chain that cannot be read is what the
+    // environment should run, what it runs and its state alike.
+    let mut once: Vec<&Not> = Vec::new();
+    for not in reasons {
+        if !once.contains(&not) {
+            once.push(not);
+        }
+    }
+    write!(
+        out,
+        "  {:<width$}  {state} on {}/{}",
+        environment.environment.as_str(),
+        environment.component,
+        environment.channel
+    )?;
+    if parts.is_empty() {
+        writeln!(out)?;
+    } else {
+        writeln!(out, ": {}", parts.join("; "))?;
+    }
+    if let Some(said) = kept {
+        words(out, said)?;
+    }
+    let indent = " ".repeat(width + 4);
+    for not in once {
+        render::not(out, &indent, not)?;
+    }
+    match &environment.between {
+        Some(between) => self::between(out, &indent, between),
+        None => Ok(()),
+    }
+}
+
+/// Where a channel's head puts an environment: a version and its index,
+/// or nothing where `channel` is empty.
+fn head(at: &HeadAt, channel: &ChannelName) -> String {
+    match at {
+        HeadAt::At { version, index } => format!("{version} ({index})"),
+        HeadAt::Empty => format!("nothing, {channel} is empty"),
+    }
+}
+
+/// 23, 134: the versions between what an environment that is behind runs
+/// and what it should, each by its version and its tag's revision with
+/// its notes beneath it, as the changelog's are printed, or why they
+/// cannot be read (58; design D8).
+fn between(out: &mut dyn Write, indent: &str, answer: &Answer<Between>) -> io::Result<()> {
+    let between = match answer {
+        Ok(between) => between,
+        Err(not) => return render::not(out, indent, not),
+    };
+    let which = match between.direction {
+        Direction::Ahead => "ahead, the versions between",
+        Direction::Back => "back, the versions whose changes it leaves",
+    };
+    if between.versions.is_empty() {
+        return writeln!(out, "{indent}{which}: none");
+    }
+    writeln!(out, "{indent}{which}:")?;
+    let notes_at = format!("{indent}    ");
+    for version in &between.versions {
+        writeln!(out, "{indent}  {} at {}", version.version, version.revision)?;
+        match &version.notes {
+            Ok(text) => {
+                for line in text.lines() {
+                    writeln!(out, "{}", format!("{notes_at}{line}").trim_end())?;
+                }
+            }
+            Err(not) => render::not(out, &notes_at, not)?,
+        }
+    }
+    Ok(())
 }
 
 fn published(out: &mut dyn Write, answer: &Answer<Status>) -> io::Result<()> {

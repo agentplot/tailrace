@@ -27,16 +27,15 @@
 
 use serde::{Deserialize, Serialize, Serializer};
 use timber_seams::{
-    Answer, AskedOf, Audience, Branch, ChannelId, ChannelName, Claim, ClaimKind, Component,
-    ComponentName, Digest, Environment, EnvironmentName, Held, Manifest, NamedSigner, Not, Read,
-    Required, RequiredClaim, Revision, Running, Seam, Seams, SignerId, Source, Verified, Version,
-    Why,
+    Answer, Audience, Branch, ChannelId, ChannelName, Claim, ClaimKind, Component, ComponentName,
+    Digest, Environment, EnvironmentName, Held, Manifest, Not, Read, Revision, Running, Seam,
+    Seams, SignerId, Source, Verified, Version, Why,
 };
 
 use crate::ledger::judge;
 use crate::{
-    answer_json, channel, chosen, newest, policy_at, Channel, Declared, History, Landed, BOUND,
-    LOCAL,
+    answer_json, channel, chosen, newest, policy_at, reporters, Channel, Declared, History, Landed,
+    BOUND, LOCAL,
 };
 
 /// What an apply is asked: the environment of that name in the one
@@ -333,15 +332,9 @@ fn reported(
     // count through the signers the policy lets report, answered where it
     // names the head already (design D8).
     if c.already {
-        let required = RequiredClaim {
-            kind: ClaimKind::Report,
-            check: None,
-            environment: Some(environment.clone()),
-            signers: reporters(seams, c.at_head)?,
-            asked_of: AskedOf::Every,
-        };
+        let reporters = reporters(seams, c.at_head)?;
         let channel = &c.environment.channel;
-        match newest(seams, environment, &c.component.name, channel, &required) {
+        match newest(seams, environment, &c.component.name, channel, &reporters) {
             Ok(held) if held.report.index == *c.index => return Ok(held.claim),
             Ok(_) | Err(Not::Absent(_)) => {}
             Err(not) => return Err(not),
@@ -399,20 +392,4 @@ fn tagged(c: &Converged<'_>) -> Answer<Revision> {
                 format!("tag {tag} reached from {}", c.at_head.revision()),
             )
         })
-}
-
-/// 116, C.10: the signers the policy at `landed` lets claim a report,
-/// read from the signers its answer for a layout carries, each with what
-/// it may claim, the one answer that lists every signer the policy names;
-/// none where it declares no policy for a layout.
-fn reporters(seams: &Seams, landed: &Landed) -> Answer<Vec<NamedSigner>> {
-    let signers = match policy_at(seams.policy.as_ref(), landed, &Audience::Layout) {
-        Ok(Required::Layout { signers, .. }) => signers,
-        Ok(_) | Err(Not::Absent(_)) => Vec::new(),
-        Err(not) => return Err(not),
-    };
-    Ok(signers
-        .into_iter()
-        .filter(|s| s.kinds.contains(&ClaimKind::Report))
-        .collect())
 }

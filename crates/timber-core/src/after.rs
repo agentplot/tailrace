@@ -1,15 +1,20 @@
 //! An environment's newest report, read across its channel's chain, and
 //! each channel an `after` makes moved to what the environments it comes
-//! after last reported (37, 41, 43, 83, 91, 97, C.10, C.12, rules
-//! core.7, core.34, core.50; design D8, D9).
+//! after last reported (37, 41, 43, 83, 91, 97, 98, C.10, C.12, rules
+//! core.7, core.34, core.42, core.50; record 0028's design D8, D9, and
+//! the design D3 of the change that reads environments in status).
 //!
 //! Every version an environment ran came to it through its channel (40,
 //! rule core.16), so the claims attached to the indexes the channel's
-//! chain moved to hold every report of it. A report counts only through
-//! a signer the requirement names that may claim one (rule core.7), and
-//! the newest is the one whose apply came last by the moment it names,
-//! never by the time the target says it converged, which is the
-//! machine's clock (design D8). Reading writes nothing.
+//! chain moved to hold every report of it. Reading them ([`reports`]) and
+//! counting them ([`newest_of`]) are apart, so the gate and apply read
+//! the chain and the store with no copy ([`newest`]) and status reads
+//! them through the host's copy, each counting alike. A report counts
+//! only through a signer the policy lets claim one ([`reporters`], rule
+//! core.7), and the newest is the one whose apply came last by the
+//! moment it names, never by the time the target says it converged,
+//! which is the machine's clock. Reports are told newest first and none
+//! older than the first that counts is told. Reading writes nothing.
 //!
 //! A channel an `after` makes moves only where every environment it
 //! comes after last reported one index, and then by the one move a
@@ -23,9 +28,9 @@
 use serde::{Serialize, Serializer};
 use serde_json::{json, Value};
 use timber_seams::{
-    Answer, AskedOf, Audience, Branch, ChannelId, Claim, ClaimKind, ComponentName, DeclaredChannel,
-    DeclaredEnvironment, Digest, Envelope, EnvironmentName, Moved, Moves, Not, Required,
-    RequiredClaim, Seam, Seams, SignerId, Source, Why,
+    Answer, Audience, Branch, ChannelId, Claim, ClaimKind, ComponentName, DeclaredChannel,
+    DeclaredEnvironment, Digest, Envelope, EnvironmentName, Moved, Moves, NamedSigner, Not,
+    Required, Seam, Seams, SignerId, Source, Why,
 };
 
 use crate::ledger::{held, moved, promotion_of, Asked, Move};
@@ -42,39 +47,54 @@ pub struct Newest {
     pub report: Reported,
 }
 
-/// 40, 43, 91, rule core.50: the newest report of `environment` of
-/// `component`, which follows `channel`: the claims attached to each
-/// index `channel`'s chain moved to, once each in the order the chain
-/// first moved to it, the reports of that environment and component
-/// among them that count through the signers `required` names (rule
-/// core.7), and of those the one with the latest `at`, the later in that
-/// order where two name one moment. Absent naming the environment where
-/// none counts; unreadable naming the chain where the ledger answers it
-/// as last read or cannot read it (60), and naming the index whose claims
-/// the store could not read (58).
-pub fn newest(
-    seams: &Seams,
+/// 43, 91, rule core.7: an environment's newest report and the signer
+/// the policy names that made it, which counted it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Counted {
+    pub newest: Newest,
+    pub signer: SignerId,
+}
+
+/// One report claim as read, not yet counted: the index it is attached
+/// to, its envelope, and what it reports.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ReportClaim {
+    pub index: Digest,
+    pub envelope: Envelope,
+    pub report: Reported,
+}
+
+/// 43, 91: the report claims of `environment` of `component` attached to
+/// the indexes its channel's chain moved to, in chain order, none yet
+/// counted (design D3).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Reports {
+    pub environment: EnvironmentName,
+    pub component: ComponentName,
+    pub attached: Vec<ReportClaim>,
+}
+
+/// 40, 43, 91, rule core.50: the report claims of `environment` of
+/// `component` attached to each of `indexes`, each index asked of
+/// `claims_of` once, in the order given, which is the order the chain
+/// first moved to it, and each index's claims in the order it answers
+/// them; read by body and not yet counted (design D3). What `claims_of`
+/// answers in place of an index's claims is the answer, the first in
+/// that order.
+pub fn reports(
+    claims_of: &mut dyn FnMut(&Digest) -> Answer<Vec<Envelope>>,
+    indexes: &[Digest],
     environment: &EnvironmentName,
     component: &ComponentName,
-    channel: &ChannelId,
-    required: &RequiredClaim,
-) -> Answer<Newest> {
-    // 1: the chain of the channel the environment follows (rule
-    // core.50), and each index it moved to, once.
-    let mut indexes: Vec<Digest> = Vec::new();
-    for envelope in held(seams.keeper.as_ref(), channel)? {
-        let index = promotion_of(channel, &envelope)?.to.index;
-        if !indexes.contains(&index) {
-            indexes.push(index);
+) -> Answer<Reports> {
+    let mut asked: Vec<&Digest> = Vec::new();
+    let mut attached = Vec::new();
+    for index in indexes {
+        if asked.contains(&index) {
+            continue;
         }
-    }
-
-    // 2, 3: the reports of the environment and component attached to
-    // each, kept where they count through the signers the requirement
-    // names (rule core.7).
-    let mut counted: Vec<Newest> = Vec::new();
-    for index in &indexes {
-        for envelope in claims_of(seams, channel, index)? {
+        asked.push(index);
+        for envelope in claims_of(index)? {
             let Some(report) = Claim::from_envelope(&envelope)
                 .as_ref()
                 .and_then(Reported::of)
@@ -82,41 +102,146 @@ pub fn newest(
             else {
                 continue;
             };
-            let told = tell(
-                seams,
-                &required.signers,
-                index,
-                &envelope,
-                Some(ClaimKind::Report),
-                None,
-                None,
-            )?;
-            if told.counts {
-                counted.push(Newest {
-                    claim: told.envelope,
-                    report,
-                });
-            }
+            attached.push(ReportClaim {
+                index: index.clone(),
+                envelope,
+                report,
+            });
         }
     }
+    Ok(Reports {
+        environment: environment.clone(),
+        component: component.clone(),
+        attached,
+    })
+}
 
-    // 4: the one whose apply came last.
-    counted
+/// 43, 91, 116, rules core.7, core.42: of `reports`, the newest that
+/// counts through `reporters`: taken latest `at` first, the later in
+/// chain order where two name one moment, each told until one counts,
+/// and none older than it told (design D3). A report whose signer cannot
+/// be told before one counts makes the answer unreadable naming it, with
+/// what could not be read, since it may be the newest. Absent naming the
+/// environment where none counts, saying so where `reporters` is empty,
+/// the policy letting no signer claim a report (58).
+pub fn newest_of(seams: &Seams, reporters: &[NamedSigner], reports: &Reports) -> Answer<Counted> {
+    let mut newest_first: Vec<(usize, &ReportClaim)> =
+        reports.attached.iter().enumerate().collect();
+    newest_first.sort_by(|(i, a), (j, b)| (b.report.at, j).cmp(&(a.report.at, i)));
+    for (_, attached) in newest_first {
+        let told = tell(
+            seams,
+            reporters,
+            &attached.index,
+            &attached.envelope,
+            Some(ClaimKind::Report),
+            None,
+            None,
+        )
+        .map_err(|not| untold(reports, attached, not))?;
+        if told.counts {
+            let signer = told.made_by.expect("a counted claim names who made it");
+            return Ok(Counted {
+                newest: Newest {
+                    claim: told.envelope,
+                    report: attached.report.clone(),
+                },
+                signer,
+            });
+        }
+    }
+    let (environment, component) = (&reports.environment, &reports.component);
+    let what = format!("a counted report of environment {environment} of {component}");
+    Err(Not::absent(
+        &Source::new(Seam::Store, BOUND),
+        if reporters.is_empty() {
+            format!("{what}: the policy lets no signer claim a report")
+        } else {
+            what
+        },
+    ))
+}
+
+/// Rule core.42: what a signer answered in place of telling `attached`,
+/// unreadable naming the report, with the signer's source and words.
+fn untold(reports: &Reports, attached: &ReportClaim, not: Not) -> Not {
+    let what = format!(
+        "the report {} of environment {} of {} on {}",
+        attached.envelope.digest(),
+        reports.environment,
+        reports.component,
+        attached.index
+    );
+    match not {
+        Not::Unreadable(u) => Not::unreadable(&u.source, format!("{what}: {}", u.what), u.said),
+        other => Not::unreadable(other.source(), what, Some(other.to_string())),
+    }
+}
+
+/// 116, C.10: the signers the policy at `landed` lets claim a report,
+/// read from the signers its answer for a layout carries, each with what
+/// it may claim, the one answer that lists every signer the policy names;
+/// none where it declares no policy for a layout. Apply, the gate's move
+/// on reports and status count an environment's reports through them
+/// alike (record 0028; design D3).
+pub fn reporters(seams: &Seams, landed: &Landed) -> Answer<Vec<NamedSigner>> {
+    let signers = match policy_at(seams.policy.as_ref(), landed, &Audience::Layout) {
+        Ok(Required::Layout { signers, .. }) => signers,
+        Ok(_) | Err(Not::Absent(_)) => Vec::new(),
+        Err(not) => return Err(not),
+    };
+    Ok(signers
         .into_iter()
-        .max_by_key(|n| n.report.at)
-        .ok_or_else(|| {
-            Not::absent(
-                &Source::new(Seam::Store, BOUND),
-                format!("a counted report of environment {environment} of {component}"),
-            )
-        })
+        .filter(|s| s.kinds.contains(&ClaimKind::Report))
+        .collect())
+}
+
+/// 40, 43, 91, rules core.45, core.50: the gate's and apply's newest
+/// report of `environment` of `component`, which follows `channel`: the
+/// chain as the ledger holds it, unreadable naming it where the ledger
+/// answers it as last read or cannot read it (60), the claims of each
+/// index it moved to as the store answers them, with no copy, unreadable
+/// naming the index whose claims the store could not read or holds none
+/// of (58), and of the reports among them the newest that counts through
+/// `reporters` ([`newest_of`]).
+pub fn newest(
+    seams: &Seams,
+    environment: &EnvironmentName,
+    component: &ComponentName,
+    channel: &ChannelId,
+    reporters: &[NamedSigner],
+) -> Answer<Newest> {
+    let mut indexes: Vec<Digest> = Vec::new();
+    for envelope in held(seams.keeper.as_ref(), channel)? {
+        indexes.push(promotion_of(channel, &envelope)?.to.index);
+    }
+    let reports = reports(
+        &mut |index| claims_of(seams, channel, index),
+        &indexes,
+        environment,
+        component,
+    )?;
+    newest_of(seams, reporters, &reports).map(|counted| counted.newest)
 }
 
 /// The claims attached to `index`, which `channel`'s chain moved to: an
 /// index the store does not hold is unreadable naming it, since the chain
 /// says a version was there and its reports cannot be read (58).
-fn claims_of(seams: &Seams, channel: &ChannelId, index: &Digest) -> Answer<Vec<Envelope>> {
-    seams.store.claims_of(index).map_err(|not| match not {
+pub(crate) fn claims_of(
+    seams: &Seams,
+    channel: &ChannelId,
+    index: &Digest,
+) -> Answer<Vec<Envelope>> {
+    seams
+        .store
+        .claims_of(index)
+        .map_err(|not| index_absent(channel, index, not))
+}
+
+/// An index whose claims the store answered absent, unreadable naming
+/// it; any other answer as it is.
+pub(crate) fn index_absent(channel: &ChannelId, index: &Digest, not: Not) -> Not {
+    match not {
         Not::Absent(a) => Not::unreadable(
             &a.source,
             format!(
@@ -126,7 +251,7 @@ fn claims_of(seams: &Seams, channel: &ChannelId, index: &Digest) -> Answer<Vec<E
             None,
         ),
         other => other,
-    })
+    }
 }
 
 /// What the gate's move on reports is asked (design D9): the environment
@@ -241,9 +366,11 @@ pub fn follow(seams: &Seams, history: &History, ask: &FollowAsk) -> Answer<Follo
     }
 
     // The environments the policy declares at the head, each one's
-    // channel the chain its reports are read across (40); what stops
-    // reading them is each report's answer.
+    // channel the chain its reports are read across (40), and the signers
+    // the policy lets claim a report, which they count through (116); what
+    // stops reading either is each report's answer.
     let environments = seams.policy.environments(at_head.revision());
+    let reporters = reporters(seams, &at_head);
 
     // 2 to 4: each channel on its own (35).
     let channels = after
@@ -257,6 +384,7 @@ pub fn follow(seams: &Seams, history: &History, ask: &FollowAsk) -> Answer<Follo
                     at_head: &at_head,
                     component,
                     environments: &environments,
+                    reporters: &reporters,
                 },
                 listed,
                 after,
@@ -273,13 +401,15 @@ struct Following<'a> {
     at_head: &'a Landed,
     component: &'a timber_seams::Component,
     environments: &'a Answer<Vec<DeclaredEnvironment>>,
+    reporters: &'a Answer<Vec<NamedSigner>>,
 }
 
 /// One channel an `after` makes, coming after `after`, followed: its
 /// policy at the head (82, 107), the host's signer one of its promoters
 /// (32, 108), the newest report of each environment it comes after,
-/// counted through the signers its policy's report of that environment
-/// names (83, rule core.7), and the move to the one index they name.
+/// counted through the signers the policy lets claim a report, which its
+/// policy's report of that environment names (83, 116, rule core.7), and
+/// the move to the one index they name.
 fn one(
     seams: &Seams,
     history: &History,
@@ -318,7 +448,7 @@ fn one(
     let reports: Vec<(EnvironmentName, Answer<Newest>)> = after
         .iter()
         .map(|environment| {
-            let newest = reported(seams, f, &required, environment);
+            let newest = reported(seams, f, environment);
             (environment.clone(), newest)
         })
         .collect();
@@ -359,16 +489,10 @@ fn one(
 
 /// 40, 43, 83: the newest report of `environment`, read across the chain
 /// of the channel it follows as the policy at the head declares it, and
-/// counted through the signers `required`, the channel's policy, names
-/// for a report of it, none where it names no such report; absent naming
-/// the environment where the policy declares none of that name in the
-/// component.
-fn reported(
-    seams: &Seams,
-    f: &Following<'_>,
-    required: &Required,
-    environment: &EnvironmentName,
-) -> Answer<Newest> {
+/// counted through the signers the policy lets claim a report (116);
+/// absent naming the environment where the policy declares none of that
+/// name in the component.
+fn reported(seams: &Seams, f: &Following<'_>, environment: &EnvironmentName) -> Answer<Newest> {
     let component = &f.component.name;
     let declared = f
         .environments
@@ -385,17 +509,6 @@ fn reported(
                 ),
             )
         })?;
-    let wanted = required
-        .claims()
-        .iter()
-        .find(|c| c.kind == ClaimKind::Report && c.environment.as_ref() == Some(environment))
-        .cloned()
-        .unwrap_or_else(|| RequiredClaim {
-            kind: ClaimKind::Report,
-            check: None,
-            environment: Some(environment.clone()),
-            signers: vec![],
-            asked_of: AskedOf::Every,
-        });
-    newest(seams, environment, component, &declared.channel, &wanted)
+    let reporters = f.reporters.as_ref().map_err(Not::clone)?;
+    newest(seams, environment, component, &declared.channel, reporters)
 }

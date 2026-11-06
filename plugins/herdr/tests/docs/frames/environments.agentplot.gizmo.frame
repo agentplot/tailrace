@@ -1,0 +1,57 @@
+agentplot/gizmo · main at 111111111111, as of 2026-10-26T07:35:00Z
+
+beta 0.2.0 sha256:111111111111
+  ← 0.2.0 from 0.1.0, asked by gate at 2026-10-26T07:33:21Z, claim sha256:666666666666
+  ← 0.1.0, the first, asked by gate at 2026-10-26T07:33:20Z, claim sha256:333333333333
+  notes of 0.2.0 sha256:111111111111:
+    ## [0.2.0] - 2026-01-01
+    
+    ### 🚀 Features
+    
+    - The gizmo turns
+  notes of 0.1.0 sha256:222222222222:
+    ## [0.1.0] - 2026-01-01
+    
+    ### 🚀 Features
+    
+    - The environments
+    
+    ### ⚙️ Miscellaneous Tasks
+    
+    - The repository
+desk 0.1.0 sha256:222222222222, bound to beta
+  ← 0.1.0, the first, asked by gate at 2026-10-26T07:33:20Z, claim sha256:777777777777
+  notes of 0.1.0 sha256:222222222222:
+    ## [0.1.0] - 2026-01-01
+    
+    ### 🚀 Features
+    
+    - The environments
+    
+    ### ⚙️ Miscellaneous Tasks
+    
+    - The repository
+stable empty, bound to beta
+
+environments: 0 running what they should · 1 behind · 1 waiting on a person · 1 cannot be read
+db cannot be read · follows repository beta
+  runs: absent — the store (bound) holds no a counted report of environment db of repository
+  should run 0.2.0 sha256:111111111111
+desk waiting on a person · follows repository desk
+  runs 0.1.0 sha256:222222222222 since 2026-10-26T07:34:00Z
+  should run 0.1.0 sha256:222222222222
+  waits on ops for beta at 0.2.0 sha256:111111111111
+srv behind · follows repository beta
+  runs 0.1.0 sha256:222222222222 since 2026-10-26T07:34:00Z
+  should run 0.2.0 sha256:111111111111
+  ahead, the versions between:
+  notes of 0.2.0 at 111111111111:
+    ## [0.2.0] - 2026-01-01
+    
+    ### 🚀 Features
+    
+    - The gizmo turns
+
+published on this host: absent — the host (/scratch/gizmo/repo/.git/timber/published) holds no version it published
+
+b back · r ask again · q close

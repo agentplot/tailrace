@@ -3,14 +3,14 @@
 //! changes only in the commit that adopts a change of the statement.
 
 /// The statement's revision the clauses were read at.
-pub const READ_AT: &str = "agentplot/blueprints 7f60e57";
+pub const READ_AT: &str = "agentplot/blueprints 90cf023";
 
 /// Each section of Parts A and B, and its clauses.
 pub const PARTS: &[(&str, &[u16])] = &[
     ("A.1 Artifacts and digests", &[1, 2, 3, 4, 138, 5, 6]),
     (
         "A.2 Claims and attestations",
-        &[7, 8, 9, 116, 10, 11, 12, 13],
+        &[7, 8, 9, 116, 10, 11, 12, 13, 141, 142, 143],
     ),
     (
         "A.3 Publishing a landing",
@@ -51,12 +51,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_parts_hold_every_clause_from_1_to_140_once_in_20_sections() {
+    fn the_parts_hold_every_clause_from_1_to_143_once_in_20_sections() {
         assert_eq!(PARTS.len(), 20);
         let mut clauses: Vec<u16> = PARTS.iter().flat_map(|(_, c)| c.iter().copied()).collect();
-        assert_eq!(clauses.len(), 140);
+        assert_eq!(clauses.len(), 143);
         clauses.sort_unstable();
-        assert_eq!(clauses, (1..=140).collect::<Vec<u16>>());
+        assert_eq!(clauses, (1..=143).collect::<Vec<u16>>());
+        assert_eq!(READ_AT, "agentplot/blueprints 90cf023");
         let sections: Vec<&str> = PARTS
             .iter()
             .map(|(s, _)| s.split(' ').next().unwrap())
@@ -88,8 +89,23 @@ mod tests {
             (138, "A.1"),
             (139, "B.2"),
             (140, "B.6"),
+            (141, "A.2"),
+            (142, "A.2"),
+            (143, "A.2"),
         ] {
             assert_eq!(section(clause), at, "clause {clause}");
         }
+    }
+
+    #[test]
+    fn the_clauses_past_140_follow_13_in_a_2() {
+        let (_, claims) = PARTS
+            .iter()
+            .find(|(s, _)| s.starts_with("A.2 "))
+            .expect("A.2");
+        assert!(
+            claims.ends_with(&[13, 141, 142, 143]),
+            "A.2 holds {claims:?}"
+        );
     }
 }

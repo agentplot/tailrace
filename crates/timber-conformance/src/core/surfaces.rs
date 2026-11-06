@@ -1,8 +1,10 @@
 //! The surfaces' group: a surface answers what the one core answers, value
 //! for value, as a program reads it (56, 57; design D6); below the
 //! marker, status-on-any-machine's channels, asked of the command line
-//! and of the served page alike (36, 132), and each promotion's notes
-//! beside them, the bytes each version's index names (132, 134).
+//! and of the served page alike (36, 132), each promotion's notes beside
+//! them, the bytes each version's index names (132, 134), and every
+//! environment with what it should run, what it runs and whether they
+//! differ, S11 (98, 132).
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,6 +16,7 @@ use timber_seams::{
 };
 
 use crate::core::publish::{one, passing, VERSION};
+use crate::core::status::one_behind_and_one_not;
 use crate::world::{FakeWorld, HOST, LANDING, STABLE};
 use crate::{ok, Rig, Scenario};
 
@@ -73,6 +76,12 @@ pub fn scenarios() -> Vec<Scenario<dyn Surface>> {
             plays: None,
             cites: &[56, 57, 132, 134],
             run: the_command_line_and_the_page_answer_each_promotions_notes,
+        },
+        Scenario {
+            name: "S11 the command line and the page answer each environment",
+            plays: Some("S11"),
+            cites: &[56, 57, 98, 132],
+            run: s11_the_command_line_and_the_page_answer_each_environment,
         },
     ]
 }
@@ -227,7 +236,7 @@ const GROWN: &str = "0.3.0";
 
 /// The text of the notes the index at `index` names, as the fake store
 /// holds their bytes.
-fn notes_held(world: &FakeWorld, index: &Digest) -> String {
+pub(crate) fn notes_held(world: &FakeWorld, index: &Digest) -> String {
     let store = &world.fakes.store;
     let Ok(Held::Manifest(Manifest::Index(meta))) = store.read(index) else {
         panic!("{index} holds no index")
@@ -297,5 +306,84 @@ fn the_command_line_and_the_page_answer_each_promotions_notes(surface: &dyn Surf
             "the notes of {} are not the bytes its index names",
             logged.version
         );
+    }
+}
+
+/// The whole of status asked through `surface` and of the core at the
+/// moment the surface answered, the same value for value: the surface's
+/// answer.
+fn alike_at_the_moment_asked(surface: &dyn Surface) -> Value {
+    let world = surface.world();
+    let through = surface.ask(&Question::Channels {
+        branch: world.main.clone(),
+    });
+    let asked = through["value"]["asked_at"]
+        .as_u64()
+        .unwrap_or_else(|| panic!("{} answered no moment asked: {through}", surface.name()));
+    let history = world.history();
+    let core = overview(
+        &world.seams(),
+        &history,
+        &world.kept(),
+        &OverviewAsk {
+            branch: world.main.clone(),
+            component: None,
+            revision: None,
+            at: asked,
+        },
+    );
+    assert_eq!(
+        through,
+        answer_json(&Ok::<_, Not>(core)),
+        "status asked through {} answered otherwise than the core",
+        surface.name()
+    );
+    through
+}
+
+fn s11_the_command_line_and_the_page_answer_each_environment(surface: &dyn Surface) {
+    let world = surface.world();
+    let [first, _, third] = one_behind_and_one_not(world);
+
+    let through = alike_at_the_moment_asked(surface);
+    let environments = &through["value"]["environments"];
+    assert_eq!(environments["answer"], "ok", "{through}");
+    let shown: Vec<(&Value, &Value, &Value, &Value)> = environments["value"]["environments"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{} named no environments: {through}", surface.name()))
+        .iter()
+        .map(|e| {
+            (
+                &e["environment"],
+                &e["should"]["value"]["index"],
+                &e["runs"]["value"]["index"],
+                &e["state"]["value"],
+            )
+        })
+        .collect();
+    let (eu, srv, should, runs) = (
+        Value::from("eu"),
+        Value::from("srv"),
+        Value::from(third.index.as_str()),
+        Value::from(first.index.as_str()),
+    );
+    let (converged, behind) = (Value::from("converged"), Value::from("behind"));
+    assert_eq!(
+        shown,
+        [
+            (&eu, &should, &should, &converged),
+            (&srv, &should, &runs, &behind),
+        ],
+        "{} does not name each environment with what it should run, what it runs \
+         and whether they differ",
+        surface.name()
+    );
+    for (key, n) in [
+        ("converged", 1),
+        ("behind", 1),
+        ("waiting", 0),
+        ("unreadable", 0),
+    ] {
+        assert_eq!(environments["value"][key], n, "{through}");
     }
 }

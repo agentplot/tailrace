@@ -1,0 +1,65 @@
+{
+  "answer": "ok",
+  "value": {
+    "asked_at": 1793000100,
+    "repositories": [
+      {
+        "answer": "ok",
+        "value": {
+          "repository": {
+            "owner": "agentplot",
+            "name": "gizmo"
+          },
+          "heads": {
+            "answer": "ok",
+            "value": [
+              {
+                "component": "repository",
+                "channel": "beta",
+                "at": {
+                  "answer": "ok",
+                  "value": {
+                    "state": "at",
+                    "version": "0.2.0",
+                    "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                  }
+                }
+              },
+              {
+                "component": "repository",
+                "channel": "desk",
+                "at": {
+                  "answer": "ok",
+                  "value": {
+                    "state": "at",
+                    "version": "0.1.0",
+                    "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                  }
+                }
+              },
+              {
+                "component": "repository",
+                "channel": "stable",
+                "at": {
+                  "answer": "ok",
+                  "value": {
+                    "state": "empty"
+                  }
+                }
+              }
+            ]
+          },
+          "environments": {
+            "answer": "ok",
+            "value": {
+              "converged": 0,
+              "behind": 1,
+              "waiting": 1,
+              "unreadable": 1
+            }
+          }
+        }
+      }
+    ]
+  }
+}
