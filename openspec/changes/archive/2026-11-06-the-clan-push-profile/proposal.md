@@ -76,7 +76,7 @@ signs (37, 41 to 45, 83, 88 to 91, 97, 119, C.10, C.12, section 9, S16).
   setting. A machine's key is a key file, which no gate task reads
   (core.38).
 - The site's targets page documents the clan push profile, its table,
-  the report and `after`. Record 0027 proposes the decisions in design
+  the report and `after`. Record 0028 proposes the decisions in design
   D2 to D9. Rules core.71 to core.73 hold the report, the `after` move
   and the update that builds nothing.
 
@@ -150,7 +150,7 @@ signs (37, 41 to 45, 83, 88 to 91, 97, 119, C.10, C.12, section 9, S16).
 - `crates/timber/moon.yml` gains the `fleet` task, tagged `check-fleet`.
   No crate, dependency, language or file type is added; `clan` and `nix`
   are the host's own, run by hand.
-- The site's targets page; record 0027 in `docs/adr/`; rules core.71 to
+- The site's targets page; record 0028 in `docs/adr/`; rules core.71 to
   core.73 in `docs/architecture/core.md`.
 - Rules kept: core.1, since clan, Nix and ssh are named only under
   `profiles/target/`. core.2, since the closure is read through the
@@ -189,6 +189,6 @@ crates/timber/tests/nix_fleet_push.rs
 crates/timber/tests/**
 crates/timber/moon.yml
 site/src/content/docs/guides/integrations/targets.mdx
-docs/adr/0027-*.md
+docs/adr/0028-*.md
 docs/architecture/core.md
 ```
