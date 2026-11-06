@@ -226,17 +226,32 @@ core.57). `core::apply` uses it like this:
 - After `report` answers the applied index, apply signs a report claim
   as `seams.signers.first()` with the asker's identity, as promote
   signs.
-- The claim's subject is the index, and it names the revision (core.9).
-  Its body is `{ environment, component, channel, version, index,
-  runs, converged_at, at }`. `runs` and `converged_at` are the target's
-  `Running`; `at` is the moment of the act, from `ApplyAsk`, so the core
-  reads no clock.
+- The claim's subject is the index, and it names the revision the
+  index names (core.9, core.60), or, for an index published before
+  indexes named one, the revision its version's tag names, as promote
+  finds it. Its body is `{ environment, component, channel, version,
+  index, runs, converged_at, at }`. `runs` and `converged_at` are the
+  target's `Running`; `at` is the moment of the act, from `ApplyAsk`,
+  so the core reads no clock.
 - Apply attaches the claim with `store.attach` and answers it in
-  `Applied.report: Answer<Digest>`.
+  `Applied.report: Answer<Digest>`, the claim's digest or the answer
+  given in its place. `Applied.running` carries the target's own
+  report, the `Running` it answered.
 - Where current already answers the head, apply asks `report`, reads
   the environment's newest report (D8), and signs one only where that
-  newest report names another index or none. A refused attach is
-  therefore made good by the next apply, never doubled.
+  newest report names another index or none, answering the held
+  report's digest where it names the head. A refused attach is
+  therefore made good by the next apply, never doubled. A newest report
+  that cannot be read signs nothing and is the report's answer.
+- The newest report apply reads counts through the signers the policy
+  lets claim a report: those the policy's answer for a layout lists,
+  each with what it may claim, filtered to `report` (116, C.10). That
+  answer is the one the policy seam gives that lists every signer the
+  file names, and it holds whether or not a channel comes after the
+  environment.
+- `judge`'s refusal of a report names its environment: `Why::Wanting`
+  carries `environment`, written only where it is set (57), as it
+  carries a verdict's `check`.
 
 Where the report sits: the store holds the version's claims, and a
 report beside its index is read by anyone who reads the version
@@ -246,6 +261,15 @@ report beside its index is read by anyone who reads the version
   is. That is a record 61 does not list. It is left until
   environments in status are designed, which also has to square 60.
 - An unsigned record, which the gate could not count (core.7).
+- Counting the newest report apply reads through the report
+  requirements of the channels that come after the environment. An
+  environment no channel comes after, such as each of swancloud's
+  machines under its record 0043, would then have no report that
+  counts, and every apply that finds it running the head would sign
+  another.
+- A seam operation answering the signers that may claim a kind. The
+  layout's answer already carries them, and the policy seam keeps three
+  operations.
 
 ### D7. Who may report is the file's alone
 
