@@ -16,14 +16,15 @@ use timber_seams::{
     ClaimKind, ComponentName, DeclaredChannel, Digest, Ecosystem, EcosystemName, Envelope,
     Environment, EnvironmentName, HeldChannel, Keeper, Landing, Left, Moves, NamedSigner, Outcome,
     Output, OutputName, Pinned, Policy, Projection, Range, Report, Required, Requirement, Revision,
-    Seams, Signature, Signer, SignerId, Store, Target, Verdict, Verified, Version, IN_TOTO,
+    Seams, Signature, Signer, SignerId, Store, Target, TargetProfile, Verdict, Verified, Version,
+    IN_TOTO,
 };
 
 use crate::seams::binding::BindingRig;
 use crate::seams::build::{BuildRig, Made};
 use crate::seams::keeper::KeeperRig;
 use crate::seams::landing::{LandingRig, Recorded};
-use crate::seams::policy::PolicyRig;
+use crate::seams::policy::{Declares, PolicyRig};
 use crate::seams::projection::ProjectionRig;
 use crate::seams::signer::SignerRig;
 use crate::seams::store::{StoreRig, BYTES};
@@ -453,11 +454,25 @@ impl PolicyRig for FakePolicyRig {
         Vec::new()
     }
 
+    /// Each of `environments` scripted as a policy declaring it answers
+    /// it; the fake keeps no channel an environment names.
+    fn environments(&self, environments: &[Declares]) -> Revision {
+        let at = revision(&self.revisions);
+        for environment in environments {
+            self.policy.declares_at(&at, environment.answered());
+        }
+        at
+    }
+
     fn unreachable(&self) -> String {
         let policy = &self.policy;
         unreachable(
             |op, f, t| policy.fault(op, f, t),
-            &[PolicyOp::PolicyFor, PolicyOp::Channels],
+            &[
+                PolicyOp::PolicyFor,
+                PolicyOp::Channels,
+                PolicyOp::Environments,
+            ],
         )
     }
 }
@@ -618,9 +633,11 @@ impl ProjectionRig for FakeProjectionRig {
     }
 }
 
-/// The fake target.
+/// The fake target, which reads `at` of an environment's settings and
+/// no other key, and holds a marker of what it applied or holds none.
 pub struct FakeTargetRig {
     pub target: FakeTarget,
+    marker: bool,
     environments: Cell<u32>,
 }
 
@@ -629,10 +646,30 @@ impl FakeTargetRig {
     /// read.
     pub const REASON: &'static str = "the marker of what was applied is gone";
 
+    /// The one settings key the fake target reads, and the key the rig's
+    /// foreign settings add.
+    pub const READS: &'static str = "at";
+    pub const FOREIGN: &'static str = "token";
+
+    /// A fake target that holds a marker of what it applied.
     pub fn new() -> Self {
+        let target = FakeTarget::new();
+        target.reads([Self::READS]);
         FakeTargetRig {
-            target: FakeTarget::new(),
+            target,
+            marker: true,
             environments: Cell::new(0),
+        }
+    }
+
+    /// A fake target that holds no marker of what it applied, the rig
+    /// telling the fake so (119).
+    pub fn holding_no_marker() -> Self {
+        let rig = Self::new();
+        rig.target.holds_no_marker();
+        FakeTargetRig {
+            marker: false,
+            ..rig
         }
     }
 
@@ -643,6 +680,7 @@ impl FakeTargetRig {
             name: EnvironmentName::new(format!("environment-{n}")),
             channel: ChannelId::new(None, ChannelName::new(format!("channel-{n}"))),
             waits: false,
+            settings: json!({ Self::READS: format!("place-{n}") }),
         }
     }
 }
@@ -670,18 +708,31 @@ impl TargetRig for FakeTargetRig {
         Verified::new(digest.clone(), Version::new("1.0.0"))
     }
 
-    fn environment(&self, head: Option<&Digest>) -> Environment {
-        let environment = self.next();
-        if let Some(head) = head {
-            self.target.head(&environment.name, head);
-        }
-        environment
+    /// The fake answers desired with the head the suite hands it, so the
+    /// rig tells it nothing of `head`.
+    fn environment(&self, _head: Option<&Digest>) -> Environment {
+        self.next()
     }
 
+    /// Where the fake holds no marker, no environment's state can be read,
+    /// and the reason is that it holds none.
     fn unreadable_environment(&self) -> (Environment, String) {
         let environment = self.next();
+        if !self.marker {
+            return (environment, timber_fakes::NO_MARKER.into());
+        }
         self.target.unreadable(&environment.name, Self::REASON);
         (environment, Self::REASON.into())
+    }
+
+    fn holds_marker(&self) -> bool {
+        self.marker
+    }
+
+    fn foreign_settings(&self) -> (Environment, String) {
+        let mut environment = self.next();
+        environment.settings[Self::FOREIGN] = json!("a credential");
+        (environment, Self::FOREIGN.into())
     }
 }
 
@@ -822,15 +873,15 @@ impl BindingRig for FakeBindingRig {
     fn bind(
         &self,
         ecosystems: &[Ecosystem],
-        environments: &[EnvironmentName],
+        targets: &[TargetProfile],
         signers: &[SignerId],
     ) -> Seams {
         let mut fakes = Fakes::new();
         for ecosystem in ecosystems {
             fakes.projection(ecosystem);
         }
-        for environment in environments {
-            fakes.target(environment);
+        for profile in targets {
+            fakes.target(profile);
         }
         let mut seams = fakes.seams();
         seams.signers = signers

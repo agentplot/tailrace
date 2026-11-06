@@ -100,12 +100,16 @@ nothing: a file that is there is never guessed past.
 
 ### Requirement: The repository binds the build and the projections
 
-The binding SHALL take the build and the projections from the
-repository, not the host (92): moon is bound as the build, its tasks
+The binding SHALL take the build, the projections and the targets from
+the repository, not the host (92): moon is bound as the build, its tasks
 named per output in the policy file at the landed revision (C.3), and
 the file and image projections are bound by their ecosystem names, the
-policy file naming each output's (C.10, C.11). The policy seam SHALL be
-bound to the policy file at the landed revision (C.10).
+policy file naming each output's (C.10, C.11). Every target profile built
+SHALL be bound by its profile name, each environment's `target` in the
+policy file picking among them (C.10, C.12); a target that reads the
+store SHALL read it through a store binding of its own, opened and never
+made. The policy seam SHALL be bound to the policy file at the landed
+revision (C.10).
 
 #### Scenario: The bindings file names no build
 
@@ -116,6 +120,11 @@ bound to the policy file at the landed revision (C.10).
 
 - **WHEN** the bindings file holds a `[build]` table
 - **THEN** publish and verify answer unreadable naming the table, since the build is the repository's to bind
+
+#### Scenario: The targets are the repository's
+
+- **WHEN** the bindings file names a store, a landing and a signer and nothing else, and `timber apply` runs
+- **THEN** the binding holds the target `nix_cache`, reading through a store binding of its own that is not made
 
 ### Requirement: Only publish makes the layout
 
@@ -292,7 +301,8 @@ host binds, through a binding of its own that never makes the store
 not read SHALL be unreadable naming the table. A file that names no
 `[ledger]` SHALL bind the git ref on the remote the landing is bound
 to, written or given, or with no remote where the landing has none
-(118); the binding SHALL hold no target.
+(118). A `[targets]` table, or any table naming a target, SHALL be
+unreadable naming it, since the targets are the repository's to bind.
 
 #### Scenario: A git ref ledger with a remote
 
@@ -318,6 +328,11 @@ to, written or given, or with no remote where the landing has none
 
 - **WHEN** the file names no `[ledger]` and `timber promote` runs, the landing bound to the remote `origin`
 - **THEN** the promotion is pushed to `refs/timber/ledger/<channel>` on `origin`, after the chain is fetched from it
+
+#### Scenario: Targets named in the host's file
+
+- **WHEN** the bindings file holds a `[targets]` table
+- **THEN** every command bound by the file answers unreadable naming `[targets]`, since the targets are the repository's to bind
 
 ### Requirement: Status is bound with nothing written
 

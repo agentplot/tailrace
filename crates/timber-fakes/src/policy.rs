@@ -1,16 +1,16 @@
 //! The fake policy (B.5): what each audience requires, for every revision
-//! or for one, which channels move on each publish, and the givens it
-//! holds off, as a test scripts it. A channel carries its component
-//! (125), and the fake gives and holds off no channel a test did not
-//! script: the channels a profile gives with nothing declared are that
-//! profile's (C.10).
+//! or for one, which channels move on each publish, the givens it holds
+//! off, and the environments each revision declares, as a test scripts
+//! it. A channel carries its component (125), and the fake gives and
+//! holds off no channel a test did not script: the channels a profile
+//! gives with nothing declared are that profile's (C.10).
 
 use std::collections::BTreeMap;
 
 use serde_json::json;
 use timber_seams::{
-    Answer, Audience, ChannelId, DeclaredChannel, HeldChannel, Moves, Not, Policy, PolicyChannels,
-    Required, Revision, Seam,
+    Answer, Audience, ChannelId, ComponentName, DeclaredChannel, DeclaredEnvironment,
+    EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, Revision, Seam,
 };
 
 use crate::Fake;
@@ -20,11 +20,13 @@ use crate::Fake;
 pub enum PolicyOp {
     PolicyFor,
     Channels,
+    Environments,
 }
 
 /// What each audience requires, at every revision and at one, the
-/// channels that move on each publish, at every revision and at one, and
-/// the givens held off, each with how it would move and its line.
+/// channels that move on each publish, at every revision and at one, the
+/// givens held off, each with how it would move and its line, and the
+/// environments each revision declares, by component and then name.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PolicyState {
     every: BTreeMap<Audience, Required>,
@@ -32,7 +34,11 @@ pub struct PolicyState {
     follows: BTreeMap<ChannelId, bool>,
     follows_at: BTreeMap<(Revision, ChannelId), bool>,
     holds: BTreeMap<ChannelId, (Moves, String)>,
+    environments: BTreeMap<Revision, Declared>,
 }
+
+/// The environments one revision declares, by component and then name.
+type Declared = BTreeMap<(Option<ComponentName>, EnvironmentName), DeclaredEnvironment>;
 
 /// A policy in memory.
 pub type FakePolicy = Fake<PolicyState, PolicyOp>;
@@ -91,6 +97,21 @@ impl FakePolicy {
         self.state()
             .holds
             .insert(channel.clone(), (moves, switch.into()));
+    }
+
+    /// 136: the policy at `revision` declares `environment`, in the
+    /// component its channel carries (125), over one of that component
+    /// and name set before.
+    pub fn declares_at(&self, revision: &Revision, environment: DeclaredEnvironment) {
+        let key = (
+            environment.channel.component.clone(),
+            environment.name.clone(),
+        );
+        self.state()
+            .environments
+            .entry(revision.clone())
+            .or_default()
+            .insert(key, environment);
     }
 }
 
@@ -162,12 +183,26 @@ impl Policy for FakePolicy {
             Ok(PolicyChannels { in_force, held })
         })
     }
+
+    /// 136: the environments the test declared at `revision`, by
+    /// component and then name, as set; an empty list at a revision given
+    /// none.
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        let given = json!({ "revision": revision });
+        self.ask(PolicyOp::Environments, given, "the environments", |s, _| {
+            Ok(s.environments
+                .get(revision)
+                .map(|declared| declared.values().cloned().collect())
+                .unwrap_or_default())
+        })
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use timber_seams::{
-        AskedOf, ChannelName, Check, ClaimKind, ComponentName, RequiredClaim, Source,
+        AskedOf, ChannelName, Check, ClaimKind, RequiredClaim, SignerId, Source, TargetProfile,
+        TargetTable,
     };
 
     use super::*;
@@ -487,5 +522,89 @@ mod tests {
         assert_eq!(calls.len(), 2);
         assert!(calls.iter().all(|c| c.op == PolicyOp::Channels));
         assert!(policy.policy_for(&rev, &beta).is_ok());
+    }
+
+    /// `name` of `component`, following `channel` of it, with a target of
+    /// `profile` where it names one.
+    fn environment(
+        component: &str,
+        name: &str,
+        channel: &str,
+        target: Option<&str>,
+    ) -> DeclaredEnvironment {
+        DeclaredEnvironment {
+            name: EnvironmentName::new(name),
+            channel: id(Some(component), channel),
+            waits: false,
+            approvers: vec![],
+            target: target.map(|profile| TargetTable {
+                profile: TargetProfile::new(profile),
+                settings: json!({ "at": "a place of its own", "outputs": [name] }),
+            }),
+        }
+    }
+
+    #[test]
+    fn the_environments_are_answered_as_set_at_their_revision_alone() {
+        let policy = FakePolicy::new();
+        let (at, other) = (Revision::new("4f2a9c1"), Revision::new("77b0e3d"));
+        let cache = environment("web", "cache", "beta", Some("pushed"));
+        policy.declares_at(&at, cache.clone());
+        assert_eq!(policy.environments(&at), Ok(vec![cache]));
+        assert_eq!(policy.environments(&other), Ok(vec![]));
+        let calls = policy.calls();
+        assert_eq!(calls.len(), 2);
+        assert!(calls.iter().all(|c| c.op == PolicyOp::Environments));
+        assert_eq!(calls[0].given["revision"], "4f2a9c1");
+        assert_eq!(
+            calls[0].answer.as_ref().unwrap()[0]["target"]["profile"],
+            "pushed"
+        );
+    }
+
+    #[test]
+    fn the_environments_are_ordered_by_component_and_then_name() {
+        let policy = FakePolicy::new();
+        let at = Revision::new("4f2a9c1");
+        let prod = DeclaredEnvironment {
+            waits: true,
+            approvers: vec![SignerId::new("box")],
+            ..environment("web", "prod", "prod", Some("pulled"))
+        };
+        let cache = environment("web", "cache", "beta", Some("pushed"));
+        let staging = environment("lib", "staging", "beta", None);
+        policy.declares_at(&at, prod.clone());
+        policy.declares_at(&at, cache.clone());
+        policy.declares_at(&at, staging.clone());
+        assert_eq!(policy.environments(&at), Ok(vec![staging, cache, prod]));
+
+        let moved = environment("web", "cache", "stable", None);
+        policy.declares_at(&at, moved.clone());
+        assert_eq!(
+            policy.environments(&at).map(|e| e[1].clone()),
+            Ok(moved),
+            "a second environment of one component and name is the one set"
+        );
+    }
+
+    #[test]
+    fn the_environments_can_be_faulted_and_are_recorded() {
+        let policy = FakePolicy::new();
+        let rev = Revision::new("4f2a9c1");
+        policy.declares_at(&rev, environment("web", "cache", "beta", Some("pushed")));
+        policy.fault(
+            PolicyOp::Environments,
+            Fault::Unreadable("no such revision".into()),
+            Times::Once,
+        );
+        assert!(matches!(
+            policy.environments(&rev),
+            Err(Not::Unreadable(u)) if u.said.as_deref() == Some("no such revision")
+        ));
+        assert_eq!(policy.environments(&rev).map(|e| e.len()), Ok(1));
+        let calls = policy.calls();
+        assert_eq!(calls.len(), 2);
+        assert!(calls.iter().all(|c| c.op == PolicyOp::Environments));
+        assert!(matches!(&calls[0].answer, Err(Not::Unreadable(_))));
     }
 }

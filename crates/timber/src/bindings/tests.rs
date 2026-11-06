@@ -270,12 +270,39 @@ fn what_the_repository_binds_and_no_table_of_the_file_are_unreadable_naming_the_
         ),
         (
             "targets",
-            "[targets] is no table of the bindings file, which binds [store], [landing], [ledger], [signing], [gate] and [trust]",
+            "[targets] is the repository's to bind, in its policy file, and not the host's",
+        ),
+        (
+            "environments",
+            "[environments] is the repository's to bind, in its policy file, and not the host's",
+        ),
+        (
+            "deploy",
+            "[deploy] is no table of the bindings file, which binds [store], [landing], [ledger], [signing], [gate] and [trust]",
         ),
     ] {
         host.write(&format!("[store]\nlayout = \"/layout\"\n\n[{table}]\nx = 1\n"));
         assert_eq!(host.unreadable(Some(&format!("[{table}]"))), said);
     }
+}
+
+#[test]
+fn targets_named_in_the_hosts_file_are_unreadable_for_every_command_and_make_nothing() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[targets]\nnix_cache = {{}}\n",
+        layout.display()
+    ));
+    for command in [For::Apply, For::Publish, For::Verify, For::Status] {
+        let (at, said) = unreadable_at(&host, host.bind(host.dir.path(), command));
+        assert_eq!(at, "[targets]");
+        assert_eq!(
+            said,
+            "[targets] is the repository's to bind, in its policy file, and not the host's"
+        );
+    }
+    assert!(!layout.exists(), "a refused file made {}", layout.display());
 }
 
 #[test]
@@ -528,6 +555,33 @@ fn a_file_naming_no_ledger_binds_the_git_ref_in_the_repository() {
         .map(|e| e.as_str())
         .collect();
     assert_eq!(ecosystems, ["cargo", "file", "image", "moon-cache", "npm"]);
+}
+
+#[test]
+fn an_apply_binds_every_target_built_through_a_store_it_never_makes() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layouts").join("laptop");
+    let apply = bound(&host, &layout, true, For::Apply);
+    assert!(
+        matches!(&apply, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store
+            && u.said.as_deref().is_some_and(|s| s.contains("No such file or directory"))),
+        "{:?}",
+        apply.err()
+    );
+    assert!(!layout.exists(), "apply made {}", layout.display());
+
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let before = files(&layout);
+    let binding = bound(&host, &layout, true, For::Apply).unwrap();
+    let profiles: Vec<&str> = binding.seams.targets.keys().map(|p| p.as_str()).collect();
+    assert_eq!(profiles, ["nix_cache"]);
+    assert!(binding
+        .seams
+        .target(&timber_seams::TargetProfile::new("nix_cache"))
+        .is_some());
+    assert!(binding.seams.projections.is_empty());
+    assert_eq!(binding.signer, None, "apply signs nothing");
+    assert_eq!(files(&layout), before, "binding an apply wrote the layout");
 }
 
 /// A repository in the host's directory, made with git, and its path.
