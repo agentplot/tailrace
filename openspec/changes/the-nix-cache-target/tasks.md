@@ -25,7 +25,7 @@
 
 ## 6. The command
 
-- [ ] 6.1 Add `crates/timber/src/commands/apply.rs` and the `apply <environment>` subcommand with `--branch`, `--component` and `--json`, bound as status is with the target family beside it and the store opened and never made, rendering `Applied` as text and as JSON, and exiting as every command does for absent, refused and unreadable (design D5). Verify: tests in `commands/apply.rs` over the fakes for every scenario of the command-line delta, `Apply makes no store` asserting no layout directory after the run
+- [x] 6.1 Add `crates/timber/src/commands/apply.rs` and the `apply <environment>` subcommand with `--branch`, `--component` and `--json`, bound as status is with the target family beside it and the store opened and never made, rendering `Applied` as text and as JSON, and exiting as every command does for absent, refused and unreadable (design D5). Verify: tests in `commands/apply.rs` over the fakes for every scenario of the command-line delta, `Apply makes no store` asserting no layout directory after the run
 
 ## 7. The closure's form
 
