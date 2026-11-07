@@ -1,7 +1,7 @@
 ---
 number: 25
 title: The tool is named timber and its family Boomdrive
-status: proposed
+status: accepted
 date: 2026-11-04
 decision-makers:
 - Chuck Swanberg
@@ -9,7 +9,7 @@ decision-makers:
 
 # The tool is named timber and its family Boomdrive
 
-Status: proposed. The names are the user's ruling of 2026-11-04, quoted below. The record is accepted when the user says yes to it as a record.
+Status: accepted by the user on 2026-11-07, on their card. The names are the user's ruling of 2026-11-04, quoted below.
 
 The user's words (2026-11-04): "the ecosystem, the org, the branding, the cloud and the opensource runner tool are all boomdrive. There is also a "boom" open source tool that does the claim reconciliation."
 
