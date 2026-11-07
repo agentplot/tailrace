@@ -161,6 +161,70 @@ def channel_lines:
     else [{text: "\($name) \(.value | tojson | clean)"}] end)
   + $logged;
 
+# A channel's head where an environment's line names it: a version and
+# its index, or empty.
+def head_words: if .state == "at" then "\(.version | clean) \(.index | short)"
+  elif .state == "empty" then "empty" else tojson | clean end;
+
+# 98: an environment's state as the core answers it: running what it
+# should, behind, waiting on a person, or cannot be read.
+def state_words: if .answer != "ok" then "cannot be read"
+  elif .value == "converged" then "running what it should"
+  elif .value == "behind" then "behind"
+  elif .value == "waiting" then "waiting on a person"
+  else .value | tojson | clean end;
+
+# 134: the versions between what an environment that is behind runs and
+# what it should, each by its version and its tag's revision with its
+# notes beneath, as rendered, or why they cannot be.
+def between_lines:
+  if . == null then []
+  elif .answer != "ok" then not_lines("  versions between: "; "  ")
+  else .value as $b
+  | (if $b.direction == "back" then "back, the versions whose changes it leaves" else "ahead, the versions between" end) as $which
+  | if ($b.versions | length) == 0 then [{text: "  \($which): none"}]
+    else [{text: "  \($which):"}]
+      + [$b.versions[]
+         | "  notes of \(.version | clean) at \(.revision | rev)" as $lead
+         | (.notes | if .answer == "ok" then [{text: "\($lead):"}] + [.value | strings | rtrimstr("\n") | split("\n") | .[] | {text: "    \(clean)"}]
+            else not_lines("\($lead): "; "  ") end)
+         | .[]]
+    end
+  end;
+
+# 41, 43, 97, 98, 134: one environment: its state and the channel it
+# follows; what it runs and since when, saying where its reports were
+# read as last fetched, or why it cannot be read; what it should run,
+# said once with what it runs where the two are one answer;
+# what its channel moves on; a reason its state gives that no line above
+# says; and beside one that is behind the versions between.
+def environment_lines:
+  . as $e
+  | [{text: "\($e.environment | clean) \($e.state | state_words) · follows \($e.component | clean) \($e.channel | clean)"}]
+  + (if $e.runs.answer != "ok" and $e.runs == $e.should then $e.runs | not_lines("  runs and should run: "; "  ")
+     else
+       ($e.runs | if .answer == "ok" then
+         .value as $r
+         | [{text: "  runs \($r.version | clean) \($r.index | short) since \($r.converged_at | clean)\($r.read | if type == "object" and has("kept") then ", reports as last fetched \(.kept.at | utc)" else "" end)"}]
+           + ($r.read | read_lines)
+       else not_lines("  runs: "; "  ") end)
+       + ($e.should | if .answer == "ok" then [{text: "  should run \(.value | head_words)"}] else not_lines("  should run: "; "  ") end)
+     end)
+  + ($e.moves_on | if . == null then []
+     elif .by == "asking" then
+       "  waits on \(if ($e.approvers | length) == 0 then "any asker the gate verifies" else $e.approvers | map(clean) | join(" or ") end) for \(.bound_to | clean)" as $lead
+       | (.at | if .answer == "ok" then [{text: "\($lead) at \(.value | head_words)"}] else not_lines("\($lead): "; "  ") end)
+     elif .by == "reports" then [{text: "  after \(.after | map(clean) | join(", "))"}]
+     else [{text: "  moves on \(tojson | clean)"}] end)
+  + (if $e.state.answer != "ok" and $e.state != $e.runs and $e.state != $e.should and $e.state != ($e.moves_on.at // null)
+     then $e.state | not_lines("  "; "  ") else [] end)
+  + ($e.between | between_lines);
+
+# 98, 132: every environment of a repository's answer, each beneath the
+# counts.
+def environment_list:
+  if .answer == "ok" then [(.value.environments // [])[] | environment_lines[]] else [] end;
+
 # 61, 134: one version this host published, and its notes or why they
 # cannot be rendered.
 def published_lines:
@@ -178,7 +242,8 @@ def published_lines:
 # 57, 132: one repository whole, as the process answers it at its path,
 # what `timber status --json` prints in its checkout: the branch and
 # the landed revision its policy was read at, each channel, the
-# environments, and what this host published.
+# environments' counts and every environment, and what this host
+# published.
 def one($repo):
   if .answer != "ok" then [{text: $repo}, {text: ""}] + not_lines(""; "")
   else .value as $o
@@ -193,6 +258,7 @@ def one($repo):
       + ($o.channels | not_lines("channels: "; ""))
     end)
   + [{text: ""}] + ($o.environments | environments_lines("environments: "; ""))
+  + ($o.environments | environment_list)
   + [{text: ""}] + ($o.published | published_lines)
   end;
 

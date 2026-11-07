@@ -4,8 +4,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use serde_json::json;
 use timber_seams::{
-    BuildId, Claim, ClaimKind, Digest, Ecosystem, EnvironmentName, Output, OutputName, Revision,
-    Seams, SignerId,
+    BuildId, Claim, ClaimKind, Digest, Ecosystem, Output, OutputName, Revision, Seams, SignerId,
+    TargetProfile,
 };
 
 use timber_fakes::Alone;
@@ -19,11 +19,11 @@ pub const GROUP: &str = "binding";
 pub trait BindingRig: Rig {
     /// One store, build, landing, policy and keeper, a signer for each of
     /// `signers`, a projection for each of `ecosystems` and a target for
-    /// each of `environments`, bound as one binding.
+    /// each of `targets`, by its profile, bound as one binding.
     fn bind(
         &self,
         ecosystems: &[Ecosystem],
-        environments: &[EnvironmentName],
+        targets: &[TargetProfile],
         signers: &[SignerId],
     ) -> Seams;
 
@@ -52,12 +52,9 @@ pub fn scenarios() -> Vec<Scenario<dyn BindingRig>> {
 
 fn one_of_each_any_number_of_projections_and_targets(rig: &dyn BindingRig) {
     let ecosystems = [Ecosystem::new("file"), Ecosystem::new("image")];
-    let environments = [
-        EnvironmentName::new("staging"),
-        EnvironmentName::new("production"),
-    ];
+    let targets = [TargetProfile::new("pushed"), TargetProfile::new("pulled")];
     let signers = [SignerId::new("host"), SignerId::new("gate")];
-    let seams = rig.bind(&ecosystems, &environments, &signers);
+    let seams = rig.bind(&ecosystems, &targets, &signers);
 
     let output = Output {
         name: OutputName::new("site"),
@@ -90,17 +87,17 @@ fn one_of_each_any_number_of_projections_and_targets(rig: &dyn BindingRig) {
     );
     assert_eq!(seams.projections.len(), ecosystems.len());
 
-    for environment in &environments {
+    for profile in &targets {
         assert!(
-            seams.target(environment).is_some(),
-            "no target is bound for {environment}"
+            seams.target(profile).is_some(),
+            "no target is bound for {profile}"
         );
     }
     assert!(
-        seams.target(&EnvironmentName::new("unbound")).is_none(),
-        "a target was found for an environment none is bound for"
+        seams.target(&TargetProfile::new("unbound")).is_none(),
+        "a target was found for a profile none is bound for"
     );
-    assert_eq!(seams.targets.len(), environments.len());
+    assert_eq!(seams.targets.len(), targets.len());
 
     assert_eq!(
         seams.signers.len(),

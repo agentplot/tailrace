@@ -9,9 +9,9 @@
 //! | the build | [`FakeBuild`] | what each revision left of each output, what each checkout's run left |
 //! | the landing | [`FakeLanding`] | revisions landed per branch, verdicts per revision |
 //! | the signer | [`FakeSigner`] | the identity at hand, the identities expired |
-//! | the policy | [`FakePolicy`] | what each audience requires, per revision, and the channels that follow each publish |
+//! | the policy | [`FakePolicy`] | what each audience requires, per revision, the channels that follow each publish, the environments each bound channel comes after, and the environments each revision declares |
 //! | a projection | [`FakeProjection`] | its ecosystem, the name each output takes, whether it packs cache entries, the build identities it holds no archive for, each checkout's pins, each render of artifacts |
-//! | a target | [`FakeTarget`] | per environment, its channel's head and what it runs |
+//! | a target | [`FakeTarget`] | per environment, what it runs or why it cannot be read; whether it holds a marker, and the settings keys it reads |
 //! | the keeper | [`FakeKeeper`] | per channel and its component, a chain of promotion claims |
 //!
 //! Each fake is a [`Fake`] over its state and the one [`Script`] every
@@ -27,7 +27,7 @@
 
 use std::collections::BTreeMap;
 
-use timber_seams::{Ecosystem, EnvironmentName, Seams};
+use timber_seams::{Ecosystem, Seams, TargetProfile};
 
 pub mod build;
 pub mod keeper;
@@ -58,7 +58,7 @@ pub struct Fakes {
     pub policy: FakePolicy,
     pub keeper: FakeKeeper,
     pub projections: BTreeMap<Ecosystem, FakeProjection>,
-    pub targets: BTreeMap<EnvironmentName, FakeTarget>,
+    pub targets: BTreeMap<TargetProfile, FakeTarget>,
 }
 
 impl Default for Fakes {
@@ -91,9 +91,9 @@ impl Fakes {
             .clone()
     }
 
-    /// The target bound for `environment`, bound now if none is.
-    pub fn target(&mut self, environment: &EnvironmentName) -> FakeTarget {
-        self.targets.entry(environment.clone()).or_default().clone()
+    /// The target bound for `profile`, bound now if none is.
+    pub fn target(&mut self, profile: &TargetProfile) -> FakeTarget {
+        self.targets.entry(profile.clone()).or_default().clone()
     }
 
     /// Clones of every fake as the one binding the core is handed: what
@@ -114,7 +114,7 @@ impl Fakes {
             targets: self
                 .targets
                 .iter()
-                .map(|(n, t)| (n.clone(), Box::new(t.clone()) as _))
+                .map(|(p, t)| (p.clone(), Box::new(t.clone()) as _))
                 .collect(),
         }
     }
@@ -125,8 +125,9 @@ mod tests {
     use serde_json::Value;
     use timber_seams::{
         Artifact, Audience, Branch, BuildId, ChannelId, ChannelName, Claim, ClaimKind, Contents,
-        Environment, IsLanded, Layout, Manifest, Name, NamedSigner, Output, OutputName, Read,
-        Request, Required, Revision, SignerId, Verdicts, Verified, Version,
+        Environment, EnvironmentName, IsLanded, Layout, Manifest, Name, NamedSigner, Not, Output,
+        OutputName, Read, Request, Required, Revision, Seam, SignerId, Source, Verdicts, Verified,
+        Version,
     };
 
     use super::*;
@@ -139,10 +140,12 @@ mod tests {
             name: EnvironmentName::new("production"),
             channel: ChannelId::new(None, ChannelName::new("stable")),
             waits: false,
+            settings: serde_json::json!({}),
         };
         let projection_a = fakes.projection(&eco_a);
         let projection_b = fakes.projection(&eco_b);
-        let target = fakes.target(&production.name);
+        let pushed = TargetProfile::new("pushed");
+        let target = fakes.target(&pushed);
 
         let rev = Revision::new("4f2a9c1");
         let gate = SignerId::new("gate");
@@ -155,7 +158,7 @@ mod tests {
 
         let seams = fakes.seams();
         assert!(seams.projection(&Ecosystem::new("eco-c")).is_none());
-        assert!(seams.target(&EnvironmentName::new("staging")).is_none());
+        assert!(seams.target(&TargetProfile::new("pulled")).is_none());
         assert_eq!(seams.signers.len(), 1);
 
         let digest = seams.store.put_bytes(b"site").unwrap().digest;
@@ -290,8 +293,14 @@ mod tests {
             )
             .is_ok_and(|served| served.status == 200));
 
-        let bound = seams.target(&production.name).expect("production is bound");
-        assert!(bound.desired(&production).is_err());
+        let bound = seams.target(&pushed).expect("pushed is bound");
+        let empty = || {
+            Err(Not::absent(
+                &Source::new(Seam::Keeper, "fake"),
+                "the head of channel stable",
+            ))
+        };
+        assert!(bound.desired(&production, &empty).is_err());
         assert!(bound.current(&production).is_err());
         bound
             .apply(
@@ -404,9 +413,9 @@ mod tests {
             .unwrap()
             .same_again
         );
-        let production = EnvironmentName::new("production");
-        fakes.target(&production);
-        fakes.target(&production);
+        let pushed = TargetProfile::new("pushed");
+        fakes.target(&pushed);
+        fakes.target(&pushed);
         assert_eq!(fakes.targets.len(), 1);
     }
 }

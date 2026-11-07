@@ -10,8 +10,8 @@ use timber_core::{answer_json, in_force, ChannelInForce, ChannelsInForce, InForc
 use timber_fakes::{FakePolicy, LandingOp, PolicyOp, PROFILE};
 use timber_seams::{
     Answer, AskedOf, Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel,
-    EnvironmentName, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim,
-    Revision, Seam, Seams, Source, Why,
+    DeclaredEnvironment, HeldChannel, Moves, Not, Policy, PolicyChannels, Required, RequiredClaim,
+    Revision, Seam, Seams, Source, TargetProfile, Why,
 };
 use world::World;
 
@@ -26,6 +26,7 @@ fn acceptance() -> Required {
         claims: vec![RequiredClaim {
             kind: ClaimKind::Provenance,
             check: None,
+            environment: None,
             signers: vec![],
             asked_of: AskedOf::Every,
         }],
@@ -125,7 +126,8 @@ fn an_absent_layout_is_shown_beside_the_channels() {
             listed(
                 of("lib", "stable"),
                 Moves::Bound {
-                    to: ChannelName::new("beta")
+                    to: ChannelName::new("beta"),
+                    after: vec![],
                 },
                 Ok(channel_policy(Some("beta")))
             ),
@@ -167,6 +169,10 @@ impl Policy for OneUnreadable {
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         self.inner.channels(revision)
     }
+
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        self.inner.environments(revision)
+    }
 }
 
 #[test]
@@ -203,7 +209,7 @@ fn one_channels_policy_unreadable_leaves_the_rest_standing() {
 #[test]
 fn the_policy_in_force_asks_the_landing_and_the_policy_alone_and_writes_nothing() {
     let mut world = World::new();
-    let production = world.fakes.target(&EnvironmentName::new("production"));
+    let production = world.fakes.target(&TargetProfile::new("fake"));
     declare(&world.fakes.policy);
     let others = || {
         (

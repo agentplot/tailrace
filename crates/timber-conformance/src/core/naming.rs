@@ -30,6 +30,7 @@ fn provenance(world: &FakeWorld) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![NamedSigner {
             id: world.host.clone(),
             verified_by: "the host's key".into(),

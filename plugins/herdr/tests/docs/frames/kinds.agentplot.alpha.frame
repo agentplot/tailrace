@@ -21,6 +21,13 @@ canary (app) unreadable — the keeper (git ref, origin) could not read chain of
   fatal: unable to access 'origin': Could not resolve host
 
 environments: 0 running what they should · 0 behind · 0 waiting on a person · 2 cannot be read
+prod cannot be read · follows app stable
+  runs and should run: refused — the keeper (git ref, origin) refused: fork: predecessor sha256:bbbbbbbbbbbb, claims sha256:cccccccccccc, sha256:dddddddddddd
+    error: two claims name one predecessor
+     see the ledger's [31mlog[0m
+web cannot be read · follows app beta
+  runs: absent — the store (bound) holds no a counted report of environment web of app
+  should run 1.2.0 sha256:aaaaaaaaaaaa
 
 published on this host:
   app 1.1.0 (app-v1.1.0) from 222222222222 on main: index sha256:999999999999 in the store (registry ghcr.io/agentplot)

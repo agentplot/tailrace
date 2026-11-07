@@ -476,9 +476,11 @@ could be asked (C.10). `policy` other
 than `auto` or `manual`, a made channel named as any channel the
 fragment holds, held or not, environments named in `after` that follow
 two channels, an environment not declared, or one that comes after
-itself, is unreadable naming the table. Nothing moves an `after`
-channel, or converges an environment, until a target is bound; `timber
-promote` moves them as any channel.
+itself, is unreadable naming the table. A manual environment's channel
+moves by `timber promote`; an `after` channel moves when the
+environments it names report the version they run, after `timber
+apply`, as [the targets page](/timber/guides/integrations/targets/#an-environment-after-another)
+says.
 
 The policy lists a repository's channels, each with its component and
 how it moves, read the same way as the policy for one channel, so the

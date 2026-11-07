@@ -192,6 +192,7 @@ fn provenance_from(signer: NamedSigner) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Every,
     }
@@ -202,6 +203,7 @@ fn test_from_the_landing() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new("test")),
+        environment: None,
         signers: vec![named(LANDING, &[ClaimKind::Verdict], &["test"])],
         asked_of: AskedOf::Built,
     }
@@ -212,6 +214,7 @@ fn review() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Review,
         check: None,
+        environment: None,
         signers: vec![named("reviewer", &[ClaimKind::Review], &[])],
         asked_of: AskedOf::Built,
     }
@@ -241,6 +244,7 @@ fn require(world: &FakeWorld, required: Required) {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![gate.clone()],
                 asked_of: AskedOf::Every,
             }],
@@ -843,6 +847,7 @@ fn an_independent_rebuild(world: &FakeWorld) {
     let rebuild = RequiredClaim {
         kind: ClaimKind::Rebuild,
         check: None,
+        environment: None,
         signers: vec![
             named(HOST, &[ClaimKind::Provenance, ClaimKind::Rebuild], &[]),
             named("verifier", &[ClaimKind::Rebuild], &[]),
@@ -1086,6 +1091,7 @@ fn beta_of_one_component(_: &FakeWorld) {
                 claims: vec![RequiredClaim {
                     kind: ClaimKind::Acceptance,
                     check: None,
+                    environment: None,
                     signers: vec![gate.clone()],
                     asked_of: AskedOf::Every,
                 }],
@@ -1175,6 +1181,7 @@ fn followed_on_publish(world: &FakeWorld, revision: &Revision) -> Vec<(String, b
                 claims: vec![RequiredClaim {
                     kind: ClaimKind::Acceptance,
                     check: None,
+                    environment: None,
                     signers: vec![gate.clone()],
                     asked_of: AskedOf::Every,
                 }],
@@ -1379,6 +1386,7 @@ fn a_following_channel_and_the_notes(world: &FakeWorld) {
     let rebuild = RequiredClaim {
         kind: ClaimKind::Rebuild,
         check: None,
+        environment: None,
         signers: vec![named("verifier", &[ClaimKind::Rebuild], &[])],
         asked_of: AskedOf::Built,
     };
@@ -1389,6 +1397,7 @@ fn a_following_channel_and_the_notes(world: &FakeWorld) {
                 RequiredClaim {
                     kind: ClaimKind::Acceptance,
                     check: None,
+                    environment: None,
                     signers: vec![gate.clone()],
                     asked_of: AskedOf::Every,
                 },

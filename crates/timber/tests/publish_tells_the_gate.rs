@@ -48,6 +48,7 @@ fn test_from_the_landing() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new("test")),
+        environment: None,
         signers: vec![NamedSigner {
             checks: vec![Check::new("test")],
             ..named(LANDING, &[ClaimKind::Verdict])
@@ -65,6 +66,7 @@ fn acceptance(kinds: &[ClaimKind]) -> Required {
             RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![named(HOST, kinds)],
                 asked_of: AskedOf::Every,
             },
@@ -86,6 +88,7 @@ fn requires(world: &FakeWorld, channel: &ChannelId, more: Vec<RequiredClaim>) {
     let mut claims = vec![RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![host.clone()],
         asked_of: AskedOf::Every,
     }];
@@ -116,6 +119,7 @@ fn beta_requires_a_gate_elsewhere(world: &FakeWorld) {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![gate.clone()],
                 asked_of: AskedOf::Every,
             }],
@@ -143,6 +147,7 @@ fn the_host_the_given_gate(world: &FakeWorld) {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![host.clone()],
                 asked_of: AskedOf::Every,
             }],
@@ -347,6 +352,7 @@ fn a_channel_held_is_refused_while_the_version_is_accepted() {
     let review = RequiredClaim {
         kind: ClaimKind::Review,
         check: None,
+        environment: None,
         signers: vec![named("reviewer", &[ClaimKind::Review])],
         asked_of: AskedOf::Every,
     };

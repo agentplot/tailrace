@@ -212,27 +212,8 @@ pub fn name(host: &Host, repository: &RepositoryName, checkout: &Path) -> Answer
 /// reads the bindings file and the checkout's history, and writes
 /// nothing.
 pub fn repository_of(host: &Host, checkout: &Path) -> Answer<RepositoryName> {
-    let remote = bindings::landing_remote(&host.config, host.home.as_deref(), checkout)?
-        .ok_or_else(|| {
-            Not::absent(
-                &Source::history(checkout.display()),
-                "remote of the landing, which neither [landing] nor the repository names",
-            )
-        })?;
-    let history = History::open(checkout)?;
-    let url = history.remote_url(&remote)?.ok_or_else(|| {
-        Not::absent(
-            &Source::history(&remote),
-            format!("address of the remote {remote}"),
-        )
-    })?;
-    RepositoryName::from_remote(&url).ok_or_else(|| {
-        Not::unreadable(
-            &Source::history(&remote),
-            format!("an owner and a name in the address of the remote {remote}, {url}"),
-            None,
-        )
-    })
+    let remote = bindings::landing_remote(&host.config, host.home.as_deref(), checkout)?;
+    bindings::repository_named(checkout, remote.as_deref())
 }
 
 /// What a repository none named answers.

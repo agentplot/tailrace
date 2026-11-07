@@ -1,0 +1,353 @@
+{
+  "answer": "ok",
+  "value": {
+    "branch": "main",
+    "asked_at": 1793000100,
+    "channels": {
+      "answer": "ok",
+      "value": {
+        "revision": "1111111111111111111111111111111111111111",
+        "landing": "source",
+        "channels": [
+          {
+            "channel": {
+              "component": null,
+              "name": "beta"
+            },
+            "moves": {
+              "by": "each_publish",
+              "prereleases": false
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "head": {
+                  "channel": "beta",
+                  "component": "repository",
+                  "to": {
+                    "version": "0.2.0",
+                    "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                  },
+                  "from": {
+                    "version": "0.1.0",
+                    "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                  },
+                  "predecessor": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                  "asked_by": "gate",
+                  "policy": {
+                    "revision": "2222222222222222222222222222222222222222",
+                    "claims": [
+                      "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+                    ]
+                  },
+                  "at": 1793000001
+                },
+                "chain": [
+                  [
+                    "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                    {
+                      "channel": "beta",
+                      "component": "repository",
+                      "to": {
+                        "version": "0.1.0",
+                        "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                      },
+                      "from": null,
+                      "predecessor": null,
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "2222222222222222222222222222222222222222",
+                        "claims": [
+                          "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+                        ]
+                      },
+                      "at": 1793000000
+                    }
+                  ],
+                  [
+                    "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+                    {
+                      "channel": "beta",
+                      "component": "repository",
+                      "to": {
+                        "version": "0.2.0",
+                        "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                      },
+                      "from": {
+                        "version": "0.1.0",
+                        "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                      },
+                      "predecessor": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "2222222222222222222222222222222222222222",
+                        "claims": [
+                          "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+                        ]
+                      },
+                      "at": 1793000001
+                    }
+                  ]
+                ],
+                "read": "source"
+              }
+            },
+            "notes": [
+              {
+                "version": "0.1.0",
+                "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "notes": {
+                  "answer": "ok",
+                  "value": "## [0.1.0] - 2026-01-01\n\n### 🚀 Features\n\n- The environments\n\n### ⚙️ Miscellaneous Tasks\n\n- The repository\n"
+                }
+              },
+              {
+                "version": "0.2.0",
+                "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                "notes": {
+                  "answer": "ok",
+                  "value": "## [0.2.0] - 2026-01-01\n\n### 🚀 Features\n\n- The gizmo turns\n"
+                }
+              }
+            ]
+          },
+          {
+            "channel": {
+              "component": null,
+              "name": "desk"
+            },
+            "moves": {
+              "by": "bound",
+              "to": "beta"
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "head": {
+                  "channel": "desk",
+                  "component": "repository",
+                  "to": {
+                    "version": "0.1.0",
+                    "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                  },
+                  "from": null,
+                  "predecessor": null,
+                  "asked_by": "gate",
+                  "policy": {
+                    "revision": "2222222222222222222222222222222222222222",
+                    "claims": [
+                      "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+                    ]
+                  },
+                  "at": 1793000000
+                },
+                "chain": [
+                  [
+                    "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+                    {
+                      "channel": "desk",
+                      "component": "repository",
+                      "to": {
+                        "version": "0.1.0",
+                        "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+                      },
+                      "from": null,
+                      "predecessor": null,
+                      "asked_by": "gate",
+                      "policy": {
+                        "revision": "2222222222222222222222222222222222222222",
+                        "claims": [
+                          "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+                        ]
+                      },
+                      "at": 1793000000
+                    }
+                  ]
+                ],
+                "read": "source"
+              }
+            },
+            "notes": [
+              {
+                "version": "0.1.0",
+                "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "notes": {
+                  "answer": "ok",
+                  "value": "## [0.1.0] - 2026-01-01\n\n### 🚀 Features\n\n- The environments\n\n### ⚙️ Miscellaneous Tasks\n\n- The repository\n"
+                }
+              }
+            ]
+          },
+          {
+            "channel": {
+              "component": null,
+              "name": "stable"
+            },
+            "moves": {
+              "by": "bound",
+              "to": "beta"
+            },
+            "at": {
+              "answer": "ok",
+              "value": {
+                "state": "empty",
+                "read": "source"
+              }
+            },
+            "notes": []
+          }
+        ]
+      }
+    },
+    "environments": {
+      "answer": "ok",
+      "value": {
+        "converged": 0,
+        "behind": 1,
+        "waiting": 1,
+        "unreadable": 1,
+        "environments": [
+          {
+            "environment": "db",
+            "component": "repository",
+            "channel": "beta",
+            "waits": false,
+            "approvers": [],
+            "should": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "version": "0.2.0",
+                "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+              }
+            },
+            "runs": {
+              "answer": "absent",
+              "absent": {
+                "source": {
+                  "seam": "store",
+                  "profile": "bound"
+                },
+                "what": "a counted report of environment db of repository"
+              }
+            },
+            "state": {
+              "answer": "absent",
+              "absent": {
+                "source": {
+                  "seam": "store",
+                  "profile": "bound"
+                },
+                "what": "a counted report of environment db of repository"
+              }
+            }
+          },
+          {
+            "environment": "desk",
+            "component": "repository",
+            "channel": "desk",
+            "waits": true,
+            "approvers": [
+              "ops"
+            ],
+            "moves_on": {
+              "by": "asking",
+              "bound_to": "beta",
+              "at": {
+                "answer": "ok",
+                "value": {
+                  "state": "at",
+                  "version": "0.2.0",
+                  "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                }
+              }
+            },
+            "should": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "version": "0.1.0",
+                "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+              }
+            },
+            "runs": {
+              "answer": "ok",
+              "value": {
+                "version": "0.1.0",
+                "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "converged_at": "2026-10-26T07:34:00Z",
+                "at": 1793000050,
+                "claim": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+                "signer": "deployer",
+                "read": "source"
+              }
+            },
+            "state": {
+              "answer": "ok",
+              "value": "waiting"
+            }
+          },
+          {
+            "environment": "srv",
+            "component": "repository",
+            "channel": "beta",
+            "waits": false,
+            "approvers": [],
+            "should": {
+              "answer": "ok",
+              "value": {
+                "state": "at",
+                "version": "0.2.0",
+                "index": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+              }
+            },
+            "runs": {
+              "answer": "ok",
+              "value": {
+                "version": "0.1.0",
+                "index": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                "converged_at": "2026-10-26T07:34:00Z",
+                "at": 1793000050,
+                "claim": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+                "signer": "deployer",
+                "read": "source"
+              }
+            },
+            "state": {
+              "answer": "ok",
+              "value": "behind"
+            },
+            "between": {
+              "answer": "ok",
+              "value": {
+                "direction": "ahead",
+                "versions": [
+                  {
+                    "version": "0.2.0",
+                    "revision": "1111111111111111111111111111111111111111",
+                    "notes": {
+                      "answer": "ok",
+                      "value": "## [0.2.0] - 2026-01-01\n\n### 🚀 Features\n\n- The gizmo turns\n"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    "published": {
+      "answer": "absent",
+      "absent": {
+        "source": {
+          "seam": "host",
+          "profile": "/scratch/gizmo/repo/.git/timber/published"
+        },
+        "what": "version it published"
+      }
+    }
+  }
+}

@@ -350,6 +350,12 @@ in
     # served layout (crates/timber/tests/npm_served.rs) run the npm this
     # Node.js carries.
     pkgs.nodejs
+    # The tools layer's Nix binary cache: the Nix cache target's proof
+    # (crates/timber/tests/nix_cache.rs) starts atticd, mints its tokens
+    # with atticadm and pushes with attic. Nix is the host's own, which
+    # devenv runs on.
+    pkgs.attic-client
+    pkgs.attic-server
     # The Claude Code plugin's checks (plugins/claude.sh).
     claude
   ]
@@ -357,14 +363,18 @@ in
 
   env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers-chromium}";
 
-  # The tools layer's tests run the pinned sluice, ssh-keygen and registries
-  # by these paths: in a moon task, moon's Rust toolchain puts cargo's own bin
-  # first on PATH, where a sluice built from source may be. Empty where
-  # sluice releases nothing for the system, and the tests say so.
+  # The tools layer's tests run the pinned sluice, ssh-keygen, registries and
+  # attic by these paths: in a moon task, moon's Rust toolchain puts cargo's
+  # own bin first on PATH, where a sluice or an attic built from source may
+  # be. Empty where sluice releases nothing for the system, and the tests say
+  # so.
   env.TIMBER_TOOLS_SLUICE = lib.optionalString (sluice != null) "${sluice}/bin/sluice";
   env.TIMBER_TOOLS_SSH_KEYGEN = "${pkgs.openssh}/bin/ssh-keygen";
   env.TIMBER_TOOLS_ZOT = "${zot}/bin/zot";
   env.TIMBER_TOOLS_DISTRIBUTION = "${pkgs.distribution}/bin/registry";
+  env.TIMBER_TOOLS_ATTIC = "${pkgs.attic-client}/bin/attic";
+  env.TIMBER_TOOLS_ATTICD = "${pkgs.attic-server}/bin/atticd";
+  env.TIMBER_TOOLS_ATTICADM = "${pkgs.attic-server}/bin/atticadm";
 
   # moon's task archives (.moon/cache/outputs) are a link into the git common
   # dir, so every worktree shares them; the rest of .moon/cache records the

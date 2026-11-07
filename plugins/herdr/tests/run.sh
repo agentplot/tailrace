@@ -227,6 +227,13 @@ framed kinds
 for r in alpha beta gamma delta; do framed kinds "agentplot/$r"; done
 pass
 
+fresh 'frames: the binary'"'"'s documents, of an environment behind, one waiting and one unread'
+answering
+documents environments
+framed environments
+framed environments agentplot/gizmo
+pass
+
 fresh 'frames: a host that knows no repository, and a root that cannot be read'
 answering
 documents empty
@@ -247,10 +254,19 @@ pass
 
 fresh 'every: environments not read are said, and never counted'
 answering
+documents kinds
+status --once --repo agentplot/gamma >"$t/out"
+grep -qxF 'environments: unreadable — the target (kubernetes, prod) could not read the environments of agentplot/gamma' "$t/out" ||
+  fail "not said: $(cat "$t/out")"
+grep -q 'running what they should\|[0-9] behind' "$t/out" && fail "counted: $(cat "$t/out")"
+pass
+
+fresh 'every: a repository that declares no environment shows four counts of none'
+answering
 documents never-published
 status --once >"$t/out"
-grep -qF 'environments: unreadable — the target (unread) could not read the environments' "$t/out" || fail "not said: $(cat "$t/out")"
-grep -q 'running what they should\|[0-9] behind' "$t/out" && fail "counted: $(cat "$t/out")"
+grep -qxF '      environments: 0 running what they should · 0 behind · 0 waiting on a person · 0 cannot be read' "$t/out" ||
+  fail "the counts: $(cat "$t/out")"
 pass
 
 fresh 'one: a chain refused is said with the ledger'"'"'s words, beside the chain that answers'
@@ -262,6 +278,39 @@ grep -qxF '  ← 1.2.0 from 1.1.0, asked by gate at 2026-10-26T07:33:21Z, claim 
 grep -qF 'stable (app) refused — the keeper (git ref, origin) refused: fork: predecessor sha256:' "$t/out" || fail "stable: $(cat "$t/out")"
 grep -qxF '   see the ledger'"'"'s [31mlog[0m' "$t/out" || fail "the ledger's words: $(cat "$t/out")"
 grep -q '^stable.*\(empty\|absent\)' "$t/out" && fail "stable read as empty or absent"
+pass
+
+fresh 'one: each environment with its state, what it runs and should, what it waits on and the notes between'
+answering
+documents environments
+status --once --repo agentplot/gizmo >"$t/out"
+for line in \
+  'environments: 0 running what they should · 1 behind · 1 waiting on a person · 1 cannot be read' \
+  'srv behind · follows repository beta' \
+  '  runs 0.1.0 sha256:222222222222 since 2026-10-26T07:34:00Z' \
+  '  should run 0.2.0 sha256:111111111111' \
+  '  ahead, the versions between:' \
+  '  notes of 0.2.0 at 111111111111:' \
+  '    - The gizmo turns' \
+  'desk waiting on a person · follows repository desk' \
+  '  waits on ops for beta at 0.2.0 sha256:111111111111' \
+  'db cannot be read · follows repository beta'; do
+  grep -qxF -- "$line" "$t/out" || fail "not said: $line: $(cat "$t/out")"
+done
+grep -q '^  runs: absent — the store (bound) holds no a counted report of environment db of repository$' "$t/out" ||
+  fail "db's reason: $(cat "$t/out")"
+grep -q '^\(db\|desk\) \(running what it should\|behind\)' "$t/out" && fail "an unread or waiting one read otherwise"
+pass
+
+fresh 'one: an environment whose chain cannot be read says why, and is not counted as running'
+answering
+documents kinds
+status --once --repo agentplot/alpha >"$t/out"
+grep -qxF 'prod cannot be read · follows app stable' "$t/out" || fail "prod: $(cat "$t/out")"
+grep -qF '  runs and should run: refused — the keeper (git ref, origin) refused: fork: predecessor sha256:' "$t/out" ||
+  fail "prod's reason: $(cat "$t/out")"
+[ "$(grep -c 'error: two claims name one predecessor' "$t/out")" = 2 ] || fail "prod's reason said twice: $(cat "$t/out")"
+grep -qxF 'web cannot be read · follows app beta' "$t/out" || fail "web: $(cat "$t/out")"
 pass
 
 fresh 'one: nothing published is absent, never an empty list'

@@ -521,6 +521,29 @@ fn a_host_keys_envelope_is_refused_reaching_nothing() {
 }
 
 #[test]
+fn bound_to_reach_no_service_a_keys_signature_is_unreadable_naming_it_and_reaches_nothing() {
+    let world = World::new();
+    let envelope = world.signed(&world.key, &provenance());
+    let asked = world.stand_in.requests();
+    let said = unreadable(
+        Kms::verifying()
+            .reaching(Reach::None)
+            .verify(&envelope, &[listed("fleet", &world.key)]),
+        &listing(&world.key, "fleet"),
+    );
+    assert_eq!(
+        said,
+        "status reaches no key service, and a key-service signer's public half is read from \
+         the service until the policy carries it"
+    );
+    assert_eq!(
+        world.stand_in.requests(),
+        asked,
+        "a profile bound to reach no service reached KMS"
+    );
+}
+
+#[test]
 fn a_verdict_from_a_key_no_signer_lists_is_refused_naming_the_key_it_names() {
     let world = World::new();
     let verdict = world.signed(&world.second, &claim(ClaimKind::Verdict, "checks passed"));

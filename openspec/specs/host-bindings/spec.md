@@ -100,12 +100,16 @@ nothing: a file that is there is never guessed past.
 
 ### Requirement: The repository binds the build and the projections
 
-The binding SHALL take the build and the projections from the
-repository, not the host (92): moon is bound as the build, its tasks
+The binding SHALL take the build, the projections and the targets from
+the repository, not the host (92): moon is bound as the build, its tasks
 named per output in the policy file at the landed revision (C.3), and
 the file and image projections are bound by their ecosystem names, the
-policy file naming each output's (C.10, C.11). The policy seam SHALL be
-bound to the policy file at the landed revision (C.10).
+policy file naming each output's (C.10, C.11). Every target profile built
+SHALL be bound by its profile name, each environment's `target` in the
+policy file picking among them (C.10, C.12); a target that reads the
+store SHALL read it through a store binding of its own, opened and never
+made. The policy seam SHALL be bound to the policy file at the landed
+revision (C.10).
 
 #### Scenario: The bindings file names no build
 
@@ -116,6 +120,11 @@ bound to the policy file at the landed revision (C.10).
 
 - **WHEN** the bindings file holds a `[build]` table
 - **THEN** publish and verify answer unreadable naming the table, since the build is the repository's to bind
+
+#### Scenario: The targets are the repository's
+
+- **WHEN** the bindings file names a store, a landing and a signer and nothing else, and `timber apply` runs
+- **THEN** the binding holds the target `nix_cache`, reading through a store binding of its own that is not made
 
 ### Requirement: Only publish makes the layout
 
@@ -258,8 +267,10 @@ The binding SHALL bind both signer profiles on every host: the one
 so a claim made by either kind of signer is told on any host whatever it
 signs with (80, 92). A host whose file names no `[signing]` SHALL bind
 the given host key first, signing as the host's name, for publish and
-promote, and both profiles verify-only for every other command, status
-among them.
+promote, and both profiles verify-only for every other command. For
+status, both profiles SHALL be bound verify-only and the key service
+profile bound to reach no service, whatever `[signing]` names, since
+status reaches no signer (60).
 
 #### Scenario: A host key host
 
@@ -281,6 +292,11 @@ among them.
 - **WHEN** a host whose file names no `[signing]` is bound for verify
 - **THEN** both signer profiles are bound verify-only, and nothing is read, made or reached in binding them
 
+#### Scenario: A key service host asking status
+
+- **WHEN** a host whose `[signing]` names a KMS key ARN is bound for status
+- **THEN** both signer profiles are bound verify-only, the key service profile reaching no service, and the binding names no signer
+
 ### Requirement: The file names the ledger
 
 The file SHALL bind the ledger for the host with `[ledger]`, naming its
@@ -292,7 +308,8 @@ host binds, through a binding of its own that never makes the store
 not read SHALL be unreadable naming the table. A file that names no
 `[ledger]` SHALL bind the git ref on the remote the landing is bound
 to, written or given, or with no remote where the landing has none
-(118); the binding SHALL hold no target.
+(118). A `[targets]` table, or any table naming a target, SHALL be
+unreadable naming it, since the targets are the repository's to bind.
 
 #### Scenario: A git ref ledger with a remote
 
@@ -319,6 +336,11 @@ to, written or given, or with no remote where the landing has none
 - **WHEN** the file names no `[ledger]` and `timber promote` runs, the landing bound to the remote `origin`
 - **THEN** the promotion is pushed to `refs/timber/ledger/<channel>` on `origin`, after the chain is fetched from it
 
+#### Scenario: Targets named in the host's file
+
+- **WHEN** the bindings file holds a `[targets]` table
+- **THEN** every command bound by the file answers unreadable naming `[targets]`, since the targets are the repository's to bind
+
 ### Requirement: Status is bound with nothing written
 
 Where the host holds no bindings file, status SHALL be bound as 118
@@ -326,8 +348,10 @@ binds such a host, of what status asks: the landing, sluice where the
 repository's own tree holds `.config/sluice.toml` and the plain branch
 otherwise, and the git ref ledger, each with the remote `origin` where
 the repository has one and no remote where it has none; the policy from
-the repository; and no store and no signer, whose every operation
-answers absent naming the binding (60, 92, 118, C.5, C.6, C.13). It
+the repository; the given layout as the store, opened and never made;
+and the signer profiles verify-only, reaching no service (60, 92, 118,
+C.5, C.6, C.13). A layout that is not there SHALL be bound as a store
+whose every operation answers unreadable with the opening's words. It
 SHALL write nothing to bind them.
 
 #### Scenario: A clone with no bindings file
@@ -340,19 +364,32 @@ SHALL write nothing to bind them.
 - **WHEN** the repository's tree holds `.config/sluice.toml` and the host has no bindings file
 - **THEN** status's landing is sluice's
 
+#### Scenario: A host that never published
+
+- **WHEN** status is bound on a host with no bindings file whose given layout is not there
+- **THEN** the binding is made, the store answers every operation unreadable naming the layout, and no layout is made
+
 ### Requirement: Status needs only what it asks
 
 Where the host's bindings file is there, status SHALL be bound to its
-`[landing]` and, where named, its `[ledger]` and `[store]`, opening the
-store only for a store ledger and never making it; it SHALL need no
-`[signing]`, and a file naming no `[ledger]` SHALL bind a ledger whose
-every chain is absent naming `[ledger]` in the file, so each channel is
-shown absent naming it (60, 118).
+`[landing]`, its `[store]` or the given layout, opened for the
+environments' reports and for a store ledger and never made, and, where
+named, its `[ledger]`; it SHALL need no `[signing]`, and a file naming
+no `[ledger]` SHALL bind a ledger whose every chain is absent naming
+`[ledger]` in the file, so each channel is shown absent naming it (60,
+118). A store that cannot be opened SHALL be bound as a store whose
+every operation answers unreadable with the opening's words, so the
+channels are read and each environment is answered from its copy (61).
 
 #### Scenario: A file naming a landing and no ledger
 
 - **WHEN** status is bound by a file naming `[landing]` and no `[ledger]`, `[store]` or `[signing]`
 - **THEN** the binding is made, and each channel's chain is absent naming `[ledger]` in the file
+
+#### Scenario: A store that cannot be opened
+
+- **WHEN** status is bound by a file whose `[store]` names a layout that is not there and whose `[ledger]` is the git ref
+- **THEN** the binding is made, the channels are read from the git ref, and the store answers every operation unreadable naming the layout
 
 ### Requirement: The file names what tells the gate
 
@@ -593,3 +630,36 @@ SHALL still answer absent naming `[landing]` where the file names none.
 
 - **WHEN** the same file is read for `timber publish`
 - **THEN** publish answers absent naming `[signing]`, and nothing is read or written
+
+### Requirement: Apply binds the host's signer to sign its report
+
+`timber apply` SHALL bind the host's signer to sign, the one `[signing]`
+names or the given host key where the file names none, as publish and
+promote bind it (118, C.8). It SHALL sign only the report of an apply
+that converged and, where the host's own steps tell its gate, the
+gate's moves on that report (11, 64). Every other signer profile SHALL
+be bound verify-only.
+
+#### Scenario: A host with no bindings file applies
+
+- **WHEN** a host with no bindings file applies an environment that converges
+- **THEN** its report is signed by the given host key, made on first use, and named as given in the answer
+
+#### Scenario: Nothing converged
+
+- **WHEN** apply is refused before the target is asked
+- **THEN** nothing is signed
+
+### Requirement: The gate table names what tells the gate after an apply
+
+`[gate]` SHALL name what tells the host's gate after an apply's report,
+as it names what tells it after a publish (130, C.16). `publish = {}`,
+or no `[gate]`, SHALL bind this host's own steps to tell its own gate,
+the apply's among them. `job = "<words>"` SHALL bind a job outside
+timber, and timber SHALL run nothing for it. No key of the table SHALL
+be added for apply.
+
+#### Scenario: No gate table, and an apply
+
+- **WHEN** the bindings file holds no `[gate]`, and an apply signs a report
+- **THEN** the binding says this host's own apply tells its gate

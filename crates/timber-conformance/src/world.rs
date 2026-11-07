@@ -22,8 +22,8 @@ use timber_seams::{
     Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, Envelope,
     Environment, EnvironmentName, IndexMeta, Layout, Manifest, Miss, Name, NamedSigner, Outcome,
     Output, OutputName, PackAt, Packed, Pin, Pinned, Projection, Range, Rendered, Report, Request,
-    Requirement, Response, Revision, Seam, Seams, Signer, SignerId, Source, Store, Verdict,
-    Version,
+    Requirement, Response, Revision, Seam, Seams, Signer, SignerId, Source, Store, TargetProfile,
+    Verdict, Version,
 };
 
 use crate::fixture::{Fixture, Repo, Snapshot, MAIN};
@@ -39,9 +39,10 @@ pub const LANDING: &str = "landing";
 pub const FILE: &str = "file";
 pub const IMAGE: &str = "image";
 
-/// The one environment the world binds a target for, and the channel it
-/// follows.
+/// The one environment the world binds a target for, the profile of its
+/// target, and the channel it follows.
 pub const PRODUCTION: &str = "production";
+pub const TARGET: &str = "fake";
 pub const STABLE: &str = "stable";
 
 /// One component, the repository, with two outputs: the site's files and
@@ -220,8 +221,9 @@ impl FakeWorld {
             name: EnvironmentName::new(PRODUCTION),
             channel: ChannelId::new(None, ChannelName::new(STABLE)),
             waits: false,
+            settings: json!({}),
         };
-        fakes.target(&environment.name);
+        fakes.target(&TargetProfile::new(TARGET));
         FakeWorld {
             fixture,
             fakes,
@@ -821,6 +823,7 @@ impl FakeWorld {
         let mut claims = vec![timber_seams::RequiredClaim {
             kind: ClaimKind::Acceptance,
             check: None,
+            environment: None,
             signers: vec![gate.clone()],
             asked_of: timber_seams::AskedOf::Every,
         }];
@@ -828,6 +831,7 @@ impl FakeWorld {
             claims.push(timber_seams::RequiredClaim {
                 kind: ClaimKind::Rebuild,
                 check: None,
+                environment: None,
                 signers: vec![named(REBUILDER, &[ClaimKind::Rebuild])],
                 asked_of: timber_seams::AskedOf::Every,
             });

@@ -1,12 +1,13 @@
 //! How every command renders the core's answer: the exit code of each of
 //! the four answers, the answer as one JSON document (57), a reason with
 //! the source's own words on a line of their own (58, 59, rule core.19),
-//! and a moment as a person reads a time in UTC.
+//! a moment as a person reads a time in UTC, and one attestation told by
+//! the signer that made it (80).
 
 use std::io::{self, Write};
 
 use serde::Serialize;
-use timber_core::answer_json;
+use timber_core::{answer_json, Told};
 use timber_seams::{Answer, Not};
 
 /// An answer.
@@ -71,6 +72,39 @@ pub fn not(out: &mut dyn Write, indent: &str, not: &Not) -> io::Result<()> {
     Ok(())
 }
 
+/// 80, 116: `told` on one line: its kind, the check of a verdict or the
+/// environment of a report (C.12), the digest it is attached to and the
+/// provenance it was carried in, the named signer that made it or the
+/// signers checked where none did, and whether it counts.
+pub fn told(told: &Told) -> String {
+    let kind = told
+        .kind
+        .map_or_else(|| "a claim in another form".to_string(), |k| k.to_string());
+    let of = match (&told.check, &told.environment) {
+        (Some(check), _) => format!(" of {check}"),
+        (None, Some(environment)) => format!(" of {environment}"),
+        (None, None) => String::new(),
+    };
+    let carried = told
+        .carried_in
+        .as_ref()
+        .map_or_else(String::new, |c| format!(", carried in {c}"));
+    let made = match &told.made_by {
+        Some(signer) if told.expired => format!("made by {signer}, expired"),
+        Some(signer) => format!("made by {signer}"),
+        None => {
+            let checked: Vec<&str> = told.checked.iter().map(|s| s.as_str()).collect();
+            format!("made by no named signer (checked {})", checked.join(", "))
+        }
+    };
+    let counts = if told.counts {
+        "counts"
+    } else {
+        "kept, does not count"
+    };
+    format!("{kind}{of} on {}{carried}: {made}; {counts}", told.on)
+}
+
 /// `seconds` since the Unix epoch as an RFC 3339 time in UTC, as every
 /// answer names a moment.
 pub fn utc(seconds: u64) -> String {
@@ -79,9 +113,42 @@ pub fn utc(seconds: u64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use timber_seams::{BuildId, OutputName, Seam, Source, Why};
+    use timber_seams::{
+        BuildId, ClaimKind, Digest, EnvironmentName, OutputName, Seam, SignerId, Source, Why,
+    };
 
     use super::*;
+
+    fn report(made_by: Option<&str>, counts: bool) -> Told {
+        Told {
+            on: Digest::of(b"index"),
+            envelope: Digest::of(b"envelope"),
+            kind: Some(ClaimKind::Report),
+            check: None,
+            environment: Some(EnvironmentName::new("srv")),
+            made_by: made_by.map(SignerId::new),
+            expired: false,
+            counts,
+            checked: vec![SignerId::new("deployer"), SignerId::new("gate")],
+            carried_in: None,
+        }
+    }
+
+    #[test]
+    fn a_report_is_one_line_naming_its_environment_and_its_signer() {
+        let index = Digest::of(b"index");
+        assert_eq!(
+            told(&report(Some("deployer"), true)),
+            format!("report of srv on {index}: made by deployer; counts")
+        );
+        assert_eq!(
+            told(&report(None, false)),
+            format!(
+                "report of srv on {index}: made by no named signer (checked deployer, gate); \
+                 kept, does not count"
+            )
+        );
+    }
 
     fn printed(n: &Not) -> String {
         let mut out = Vec::new();

@@ -28,9 +28,10 @@ use timber::commands::serve::page::escape;
 use timber::commands::serve::serve_on;
 use timber::profiles::store::layout::Layout;
 use timber::{run, Binding, Cli};
-use timber_core::{History, Kept, RepositoryName};
+use timber_core::{History, Kept, Reported, ReportsCopy, RepositoryName};
 use timber_seams::{
-    Answer, Claim, ClaimKind, ComponentName, IndexMeta, Manifest, Name, Revision, SignerId, Version,
+    Answer, ChannelId, ChannelName, Claim, ClaimKind, ComponentName, Digest, EnvironmentName,
+    IndexMeta, Manifest, Name, Revision, SignerId, Version,
 };
 
 const GATE: &str = "gate";
@@ -109,6 +110,12 @@ struct Two {
 
 impl Two {
     fn new() -> Two {
+        Two::with("\"acceptance\", \"promotion\"", "")
+    }
+
+    /// The same, the gate's `kinds` the policy's `kinds`, and the policy
+    /// declaring `environments` after its channels.
+    fn with(kinds: &str, environments: &str) -> Two {
         let scratch = Scratch::new();
         let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).expect("an Ed25519 key");
         let a = scratch.repo.clone();
@@ -116,10 +123,11 @@ impl Two {
             POLICY_FILE,
             &format!(
                 "outputs = [\"site\"]\n\n[projections]\nsite = \"file\"\n\n\
-                 [signers.{GATE}]\nssh = \"{}\"\nkinds = [\"acceptance\", \"promotion\"]\n\n\
+                 [signers.{GATE}]\nssh = \"{}\"\nkinds = [{kinds}]\n\n\
                  [channels.beta]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n\n\
                  [channels.stable]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n\n\
-                 [channels.rc]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n",
+                 [channels.rc]\nrequire = [{{ kind = \"acceptance\", signers = [\"{GATE}\"] }}]\n\n\
+                 {environments}",
                 key.public_key().to_openssh().unwrap()
             ),
         );
@@ -328,7 +336,16 @@ fn a_machine_that_never_published_answers_every_channel_as_the_one_that_promoted
         ours["value"]["channels"]["value"]["revision"]
     );
     assert_eq!(theirs["value"]["published"]["answer"], "absent", "{theirs}");
-    assert_eq!(theirs["value"]["environments"]["answer"], "unreadable");
+    // The policy declares no environment: an empty list on both.
+    assert_eq!(
+        theirs["value"]["environments"]["value"]["environments"],
+        serde_json::json!([]),
+        "{theirs}"
+    );
+    assert_eq!(
+        theirs["value"]["environments"],
+        ours["value"]["environments"]
+    );
     assert_eq!(files(&two.b_home, true), [], "B's home was written");
     assert!(!two.nowhere.exists(), "a bindings file was made");
     assert_eq!(files(&two.b.path, false), b_tree, "B's tree was written");
@@ -473,4 +490,110 @@ fn a_machine_cut_off_from_its_remote_shows_every_channel_and_says_when() {
         )),
         "{page}"
     );
+}
+
+/// Spec environment-status, one store read from two machines: machine A
+/// reports `srv` running 0.1.0 while `rc`, which it follows, is at
+/// 0.2.0, the report signed by the gate's key, which the policy lets
+/// claim a report, and attached to 0.1.0's index in A's layout. Machine
+/// B, which never published, its bindings file naming that layout and
+/// nothing else, shows `srv` behind with the notes of 0.2.0 as A shows
+/// it, keeps the report in its own copy and writes nothing else (60, 61,
+/// 98, 134).
+#[test]
+fn a_machine_that_never_published_reads_the_same_environments_from_one_store() {
+    let two = Two::with(
+        "\"acceptance\", \"promotion\", \"report\"",
+        "[environments.srv]\nchannel = \"rc\"\n",
+    );
+    let a_status = two.bind_a(For::Status);
+    let first = status(&a_status, &two.a.path);
+    let srv = &first["value"]["environments"]["value"]["environments"][0];
+    assert_eq!(srv["runs"]["answer"], "absent", "{first}");
+    let to = &channel(&first, "rc")["at"]["value"]["chain"][0][1]["to"];
+    assert_eq!(to["version"], "0.1.0", "{first}");
+    let index = Digest::parse(to["index"].as_str().unwrap()).unwrap();
+    let report = Reported {
+        environment: EnvironmentName::new("srv"),
+        component: ComponentName::new("repository"),
+        channel: ChannelName::new("rc"),
+        version: Version::new("0.1.0"),
+        index: index.clone(),
+        runs: index.clone(),
+        converged_at: "2026-11-05T09:00:00Z".into(),
+        at: now(),
+    };
+    let revision = Revision::new(two.a.git(&["rev-parse", "v0.1.0^{commit}"]));
+    let a = two.bind_a(For::Promote).expect("machine A binds");
+    let envelope = a.seams.signers[0]
+        .sign(&report.claim(revision), &SignerId::new(GATE))
+        .expect("the gate's key signs");
+    a.seams.store.attach(&index, &envelope).unwrap();
+
+    let ours = status(&a_status, &two.a.path);
+    let srv = &ours["value"]["environments"]["value"]["environments"][0];
+    assert_eq!(srv["state"]["value"], "behind", "{ours}");
+    assert_eq!(srv["runs"]["value"]["version"], "0.1.0", "{ours}");
+    assert_eq!(srv["runs"]["value"]["signer"], GATE, "{ours}");
+    assert_eq!(srv["runs"]["value"]["read"], "source", "{ours}");
+    assert_eq!(srv["should"]["value"]["version"], "0.2.0", "{ours}");
+    let versions = &srv["between"]["value"]["versions"];
+    assert_eq!(versions.as_array().map(Vec::len), Some(1), "{ours}");
+    assert_eq!(versions[0]["version"], "0.2.0", "{ours}");
+    let notes = versions[0]["notes"]["value"]
+        .as_str()
+        .expect("0.2.0's notes");
+    assert!(notes.contains("- The site grows\n"), "{notes}");
+
+    // Machine B, bound to A's layout alone, the rest given.
+    let layout = two.scratch.path().join("a/layout");
+    let b_file = two
+        .scratch
+        .path()
+        .join("b-host/one-store/timber/config.toml");
+    fs::create_dir_all(b_file.parent().unwrap()).unwrap();
+    fs::write(
+        &b_file,
+        format!("[store]\nlayout = {:?}\n", layout.display().to_string()),
+    )
+    .unwrap();
+    let b_tree = files(&two.b.path, false);
+    let b = bindings::bind(&b_file, Some(&two.b_home), None, &two.b.path, For::Status);
+    let theirs = status(&b, &two.b.path);
+    assert_eq!(
+        theirs["value"]["environments"], ours["value"]["environments"],
+        "{theirs}"
+    );
+    assert_eq!(files(&two.b_home, true), [], "B's home was written");
+    assert_eq!(files(&two.b.path, false), b_tree, "B's tree was written");
+    let copy = ReportsCopy::at(&History::open(&two.b.path).unwrap()).path(
+        &EnvironmentName::new("srv"),
+        &ChannelId::new(None, ChannelName::new("rc")),
+    );
+    let kept: Value = serde_json::from_slice(&fs::read(&copy).unwrap()).unwrap();
+    assert_eq!(
+        kept["reports"],
+        serde_json::json!([{ "index": index.as_str(), "envelope": envelope }]),
+        "{kept}"
+    );
+
+    let (code, text) = ask(&b, &two.b.path, &["status"]);
+    assert_eq!(code, 0, "{text}");
+    let lines: Vec<&str> = text.lines().collect();
+    let at = lines
+        .iter()
+        .position(|l| l.starts_with("  srv  "))
+        .unwrap_or_else(|| panic!("no line for srv: {text}"));
+    assert!(
+        lines[at].starts_with(&format!(
+            "  srv  behind on repository/rc: runs 0.1.0 ({index}) since 2026-11-05T09:00:00Z; \
+             should run 0.2.0 ("
+        )),
+        "{text}"
+    );
+    let shown: Vec<String> = notes
+        .lines()
+        .map(|l| format!("           {l}").trim_end().to_string())
+        .collect();
+    assert_eq!(lines[at + 3..at + 3 + shown.len()], shown, "{text}");
 }

@@ -270,12 +270,39 @@ fn what_the_repository_binds_and_no_table_of_the_file_are_unreadable_naming_the_
         ),
         (
             "targets",
-            "[targets] is no table of the bindings file, which binds [store], [landing], [ledger], [signing], [gate] and [trust]",
+            "[targets] is the repository's to bind, in its policy file, and not the host's",
+        ),
+        (
+            "environments",
+            "[environments] is the repository's to bind, in its policy file, and not the host's",
+        ),
+        (
+            "deploy",
+            "[deploy] is no table of the bindings file, which binds [store], [landing], [ledger], [signing], [gate] and [trust]",
         ),
     ] {
         host.write(&format!("[store]\nlayout = \"/layout\"\n\n[{table}]\nx = 1\n"));
         assert_eq!(host.unreadable(Some(&format!("[{table}]"))), said);
     }
+}
+
+#[test]
+fn targets_named_in_the_hosts_file_are_unreadable_for_every_command_and_make_nothing() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[targets]\nnix_cache = {{}}\n",
+        layout.display()
+    ));
+    for command in [For::Apply, For::Publish, For::Verify, For::Status] {
+        let (at, said) = unreadable_at(&host, host.bind(host.dir.path(), command));
+        assert_eq!(at, "[targets]");
+        assert_eq!(
+            said,
+            "[targets] is the repository's to bind, in its policy file, and not the host's"
+        );
+    }
+    assert!(!layout.exists(), "a refused file made {}", layout.display());
 }
 
 #[test]
@@ -524,6 +551,183 @@ fn a_file_naming_no_ledger_binds_the_git_ref_in_the_repository() {
         .map(|e| e.as_str())
         .collect();
     assert_eq!(ecosystems, ["cargo", "file", "image", "moon-cache", "npm"]);
+}
+
+#[test]
+fn an_apply_binds_every_target_built_through_a_store_it_never_makes() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layouts").join("laptop");
+    let apply = bound(&host, &layout, true, For::Apply);
+    assert!(
+        matches!(&apply, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store
+            && u.said.as_deref().is_some_and(|s| s.contains("No such file or directory"))),
+        "{:?}",
+        apply.err()
+    );
+    assert!(!layout.exists(), "apply made {}", layout.display());
+
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let before = files(&layout);
+    let binding = bound(&host, &layout, true, For::Apply).unwrap();
+    let profiles: Vec<&str> = binding.seams.targets.keys().map(|p| p.as_str()).collect();
+    assert_eq!(profiles, ["clan", "nix_cache"]);
+    assert!(binding
+        .seams
+        .target(&timber_seams::TargetProfile::new("nix_cache"))
+        .is_some());
+    assert!(binding.seams.projections.is_empty());
+    assert_eq!(files(&layout), before, "binding an apply wrote the layout");
+}
+
+// Requirement: Apply binds the host's signer to sign its report
+
+#[test]
+fn an_apply_signs_as_the_signer_signing_names_and_binds_every_other_verify_only() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let binding = bound(&host, &layout, true, For::Apply).unwrap();
+    assert_eq!(binding.signer, Some(SignerId::new("laptop")));
+    let promote = bound(&host, &layout, true, For::Promote).unwrap();
+    assert_eq!(
+        binding.seams.signers.len(),
+        promote.seams.signers.len(),
+        "an apply binds other signers than a promote"
+    );
+    for signer in &binding.seams.signers[1..] {
+        match signer.sign(&claim(), &SignerId::new("laptop")) {
+            Err(Not::Absent(a)) => {
+                assert_eq!(a.source.seam, Seam::Signer);
+                assert!(a.what.contains("no identity is at hand"), "{a:?}");
+            }
+            other => panic!("a signer after the host's answered {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn an_apply_with_no_file_signs_as_the_given_host_key_made_at_its_first_sign() {
+    let host = Host::new();
+    let (repo, head) = committed(&host, None);
+    let apply = host.bind(&repo, For::Apply);
+    // The given layout is opened and never made: a host that never
+    // published has none to apply from.
+    assert!(
+        matches!(&apply, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store),
+        "{:?}",
+        apply.err()
+    );
+    profiles::store::layout::Layout::create(host.given_layout()).unwrap();
+    let apply = host.bind(&repo, For::Apply).unwrap();
+    assert_given(&host, &apply, &repo, &head);
+    assert_eq!(apply.signer, Some(given_signer(&host)));
+    let key = host.data().join(profiles::signer::HOST_KEY);
+    assert!(!key.exists(), "binding an apply made {}", key.display());
+    let signer = apply.signer.clone().unwrap();
+    apply.seams.signers[0].sign(&claim(), &signer).unwrap();
+    assert!(
+        key.is_file(),
+        "the first sign made no key at {}",
+        key.display()
+    );
+}
+
+#[test]
+fn status_and_policy_bind_no_signer_whatever_the_file_names() {
+    let host = Host::new();
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    for command in [For::Status, For::Policy] {
+        assert_eq!(
+            bound(&host, &layout, true, command).unwrap().signer,
+            None,
+            "{command:?}"
+        );
+    }
+}
+
+// Requirement: Every host binds every signer profile for verify
+
+const ARN: &str = "arn:aws:kms:us-west-2:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab";
+
+/// `claim()` in an envelope signed with a P-256 key, as KMS signs one,
+/// its signature naming `ARN`.
+fn p256_signed() -> Envelope {
+    use p256::ecdsa::signature::Signer as _;
+    let key = p256::ecdsa::SigningKey::from_slice(&[7; 32]).unwrap();
+    let payload = claim().payload();
+    let sig: p256::ecdsa::Signature = key.sign(&profiles::signer::host_key::pae(
+        timber_seams::IN_TOTO,
+        &payload,
+    ));
+    Envelope::signed(
+        timber_seams::IN_TOTO,
+        payload,
+        timber_seams::Signature {
+            signer: SignerId::new(ARN),
+            keyid: ARN.into(),
+            sig: sig.to_der().as_bytes().to_vec(),
+        },
+    )
+}
+
+#[test]
+fn a_key_service_host_asking_status_binds_both_verify_only_reaching_no_service() {
+    let host = Host::new();
+    let repo = repository(&host);
+    host.write(&format!(
+        "[landing]\nbranch = {{}}\n\n[signing]\nkms = \"{ARN}\"\n"
+    ));
+    let binding = host
+        .bind(&repo, For::Status)
+        .unwrap_or_else(|not| panic!("status bound nothing: {not}"));
+    assert_eq!(binding.signer, None, "status names a signer");
+    assert_eq!(binding.seams.signers.len(), 2);
+    for signer in &binding.seams.signers {
+        for identity in [ARN, "laptop"] {
+            match signer.sign(&claim(), &SignerId::new(identity)) {
+                Err(Not::Absent(a)) => assert_eq!(a.source.seam, Seam::Signer),
+                other => panic!("status's signer signed as {identity}: {other:?}"),
+            }
+        }
+    }
+    // The host key first, verify-only, which tells no KMS key's signature;
+    // then the key service profile, which answers the key the policy lists
+    // unreadable where it would read its public half, reaching nothing.
+    let envelope = p256_signed();
+    let fleet = NamedSigner {
+        id: SignerId::new("fleet"),
+        verified_by: ARN.into(),
+        kinds: Vec::new(),
+        checks: Vec::new(),
+    };
+    let host_key = binding.seams.signers[0].verify(&envelope, std::slice::from_ref(&fleet));
+    assert!(matches!(host_key, Err(Not::Refused(_))), "{host_key:?}");
+    match binding.seams.signers[1].verify(&envelope, &[fleet]) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(
+                u.source,
+                profiles::signer::kms::Kms::source(),
+                "the key service profile is second"
+            );
+            assert_eq!(
+                u.what,
+                format!("the key {ARN} the policy lists for the signer fleet")
+            );
+            assert_eq!(
+                u.said.as_deref(),
+                Some(
+                    "status reaches no key service, and a key-service signer's public half is \
+                     read from the service until the policy carries it"
+                )
+            );
+        }
+        other => panic!("status's key service profile answered {other:?}"),
+    }
+    assert!(
+        !host.data().exists(),
+        "binding status made the data directory"
+    );
 }
 
 /// A repository in the host's directory, made with git, and its path.
@@ -1207,6 +1411,43 @@ fn stable() -> ChannelId {
     ChannelId::new(None, ChannelName::new("stable"))
 }
 
+/// What opening the layout at `layout` answers, which a store status
+/// binds over it answers at every operation where it cannot be opened.
+fn opening(layout: &Path) -> Not {
+    profiles::store::layout::Layout::open(layout)
+        .err()
+        .unwrap_or_else(|| panic!("the layout at {} opened", layout.display()))
+}
+
+/// The words `not` is unreadable with, where it is.
+fn said(not: &Not) -> Option<String> {
+    match not {
+        Not::Unreadable(u) => u.said.clone(),
+        _ => None,
+    }
+}
+
+/// That every operation `store` is asked answers `not`, so a store that
+/// cannot be opened is read as unreadable in the opening's words.
+fn answers_every_operation(store: &dyn Store, not: &Not) {
+    let digest = Digest::of(b"an index");
+    let name = Name::new("v0.1.0");
+    let eco = Ecosystem::new("eco");
+    let answers = [
+        store.put_bytes(b"abc").map(|_| ()),
+        store.claims_of(&digest).map(|_| ()),
+        store.name(&name, &digest, None),
+        store.resolve(&name).map(|_| ()),
+        store.read(&digest).map(|_| ()),
+        store
+            .versions(&eco, &EcosystemName::new("timber"))
+            .map(|_| ()),
+    ];
+    for answer in answers {
+        assert_eq!(answer.as_ref().err(), Some(not), "{answer:?}");
+    }
+}
+
 #[test]
 fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making_it() {
     let host = Host::new();
@@ -1216,12 +1457,21 @@ fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making
         "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[ledger]\nstore = {{}}\n",
         layout.display()
     ));
-    let missing = host.bind(&repo, For::Status);
-    assert!(
-        matches!(&missing, Err(Not::Unreadable(u)) if u.source.seam == Seam::Store),
-        "{:?}",
-        missing.err()
-    );
+    let binding = host
+        .bind(&repo, For::Status)
+        .unwrap_or_else(|not| panic!("a missing layout bound nothing: {not}"));
+    let not = opening(&layout);
+    assert!(matches!(&not, Not::Unreadable(u) if u.source.seam == Seam::Store));
+    answers_every_operation(binding.seams.store.as_ref(), &not);
+    // The ledger held in the store reads it through a store of its own,
+    // which answers the same, with nothing kept to answer from.
+    match binding.seams.keeper.chain(&stable()) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::new(Seam::Keeper, "store"));
+            assert_eq!(u.said, said(&not));
+        }
+        other => panic!("a store ledger over no layout answered {other:?}"),
+    }
     assert!(!layout.exists(), "status made {}", layout.display());
     profiles::store::layout::Layout::create(&layout).unwrap();
     match chain_of(host.bind(&repo, For::Status)) {
@@ -1231,7 +1481,7 @@ fn a_file_naming_a_store_ledger_binds_status_opening_the_layout_and_never_making
 }
 
 #[test]
-fn a_git_ref_ledger_binds_status_with_the_layout_it_names_missing_and_opens_no_store() {
+fn a_git_ref_ledger_binds_status_with_a_store_that_cannot_be_opened_answering_its_words() {
     let host = Host::new();
     let repo = repository(&host);
     let layout = host.dir.path().join("layout");
@@ -1252,13 +1502,40 @@ fn a_git_ref_ledger_binds_status_with_the_layout_it_names_missing_and_opens_no_s
         Err(Not::Absent(a)) => assert_eq!(a.source, Source::new(Seam::Keeper, "git_ref")),
         other => panic!("a git ref ledger answered {other:?}"),
     }
-    match binding.seams.store.resolve(&Name::new("v0.1.0")) {
-        Err(Not::Absent(a)) => {
-            assert_eq!(a.source, Source::new(Seam::Store, "unbound"));
-            assert!(a.what.contains("[store]"), "{a:?}");
+    let not = opening(&layout);
+    match &not {
+        Not::Unreadable(u) => {
+            assert!(
+                u.source.profile.contains(&layout.display().to_string()),
+                "{u:?}"
+            );
+            let said = u.said.as_deref().unwrap_or_default();
+            assert!(said.contains("No such file or directory"), "{said}");
         }
-        other => panic!("status's store answered {other:?}"),
+        other => panic!("opening no layout answered {other:?}"),
     }
+    answers_every_operation(binding.seams.store.as_ref(), &not);
+    assert!(!layout.exists(), "status's store made {}", layout.display());
+}
+
+#[test]
+fn status_opens_the_layout_the_file_names_and_reads_from_it_writing_nothing() {
+    let host = Host::new();
+    let repo = repository(&host);
+    let layout = host.dir.path().join("layout");
+    profiles::store::layout::Layout::create(&layout).unwrap();
+    let held = profiles::store::layout::Layout::open(&layout)
+        .unwrap()
+        .put_bytes(b"an index")
+        .unwrap();
+    host.write(&format!(
+        "[store]\nlayout = \"{}\"\n\n[landing]\nbranch = {{}}\n\n[ledger]\ngit_ref = {{}}\n",
+        layout.display()
+    ));
+    let before = files(&layout);
+    let binding = host.bind(&repo, For::Status).unwrap();
+    assert_eq!(binding.seams.store.claims_of(&held.digest), Ok(Vec::new()));
+    assert_eq!(files(&layout), before, "status's store wrote the layout");
 }
 
 #[test]
@@ -1871,13 +2148,9 @@ fn status_with_no_file_binds_the_given_landing_and_the_git_ref_on_its_remote_and
         other => panic!("the given ledger answered {other:?}, not from origin"),
     }
     assert_eq!(binding.store, given_store(&host));
-    match binding.seams.store.resolve(&Name::new("v0.1.0")) {
-        Err(Not::Absent(a)) => {
-            assert_eq!(a.source, Source::new(Seam::Store, "unbound"));
-            assert!(a.what.contains("[store] layout (given)"), "{a:?}");
-        }
-        other => panic!("status's given store answered {other:?}"),
-    }
+    // A host that never published has no given layout: the store answers
+    // every operation with the opening's words, and none is made.
+    answers_every_operation(binding.seams.store.as_ref(), &opening(&host.given_layout()));
     assert_eq!(binding.signer, None);
     assert_eq!(binding.seams.signers.len(), 2);
     assert!(binding.seams.projections.is_empty() && binding.seams.targets.is_empty());
@@ -1951,23 +2224,26 @@ fn a_store_ledger_over_the_given_layout_holds_the_chain_there_and_never_makes_it
     let host = Host::new();
     let (repo, _) = committed(&host, None);
     host.write("[ledger]\nstore = {}\n");
-    for command in [For::Verify, For::Status] {
-        match host.bind(&repo, command) {
-            Err(Not::Unreadable(u)) => {
-                assert_eq!(u.source.seam, Seam::Store, "{command:?}");
-                assert!(
-                    u.what
-                        .starts_with(&host.given_layout().display().to_string()),
-                    "{u:?}"
-                );
-            }
-            other => panic!(
-                "{command:?} over no given layout answered {:?}",
-                other.err()
-            ),
+    match host.bind(&repo, For::Verify) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source.seam, Seam::Store);
+            assert!(
+                u.what
+                    .starts_with(&host.given_layout().display().to_string()),
+                "{u:?}"
+            );
         }
-        assert!(!host.given_layout().exists(), "{command:?} made the layout");
+        other => panic!("verify over no given layout answered {:?}", other.err()),
     }
+    // Status is bound, and its store ledger answers the opening's words.
+    match chain_of(host.bind(&repo, For::Status)) {
+        Err(Not::Unreadable(u)) => {
+            assert_eq!(u.source, Source::new(Seam::Keeper, "store"));
+            assert_eq!(u.said, said(&opening(&host.given_layout())));
+        }
+        other => panic!("status's store ledger over no layout answered {other:?}"),
+    }
+    assert!(!host.given_layout().exists(), "binding made the layout");
     let binding = host.bind(&repo, For::Publish).unwrap();
     assert_eq!(binding.store, given_store(&host));
     match binding.seams.keeper.chain(&stable()) {

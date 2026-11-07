@@ -7,30 +7,40 @@
 //! the process's routes with no port bound, each time, revision, digest
 //! and scratch path replaced by a fixed value of the same form, and
 //! compared with `plugins/herdr/tests/docs/never-published/`; with
-//! `TIMBER_HERDR_DOCS=write` they are written there instead. Needs git
-//! alone, so it is in the fast layer.
+//! `TIMBER_HERDR_DOCS=write` they are written there instead. A second
+//! scratch host holds a repository with an environment behind, one
+//! waiting and one unread, its reports in the host's given layout, whose
+//! documents are `plugins/herdr/tests/docs/environments/` alike (98, 134).
+//! Needs git alone, so it is in the fast layer.
 
 mod scratch;
 
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use clap::Parser;
-use scratch::{Scratch, POLICY_FILE};
+use scratch::{Scratch, MAIN, POLICY_FILE};
 use serde_json::Value;
+use ssh_key::rand_core::OsRng;
+use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use timber::commands::serve::host::{name, Host};
 use timber::commands::serve::{address, respond_with};
+use timber::profiles::signer::host_key::HostKey;
+use timber::profiles::store::layout::Layout;
 use timber::{run, Cli};
-use timber_core::RepositoryName;
+use timber_core::{Reported, RepositoryName};
 use timber_fakes::FakeSigner;
 use timber_seams::{
-    ChannelId, ChannelName, Digest, Moved, Promotion, Revision, Satisfied, Signer, SignerId,
-    Version,
+    ChannelId, ChannelName, ComponentName, Digest, EnvironmentName, IndexMeta, Manifest, Moved,
+    Promotion, Revision, Satisfied, Signer, SignerId, Store, Version,
 };
 
-/// Where the plugin's tests read the documents.
-fn docs() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../plugins/herdr/tests/docs/never-published")
+/// Where the plugin's tests read the documents of `scene`.
+fn docs(scene: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../plugins/herdr/tests/docs")
+        .join(scene)
 }
 
 /// The moment every asked moment is fixed at: after the promotions.
@@ -89,13 +99,26 @@ fn declared(scratch: &Scratch) -> Revision {
 /// head it is at, sealed as the fake signer seals, under the policy at
 /// `policy`.
 fn promote(host: &Host, at: &Path, policy: &Revision, channel: &str, versions: &[&str]) {
+    let moves: Vec<Moved> = versions
+        .iter()
+        .map(|version| Moved {
+            version: Version::new(*version),
+            index: Digest::of(format!("{version}'s index").as_bytes()),
+        })
+        .collect();
+    promote_to(host, at, policy, channel, &moves);
+}
+
+/// `channel` promoted in the ledger to each of `moves` in turn, as
+/// [`promote`] promotes it.
+fn promote_to(host: &Host, at: &Path, policy: &Revision, channel: &str, moves: &[Moved]) {
     let channel = ChannelId::new(None, ChannelName::new(channel));
     let binding = host.bind(at).expect("the host binds");
     let keeper = &binding.seams.keeper;
     let gate = FakeSigner::new();
     gate.hold(&SignerId::new("gate"));
     let mut head = timber_core::channel(keeper.as_ref(), &channel).unwrap();
-    for (n, version) in versions.iter().enumerate() {
+    for (n, to) in moves.iter().enumerate() {
         let (from, predecessor) = match &head {
             timber_core::Channel::At { head, chain, .. } => {
                 (Some(head.to.clone()), chain.last().map(|(d, _)| d.clone()))
@@ -105,16 +128,15 @@ fn promote(host: &Host, at: &Path, policy: &Revision, channel: &str, versions: &
         let promotion = Promotion {
             channel: channel.name.clone(),
             component: channel.component_name(),
-            to: Moved {
-                version: Version::new(*version),
-                index: Digest::of(format!("{version}'s index").as_bytes()),
-            },
+            to: to.clone(),
             from,
             predecessor: predecessor.clone(),
             asked_by: SignerId::new("gate"),
             policy: Satisfied {
                 revision: policy.clone(),
-                claims: vec![Digest::of(format!("{version}'s acceptance").as_bytes())],
+                claims: vec![Digest::of(
+                    format!("{}'s acceptance", to.version).as_bytes(),
+                )],
             },
             at: 1_793_000_000 + n as u64,
         };
@@ -262,10 +284,10 @@ fn difference(at: &str, want: &Value, got: &Value) -> Option<String> {
     }
 }
 
-/// `served` written to `file` under the documents with
+/// `served` written to `file` under the documents of `scene` with
 /// `TIMBER_HERDR_DOCS=write`, else compared with what is there.
-fn committed(file: &str, served: &Value) {
-    let path = docs().join(file);
+fn committed(scene: &str, file: &str, served: &Value) {
+    let path = docs(scene).join(file);
     if std::env::var("TIMBER_HERDR_DOCS").as_deref() == Ok("write") {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         let mut text = serde_json::to_string_pretty(served).unwrap();
@@ -299,7 +321,8 @@ fn served(host: &Host, target: &str, status: u16) -> Value {
     serde_json::from_slice(&response.body).expect("a JSON document")
 }
 
-// Requirement: The pane shows what status prints on a machine that never published
+// Requirement: The pane shows what status prints on a machine that never
+// published
 
 #[test]
 fn the_documents_the_plugin_renders_are_the_binarys_own() {
@@ -340,8 +363,11 @@ fn the_documents_the_plugin_renders_are_the_binarys_own() {
         "{repository}"
     );
     assert_eq!(channels[1]["at"]["value"]["state"], "empty", "{repository}");
+    // The policy declares no environment: an empty list, four counts of
+    // none.
     assert_eq!(
-        repository["value"]["environments"]["answer"], "unreadable",
+        repository["value"]["environments"]["value"]["environments"],
+        serde_json::json!([]),
         "{repository}"
     );
     assert_eq!(
@@ -349,8 +375,12 @@ fn the_documents_the_plugin_renders_are_the_binarys_own() {
         "{repository}"
     );
 
-    committed("status.json", &root);
-    committed("agentplot/widget/status.json", &repository);
+    committed("never-published", "status.json", &root);
+    committed(
+        "never-published",
+        "agentplot/widget/status.json",
+        &repository,
+    );
 
     // The repository's document is what `timber status --json` prints
     // in its checkout.
@@ -359,6 +389,177 @@ fn the_documents_the_plugin_renders_are_the_binarys_own() {
     assert_eq!(run(&cli, &host.bind(&at), &at, &mut out), 0);
     let mut printed: Value = serde_json::from_slice(&out).unwrap();
     let mut again = served(&host, &format!("{}/status.json", widget().path()), 200);
+    Fixed::new(&paths).value(&mut printed);
+    Fixed::new(&paths).value(&mut again);
+    assert_eq!(again, printed);
+}
+
+// Requirement (herdr-plugin): Opening a row shows that repository whole,
+// every environment with the notes between
+
+fn gizmo() -> RepositoryName {
+    RepositoryName {
+        owner: "agentplot".into(),
+        name: "gizmo".into(),
+    }
+}
+
+/// When the deployer's apply reported, fixed: after the promotions.
+const REPORTED: u64 = 1_793_000_050;
+
+/// A key of `dir`'s own at `name`, its file's mode the owner's alone: the
+/// key and its file.
+fn key_in(dir: &Path, name: &str) -> (PrivateKey, PathBuf) {
+    let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).expect("an Ed25519 key");
+    let file = dir.join(name);
+    key.write_openssh_file(&file, LineEnding::LF).unwrap();
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o600)).unwrap();
+    (key, file)
+}
+
+/// The deployer's report of `environment`, which follows `channel`,
+/// running `to`, tagged at `revision`, signed by its key at `key` and
+/// attached to `to`'s index in `layout`.
+fn reported(
+    layout: &Layout,
+    key: &Path,
+    (environment, channel): (&str, &str),
+    (to, revision): (&Moved, &Revision),
+) {
+    let report = Reported {
+        environment: EnvironmentName::new(environment),
+        component: ComponentName::new("repository"),
+        channel: ChannelName::new(channel),
+        version: to.version.clone(),
+        index: to.index.clone(),
+        runs: to.index.clone(),
+        converged_at: "2026-10-26T07:34:00Z".into(),
+        at: REPORTED,
+    };
+    let deployer = SignerId::new("deployer");
+    let envelope = HostKey::new(deployer.clone(), key)
+        .sign(&report.claim(revision.clone()), &deployer)
+        .expect("the deployer's key signs");
+    layout.attach(&to.index, &envelope).unwrap();
+}
+
+/// A scratch host knowing `agentplot/gizmo` alone, whose policy declares
+/// `beta` and `stable`, a deployer it lets claim a report and `ops`, and
+/// three environments: `srv` on `beta`, behind, running 0.1.0 while
+/// `beta` is at 0.2.0, whose commit holds a feature of its own; `desk`,
+/// which waits on `ops`, its own channel at 0.1.0 and running it while
+/// `beta` is at 0.2.0; and `db` on `beta`, which no report names. Both
+/// versions are tagged and landed, their indexes put in the host's given
+/// layout.
+#[test]
+fn the_environments_the_plugin_renders_are_the_binarys_own() {
+    let scratch = Scratch::new();
+    let host = host_in(&scratch.path());
+    let (deployer, deployer_key) = key_in(&scratch.path(), "deployer.key");
+    let (ops, _) = key_in(&scratch.path(), "ops.key");
+    let repo = &scratch.repo;
+    repo.write(
+        POLICY_FILE,
+        &format!(
+            "outputs = [\"site\"]\n\n[projections]\nsite = \"file\"\n\n\
+             [signers.deployer]\nssh = \"{}\"\nkinds = [\"report\"]\n\n\
+             [signers.ops]\nssh = \"{}\"\nkinds = [\"review\"]\n\n\
+             [channels.beta]\nrequire = []\n\n[channels.stable]\nbound_to = \"beta\"\nrequire = []\n\n\
+             [environments.srv]\nchannel = \"beta\"\n\n\
+             [environments.desk]\nchannel = \"beta\"\npolicy = \"manual\"\napprovers = [\"ops\"]\n\n\
+             [environments.db]\nchannel = \"beta\"\n",
+            deployer.public_key().to_openssh().unwrap(),
+            ops.public_key().to_openssh().unwrap()
+        ),
+    );
+    let policy = Revision::new(repo.commit("feat: the environments"));
+    repo.write("site/index.html", "<p>gizmo</p>");
+    let second = repo.commit("feat: the gizmo turns");
+    repo.git(&["tag", "v0.1.0", policy.as_str()]);
+    repo.git(&["tag", "v0.2.0", &second]);
+    repo.git(&["push", "-q", "origin", MAIN, "v0.1.0", "v0.2.0"]);
+    let at = repo.path.clone();
+    name(&host, &gizmo(), &at).unwrap();
+
+    let layout = Layout::create(scratch.path().join("data/timber/layout")).unwrap();
+    let moves: Vec<Moved> = ["0.1.0", "0.2.0"]
+        .iter()
+        .map(|version| {
+            let meta = IndexMeta::new(
+                ComponentName::new("repository"),
+                Version::new(*version),
+                vec![],
+            )
+            .unwrap();
+            Moved {
+                version: Version::new(*version),
+                index: layout.put_artifact(&Manifest::Index(meta)).unwrap().digest,
+            }
+        })
+        .collect();
+    promote_to(&host, &at, &policy, "beta", &moves);
+    promote_to(&host, &at, &policy, "desk", &moves[..1]);
+    reported(
+        &layout,
+        &deployer_key,
+        ("srv", "beta"),
+        (&moves[0], &policy),
+    );
+    reported(
+        &layout,
+        &deployer_key,
+        ("desk", "desk"),
+        (&moves[0], &policy),
+    );
+
+    let paths = [(scratch.path(), "/scratch/gizmo")];
+    let paths: Vec<(&Path, &str)> = paths.iter().map(|(p, f)| (p.as_path(), *f)).collect();
+    let mut fixed = Fixed::new(&paths);
+    let mut root = served(&host, "/status.json", 200);
+    let mut repository = served(&host, &format!("{}/status.json", gizmo().path()), 200);
+    fixed.value(&mut root);
+    fixed.value(&mut repository);
+
+    let row = &root["value"]["repositories"][0];
+    assert_eq!(
+        row["value"]["environments"]["value"],
+        serde_json::json!({ "converged": 0, "behind": 1, "waiting": 1, "unreadable": 1 }),
+        "{root}"
+    );
+    let part = &repository["value"]["environments"]["value"];
+    let state = |name: &str| {
+        part["environments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["environment"] == name)
+            .unwrap_or_else(|| panic!("no environment {name}: {repository}"))["state"]
+            .clone()
+    };
+    assert_eq!(state("srv")["value"], "behind", "{repository}");
+    assert_eq!(state("desk")["value"], "waiting", "{repository}");
+    assert_eq!(state("db")["answer"], "absent", "{repository}");
+    let srv = part["environments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["environment"] == "srv")
+        .unwrap();
+    let notes = srv["between"]["value"]["versions"][0]["notes"]["value"]
+        .as_str()
+        .expect("0.2.0's notes");
+    assert!(notes.contains("- The gizmo turns\n"), "{notes}");
+
+    committed("environments", "status.json", &root);
+    committed("environments", "agentplot/gizmo/status.json", &repository);
+
+    // The repository's document is what `timber status --json` prints
+    // in its checkout.
+    let cli = Cli::try_parse_from(["timber", "status", "--json"]).unwrap();
+    let mut out = Vec::new();
+    assert_eq!(run(&cli, &host.bind(&at), &at, &mut out), 0);
+    let mut printed: Value = serde_json::from_slice(&out).unwrap();
+    let mut again = served(&host, &format!("{}/status.json", gizmo().path()), 200);
     Fixed::new(&paths).value(&mut printed);
     Fixed::new(&paths).value(&mut again);
     assert_eq!(again, printed);

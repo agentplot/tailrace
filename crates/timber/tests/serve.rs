@@ -11,6 +11,7 @@ mod scratch;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -19,23 +20,27 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use clap::Parser;
 use scratch::{Repo, Scratch, MAIN, POLICY_FILE};
 use serde_json::Value;
+use ssh_key::rand_core::OsRng;
+use ssh_key::{Algorithm, LineEnding, PrivateKey};
 use timber::bindings::{For, Teller};
 use timber::commands::serve::host::{checkout_of, find_or_start, name, Host, SERVING};
 use timber::commands::serve::page::escape;
 use timber::commands::serve::{respond_with, serve_on, serve_with, Binder, Response, Served};
 use timber::commands::status::page;
+use timber::profiles::signer::host_key::HostKey;
+use timber::profiles::store::layout::Layout as OciLayout;
 use timber::{run, Binding, Cli, REVISION};
 use timber_core::{
     answer_json, artifact_name, place, sync_checkout, CheckoutAsk, Entry, History, Kept, Layouts,
-    Noted, OverviewAsk, RepositoryName,
+    Noted, OverviewAsk, Reported, RepositoryName,
 };
 use timber_fakes::{FakeProjection, FakeSigner, FakeStore, Fakes};
 use timber_seams::{
     Answer, Artifact, ArtifactMeta, AskedOf, Audience, Branch, BuildId, ChannelId, ChannelName,
-    Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, IndexMeta, Layout,
-    Manifest, Miss, Moved, NamedSigner, Not, Output, PackAt, Packed, Pin, Pinned, Projection,
-    Promotion, Range, Rendered, Request, Required, RequiredClaim, Requirement, Revision, Satisfied,
-    Seam, Signer, SignerId, Source, Store, Version,
+    Claim, ClaimKind, ComponentName, Contents, Digest, Ecosystem, EcosystemName, EnvironmentName,
+    IndexMeta, Layout, Manifest, Miss, Moved, NamedSigner, Not, Output, PackAt, Packed, Pin,
+    Pinned, Projection, Promotion, Range, Rendered, Request, Required, RequiredClaim, Requirement,
+    Revision, Satisfied, Seam, Signer, SignerId, Source, Store, Version,
 };
 
 /// The host the tests serve: a state directory, a bindings file, a home
@@ -61,6 +66,11 @@ fn bind(host: &Host, ledger_remote: &str) {
     )
     .unwrap();
 }
+
+/// The policy every world lands first: `beta`, and `stable` bound to it.
+const POLICY: &str = "outputs = [\"site\"]\n\n[projections]\nsite = \"file\"\n\n\
+                      [channels.beta]\nrequire = []\n\n[channels.stable]\nbound_to = \"beta\"\n\
+                      require = []\n";
 
 /// A scratch remote and its clone, the policy declaring `beta` and
 /// `stable`, bound to `beta`, landed on `main`; the host's record holding
@@ -89,11 +99,7 @@ impl World {
     fn on(host: impl FnOnce(&Path) -> Host) -> World {
         let scratch = Scratch::new();
         let repo = &scratch.repo;
-        repo.write(
-            POLICY_FILE,
-            "outputs = [\"site\"]\n\n[projections]\nsite = \"file\"\n\n\
-             [channels.beta]\nrequire = []\n\n[channels.stable]\nbound_to = \"beta\"\nrequire = []\n",
-        );
+        repo.write(POLICY_FILE, POLICY);
         let head = Revision::new(repo.commit("feat: the channels"));
         repo.push();
         let host = host(&scratch.path());
@@ -160,6 +166,13 @@ impl World {
     /// head it is at, sealed as the fake signer seals; every claim's
     /// digest.
     fn promote(&self, channel: &str, versions: &[&str]) -> Vec<Digest> {
+        let moves: Vec<Moved> = versions.iter().map(|v| moved(v)).collect();
+        self.promote_to(channel, &moves)
+    }
+
+    /// `channel` promoted in the ledger to each of `moves` in turn, as
+    /// [`World::promote`] promotes it.
+    fn promote_to(&self, channel: &str, moves: &[Moved]) -> Vec<Digest> {
         let channel = ChannelId::new(None, ChannelName::new(channel));
         let binding = self.host.bind(&self.repo().path).expect("the host binds");
         let keeper = &binding.seams.keeper;
@@ -167,7 +180,7 @@ impl World {
         gate.hold(&SignerId::new("gate"));
         let mut head = timber_core::channel(keeper.as_ref(), &channel).unwrap();
         let mut claims = Vec::new();
-        for version in versions {
+        for to in moves {
             let (from, predecessor) = match &head {
                 timber_core::Channel::At { head, chain, .. } => {
                     (Some(head.to.clone()), chain.last().map(|(d, _)| d.clone()))
@@ -177,13 +190,13 @@ impl World {
             let promotion = Promotion {
                 channel: channel.name.clone(),
                 component: channel.component_name(),
-                to: moved(version),
+                to: to.clone(),
                 from,
                 predecessor: predecessor.clone(),
                 asked_by: SignerId::new("gate"),
                 policy: Satisfied {
                     revision: self.head.clone(),
-                    claims: vec![acceptance(version)],
+                    claims: vec![acceptance(to.version.as_str())],
                 },
                 at: 1_793_000_000 + claims.len() as u64,
             };
@@ -392,7 +405,12 @@ fn the_page_names_every_channel_version_and_promotion_and_escapes_the_words() {
         )),
         "{page}"
     );
-    assert!(page.contains("no target is read"), "{page}");
+    // The policy declares no environment: four counts of none.
+    assert!(page.contains(NONE), "{page}");
+    assert!(
+        page.contains("The policy declares no environment."),
+        "{page}"
+    );
     assert!(page.contains("v0.1.0"), "the record's part: {page}");
 
     // A ledger whose remote's name holds markup: each channel's chain is
@@ -638,6 +656,146 @@ fn no_request_writes_a_file_of_the_record_or_the_repository() {
     );
 }
 
+// Requirement: A repository's page and its JSON are its status answer,
+// the notes between beside an environment that is behind
+
+/// The environments' four counts of none, as a page renders them.
+const NONE: &str = "0 running what they should, 0 behind, 0 waiting on a person, 0 unreadable";
+
+/// On `world`: `srv` declared following `beta`, and a deployer, by a key
+/// of the scratch directory's own, whom the policy lets claim a report,
+/// in a commit whose subject holds markup, tagged 0.2.0 over 0.1.0 at
+/// the world's head and landed; both versions' indexes put in the host's
+/// given layout, made here; `beta` promoted to each in turn; and the
+/// deployer's one report, attached to 0.1.0's index, saying `srv` runs
+/// it. The revision of 0.2.0.
+fn srv_behind(world: &World) -> Revision {
+    let key = PrivateKey::random(&mut OsRng, Algorithm::Ed25519).expect("an Ed25519 key");
+    let key_file = world.scratch.path().join("deployer.key");
+    key.write_openssh_file(&key_file, LineEnding::LF).unwrap();
+    fs::set_permissions(&key_file, fs::Permissions::from_mode(0o600)).unwrap();
+    let repo = world.repo();
+    repo.write(
+        POLICY_FILE,
+        &format!(
+            "{POLICY}\n[signers.deployer]\nssh = \"{}\"\nkinds = [\"report\"]\n\n\
+             [environments.srv]\nchannel = \"beta\"\n",
+            key.public_key().to_openssh().unwrap()
+        ),
+    );
+    let second = Revision::new(repo.commit("feat: <script>alert(1)</script> for srv"));
+    repo.git(&["tag", "v0.1.0", world.head.as_str()]);
+    repo.git(&["tag", "v0.2.0", second.as_str()]);
+    repo.git(&["push", "-q", "origin", MAIN, "v0.1.0", "v0.2.0"]);
+
+    let layout = OciLayout::create(world.scratch.path().join("data/timber/layout")).unwrap();
+    let moves: Vec<Moved> = ["0.1.0", "0.2.0"]
+        .iter()
+        .map(|version| {
+            let meta = IndexMeta::new(
+                ComponentName::new("repository"),
+                Version::new(*version),
+                vec![],
+            )
+            .unwrap();
+            Moved {
+                version: Version::new(*version),
+                index: layout.put_artifact(&Manifest::Index(meta)).unwrap().digest,
+            }
+        })
+        .collect();
+    world.promote_to("beta", &moves);
+    let runs = &moves[0].index;
+    let report = Reported {
+        environment: EnvironmentName::new("srv"),
+        component: ComponentName::new("repository"),
+        channel: ChannelName::new("beta"),
+        version: Version::new("0.1.0"),
+        index: runs.clone(),
+        runs: runs.clone(),
+        converged_at: "2026-11-05T09:00:00Z".into(),
+        at: now(),
+    };
+    let deployer = SignerId::new("deployer");
+    let envelope = HostKey::new(deployer.clone(), &key_file)
+        .sign(&report.claim(world.head.clone()), &deployer)
+        .expect("the deployer's key signs");
+    layout.attach(runs, &envelope).unwrap();
+    second
+}
+
+#[test]
+fn an_environment_behind_shows_the_notes_between_escaped_and_its_json_is_status() {
+    let world = World::new();
+    let repository = world.named();
+    let second = srv_behind(&world);
+    let (address, _) = serving(&world.host, Duration::from_secs(60));
+
+    let (status, served) = json(address, &format!("{}/status.json", repository.path()));
+    assert_eq!(status, 200, "{served}");
+    assert_eq!(unasked(served.clone()), unasked(world.status()));
+    let srv = &served["value"]["environments"]["value"]["environments"][0];
+    assert_eq!(srv["state"]["value"], "behind", "{served}");
+    let between = &srv["between"]["value"]["versions"];
+    assert_eq!(between[0]["version"], "0.2.0", "{served}");
+    assert_eq!(between[0]["revision"], second.as_str(), "{served}");
+    let notes = between[0]["notes"]["value"]
+        .as_str()
+        .expect("0.2.0's notes");
+    assert!(notes.contains("<script>alert(1)</script>"), "{notes}");
+
+    let (status, page) = get(address, &format!("{}/status", repository.path()));
+    assert_eq!(status, 200, "{page}");
+    assert!(
+        page.contains("0 running what they should, 1 behind, 0 waiting on a person, 0 unreadable"),
+        "{page}"
+    );
+    let runs = srv["runs"]["value"]["index"].as_str().unwrap();
+    let should = srv["should"]["value"]["index"].as_str().unwrap();
+    assert!(
+        page.contains(&format!(
+            "<tr><td>srv</td><td>repository/beta</td><td>behind</td>\
+             <td>0.1.0 <code>{runs}</code> since 2026-11-05T09:00:00Z</td>\
+             <td>0.2.0 <code>{should}</code></td><td></td></tr>"
+        )),
+        "{page}"
+    );
+    assert!(
+        page.contains(&format!(
+            "ahead, the versions between:<ol class=\"chain\"><li>0.2.0 at <code>{second}</code>\
+             <pre>{}</pre></li></ol>",
+            escape(notes)
+        )),
+        "{page}"
+    );
+    assert!(
+        page.contains("&lt;script&gt;alert(1)&lt;/script&gt;"),
+        "{page}"
+    );
+    assert!(!page.contains("<script"), "{page}");
+
+    // The root's row carries the four counts as counted.
+    let (status, root) = json(address, "/status.json");
+    assert_eq!(status, 200, "{root}");
+    assert_eq!(
+        root["value"]["repositories"][0]["value"]["environments"],
+        serde_json::json!({
+            "answer": "ok",
+            "value": { "converged": 0, "behind": 1, "waiting": 0, "unreadable": 0 }
+        }),
+        "{root}"
+    );
+    let (status, page) = get(address, "/");
+    assert_eq!(status, 200, "{page}");
+    assert!(
+        page.contains(
+            "</td><td>0 running what they should, 1 behind, 0 waiting on a person, \
+             0 unreadable</td></tr>"
+        ),
+        "{page}"
+    );
+}
+
 // Requirement: The root answers every repository it knows together
 
 #[test]
@@ -675,7 +833,7 @@ fn two_repositories_named_are_answered_together_at_the_root() {
     ] {
         assert!(page.contains(head), "{head}: {page}");
     }
-    assert_eq!(page.matches("no target is read").count(), 2, "{page}");
+    assert_eq!(page.matches(NONE).count(), 2, "{page}");
 }
 
 #[test]
@@ -885,6 +1043,7 @@ fn accepted_by_the_gate() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![NamedSigner {
             id: SignerId::new("gate"),
             verified_by: "gate's key".into(),

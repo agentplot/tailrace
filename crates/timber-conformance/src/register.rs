@@ -25,7 +25,8 @@ pub struct Pending {
 }
 
 const DRIVER: &str = "bolt 5 · the driver and the pool run publish";
-const TARGET: &str = "phase 2 · the first target";
+const CATALOGUED: &str = "every-claim-takes-the-catalogued-kind-that-carries-it";
+const KEYLESS: &str = "phase 2 · keyless signing";
 const REBUILD: &str = "phase 2 · the verifier's rebuild";
 const PHASE_2: &str = "phase 2";
 
@@ -35,18 +36,14 @@ const PHASE_2: &str = "phase 2";
 pub const PENDING: &[Pending] = &[
     Pending { clause: 135, unit: DRIVER, why: "A check job pushes what its run left before the landing and a publish takes its outputs from the store, and no publish reads the store for them yet." },
     Pending { clause: 139, unit: DRIVER, why: "The build answers what a checkout's run left, and the build seam has no such operation yet." },
-    Pending { clause: 41, unit: TARGET, why: "An environment that waits converges on an approver's promotion, S6's environment half, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 97, unit: TARGET, why: "An approval is a promotion of the environment's own channel, S6's environment half, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 42, unit: TARGET, why: "A reconciler verifies before it applies, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 44, unit: TARGET, why: "Pushed to or pulling is the environment's own, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 45, unit: TARGET, why: "A reconciler acts with the environment's own credentials, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 119, unit: TARGET, why: "A reconciler leaves a marker of what it applied, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 126, unit: TARGET, why: "The roster is a target's, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 98, unit: TARGET, why: "What each environment should run and runs is reported by a target, and phase 1 leaves every target to phase 2." },
-    Pending { clause: 136, unit: TARGET, why: "The policy seam answers the environments a policy declares, each with its target, and phase 1 leaves every target to phase 2." },
+    Pending { clause: 141, unit: CATALOGUED, why: "Every claim still takes a predicate type of timber's own, and a provenance, an acceptance, a rebuild and a test take the kinds SLSA and in-toto catalogue only once the signer seam's form changes (ADR 0022, rule core.57)." },
+    Pending { clause: 142, unit: KEYLESS, why: "A bundle of claims verified under a trusted root timber is given comes with keyless signing (C.9) and the open verifier, which phase 1 builds none of (ADR 0022, rule core.58)." },
+    Pending { clause: 143, unit: KEYLESS, why: "Another system's trusted root named as a signer comes with keyless signing (C.9), and phase 1 verifies under no root (ADR 0022, rule core.59)." },
     Pending { clause: 55, unit: REBUILD, why: "A verifier's rebuild reads no cache entry it did not write, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 112, unit: REBUILD, why: "A verifier compares the digests of outputs, and phase 1 leaves the rebuild to phase 2." },
     Pending { clause: 133, unit: REBUILD, why: "A verifier's rebuild reads no compilation's cache another party wrote, and phase 1 leaves the rebuild to phase 2." },
+    Pending { clause: 44, unit: PHASE_2, why: "Pushed to or pulling is the environment's own, and every target of bolt 6 is pushed to; the Nix fleet's pull profile, the first that pulls, comes in phase 2." },
+    Pending { clause: 126, unit: PHASE_2, why: "The roster is a target's, and no target of bolt 6 holds one; the pull profile's roster comes in phase 2." },
     Pending { clause: 127, unit: PHASE_2, why: "A channel declared by a pattern over branch names, which no unit of phase 1 carves." },
     Pending { clause: 128, unit: PHASE_2, why: "Several promotions in one act, which no unit of phase 1 carves." },
     Pending { clause: 129, unit: PHASE_2, why: "The asker named by an identity the owner's identity provider issued, and phase 1 binds none." },
@@ -64,10 +61,7 @@ pub struct Part {
 
 // One part per line, as the entries are.
 #[rustfmt::skip]
-pub const PARTS: &[Part] = &[
-    Part { clause: 132, part: "what every environment should run, runs and waits on, and the four counts of each repository's row", unit: TARGET, why: "The pages show environments once a target reports them, and phase 1 leaves every target to phase 2." },
-    Part { clause: 134, part: "the notes of every version between what an environment runs and what it should", unit: TARGET, why: "The surfaces show environments once a target reports them, and phase 1 leaves every target to phase 2." },
-];
+pub const PARTS: &[Part] = &[];
 
 #[cfg(test)]
 mod tests {
@@ -101,6 +95,114 @@ mod tests {
             "a pinned version's dependencies, two levels down",
         ] {
             assert!(layouts.contains(&scenario), "{scenario} cites no 137");
+        }
+    }
+
+    #[test]
+    fn the_nix_cache_target_leaves_the_register_naming_who_cites_the_rest() {
+        let cited: Vec<u16> = citations()
+            .iter()
+            .flat_map(|c| c.cites.iter().copied())
+            .collect();
+        for clause in [42, 45, 119, 136] {
+            assert!(cited.contains(&clause), "{clause} is cited by no scenario");
+            assert!(
+                !PENDING.iter().any(|p| p.clause == clause),
+                "{clause} is cited, and still in the register"
+            );
+        }
+        let unit = |clause: u16| {
+            PENDING
+                .iter()
+                .find(|p| p.clause == clause)
+                .unwrap_or_else(|| panic!("{clause} is not in the register"))
+                .unit
+        };
+        for clause in [44, 126] {
+            assert_eq!(unit(clause), PHASE_2, "{clause} waits on another unit");
+        }
+        for why in PENDING
+            .iter()
+            .map(|p| p.why)
+            .chain(PARTS.iter().map(|p| p.why))
+        {
+            assert!(
+                !why.contains("leaves every target"),
+                "an entry still leaves every target to phase 2: {why}"
+            );
+        }
+    }
+
+    #[test]
+    fn environments_in_status_leave_the_register_with_98_cited_and_no_part_of_132_or_134_waiting() {
+        assert!(
+            citations()
+                .iter()
+                .any(|c| c.group == "status" && c.cites.contains(&98)),
+            "no scenario of the status group cites 98"
+        );
+        assert!(
+            !PENDING.iter().any(|p| p.clause == 98),
+            "98 is cited, and still in the register"
+        );
+        let parts: Vec<&Part> = PARTS
+            .iter()
+            .filter(|p| [132, 134].contains(&p.clause))
+            .collect();
+        assert_eq!(parts, Vec::<&Part>::new(), "a part of 132 or 134 waits");
+        for unit in PENDING
+            .iter()
+            .map(|p| p.unit)
+            .chain(PARTS.iter().map(|p| p.unit))
+        {
+            assert!(
+                !unit.contains("environments in status"),
+                "an entry still waits on environments in status: {unit}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_clauses_the_statement_added_through_143_wait_named() {
+        let cited: Vec<u16> = citations()
+            .iter()
+            .flat_map(|c| c.cites.iter().copied())
+            .collect();
+        for (clause, waits_on) in [(141, CATALOGUED), (142, KEYLESS), (143, KEYLESS)] {
+            assert!(!cited.contains(&clause), "{clause} is cited");
+            let entry = PENDING
+                .iter()
+                .find(|p| p.clause == clause)
+                .unwrap_or_else(|| panic!("{clause} is not in the register"));
+            assert_eq!(entry.unit, waits_on, "{clause} waits on another unit");
+            assert!(!entry.why.trim().is_empty(), "{clause} waits for no reason");
+        }
+    }
+
+    #[test]
+    fn the_clan_push_profile_leaves_the_register_with_s16_citing_41_and_97() {
+        let s16: Vec<&[u16]> = citations()
+            .iter()
+            .filter(|c| c.group == "after" && c.plays == Some("S16"))
+            .map(|c| c.cites)
+            .collect();
+        assert_eq!(s16.len(), 1, "the after group plays S16 other than once");
+        for clause in [41, 97] {
+            assert!(s16[0].contains(&clause), "S16 cites no {clause}");
+            assert!(
+                !PENDING.iter().any(|p| p.clause == clause),
+                "{clause} is cited, and still in the register"
+            );
+        }
+        for unit in PENDING
+            .iter()
+            .map(|p| p.unit)
+            .chain(PARTS.iter().map(|p| p.unit))
+        {
+            assert!(
+                !unit.contains("clan push profile"),
+                "an entry still waits on the clan push profile: {unit}"
+            );
         }
     }
 }

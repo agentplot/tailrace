@@ -19,16 +19,19 @@ statement names them (57). timber never answers a refusal as an
 absence, an absence as a refusal, or either as unknown; a refusal names
 the first claim found wanting and why, and carries the underlying
 store's, signer's or ecosystem's own words verbatim beside timber's
-(58, 59). Asking what timber holds reaches no store, no signer and no
-target, and writes nothing (60).
+(58, 59). Asking what timber holds reaches no signer and no target; it
+reaches a store only to fetch a chain the store holds or an
+environment's reports into the host's copy, and writes nothing but that
+copy (60).
 
 ## What status shows
 
 `timber status` answers in any checkout of a repository, on any
 machine, one that never published included: a fresh clone on a host
 with no bindings file is bound to the branch, or sluice where the
-repository is set up for it, and the git ref ledger, and nothing is
-written to bind it (118). It names the branch and the landed revision
+repository is set up for it, the git ref ledger and the given layout as
+its store, opened and never made, and nothing is written to bind it
+(118). It names the branch and the landed revision
 its policy was read at, and then, for each channel the policy declares
 (131), its component, the channel it is bound to where it is one, and
 the version it is at or that it is empty (31). Below each version is
@@ -48,16 +51,75 @@ ledger is answered one version per channel; a chain the ledger could
 only answer as this host last fetched it says when, with the remote's
 own words (36, 61).
 
-Beside the channels are two parts of their own. The environments are
-answered unreadable, saying what each should run and runs is read from
-a target and no target is read yet, never as none behind (98). What
-this host published comes from its own record, absent on a machine that
-never published (61). A chain that cannot be read, a fork the ledger
-refuses and a channel never promoted are three answers, each carrying
-the ledger's own words, and one channel's answer leaves every other
-shown (58, 59). `timber status --json` prints the same answer as one
-document, and asking writes nothing and reaches no store, signer or
-target (60).
+Beside the channels are two parts of their own. The first is every
+environment the policy declares at the landed revision, of the
+component asked where status names one (136). Under `environments` come
+four counts, how many run what they should, are behind, wait on a
+person and cannot be read, each environment in exactly one; then a line
+for each environment, its state, the channel it follows, what it runs
+and since when, what it should run, and what its channel moves on:
+
+```text
+environments
+  0 running what they should, 1 behind, 0 waiting, 0 unreadable
+  srv  behind on repository/stable: runs 0.2.0 (sha256:…) since 2026-11-05T09:00:00Z; should run 0.4.0 (sha256:…)
+       ahead, the versions between:
+         0.3.0 at 4f2c…
+           ## [0.3.0] - 2026-11-04
+           …
+         0.4.0 at 9a1e…
+           …
+```
+
+What it should run is its channel's head, as the channels above show it
+(40, 88). What it runs is its newest counted report: the claim the host
+that applied a version signs once the target says it runs it, attached
+beside the version's index, naming when the target converged (43, 91).
+It is read from the store and never asked of the target (60, 98). The
+state is one of four: running what it should; behind, where its newest
+report names another index than its channel's head; waiting, where it
+waits on an approver and the channel its own is bound to is somewhere
+else, naming the approvers and that channel's head (41, 97); or
+unreadable, with the reason. An environment no counted report names,
+one whose channel was never promoted among them, is unreadable saying
+so, never shown as converged (98). One that comes after others names
+them, and is never waiting on a person, since its channel moves on
+their reports (37).
+
+Beside an environment that is behind are the notes of every version
+between what it runs and what it should, `ahead` where what it should
+run is higher and `back`, the versions whose changes it leaves, where it
+is lower: each release above the lower and at or below the higher, and
+the higher where it is a prerelease, by its version and its tag's
+revision, with its notes rendered from the landed history as the
+channels' changelog renders them (134). A version the channel skipped is
+among them. One version's notes that cannot be rendered are answered
+unreadable in its place and the others shown; where the local history
+no longer holds a commit between, the versions between are unreadable
+with git's words, and the environment's state is shown as it is (58).
+
+Status fetches each environment's reports, the claims attached to every
+index its channel's chain moved to, into the host's copy under the
+repository's common git directory, `timber/reports/`, as it fetches a
+chain a store holds (61). Where the store cannot be reached, it answers
+from the copy, saying `reports as last fetched` and when, with the
+store's own words beneath; on a host that never fetched them, what the
+environment runs is unreadable naming its reports, with the store's
+words, and status still exits 0 (59, 60). Deleting the copy loses
+nothing: the next status fetches it again (63). A report counts only
+through a signer the policy lets claim `report` (116), and status
+reaches no signer: a report signed by a key-service signer is
+unreadable naming the key, and its environment unread, until the policy
+carries the key's public half (C.7).
+
+The second part is what this host published, from its own record,
+absent on a machine that never published (61). A chain that cannot be
+read, a fork the ledger refuses and a channel never promoted are three
+answers, each carrying the ledger's own words, and one channel's or one
+environment's answer leaves every other shown (58, 59).
+`timber status --json` prints the same answer as one document, and
+asking reaches no signer and no target and writes nothing but the
+host's copies (60).
 
 ## The pages
 
@@ -69,17 +131,18 @@ behind, wait on a person or cannot be read; `/status.json` is the same
 answer for a program. `http://127.0.0.1:7420/<owner>/<name>/status`
 shows one repository whole: its channels and their chains, each
 promotion with who asked and the notes of the version it moved to, the
-same changelog the command line prints; its environments; and what this
-host published, each version's notes beneath its row (132). And
+same changelog the command line prints; every environment, in a table
+of what it follows, its state, what it runs, what it should run and
+what it moves on, with a row beneath one that is behind for the
+versions between and each one's notes; and what this host published,
+each version's notes beneath its row (132). And
 `/<owner>/<name>/status.json` is exactly what `timber status --json`
 prints in its checkout. The owner and name are the last two parts of
 the address of the repository's landing's remote (49). Each page is
 rendered from the one core on each request, never by a timer, and
-writes nothing (57, 60, 132).
-
-The environments' part, and each row's four counts, say they are not
-yet read: what an environment should run and runs is read from a
-target, and no target is read yet (98).
+writes nothing but the reports' copy, since each request fetches the
+reports as status does (57, 60, 132). Every string, the notes among
+them, is escaped, and no page runs a script.
 
 `timber status --page`, run in a checkout, names its repository to
 the host, finds the serving process or starts it where none answers,
@@ -94,9 +157,12 @@ pane a person is in. It shows every repository the host knows, one row
 each, as the root's answer gives them: every channel's head and the
 environments' four counts, or the answer given in their place. Opening a
 row shows that repository whole, as its own path answers: what
-`timber status --json` prints in its checkout. Both are read from the
-host's one serving process at its one address; where nothing answers
-there, the pane starts `timber serve` as any asker does, and the
+`timber status --json` prints in its checkout. Of each environment it
+shows the state and the channel it follows, then, one beneath the
+other, what it runs and since when or why that cannot be read, what it
+should run, what it waits on, and, beside one that is behind, the notes
+of every version between. Both are read from the host's one serving
+process at its one address; where nothing answers there, the pane starts `timber serve` as any asker does, and the
 process's lock keeps the host to one (114, 132). The pane asks again
 every few seconds while it is open, keeps absent, refused and unreadable
 apart wherever one stands, each with the source's own words, and works

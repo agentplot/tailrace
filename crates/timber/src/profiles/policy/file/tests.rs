@@ -151,6 +151,7 @@ fn a_host_key_listed_is_a_signer_with_its_verifier_and_reach() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop_the_given_gate()],
                 asked_of: AskedOf::Every,
             }],
@@ -370,6 +371,7 @@ fn a_layout_line_written_is_answered_with_nothing_of_the_given_beneath_it() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop()],
                 asked_of: AskedOf::Every,
             }],
@@ -489,6 +491,7 @@ fn declared(channel: ChannelId, moves: Moves) -> DeclaredChannel {
 fn bound(to: &str) -> Moves {
     Moves::Bound {
         to: ChannelName::new(to),
+        after: vec![],
     }
 }
 
@@ -530,6 +533,7 @@ fn by_the_gate(signers: Vec<NamedSigner>) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers,
         asked_of: AskedOf::Every,
     }
@@ -696,6 +700,7 @@ fn a_bound_channel_names_the_channel_it_is_bound_to() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop_the_given_gate()],
                 asked_of: AskedOf::Every,
             }],
@@ -881,6 +886,7 @@ fn a_rebuild() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Rebuild,
         check: None,
+        environment: None,
         signers: vec![NamedSigner {
             id: SignerId::new("verifier"),
             verified_by: "ssh-ed25519 VVVV".into(),
@@ -1119,6 +1125,7 @@ fn a_givens_line_naming_another_promoter_never_widens_who_signs() {
             vec![RequiredClaim {
                 kind: ClaimKind::Promotion,
                 check: None,
+                environment: None,
                 signers: vec![release],
                 asked_of: AskedOf::Every,
             }],
@@ -1278,15 +1285,65 @@ fn a_manual_environments_approver_the_signers_table_lacks_is_unreadable_naming_i
 
 // Requirement: The environments' words are read
 
+/// The words of the channels' answer and of the environments', which
+/// are one (136).
+fn environments_unreadable(repo: &Repo, at: &Revision) -> String {
+    let said = unreadable(repo.policy().channels(at), at);
+    assert_eq!(unreadable(repo.policy().environments(at), at), said);
+    said
+}
+
+/// The words a `target` not of its form ends with (C.10).
+const TARGET_FORM_WORDS: &str = "an environment's target is a table of one key, its target's profile, whose value is that target's own table (C.10)";
+
 #[test]
 fn an_environment_naming_its_target_is_read_and_makes_no_channel() {
     let repo = Repo::new();
     let at = repo.at(
-        "[environments.site]\nchannel = \"stable\"\ntarget = { bucket = \"example-site\", region = 3 }\n",
+        "[environments.site]\nchannel = \"stable\"\ntarget.nix_cache = { attic = \"fleet:site\" }\n",
     );
     assert_eq!(repo.policy().listed(&at), Ok(givens(None)));
+}
+
+#[test]
+fn a_target_naming_two_profiles_is_unreadable_naming_the_table_and_target() {
+    let repo = Repo::new();
+    let at = repo.at(
+        "[environments.site]\nchannel = \"stable\"\n\n\
+         [environments.site.target]\nnix_cache = { attic = \"fleet:site\" }\nbucket = { name = \"example-site\" }\n",
+    );
+    assert_eq!(
+        environments_unreadable(&repo, &at),
+        format!(
+            "[environments.site] names target.bucket and target.nix_cache, and {TARGET_FORM_WORDS}"
+        )
+    );
+}
+
+#[test]
+fn a_target_whose_profile_names_no_table_is_unreadable_naming_the_table_and_target() {
+    let repo = Repo::new();
+    let at = repo
+        .at("[environments.site]\nchannel = \"stable\"\ntarget = { nix_cache = \"fleet:site\" }\n");
+    assert_eq!(
+        environments_unreadable(&repo, &at),
+        format!("[environments.site] names target.nix_cache, which is no table, and {TARGET_FORM_WORDS}")
+    );
+}
+
+#[test]
+fn a_target_that_is_no_table_or_names_no_profile_is_unreadable_naming_target() {
+    let repo = Repo::new();
     let at = repo.at("[environments.site]\nchannel = \"stable\"\ntarget = \"site\"\n");
-    assert_eq!(repo.policy().listed(&at), Ok(givens(None)));
+    assert_eq!(
+        environments_unreadable(&repo, &at),
+        format!("[environments.site] names target, which is no table, and {TARGET_FORM_WORDS}")
+    );
+    let at = repo.at("[environments.site]\nchannel = \"stable\"\ntarget = {}\n");
+    assert_eq!(
+        environments_unreadable(&repo, &at),
+        format!("[environments.site] names target with no profile in it, and {TARGET_FORM_WORDS}")
+    );
 }
 
 #[test]
@@ -1363,6 +1420,190 @@ fn environments_among_components_are_declared_per_component() {
     );
 }
 
+// Requirement: The profile answers the environments the file declares
+
+/// The environment `name` of `component`, following `channel`, waiting
+/// on `approvers` where `waits`, with `target`.
+fn environment(
+    component: Option<&str>,
+    name: &str,
+    channel: &str,
+    waits: bool,
+    approvers: &[&str],
+    target: Option<(&str, serde_json::Value)>,
+) -> DeclaredEnvironment {
+    DeclaredEnvironment {
+        name: EnvironmentName::new(name),
+        channel: id(component, channel),
+        waits,
+        approvers: approvers.iter().map(|a| SignerId::new(*a)).collect(),
+        target: target.map(|(profile, settings)| TargetTable {
+            profile: TargetProfile::new(profile),
+            settings,
+        }),
+    }
+}
+
+#[test]
+fn a_cache_environment_in_a_component_is_answered_with_its_target_as_written() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[environments.swancloud-srv.cache]\nchannel = \"beta\"\n\
+         target.nix_cache = {{ attic = \"fleet:swancloud\", closures = [\"swancloud-srv\"] }}\n",
+        component("swancloud-srv")
+    ));
+    assert_eq!(
+        repo.policy().environments(&at),
+        Ok(vec![environment(
+            Some("swancloud-srv"),
+            "cache",
+            "beta",
+            false,
+            &[],
+            Some((
+                "nix_cache",
+                serde_json::json!({ "attic": "fleet:swancloud", "closures": ["swancloud-srv"] })
+            )),
+        )])
+    );
+}
+
+#[test]
+fn a_manual_environment_follows_its_made_channel_and_waits_on_its_approvers() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[environments.prod]\nchannel = \"stable\"\npolicy = \"manual\"\napprovers = [\"ci\"]\n",
+        askers_table()
+    ));
+    assert_eq!(
+        repo.policy().environments(&at),
+        Ok(vec![environment(None, "prod", "prod", true, &["ci"], None)])
+    );
+}
+
+#[test]
+fn an_environment_after_another_follows_its_made_channel() {
+    let repo = Repo::new();
+    let at = repo.at("[environments.us]\nchannel = \"stable\"\n\n\
+         [environments.eu]\nchannel = \"stable\"\nafter = [\"us\"]\n");
+    assert_eq!(
+        repo.policy().environments(&at),
+        Ok(vec![
+            environment(None, "eu", "eu", false, &[], None),
+            environment(None, "us", "stable", false, &[], None),
+        ])
+    );
+}
+
+#[test]
+fn an_environment_with_no_target_is_answered_with_none() {
+    let repo = Repo::new();
+    let at = repo.at("[environments.prod]\nchannel = \"stable\"\n");
+    assert_eq!(
+        repo.policy().environments(&at),
+        Ok(vec![environment(None, "prod", "stable", false, &[], None)])
+    );
+}
+
+#[test]
+fn the_environments_are_ordered_by_component_and_then_name() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}{}[environments.web.staging]\nchannel = \"beta\"\n\n\
+         [environments.web.cache]\nchannel = \"beta\"\n\n\
+         [environments.lib.docs]\nchannel = \"stable\"\n",
+        component("web"),
+        component("lib")
+    ));
+    let names: Vec<(Option<String>, String)> = repo
+        .policy()
+        .environments(&at)
+        .unwrap()
+        .into_iter()
+        .map(|e| {
+            (
+                e.channel.component.map(|c| c.to_string()),
+                e.name.to_string(),
+            )
+        })
+        .collect();
+    let of = |c: &str, n: &str| (Some(c.to_string()), n.to_string());
+    assert_eq!(
+        names,
+        [of("lib", "docs"), of("web", "cache"), of("web", "staging")]
+    );
+}
+
+#[test]
+fn a_targets_settings_are_carried_as_written() {
+    let repo = Repo::new();
+    let at = repo.at(
+        "[environments.site]\nchannel = \"stable\"\n\n\
+         [environments.site.target.pushed]\nat = \"a place\"\ntries = 3\nshare = 0.5\non = true\n\
+         since = 2026-01-01T00:00:00Z\noutputs = [\"site\", \"docs\"]\nnested = { deeper = { key = \"value\" } }\n",
+    );
+    let settings = serde_json::json!({
+        "at": "a place",
+        "tries": 3,
+        "share": 0.5,
+        "on": true,
+        "since": "2026-01-01T00:00:00Z",
+        "outputs": ["site", "docs"],
+        "nested": { "deeper": { "key": "value" } },
+    });
+    assert_eq!(
+        repo.policy().environments(&at),
+        Ok(vec![environment(
+            None,
+            "site",
+            "stable",
+            false,
+            &[],
+            Some(("pushed", settings))
+        )])
+    );
+    let at =
+        repo.at("[environments.site]\nchannel = \"stable\"\ntarget.pushed = { share = nan }\n");
+    assert_eq!(
+        environments_unreadable(&repo, &at),
+        "[environments.site] names target.pushed holding NaN, a number a target's settings cannot carry"
+    );
+}
+
+// Requirement: The environments are unreadable as the channels are
+
+#[test]
+fn no_environment_declared_and_no_file_answer_an_empty_list() {
+    let repo = Repo::new();
+    let none = repo.commit();
+    assert_eq!(repo.policy().environments(&none), Ok(vec![]));
+    let at = repo.at(&format!("{}[channels.edge]\n", gate_table(false)));
+    assert_eq!(repo.policy().environments(&at), Ok(vec![]));
+}
+
+#[test]
+fn a_broken_environment_table_makes_the_environments_unreadable_as_the_channels() {
+    let repo = Repo::new();
+    let at = repo.at("[environments.prod]\nchannel = \"stable\"\npolicy = \"sometimes\"\n");
+    assert_eq!(
+        environments_unreadable(&repo, &at),
+        "[environments.prod] names the policy sometimes, and an environment's policy is auto or manual"
+    );
+}
+
+#[test]
+fn the_environments_of_a_revision_not_held_or_a_file_not_read_answer_as_policy_for() {
+    let repo = Repo::new();
+    let missing = Revision::new("0000000000000000000000000000000000000001");
+    assert_eq!(
+        repo.policy().environments(&missing),
+        Err(Not::absent(&source(), format!("revision {missing}")))
+    );
+    let at = repo.at("[environments.prod\nchannel = \"stable\"\n");
+    let said = unreadable(repo.policy().environments(&at), &at);
+    assert_eq!(unreadable(repo.policy().channels(&at), &at), said);
+}
+
 // Requirement: A manual environment has a channel of its own
 
 #[test]
@@ -1388,8 +1629,19 @@ fn prod_waits_on_stable_with_a_channel_of_its_own() {
 
 // Requirement: An after environment has a channel bound to theirs
 
+/// Bound to `to` and coming after `environments`, in their order.
+fn bound_after(to: &str, environments: &[&str]) -> Moves {
+    Moves::Bound {
+        to: ChannelName::new(to),
+        after: environments
+            .iter()
+            .map(|e| EnvironmentName::new(*e))
+            .collect(),
+    }
+}
+
 #[test]
-fn eu_after_us_is_bound_to_us() {
+fn eu_after_us_is_bound_to_us_and_comes_after_it() {
     let repo = Repo::new();
     let at = repo.at(
         "[environments.us]\nchannel = \"stable\"\npolicy = \"manual\"\n\n\
@@ -1397,8 +1649,197 @@ fn eu_after_us_is_bound_to_us() {
     );
     let mut all = givens(None);
     all.push(declared(id(None, "us"), bound("stable")));
-    all.push(declared(id(None, "eu"), bound("us")));
+    all.push(declared(id(None, "eu"), bound_after("us", &["us"])));
     assert_eq!(repo.policy().listed(&at), Ok(sorted(all)));
+}
+
+#[test]
+fn a_channel_an_after_makes_comes_after_its_environments_in_the_order_written() {
+    let repo = Repo::new();
+    let at = repo.at(
+        "[environments.us]\nchannel = \"stable\"\n\n[environments.ca]\nchannel = \"stable\"\n\n\
+         [environments.eu]\nchannel = \"stable\"\nafter = [\"us\", \"ca\"]\n",
+    );
+    let mut all = givens(None);
+    all.push(declared(
+        id(None, "eu"),
+        bound_after("stable", &["us", "ca"]),
+    ));
+    assert_eq!(repo.policy().listed(&at), Ok(sorted(all)));
+}
+
+/// A report of `environment` by `signers`, asked of every artifact.
+fn report_of(environment: &str, signers: Vec<NamedSigner>) -> RequiredClaim {
+    RequiredClaim {
+        kind: ClaimKind::Report,
+        check: None,
+        environment: Some(EnvironmentName::new(environment)),
+        signers,
+        asked_of: AskedOf::Every,
+    }
+}
+
+/// `us` waiting on `stable`, and `eu` after it.
+const EU_AFTER_US: &str = "[environments.us]\nchannel = \"stable\"\npolicy = \"manual\"\n\n\
+     [environments.eu]\nchannel = \"stable\"\nafter = [\"us\"]\n";
+
+#[test]
+fn eus_policy_requires_the_gates_acceptance_then_its_lines_claims_then_a_report_of_us() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[signers.deployer]\nssh = \"ssh-ed25519 DDDD\"\nkinds = [\"acceptance\", \"promotion\", \"report\"]\n\n\
+         {EU_AFTER_US}\n[channels.eu]\nrequire = [{{ kind = \"provenance\", signers = [\"laptop\"] }}]\n",
+        signers()
+    ));
+    let deployer = NamedSigner {
+        id: SignerId::new("deployer"),
+        verified_by: "ssh-ed25519 DDDD".into(),
+        kinds: vec![
+            ClaimKind::Acceptance,
+            ClaimKind::Promotion,
+            ClaimKind::Report,
+        ],
+        checks: vec![],
+    };
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "eu")),
+        Ok(Required::Channel {
+            claims: vec![
+                by_the_gate(vec![deployer.clone()]),
+                RequiredClaim {
+                    kind: ClaimKind::Provenance,
+                    check: None,
+                    environment: None,
+                    signers: vec![laptop()],
+                    asked_of: AskedOf::Every,
+                },
+                report_of("us", vec![deployer.clone()]),
+            ],
+            bound_to: Some(ChannelName::new("us")),
+            promoted_by: vec![deployer.clone()],
+            approvers: vec![],
+        })
+    );
+    // us, which a manual environment makes, comes after none and
+    // requires no report.
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "us")),
+        Ok(Required::Channel {
+            claims: vec![by_the_gate(vec![deployer.clone()])],
+            bound_to: Some(ChannelName::new("stable")),
+            promoted_by: vec![deployer],
+            approvers: vec![],
+        })
+    );
+}
+
+#[test]
+fn a_channel_after_two_environments_requires_a_report_of_each_in_the_order_written() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[signers.deployer]\nssh = \"ssh-ed25519 DDDD\"\nkinds = [\"report\"]\n\n\
+         [environments.us]\nchannel = \"stable\"\n\n[environments.ca]\nchannel = \"stable\"\n\n\
+         [environments.eu]\nchannel = \"stable\"\nafter = [\"us\", \"ca\"]\n",
+        gate_table(false)
+    ));
+    let deployer = NamedSigner {
+        id: SignerId::new("deployer"),
+        verified_by: "ssh-ed25519 DDDD".into(),
+        kinds: vec![ClaimKind::Report],
+        checks: vec![],
+    };
+    let required = channel_policy(&repo, &at, &id(None, "eu")).unwrap();
+    assert_eq!(
+        required.claims(),
+        [
+            by_the_gate(vec![gate(false)]),
+            report_of("us", vec![deployer.clone()]),
+            report_of("ca", vec![deployer]),
+        ]
+    );
+    assert_eq!(required.promoted_by(), [gate(false)]);
+}
+
+#[test]
+fn the_deployer_may_report() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[signers.deployer]\nssh = \"ssh-ed25519 DDDD\"\nkinds = [\"provenance\", \"report\"]\n\n{EU_AFTER_US}",
+        gate_table(true)
+    ));
+    let deployer = NamedSigner {
+        id: SignerId::new("deployer"),
+        verified_by: "ssh-ed25519 DDDD".into(),
+        kinds: vec![ClaimKind::Provenance, ClaimKind::Report],
+        checks: vec![],
+    };
+    let required = channel_policy(&repo, &at, &id(None, "eu")).unwrap();
+    assert_eq!(
+        required.claims(),
+        [
+            by_the_gate(vec![gate(true)]),
+            report_of("us", vec![deployer]),
+        ]
+    );
+    assert_eq!(required.promoted_by(), [gate(true)]);
+}
+
+#[test]
+fn nobody_may_report_so_eus_report_of_us_names_no_signer() {
+    let repo = Repo::new();
+    let at = repo.at(&format!("{}{}{EU_AFTER_US}", gate_table(true), signers()));
+    assert_eq!(
+        channel_policy(&repo, &at, &id(None, "eu")),
+        Ok(Required::Channel {
+            claims: vec![by_the_gate(vec![gate(true)]), report_of("us", vec![])],
+            bound_to: Some(ChannelName::new("us")),
+            promoted_by: vec![gate(true)],
+            approvers: vec![],
+        })
+    );
+}
+
+#[test]
+fn the_one_host_108_admits_may_accept_and_promote_and_never_report() {
+    let repo = Repo::new();
+    let at = repo.at(&format!("{}\n{EU_AFTER_US}", laptop_alone()));
+    let required = channel_policy(&repo, &at, &id(None, "eu")).unwrap();
+    assert_eq!(
+        required,
+        Required::Channel {
+            claims: vec![
+                by_the_gate(vec![laptop_the_given_gate()]),
+                report_of("us", vec![]),
+            ],
+            bound_to: Some(ChannelName::new("us")),
+            promoted_by: vec![laptop_the_given_gate()],
+            approvers: vec![],
+        }
+    );
+    assert!(!laptop_the_given_gate().kinds.contains(&ClaimKind::Report));
+}
+
+#[test]
+fn a_report_a_require_names_is_unreadable_naming_its_table() {
+    let repo = Repo::new();
+    let at = repo.at(&format!(
+        "{}[signers.deployer]\nssh = \"ssh-ed25519 DDDD\"\nkinds = [\"report\"]\n\n{EU_AFTER_US}\n\
+         [channels.us]\nrequire = [{{ kind = \"report\", signers = [\"deployer\"] }}]\n",
+        gate_table(false)
+    ));
+    assert_eq!(
+        unreadable(channel_policy(&repo, &at, &id(None, "us")), &at),
+        "[channels.us] requires a report, and a report names its environment: it is required of the environments an after names, by the channel it makes (C.10)"
+    );
+    let at = repo.at(&format!(
+        "{}[signers.deployer]\nssh = \"ssh-ed25519 DDDD\"\nkinds = [\"report\"]\n\n\
+         [acceptance]\nrequire = [{{ kind = \"report\", signers = [\"deployer\"] }}]\n",
+        gate_table(false)
+    ));
+    assert_eq!(
+        unreadable(repo.policy().policy_for(&at, &Audience::Acceptance), &at),
+        "[acceptance] requires a report, and a report names its environment: it is required of the environments an after names, by the channel it makes (C.10)"
+    );
 }
 
 #[test]
@@ -1480,6 +1921,7 @@ fn a_line_that_restates_prods_binding_adds_its_claims() {
             RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop()],
                 asked_of: AskedOf::Every,
             },
@@ -1551,6 +1993,7 @@ fn a_fragment_that_cannot_be_read_makes_every_answer_unreadable_naming_the_given
         let policy = PolicyFile::with_givens(repo.path(), text);
         let not = Not::unreadable(&source(), GIVENS_NAME, Some(said));
         assert_eq!(policy.listed(&at), Err(not.clone()));
+        assert_eq!(policy.environments(&at), Err(not.clone()));
         for audience in [
             Audience::Acceptance,
             Audience::Layout,
@@ -1609,6 +2052,7 @@ fn a_fragment_of_other_names_is_read_with_a_line_under_one() {
             RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop()],
                 asked_of: AskedOf::Every,
             },
@@ -1704,6 +2148,7 @@ fn a_laptops_policy_names_it_the_gate_for_acceptance_and_the_given_channels() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop_the_given_gate()],
                 asked_of: AskedOf::Every,
             }],
@@ -1739,6 +2184,7 @@ fn a_file_naming_a_gate_answers_its_provenance_signer_as_written() {
             claims: vec![RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![laptop()],
                 asked_of: AskedOf::Every,
             }],
@@ -1799,6 +2245,7 @@ fn refused_for_no_gate(answer: Answer<Required>, what: &str) {
             Why::Wanting {
                 kind: ClaimKind::Acceptance,
                 check: None,
+                environment: None,
                 signers: vec![],
             },
             Some("several publishers and no gate, name an accepting signer".into()),
@@ -1845,6 +2292,7 @@ fn with_two_publishers_and_no_gate_the_layout_and_a_hand_declared_channel_answer
     let provenance_by = |signer: NamedSigner| RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![signer],
         asked_of: AskedOf::Every,
     };
@@ -2006,12 +2454,14 @@ fn acceptance_asks_its_provenance_of_every_artifact_and_its_verdict_of_built_one
                 RequiredClaim {
                     kind: ClaimKind::Provenance,
                     check: None,
+                    environment: None,
                     signers: vec![laptop_the_given_gate()],
                     asked_of: AskedOf::Every,
                 },
                 RequiredClaim {
                     kind: ClaimKind::Verdict,
                     check: Some(Check::new("cli:test")),
+                    environment: None,
                     signers: vec![the_box()],
                     asked_of: AskedOf::Built,
                 },
@@ -2052,6 +2502,7 @@ fn the_one_hosts_own_given_acceptance_is_asked_of_every_artifact() {
         Ok(vec![RequiredClaim {
             kind: ClaimKind::Acceptance,
             check: None,
+            environment: None,
             signers: vec![laptop_the_given_gate()],
             asked_of: AskedOf::Every,
         }])
@@ -2071,6 +2522,7 @@ fn a_layouts_verdict_is_asked_of_every_artifact() {
         [RequiredClaim {
             kind: ClaimKind::Verdict,
             check: Some(Check::new("cli:test")),
+            environment: None,
             signers: vec![the_box()],
             asked_of: AskedOf::Every,
         }]

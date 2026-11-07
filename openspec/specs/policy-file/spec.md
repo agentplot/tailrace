@@ -344,26 +344,39 @@ component is declared and `[environments.<component>.<name>]` where
 components are. Its keys SHALL be C.10's words and no others: its
 `channel`, `policy` (`auto` or `manual`, `auto` where unwritten),
 `after`, a list of environment names of the same component, `target`,
-which the profile SHALL leave to the target's reader, reading nothing
-of its value, and, where the environment is manual, `approvers`, the
-signers that may say yes, read as a channel's `approvers` is (C.10, as
-ruled at agentplot/blueprints 088430c). Any other `policy`, or a
-`channel` the file does not declare, give or make, SHALL be unreadable
-naming the table. `approvers` on an environment that is not manual
-SHALL be unreadable naming the table and the key, since no one says yes
-to it. Any other key SHALL be unreadable naming the table and the key,
-since a target's own settings sit in the target's table and nowhere
-else (C.10).
+and, where the environment is manual, `approvers`, the signers that may
+say yes, read as a channel's `approvers` is (C.10, as ruled at
+agentplot/blueprints 088430c). `target` SHALL be a table of exactly one
+key, the profile of the environment's target, whose value is a table,
+the target's own settings, which the profile SHALL carry as written and
+read nothing of (C.10, 136). Any other `policy`, or a `channel` the file
+does not declare, give or make, SHALL be unreadable naming the table. A
+`target` naming no profile or two, or whose profile's value is not a
+table, SHALL be unreadable naming the table and `target`. `approvers` on
+an environment that is not manual SHALL be unreadable naming the table
+and the key, since no one says yes to it. Any other key SHALL be
+unreadable naming the table and the key, since a target's own settings
+sit in the target's table and nowhere else (C.10).
 
 #### Scenario: An environment naming its target
 
-- **WHEN** `[environments.site]` names `channel = "stable"` and a `target`
+- **WHEN** `[environments.site]` names `channel = "stable"` and `target.nix_cache = { attic = "fleet:site" }`
 - **THEN** the channels answer is read, and `site` makes no channel
 
 #### Scenario: An environment with a target's own key
 
 - **WHEN** `[environments.site]` names `channel = "stable"` and `bucket = "example-site"`
 - **THEN** the channels are unreadable naming `[environments.site]` and `bucket`, and saying a target's settings sit in the target's table
+
+#### Scenario: A target naming two profiles
+
+- **WHEN** `[environments.site]` names `channel = "stable"` and a `target` table with the keys `nix_cache` and `bucket`
+- **THEN** the channels and the environments are unreadable naming `[environments.site]` and `target`
+
+#### Scenario: A target whose profile names no table
+
+- **WHEN** `[environments.site]` names `target = { nix_cache = "fleet:site" }`
+- **THEN** the channels and the environments are unreadable naming `[environments.site]` and `target`
 
 #### Scenario: Approvers in a manual environment's table
 
@@ -553,3 +566,113 @@ every artifact.
 
 - **WHEN** an entry of `[acceptance]`'s `require` names a key besides `kind`, `check` and `signers`
 - **THEN** the answer is unreadable, naming the file and the table, as for any other unknown key
+
+### Requirement: The profile answers the environments the file declares
+
+The policy file profile SHALL answer environments at a revision from the
+file at that revision's tree and the table in force the channels are
+read from, so the two never disagree (136, 65, rule core.22): each
+environment, ordered by component and then name, the channel it follows,
+the made one where it is manual or names `after`, whether it waits, its
+`approvers` where manual, and its target's profile and settings, or
+none.
+
+#### Scenario: A cache environment in a component
+
+- **WHEN** the file declares a component `swancloud-srv` and `[environments.swancloud-srv.cache]` names `channel = "beta"` and `target.nix_cache = { attic = "fleet:swancloud", closures = ["swancloud-srv"] }`
+- **THEN** environments answers `cache` of `swancloud-srv`, following `beta` of `swancloud-srv`, not waiting, with the profile `nix_cache` and the settings `attic` and `closures` as written
+
+#### Scenario: A manual environment follows its made channel
+
+- **WHEN** `[environments.prod]` names `channel = "stable"`, `policy = "manual"` and `approvers = ["ci"]`
+- **THEN** environments answers `prod` following the channel `prod`, waiting on `ci`
+
+#### Scenario: An environment with no target
+
+- **WHEN** `[environments.prod]` names `channel = "stable"` and no `target`
+- **THEN** environments answers `prod` with no target
+
+#### Scenario: No environment declared
+
+- **WHEN** the file at a revision declares no environment
+- **THEN** environments answers an empty list
+
+### Requirement: The environments are unreadable as the channels are
+
+A file that declares no environment, or no file, SHALL answer
+environments with an empty list. A file whose environments' tables are
+unreadable SHALL answer environments unreadable naming the table, as it
+answers the channels.
+
+#### Scenario: No policy file
+
+- **WHEN** the revision's tree holds no `.config/timber.toml`
+- **THEN** environments answers an empty list
+
+#### Scenario: A broken environment table
+
+- **WHEN** `[environments.prod]` names `policy = "sometimes"`
+- **THEN** environments answers unreadable naming `[environments.prod]`, as the channels do
+
+### Requirement: report is a kind a signer may claim
+
+A `[signers.<name>]` table's `kinds` SHALL take `report`, letting that
+signer claim reports of any environment the file declares (116). No
+signer SHALL be let claim a report by any rule of the profile's own:
+a file whose `[signers]` lists no signer with `report` lets none, and
+the one host 108 admits gains no report by being the gate (C.10, 116).
+
+#### Scenario: The deployer may report
+
+- **WHEN** `[signers.deployer]` names `kinds = ["provenance", "report"]`
+- **THEN** a policy requiring a report names `deployer` as a signer that may claim one
+
+#### Scenario: The one host and no report
+
+- **WHEN** `[signers.laptop]` names `kinds = ["provenance"]` alone, the one host 108 admits
+- **THEN** `laptop` may claim acceptance and promotion and no report
+
+### Requirement: A require names no report
+
+A `require` entry of kind `report` SHALL make the file unreadable naming
+its table. An entry has no key to name the environment a report is of,
+and a report is required only of the environments an `after` names
+(C.10).
+
+#### Scenario: A report a require names
+
+- **WHEN** `[channels.us]` writes `require = [{ kind = "report", signers = ["deployer"] }]`
+- **THEN** the policy file is unreadable naming `[channels.us]` and the report
+
+### Requirement: A channel an after makes lists its environments
+
+The profile SHALL list a channel an environment's `after` makes as
+bound to the channel the environments it names follow, coming after
+those environments, in the order `after` names them (131, C.10). A
+channel bound by `bound_to`, or by a manual environment, SHALL come
+after none.
+
+#### Scenario: eu after us
+
+- **WHEN** `us` names `stable` with `policy = "manual"`, and `eu` names `stable` with `after = ["us"]`
+- **THEN** the channels answer lists `eu` bound to `us` and coming after `us`, and `us` bound to `stable` and coming after none
+
+### Requirement: The policy for an after channel requires a report of each environment
+
+The policy for a channel an `after` makes SHALL require, after the
+gate's acceptance and any claim its line adds, one report of each
+environment it comes after, in the order `after` names them. Each SHALL
+be by the signers `[signers]` lets claim a report (83, 116, C.10). Where
+no signer may claim a report, each requirement SHALL name no signer,
+and every version SHALL be refused naming the first, so the channel
+never moves on a report nobody may make.
+
+#### Scenario: eu's policy
+
+- **WHEN** `[signers.deployer]` may claim acceptance, promotion and report, and `eu` names `after = ["us"]`
+- **THEN** the policy for `eu` requires an acceptance by `deployer`, then a report of `us` by `deployer`, and names `deployer` as its promoter
+
+#### Scenario: Nobody may report
+
+- **WHEN** `eu` names `after = ["us"]` and no signer's kinds hold `report`
+- **THEN** the policy for `eu` requires a report of `us` by no signer, and a judge of any version under it is refused naming that report

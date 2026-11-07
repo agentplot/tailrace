@@ -1,8 +1,8 @@
 //! The `timber` binary: the command line, timber's first surface.
 //! `timber publish`, `timber verify`, `timber status`, `timber
-//! sync`, `timber push`, `timber rebuild`, `timber promote` and
-//! `timber policy` each turn their arguments into one question to the one core and render its
-//! answer, as text for a person or, with `--json`, as the answer itself
+//! sync`, `timber push`, `timber rebuild`, `timber promote`, `timber
+//! apply` and `timber policy` each turn their arguments into one question
+//! to the one core and render its answer, as text for a person or, with `--json`, as the answer itself
 //! for a program; none reads a seam, the record or the history itself,
 //! or computes a version, a digest, a signer or a channel of its own (56,
 //! 57, rule core.31). Absent, refused and unreadable are three answers
@@ -13,11 +13,17 @@
 //! by the host's bindings file (118) and the repository's policy file
 //! ([`bindings`]): on a host with no bindings file they answer absent
 //! naming it, and a broken one unreadable, each in its own form and with
-//! its own exit. `status` is bound to the landing, the policy and the
-//! ledger alone, and on a host with no bindings file as 118 binds such a
-//! host; a binding it cannot make is its channels' answer, and the
-//! host's record answers beside it (60). `policy` is bound as status is,
-//! with no store and no signer, and a binding it cannot make is its
+//! its own exit. `status` is bound to the landing, the policy, the ledger
+//! and the store, opened and never made, a store that cannot be opened
+//! answering every operation with the opening's words, and every signer
+//! verify-only, reaching no service; on a host with no bindings file as
+//! 118 binds such a host; a binding it cannot make is its channels'
+//! answer, and the host's record answers beside it (60, 61). `policy` is
+//! bound to the landing, the policy and the ledger, with no store and no
+//! signer, and a binding it cannot make is its answer. `apply` is bound
+//! to the landing, the policy and the ledger, signing its report as the
+//! host's signer, with the store opened and never made and every target
+//! profile built beside it (43, 92), and a binding it cannot make is its
 //! answer. `timber serve` is the host's one serving process, timber's
 //! second surface: it binds nothing itself, and answers each request from
 //! the one core over the binding of the checkout that named the
@@ -90,6 +96,10 @@ pub enum Command {
     /// channel's policy and held by the ledger before the store follows,
     /// or back to the version it moved from.
     Promote(commands::promote::PromoteArgs),
+    /// Converge one environment on its channel's head, the claims the
+    /// channel's policy requires of it judged before its target is handed
+    /// the version.
+    Apply(commands::apply::ApplyArgs),
     /// The policy in force at the branch's landed head: what acceptance
     /// and a layout require, and every channel, the givens among them,
     /// with how each moves, its claims and its promoters.
@@ -128,6 +138,7 @@ pub fn run(cli: &Cli, binding: &Answer<Binding>, at: &Path, out: &mut dyn Write)
         Command::Push(args) => commands::push::run(args, binding, at, out),
         Command::Rebuild(args) => commands::rebuild::run(args, binding, at, out),
         Command::Promote(args) => commands::promote::run(args, binding, at, out),
+        Command::Apply(args) => commands::apply::run(args, binding, at, out),
         Command::Policy(args) => commands::policy::run(args, binding, at, out),
         Command::Serve(args) => commands::serve::run(args, out),
     }

@@ -9,7 +9,7 @@ beta 0.2.0 sha256:111111111111
     the history holds no tag v0.1.0 reached from 1111111111111111111111111111111111111111
 stable empty, bound to beta
 
-environments: unreadable — the target (unread) could not read the environments: what each environment should run and runs is read from a target, and no target is read
+environments: 0 running what they should · 0 behind · 0 waiting on a person · 0 cannot be read
 
 published on this host: absent — the host (/scratch/widget/repo/.git/timber/published) holds no version it published
 

@@ -13,8 +13,9 @@ use timber_core::{verify, Published, Told, Verified, VerifiedNotes, VerifyAsk, N
 use timber_fakes::{Fault, LandingOp, PolicyOp, SignerOp, StoreOp, Times};
 use timber_seams::{
     Answer, AskedOf, Audience, ChannelId, ChannelName, Check, Claim, ClaimKind, ComponentName,
-    Digest, Envelope, Held, IndexMeta, Manifest, Name, NamedSigner, Not, Outcome, Policy,
-    PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store, Version, Why,
+    DeclaredEnvironment, Digest, Envelope, Held, IndexMeta, Manifest, Name, NamedSigner, Not,
+    Outcome, Policy, PolicyChannels, Required, RequiredClaim, Revision, Seam, SignerId, Store,
+    Version, Why,
 };
 use world::{build_of, World, HOST, LANDING};
 
@@ -35,12 +36,14 @@ fn acceptance() -> Required {
             RequiredClaim {
                 kind: ClaimKind::Provenance,
                 check: None,
+                environment: None,
                 signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
                 asked_of: AskedOf::Every,
             },
             RequiredClaim {
                 kind: ClaimKind::Verdict,
                 check: Some(Check::new("test")),
+                environment: None,
                 signers: vec![named(LANDING, &[ClaimKind::Verdict], &["test"])],
                 asked_of: AskedOf::Every,
             },
@@ -223,6 +226,10 @@ impl Policy for Watched {
 
     fn channels(&self, revision: &Revision) -> Answer<PolicyChannels> {
         self.inner.channels(revision)
+    }
+
+    fn environments(&self, revision: &Revision) -> Answer<Vec<DeclaredEnvironment>> {
+        self.inner.environments(revision)
     }
 }
 

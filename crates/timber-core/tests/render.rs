@@ -219,6 +219,7 @@ fn acceptance() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
         asked_of: AskedOf::Every,
     }
@@ -229,6 +230,7 @@ fn provenance() -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![named(HOST, &[ClaimKind::Provenance], &[])],
         asked_of: AskedOf::Every,
     }
@@ -406,6 +408,7 @@ fn given_by_trusted(ids: &[&str]) -> (PolicyOf, Vec<RequiredClaim>) {
     let acceptance = RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers,
         asked_of: AskedOf::Every,
     };
@@ -519,6 +522,7 @@ fn a_required_claim_through_a_signer_the_host_does_not_trust_is_found_wanting() 
     let gate_or_box = RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![
             named(GATE, &[ClaimKind::Acceptance], &[]),
             named("box", &[ClaimKind::Acceptance], &[]),
@@ -620,6 +624,7 @@ fn a_host_trusting_none_refuses_naming_acceptance_with_no_signer_checked() {
                 wanting: RequiredClaim {
                     kind: ClaimKind::Acceptance,
                     check: None,
+                    environment: None,
                     signers: vec![],
                     asked_of: AskedOf::Every,
                 },
@@ -699,6 +704,7 @@ fn a_file_naming_signers_counts_a_publishers_policy_through_them_alone() {
     let gate_or_box = RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![
             named(GATE, &[ClaimKind::Acceptance], &[]),
             named("box", &[ClaimKind::Acceptance], &[]),
@@ -770,6 +776,7 @@ fn a_claim_its_file_names_no_signer_for_is_read_through_the_hosts_trust() {
     let nobody = RequiredClaim {
         kind: ClaimKind::Acceptance,
         check: None,
+        environment: None,
         signers: vec![],
         asked_of: AskedOf::Every,
     };
@@ -888,6 +895,7 @@ fn verdict(check: &str) -> RequiredClaim {
     RequiredClaim {
         kind: ClaimKind::Verdict,
         check: Some(Check::new(check)),
+        environment: None,
         signers: vec![named(LANDING, &[ClaimKind::Verdict], &[check])],
         asked_of: AskedOf::Every,
     }
@@ -1007,6 +1015,7 @@ fn a_claim_of_a_kind_its_signer_may_not_make_does_not_count() {
     let gate_for_provenance = RequiredClaim {
         kind: ClaimKind::Provenance,
         check: None,
+        environment: None,
         signers: vec![named(GATE, &[ClaimKind::Acceptance], &[])],
         asked_of: AskedOf::Every,
     };

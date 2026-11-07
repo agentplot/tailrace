@@ -10,7 +10,7 @@ use std::fs;
 
 use scratch::{git_fails, Scratch, POLICY_FILE};
 use timber::profiles::policy::file::PolicyFile;
-use timber_conformance::seams::policy::{self, PolicyRig};
+use timber_conformance::seams::policy::{self, Declares, PolicyRig};
 use timber_conformance::{run, Rig};
 use timber_seams::{
     Audience, ChannelId, ChannelName, ClaimKind, ComponentName, DeclaredChannel, HeldChannel,
@@ -162,10 +162,66 @@ fn declaring_file(components: &[ComponentName], channels: &[DeclaredChannel]) ->
                     text.push_str("prereleases = true\n");
                 }
             }
-            Moves::Bound { to } => {
+            Moves::Bound { to, .. } => {
                 text.push_str(&format!("bound_to = {}\n", quoted(to.as_str())));
             }
             Moves::Promotion => {}
+        }
+        text.push('\n');
+    }
+    text
+}
+
+/// The policy file declaring `environments`, no component declared
+/// (C.10): each environment's table naming its channel, and where it
+/// waits `policy = "manual"` and its signers as approvers, each under
+/// `[signers]`; its target under its profile's one key, the target's
+/// settings as an inline table; and each channel one of them names that
+/// is not among `given`, declared moving by a promotion alone.
+fn environments_file(environments: &[Declares], given: &[DeclaredChannel]) -> String {
+    let mut text = String::new();
+    let mut approvers: Vec<&str> = environments
+        .iter()
+        .flat_map(|e| e.waits_on.iter().flatten())
+        .map(|a| a.as_str())
+        .collect();
+    approvers.sort_unstable();
+    approvers.dedup();
+    for id in approvers {
+        text.push_str(&format!(
+            "[signers.{id}]\nkey = {}\n\n",
+            quoted(&format!("{id}'s key"))
+        ));
+    }
+    let mut named: Vec<&ChannelName> = environments
+        .iter()
+        .map(|e| &e.channel)
+        .filter(|c| !given.iter().any(|g| g.channel.name == **c))
+        .collect();
+    named.sort_unstable();
+    named.dedup();
+    for channel in named {
+        text.push_str(&format!("[channels.{channel}]\nrequire = []\n\n"));
+    }
+    for environment in environments {
+        text.push_str(&format!(
+            "[environments.{}]\nchannel = {}\n",
+            environment.name,
+            quoted(environment.channel.as_str())
+        ));
+        if let Some(waits_on) = &environment.waits_on {
+            text.push_str("policy = \"manual\"\n");
+            if !waits_on.is_empty() {
+                text.push_str(&format!(
+                    "approvers = {}\n",
+                    list(waits_on.iter().map(|a| a.as_str()))
+                ));
+            }
+        }
+        if let Some(target) = &environment.target {
+            let settings = toml::Value::try_from(&target.settings)
+                .expect("the settings the suite declares are TOML's");
+            text.push_str(&format!("target.{} = {settings}\n", target.profile));
         }
         text.push('\n');
     }
@@ -197,6 +253,7 @@ fn fragment(components: &[ComponentName]) -> Vec<(DeclaredChannel, bool, String)
         ) {
             (_, Some(to)) => Moves::Bound {
                 to: ChannelName::new(to),
+                after: vec![],
             },
             (Some(true), None) => Moves::EachPublish {
                 prereleases: key("prereleases").and_then(toml::Value::as_bool) == Some(true),
@@ -265,6 +322,16 @@ impl PolicyRig for PolicyFileRig {
             .filter(|(_, held, _)| *held)
             .map(|(channel, _, switch)| HeldChannel { channel, switch })
             .collect()
+    }
+
+    /// The policy file declaring `environments`, committed.
+    fn environments(&self, environments: &[Declares]) -> Revision {
+        let repo = &self.scratch.repo;
+        repo.write(
+            POLICY_FILE,
+            &environments_file(environments, &self.given(&[])),
+        );
+        Revision::new(repo.commit("chore: the environments"))
     }
 
     /// The repository removed, and git's words for reading it.

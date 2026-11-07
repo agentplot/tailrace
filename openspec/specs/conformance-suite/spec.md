@@ -372,14 +372,20 @@ the ecosystem's.
 
 ### Requirement: A target's contract
 
-The target's group SHALL hold a target to 88 to 91, and to the parts of
-31, 40 and 43 a target keeps: what an environment should run is its
-channel's head, an empty channel is an answer, and what it runs is
-reported by digest with when it last converged.
+The target's group SHALL hold a target to 88 to 91, to 45 and 119, and
+to the parts of 31, 40 and 43 a target keeps: what an environment should
+run is its channel's head as the core hands it, an empty channel is an
+answer, what it runs is reported by digest with when it last converged
+where the target holds a marker and is unread with the reason where it
+holds none, and a target reads no setting but its own. The group's rig
+SHALL declare whether its target holds a marker of what it applied, as a
+store's rig declares whether its names take a condition (rule core.49);
+"converged and reported" SHALL run where it does, and "applied where no
+marker is held" where it does not, each not applicable to the other.
 
 #### Scenario: What an environment should run
 
-- **WHEN** an environment's channel names a digest, and another's names nothing
+- **WHEN** desired is asked of one environment with a head that names a digest, and of another with a head that answers the channel empty
 - **THEN** the first answers that digest and the second answers empty, not an error
 
 #### Scenario: An environment that cannot be read
@@ -389,8 +395,18 @@ reported by digest with when it last converged.
 
 #### Scenario: Converged and reported
 
-- **WHEN** a verified version is applied to an environment
+- **WHEN** a verified version is applied to an environment whose target holds a marker
 - **THEN** the environment's current digest and its report name that version's digest and when it converged
+
+#### Scenario: Applied where no marker is held
+
+- **WHEN** a verified version is applied to an environment whose target holds no marker
+- **THEN** current and report each answer unreadable with the reason, and neither names the digest applied
+
+#### Scenario: A table with a key the target does not read
+
+- **WHEN** desired, current and apply are asked of an environment whose settings hold a key the target does not read
+- **THEN** each answers unreadable naming that key, and nothing is applied
 
 ### Requirement: The keeper's contract
 
@@ -446,7 +462,7 @@ its contract and finding it reported as failed.
 #### Scenario: One of each, and any number of projections and targets
 
 - **WHEN** one store, build, landing, policy and keeper, two signers, two projections and two targets are bound
-- **THEN** each projection is found by its ecosystem and each target by its environment
+- **THEN** each projection is found by its ecosystem and each target by its profile
 
 #### Scenario: A broken profile fails the suite
 
@@ -614,11 +630,12 @@ version to 21 to 24, 65, 123 and 124.
 ### Requirement: Status over the fakes
 
 The status group SHALL hold status to 58, 60, 61 and 62: answered from
-what the host keeps, with no seam asked and nothing written.
+what the host keeps and what the ledger and the store answer, with no
+signer or target asked, and nothing written but the host's copy.
 
 #### Scenario: Status after a publish
 
-- **WHEN** status is asked after a publish
+- **WHEN** status is asked after a publish, in a world whose policy declares no environment
 - **THEN** it answers the component, version, revision and index published with the notes the index names, byte for byte, no fake records a call after the publish's last, and no file of the record changes
 
 #### Scenario: The record read with a file reader
@@ -872,48 +889,6 @@ commit that cites them.
 
 - **WHEN** the coverage check runs
 - **THEN** 32, 33, 37, 38, 39, 101 and 106 are cited and in no register entry, 41 and 97 are pending with the first target, and 125 is pending with `the-policy-seam-lists-the-channels`
-
-### Requirement: Channels in status over the fakes
-
-The status group SHALL hold status's channels to 31, 36, 58 to 61, 63,
-101 and 131 over the fakes, below its marker, each scenario asking the
-landing, the policy and the keeper alone and writing nothing:
-
-- every channel the policy declares, at its version or empty, with its
-  chain (31, 101, 125, 131);
-- a channel read as last read, with the store unreachable, nothing
-  shown refused, playing S10 as far as status goes (36, 60, 61);
-- one chain unreadable and one forked beside a channel shown, each
-  carrying the keeper's words (58, 59, 105);
-- everything kept deleted, the channels answered the same and the
-  record the same once rebuilt, playing S12 for the channels (63);
-- the environments' part unreadable with a fake target bound, the
-  target asked nothing (58, 60).
-
-#### Scenario: Every channel at its version or empty
-
-- **WHEN** the fake policy declares `beta` and `stable` of the world's component and the fake keeper holds two promotions of `stable`
-- **THEN** status names `beta` empty and `stable` at its head's version with both promotions newest first, and the store, signer and targets record no call
-
-#### Scenario: S10 for status
-
-- **WHEN** the fake store faults every operation, the fake keeper is made unreachable after one answer, and status is asked
-- **THEN** each channel is shown as last read with its time and the keeper's words, no part is refused, and the store records no call
-
-#### Scenario: One channel's answer beside another's
-
-- **WHEN** the fake keeper's chain is faulted unreadable once with the words `connection reset` and another channel is forked
-- **THEN** the first channel asked is unreadable carrying `connection reset`, the forked one refused naming both claims, and every other channel shown
-
-#### Scenario: S12 for the channels
-
-- **WHEN** status is asked, the host's record is deleted, and status is asked again
-- **THEN** the channels' part of both answers is equal, and after a rebuild so is the record's
-
-#### Scenario: The environments not yet read
-
-- **WHEN** the fake world binds a target for an environment and status is asked
-- **THEN** the environments' part is unreadable saying no target is read, never empty, and the fake target records no call
 
 ### Requirement: The page answers from the one core beside the command line
 
@@ -1189,3 +1164,203 @@ the outputs publishing what another world pushed before its landing.
 
 - **WHEN** a checkout is scripted as having left a failed build identity beside a passing one, and what it left is pushed
 - **THEN** only the passing one's entry is written
+
+### Requirement: The policy's environments
+
+The policy's group SHALL hold a policy to 136, its rig declaring at a
+landed revision a waiting environment and one that moves on its own,
+each with a target's profile and settings; its scenarios SHALL cite 136,
+and 136 SHALL leave the register in the commit whose scenario first
+cites it (rule core.33).
+
+#### Scenario: Environments declared
+
+- **WHEN** the rig declares `cache`, following `beta` with a target, and `prod`, manual and following `stable` and approved by one signer, at a landed revision
+- **THEN** environments answers both, `prod` following the channel made for it and waiting on that signer, each with its target as declared
+
+#### Scenario: None declared
+
+- **WHEN** environments is asked at a revision that declares none
+- **THEN** it answers an empty list, not absent
+
+### Requirement: Apply over the fakes
+
+A core group, apply, SHALL run the core's apply over the fakes, a
+scenario for each requirement of `environment-apply`: the head applied
+once its claims are judged, a wanting claim, an empty channel, an
+unbound profile, an environment already at the head. They SHALL cite
+31, 40, 42, 88, 90 and 136 as each exercises them, and 42 SHALL leave
+the register in the commit whose scenario first cites it (rules
+core.29, core.33).
+
+#### Scenario: The head applied after its claims are judged
+
+- **WHEN** an environment follows `beta`, whose head's index carries every claim the policy for `beta` requires, and the fake target runs another digest
+- **THEN** the fake target records one apply of that index and version, after the claims were read, and the answer names them
+
+#### Scenario: A wanting claim stops the apply
+
+- **WHEN** the policy for the channel requires a claim the head's index lacks
+- **THEN** the apply is refused naming that claim, and the fake target records no apply
+
+### Requirement: The register after the Nix cache target
+
+When this unit's scenarios are in, 42, 45, 119 and 136 SHALL be cited and
+in no register entry. The entries that named the first target SHALL name
+the unit or phase that will cite them: 41 and 97 the clan push profile of
+bolt 6; 44 and 126 phase 2; 98, and the parts of 132 and 134 that show
+environments, phase 2's environments in status; each with its reason
+(rule core.33, section 12).
+
+#### Scenario: The register after this unit
+
+- **WHEN** the coverage check runs after this unit's last commit
+- **THEN** 42, 45, 119 and 136 are cited and not registered, 41 and 97 are pending with the clan push profile, and 44, 98, 126 and the parts of 132 and 134 are pending with phase 2, and the check passes
+
+### Requirement: Reports over the fakes
+
+A core group, `after`, SHALL hold the report scenarios over the fakes.
+In the first, an apply converges and the fake target reports the index
+applied, and one report claim about it, signed by the host's signer,
+is attached beside it. In the second, the report is unread and no
+claim is signed. In the third, an environment's newest report is read
+across two versions of its channel. Each scenario SHALL cite 43 and 91,
+and the first SHALL also cite 11 (rule core.33).
+
+#### Scenario: The report group passes over the fakes
+
+- **WHEN** `moon run conformance:test` runs the `after` group over the fakes
+- **THEN** the three report scenarios pass, each citing its clauses
+
+### Requirement: S16 over the fakes
+
+The `after` group SHALL play S16 over the fakes, with `first` a manual
+environment on `stable` whose `approvers` name `desk`, and `second`
+after `first`. An asking by `desk` moves `first`'s channel and not
+`second`'s; `first` is applied and reports, and `second`'s channel
+follows; `first` is moved back, applied and reports, and `second`'s
+channel follows back. It SHALL cite 37, 41, 43, 83, 91 and 97.
+
+#### Scenario: S16 passes over the fakes
+
+- **WHEN** the `after` group runs over the fakes
+- **THEN** S16 passes, `second`'s chain holding two moves, each after a report of `first`
+
+### Requirement: S16 checks that second is never ahead
+
+After each step of S16, the scenario SHALL assert that `second`'s
+channel is empty or names the index of `first`'s newest report (37,
+C.10).
+
+#### Scenario: A move ahead fails the scenario
+
+- **WHEN** the fakes are scripted so the gate would move `second` to a version `first` has not reported
+- **THEN** S16 fails naming the step and the two indexes
+
+### Requirement: The clan push profile runs the target group
+
+The target group SHALL run over the clan push profile, in its own tests
+against a scripted fleet, declaring that its target holds a marker. It
+SHALL also run by hand against one machine, under `check-fleet` (93,
+rule core.38).
+
+#### Scenario: The scripted fleet
+
+- **WHEN** `moon run cli:test` runs
+- **THEN** the target group passes over the clan push profile with the scripted fleet
+
+### Requirement: The register after the clan push profile
+
+41 and 97 SHALL leave the register in the commit whose S16 scenario
+first cites them, and no entry SHALL name `bolt 6 · the clan push
+profile` after this change (rule core.33, ADR 0012). 44 and 126 SHALL
+stay named by the phase the Nix cache target's change names them by.
+
+#### Scenario: The coverage check after this change
+
+- **WHEN** `moon run conformance:coverage` runs
+- **THEN** 41 and 97 are cited by S16, appear in no register entry, and no entry names the clan push profile
+
+### Requirement: Environments in status over the fakes
+
+The status group SHALL hold status's environments to 43, 58 to 61, 63,
+91, 98, 132 and 134 over the fakes, with reports made by the fakes'
+apply and no target asked: running what it should, behind with the
+notes between, moved back, waiting, after another, no counted report,
+an uncounted signer, S10 and S12 for the environments, a chain as last
+read, and the four counts of the part and the row.
+
+#### Scenario: Behind, with the notes between
+
+- **WHEN** a world publishes three versions, `stable` is promoted to the third, and the fake apply reported `srv` running the first
+- **THEN** status names `srv` behind, running the first, should run the third, with the second's and the third's notes, and the fake target records no call
+
+#### Scenario: S10 for the environments
+
+- **WHEN** status is asked, the fake store is then faulted unreadable on every operation, and status is asked again
+- **THEN** each environment is shown as the first answer showed it, its reports read as last fetched at the first's moment with the store's words, and no part is refused
+
+#### Scenario: S12 for the environments
+
+- **WHEN** status is asked, the reports' copy is deleted, and status is asked again
+- **THEN** the environments' part of both answers is equal
+
+#### Scenario: No counted report
+
+- **WHEN** a world declares `srv` and no apply has reported it
+- **THEN** `srv` is unread saying no counted report names it, and is counted among those that cannot be read
+
+### Requirement: S11 over the fakes
+
+The status group SHALL play S11 over the fakes, citing 56, 57, 98 and
+132: the overview names each environment with what it should run, what
+it runs and whether they differ, and the row made from it carries the
+part's four counts. The surfaces group SHALL hold the command line and
+the served page to the core's answer with environments in it, value for
+value but for the moment asked (56, 57, rule core.31).
+
+#### Scenario: S11
+
+- **WHEN** a world declares two environments, one running what it should and one behind, and status is asked of the core, through the command line with `--json`, and through the page's JSON
+- **THEN** the three answers are equal but for the moment asked, each naming both environments with what each should run and runs and whether they differ, and the row's counts are one running what it should and one behind
+
+### Requirement: The register after environments in status
+
+98 SHALL leave the register, and the parts of 132 and 134 that show
+environments SHALL leave its parts, in the commit whose scenarios first
+cite them, and no entry SHALL name `phase 2 · environments in status`
+after this change (rule core.33, ADR 0012).
+
+#### Scenario: The coverage check after this change
+
+- **WHEN** `moon run conformance:coverage` runs
+- **THEN** 98 is cited and appears in no register entry, the register names no part of 132 or 134, and no entry names environments in status
+
+### Requirement: Status's channels over the fakes, beside the environments
+
+The status group SHALL hold status's channels to 31, 36, 58 to 61, 63,
+101 and 131 over the fakes, below its marker, each scenario asking the
+landing, the policy and the keeper, the store only for an environment's
+reports, and writing nothing but the host's copy: every channel at its
+version or empty; S10 for the channels; one chain unreadable and one
+forked beside a channel shown; and S12 for the channels.
+
+#### Scenario: Every channel at its version or empty
+
+- **WHEN** the fake policy declares `beta` and `stable` of the world's component and no environment, and the fake keeper holds two promotions of `stable`
+- **THEN** status names `beta` empty and `stable` at its head's version with both promotions newest first, and the store, signer and targets record no call
+
+#### Scenario: S10 for status
+
+- **WHEN** the fake store faults every operation, the fake keeper is made unreachable after one answer, and status is asked
+- **THEN** each channel is shown as last read with its time and the keeper's words, no part is refused, and the store records no write
+
+#### Scenario: One channel's answer beside another's
+
+- **WHEN** the fake keeper's chain is faulted unreadable once with the words `connection reset` and another channel is forked
+- **THEN** the first channel asked is unreadable carrying `connection reset`, the forked one refused naming both claims, and every other channel shown
+
+#### Scenario: S12 for the channels
+
+- **WHEN** status is asked, the host's record is deleted, and status is asked again
+- **THEN** the channels' part of both answers is equal, and after a rebuild so is the record's

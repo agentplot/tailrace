@@ -63,8 +63,8 @@
 //! the repository's `HEAD` commit is set up for (C.5, C.6), over the
 //! checkout's `origin` or its one remote; the ledger the git ref on the
 //! landing's remote, written or given, or in the repository's own refs
-//! where the landing has none (C.13); for a publish or a promote, the
-//! host key at `timber/host/signing.key` under the same data
+//! where the landing has none (C.13); for a publish, a promote or an
+//! apply, the host key at `timber/host/signing.key` under the same data
 //! directory, made on its first sign and signing as the host's name
 //! (C.8); and the host's own publish as what tells its gate (130). A
 //! file that is there is
@@ -81,7 +81,13 @@
 //! through a second binding of the store, and Cargo's projection crates
 //! and npm's tarballs through a third and a fourth, each opened and
 //! never made (design D6). What tells the gate is bound for every
-//! command; no target is bound yet. Only a publish and the two pushes
+//! command. Every target profile built is bound for an apply, each
+//! reading through a store binding of its own, opened and never made,
+//! the repository's environments picking among them (92, C.10; the Nix
+//! cache unit's design D3); no other command binds a target. An apply
+//! binds the host's signer to sign its report, as a promote binds it, and
+//! every other signer profile verify-only (11, 43). Only a
+//! publish and the two pushes
 //! make the layout, the given one with its parents, at the first
 //! operation asked of the store and never in binding it, so a publish
 //! refused before it asks the store anything leaves nothing behind; a
@@ -91,14 +97,26 @@
 //! every other command opens it, and a promote makes nothing (C.13,
 //! C.14).
 //!
-//! Status asks the landing, the policy and the ledger alone (60; design
-//! D8): it is bound by the same path, with no signer but every profile
-//! verify-only, and the store opened, never made, only for a ledger held
-//! in it, every operation of the store answering absent naming it
-//! otherwise; so status on a host with nothing written reads the given
-//! landing and the given ledger and makes nothing. The policy command is
-//! bound as status is, with no store whether or not the file names one
-//! (the channels unit's design D11).
+//! Status asks the landing, the policy, the ledger and the store, and
+//! reaches no signer (60; design D8; the design D5 and D11 of the change
+//! that reads environments in status): it is bound by the same path with
+//! no signer, both signer profiles verify-only and the key service
+//! profile reaching no service, whatever `[signing]` names, and the store
+//! `[store]` names, or the given layout, opened and never made, for the
+//! environments' reports and for a ledger held in it. A store that cannot
+//! be opened, as a host that never published has no given layout, is
+//! bound as one whose every operation answers with the opening's words,
+//! unreadable, so the channels are read and each environment is answered
+//! from the host's copy (61); so status on a host with nothing written
+//! reads the given landing and the given ledger and makes nothing. The
+//! policy command is bound with no store whether or not the file names
+//! one, every operation of it absent naming the binding (the channels
+//! unit's design D11). Apply binds the host's signer to sign
+//! its report and the gate's moves on it, every other profile
+//! verify-only, with the store opened and never made, since it judges the
+//! claims attached to the head's index, and the targets beside (11, 42,
+//! 43, 91; the Nix cache unit's design D5; the clan push profile's design
+//! D6 and D9).
 
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -107,6 +125,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::de::DeserializeOwned;
+use timber_core::{History, RepositoryName};
 use timber_seams::{
     Answer, Branch, Digest, Ecosystem, EcosystemName, Envelope, Held, IsLanded, Landing, Manifest,
     Name, NamedSigner, Not, Put, Revision, Seam, Seams, SignerId, Source, Store, Verdicts, Version,
@@ -368,7 +387,7 @@ pub fn read(file: &Path, home: Option<&Path>) -> Answer<Bindings> {
                     bindings.trust.push(trusted(file, id, value)?);
                 }
             }
-            "build" | "projections" => {
+            "build" | "projections" | "targets" | "environments" => {
                 return Err(unreadable(
                     file,
                     Some(&at),
@@ -472,8 +491,11 @@ fn trusted(file: &Path, id: &str, value: &toml::Value) -> Answer<NamedSigner> {
 /// The command a binding is made for: publish, push or a push before a
 /// landing, which make the layout the first time; verify, sync or
 /// rebuild, which never make or write one; promote, which signs and never
-/// makes the layout; status, which asks the landing, the policy and the
-/// ledger alone; or policy, bound as status is with no store.
+/// makes the layout; status, which asks the landing, the policy, the
+/// ledger and the store, opened and never made, and reaches no signer;
+/// policy, which asks the landing, the policy and the ledger, with no
+/// store; or apply, bound with the store opened and the targets beside,
+/// and signing its report as promote signs (11, 43).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum For {
     Publish,
@@ -487,11 +509,14 @@ pub enum For {
     Promote,
     Status,
     Policy,
+    Apply,
 }
 
-/// The store status binds where no ledger is held in it, and the policy
-/// command always, which neither asks: every operation answers why it
-/// was not opened (60).
+/// A store not opened: the policy command's, which asks none, every
+/// operation absent naming the binding; and status's where the store
+/// cannot be opened, every operation answering the opening's own answer,
+/// unreadable with its words, so the channels are read and each
+/// environment is answered from the host's copy (60, 61).
 struct Unopened {
     not: Not,
 }
@@ -502,6 +527,11 @@ impl Unopened {
         Box::new(Unopened {
             not: Not::absent(&Source::new(Seam::Store, "unbound"), what),
         })
+    }
+
+    /// Every operation answering `not`, what opening the store answered.
+    fn answering(not: Not) -> Box<dyn Store> {
+        Box::new(Unopened { not })
     }
 }
 
@@ -570,14 +600,21 @@ impl Landing for NoLanding {
 /// each it leaves out, or every table where there is no file, binds what
 /// its seam's profile family gives: the layout under the data directory,
 /// the landing the repository is set up for over the checkout's remote,
-/// the git ref on the landing's remote, and for a publish or a promote
-/// the given host key under the same data directory, signing as the name
-/// its public half gives (C.2, C.5, C.6, C.8, C.13); a push before a
+/// the git ref on the landing's remote, and for a publish, a promote or
+/// an apply the given host key under the same data directory, signing as
+/// the name its public half gives, made at its first sign (C.2, C.5, C.6,
+/// C.8, C.13); a push before a
 /// landing binds none where the file names no `[landing]`, every
-/// operation of it absent, since it asks the landing nothing (139); every
-/// other command binds both signers verify-only. A sync trusts the host's
+/// operation of it absent, since it asks the landing nothing (139);
+/// status binds both signers verify-only, the key service profile
+/// reaching no service, whatever `[signing]` names, and the store opened,
+/// one that cannot be opened answering every operation with the
+/// opening's words (60, 61); every other command binds both signers
+/// verify-only. A sync trusts the host's
 /// own signer, the one `[signing]` names, before the signers `[trust]`
-/// names, what verifies it read before the store is bound.
+/// names, what verifies it read before the store is bound. An apply binds
+/// every target profile built beside the store, each through a store
+/// binding of its own (92; the Nix cache unit's design D3).
 /// Every table is read, `[gate]` among them, and nothing is made: a
 /// publish or a push makes the layout at its store's first operation, so
 /// path with `~/` expanded, so the record names a directory a reader
@@ -598,7 +635,7 @@ pub fn bind(
     let signing = match (&bindings.signing, command) {
         (_, For::Status | For::Policy) => None,
         (Some(signing), _) => Some(signing),
-        (None, For::Publish | For::Promote) => {
+        (None, For::Publish | For::Promote | For::Apply) => {
             let data = data(xdg_data_home, home).ok_or_else(|| {
                 Not::absent(
                     &source(file),
@@ -644,28 +681,36 @@ pub fn bind(
     // A publish or a push makes the layout at its store's first
     // operation, through whichever binding of it is asked first.
     let make = matches!(command, For::Publish | For::Push | For::Left);
-    let ledger = |store: &Table| match &bindings.ledger {
-        Some(ledger) => profiles::ledger::bind(ledger, repository, store, make),
+    let opened = || profiles::store::bind(store, make);
+    let ledger = |open: &dyn Fn() -> Answer<Box<dyn Store>>| match &bindings.ledger {
+        Some(ledger) => profiles::ledger::bind(ledger, repository, open),
         None => Ok(profiles::ledger::given(repository, remote.clone())),
     };
-    let (bound, keeper, projections) = if matches!(command, For::Status | For::Policy) {
-        let keeper = ledger(store)?;
-        // No part of status reads the store but a ledger held in it, so a
-        // store that is not there leaves every other ledger's chains read.
-        let bound = match (&bindings.ledger, command) {
-            (_, For::Policy) => {
-                Unopened::absent("binding of the store, which timber policy binds none".into())
-            }
-            (Some(ledger), _) if profiles::ledger::in_store(ledger) => {
-                profiles::store::bind(store, false)?
-            }
-            _ => Unopened::absent(format!(
-                "binding of the store, {} in {}, which status opens only for a ledger held in it",
-                store.at(),
-                file.display()
-            )),
+    let (bound, keeper, projections, targets) = if command == For::Status {
+        // Status reads the environments' reports and a ledger held in the
+        // store; a store that cannot be opened answers why at each
+        // operation, so every other ledger's chains are read and each
+        // environment is answered from the host's copy (60, 61).
+        let open = || -> Answer<Box<dyn Store>> {
+            Ok(profiles::store::bind(store, false).unwrap_or_else(Unopened::answering))
         };
-        (bound, keeper, BTreeMap::new())
+        let keeper = ledger(&open)?;
+        (open()?, keeper, BTreeMap::new(), BTreeMap::new())
+    } else if command == For::Policy {
+        let keeper = ledger(&opened)?;
+        let bound = Unopened::absent("binding of the store, which timber policy binds none".into());
+        (bound, keeper, BTreeMap::new(), BTreeMap::new())
+    } else if command == For::Apply {
+        // Apply judges the claims attached to the head's index, and each
+        // target reads through a store of its own; neither is made (42).
+        let bound = profiles::store::bind(store, false)?;
+        let targets = profiles::target::bound(
+            &|| profiles::store::bind(store, false),
+            repository,
+            repository_named(repository, remote.as_deref()),
+        )?;
+        let keeper = ledger(&opened)?;
+        (bound, keeper, BTreeMap::new(), targets)
     } else {
         // A push's store, after a landing or of what a checkout left,
         // writes cache entries alone, into the bound build profile's cache
@@ -676,11 +721,12 @@ pub fn bind(
         let cache = profiles::store::bind_for(store, make, build, push)?;
         let crates = profiles::store::bind_for(store, make, build, push)?;
         let packages = profiles::store::bind_for(store, make, build, push)?;
-        let keeper = ledger(store)?;
+        let keeper = ledger(&opened)?;
         (
             bound,
             keeper,
             profiles::projection::bound(cache, crates, packages, repository),
+            BTreeMap::new(),
         )
     };
     Ok(Binding {
@@ -690,9 +736,12 @@ pub fn bind(
             landing,
             policy: profiles::policy::bind(repository),
             keeper,
-            signers: profiles::signer::bind(signing),
+            signers: match command {
+                For::Status => profiles::signer::unreaching(),
+                _ => profiles::signer::bind(signing),
+            },
             projections,
-            targets: BTreeMap::new(),
+            targets,
         },
         store: named,
         signer: signing.map(Signing::signer),
@@ -714,6 +763,34 @@ pub fn landing_remote(
         Some(landing) => profiles::landing::remote(landing),
         None => profiles::landing::given_remote(file, repository),
     }
+}
+
+/// 114: the repository the checkout at `checkout` is of, by the owner and
+/// name the address of its landing's remote, `remote`, ends in. Absent
+/// where the landing has no remote or the remote no address, and
+/// unreadable naming the remote and its address where it ends in no owner
+/// and name. It reads the checkout's history and writes nothing.
+pub fn repository_named(checkout: &Path, remote: Option<&str>) -> Answer<RepositoryName> {
+    let remote = remote.ok_or_else(|| {
+        Not::absent(
+            &Source::history(checkout.display()),
+            "remote of the landing, which neither [landing] nor the repository names",
+        )
+    })?;
+    let history = History::open(checkout)?;
+    let url = history.remote_url(remote)?.ok_or_else(|| {
+        Not::absent(
+            &Source::history(remote),
+            format!("address of the remote {remote}"),
+        )
+    })?;
+    RepositoryName::from_remote(&url).ok_or_else(|| {
+        Not::unreadable(
+            &Source::history(remote),
+            format!("an owner and a name in the address of the remote {remote}, {url}"),
+            None,
+        )
+    })
 }
 
 /// The binding for `command` in the repository at `repository`, from the

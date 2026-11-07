@@ -9,9 +9,8 @@ timber reaches everything outside itself through a seam: an interface
 of a few operations that [Part B of the statement](https://github.com/agentplot/blueprints/blob/main/design/timber/requirements.md#part-b-contracts-across-the-seams)
 fixes in plain words, and that a profile of Part C implements for one
 registry, one build system, one signer, one ecosystem or one kind of
-target. The core names none of them. The OCI layout on disk, moon,
-sluice and a plain git branch are built, and every other member below is
-designed; each page says what its seam asks of it.
+target. The core names none of them. Each page says what its seam asks
+of its members and which of them are built; the rest are designed.
 
 | kind | binds | members |
 |---|---|---|
@@ -21,7 +20,7 @@ designed; each page says what its seam asks of it.
 | [signers](/timber/guides/integrations/signers/) | B.4, the signer: sign a claim as the party running timber, verify who signed | a key in AWS KMS, a host key, keyless with Sigstore |
 | [ledgers](/timber/guides/integrations/ledgers/) | B.8, the ledger: append a promotion after its predecessor, answer a channel's chain | a git ref the gate pushes, the store where it retains claims |
 | [projections](/timber/guides/integrations/projections/) | B.6, a projection: pack an output into an ecosystem's bytes, render a layout, serve it | npm, Maven, Python, Go, Cargo, NuGet, a file, an image, moon's cache |
-| [targets](/timber/guides/integrations/targets/) | B.7, a target: what an environment wants, what it runs, converge it, report | a package registry such as CodeArtifact or npmjs, a static site, a CloudFormation stack, a function, Kubernetes via Flux or Argo, a Nix fleet via Clan, a Nix binary cache such as Attic |
+| [targets](/timber/guides/integrations/targets/) | B.7, a target: what an environment wants, what it runs, converge it, report | a package registry such as CodeArtifact or npmjs, a static site, a CloudFormation stack, a function, Kubernetes via Flux or Argo, a Nix fleet via Clan, pushed one machine at a time, built, a Nix binary cache through Attic, built |
 | [surfaces](/timber/guides/integrations/surfaces/) | A.10, askers and surfaces: one core, every answer the same, readable by a program | the command line, Claude Code, herdr, Boomdrive through millpond |
 
 The repository's authors bind the build, the projections and the targets
