@@ -16,9 +16,10 @@ tasks:
     inputs: ['/crates/**/*', '/Cargo.toml', '/Cargo.lock', '/devenv.nix', '/devenv.lock', '/.prototools', '/rust-toolchain.toml']
     tags: [check-fast]
     options: {runFromWorkspaceRoot: true}
-  # rustc, cargo, clippy and rustfmt are the build .prototools pins, on
-  # whichever host runs the gate (core.26). It reads the tools it checks
-  # from outside the tree, so it never replays.
+  # rustc, cargo, clippy and rustfmt are the build .prototools pins, and
+  # openspec and the Claude Code skills it writes the release devenv.nix
+  # pins, on whichever host runs the gate (core.26; ADR 0030). It reads the
+  # tools it checks from outside the tree, so it never replays.
   toolchain:
     command: 'sh check-toolchain.sh'
     tags: [check-fast]
