@@ -10,3 +10,8 @@ devenv.local.nix
 /site/node_modules/
 /site/dist/
 /site/.astro/
+
+# Claude Code's project files, which devenv writes from devenv.nix at each
+# entry to the shell (ADR 0030)
+/.mcp.json
+/.claude/settings.json
