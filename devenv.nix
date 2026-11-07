@@ -222,6 +222,41 @@ let
     '';
   };
 
+  # OpenSpec, which writes this repository's changes and the Claude Code
+  # skills and commands the tree tracks under .claude/ (ADR 0030): the
+  # release flume, sluice and boomdrive pin, built as nixpkgs builds its
+  # older one. Bump the version, then each hash from the mismatch the build
+  # reports, then write the skills and commands again with it:
+  # `openspec init --tools claude --profile custom`, with the user's
+  # OpenSpec configuration naming the family's ten workflows, propose,
+  # explore, new, continue, apply, ff, sync, archive, bulk-archive and
+  # verify. root:toolchain fails while a skill names another release.
+  openspecVersion = "1.14.3";
+  openspec = pkgs.openspec.overrideAttrs (
+    finalAttrs: _: {
+      version = openspecVersion;
+      src = pkgs.fetchFromGitHub {
+        owner = "Fission-AI";
+        repo = "OpenSpec";
+        tag = "v${finalAttrs.version}";
+        hash = "sha256-tdTX0nkDe/aNZgLckh6/B6BtoSb40w0Y5qzg+d1LjHU=";
+      };
+      pnpmDeps = pkgs.fetchPnpmDeps {
+        inherit (finalAttrs) pname version src;
+        pnpm = pkgs.pnpm_10;
+        fetcherVersion = 3;
+        hash = "sha256-fKm4sBdTDeQfIiE0k301jtRbiuJrBE7YIEBu8RZxuXI=";
+      };
+    }
+  );
+
+  # devenv's own script that makes the files it declares, Claude Code's
+  # among them, run from the repository's root.
+  writeFiles = ''
+    cd ${lib.escapeShellArg config.devenv.root} || exit
+    ${config.tasks."devenv:files".exec}
+  '';
+
   # The application toolchain .prototools pins, on PATH. proto's home is
   # this repository's, in the git common dir so every worktree shares it,
   # and only this repository's pins are read (no global .prototools).
@@ -358,6 +393,9 @@ in
     pkgs.attic-server
     # The Claude Code plugin's checks (plugins/claude.sh).
     claude
+    # The changes and specs, and the skills and commands it writes under
+    # .claude/, which root:toolchain holds to its pin.
+    openspec
   ]
   ++ lib.optional (sluice != null) sluice;
 
@@ -376,6 +414,30 @@ in
   env.TIMBER_TOOLS_ATTICD = "${pkgs.attic-server}/bin/atticd";
   env.TIMBER_TOOLS_ATTICADM = "${pkgs.attic-server}/bin/atticadm";
 
+  # Claude Code's project files (ADR 0030, after agentplot/boomdrive's
+  # record 0022): .mcp.json from the servers below and
+  # .claude/settings.json, each a link devenv makes into the store and git
+  # ignores. A Claude Code setting of the repository's goes here, never
+  # into those files. devenv's hosted server searches packages and devenv's
+  # options and starts no process on the host; it is named because a list
+  # of the repository's own replaces devenv's default. Every server named
+  # is approved by name in the settings, so a session in a trusted folder,
+  # a place among them, starts them and asks nothing.
+  claude.code = {
+    enable = true;
+    mcpServers."mcp.devenv.sh" = {
+      type = "http";
+      url = "https://mcp.devenv.sh";
+    };
+    # devenv's own hook, on wherever git-hooks are, runs prek after every
+    # edit. An agent here runs each tool through `devenv shell --`, so prek
+    # is not on its session's PATH and the hook would fail at each edit;
+    # the pre-commit hook runs treefmt and clippy on what is staged.
+    hooks.git-hooks-run.enable = false;
+  };
+  files.${config.claude.code.settingsPath}.json.enabledMcpjsonServers =
+    lib.attrNames config.claude.code.mcpServers;
+
   # moon's task archives (.moon/cache/outputs) are a link into the git common
   # dir, so every worktree shares them; the rest of .moon/cache records the
   # checkout's absolute paths and stays its own. moon's home is the
@@ -390,7 +452,17 @@ in
   # a check the policy marks cold, and a session's own shell inherits the
   # same from the host, which exports them into every shell. Where the host
   # declares none, rustc runs unwrapped (clause 133; check-compile-server.sh).
+  #
+  # devenv's files, Claude Code's above, are made here as well as by
+  # devenv's own task: a place's readiness is sluice's equip, which sources
+  # this script from `devenv print-dev-env` and runs no task, and the agent
+  # started after it reads them as it starts (ADR 0030). Their words go to
+  # no output a caller reads the environment from, and a working copy where
+  # they cannot be written still gets its shell.
   enterShell = ''
+    if ! (${writeFiles}) >/dev/null; then
+      echo "devenv.nix: Claude Code's files were not written in ${config.devenv.root}" >&2
+    fi
     if [ -n "''${SLUICE_JOBS:-}" ]; then
       CARGO_BUILD_JOBS="$SLUICE_JOBS"
       RUST_TEST_THREADS="$SLUICE_JOBS"

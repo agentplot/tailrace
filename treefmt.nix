@@ -29,8 +29,6 @@ _: {
     "target/**"
     ".devenv/**"
     ".moon/cache/**"
-    # Claude Code rewrites it in its own layout when a setting changes.
-    ".claude/settings.json"
     # The herdr plugin's jq programs: no formatter or linter for jq in the
     # toolchain; plugin-herdr's tests run every program under sh and dash.
     "plugins/herdr/lib/*.jq"
